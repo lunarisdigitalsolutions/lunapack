@@ -1,0 +1,47 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "type": "process",
+      "command": "dotnet",
+      "args": [
+        "restore",
+        "${workspaceFolder}/projects/cli/src/Lunapack.Cli/Lunapack.Cli.csproj",
+        "--locked-mode"
+      ],
+      "problemMatcher": ["$msCompile"],
+      "label": "Validate CLI Lock File"
+    },
+    {
+      "type": "process",
+      "command": "dotnet",
+      "args": [
+        "publish",
+        "${workspaceFolder}/projects/cli/src/Lunapack.Cli/Lunapack.Cli.csproj",
+        "-c",
+        "Release",
+        "--no-restore",
+        "--self-contained",
+        "-p:PublishAot=true",
+        "--runtime",
+        "${input:runtimeIdentifier}"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "dependsOn": "Validate CLI Lock File",
+      "problemMatcher": ["$msCompile"],
+      "label": "Build CLI (Native AOT)"
+    }
+  ],
+  "inputs": [
+    {
+      "id": "runtimeIdentifier",
+      "type": "pickString",
+      "options": ["win-x64", "linux-x64"],
+      "default": "win-x64",
+      "description": "Enter runtime identifier"
+    }
+  ]
+}

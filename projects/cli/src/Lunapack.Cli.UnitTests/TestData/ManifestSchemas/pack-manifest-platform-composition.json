@@ -1,0 +1,24 @@
+{
+  "id": "platform-composite",
+  "version": "1.0.0",
+  "license": "MIT",
+  "author": "Lunaris Digital Solutions <info@lunaris.digital>",
+  "packs": [
+    {
+      "id": "azure-bicep",
+      "version": "1.0.0"
+    },
+    {
+      "id": "github-actions",
+      "version": "1.0.0"
+    },
+    {
+      "id": "aspnetcore",
+      "version": "1.0.0"
+    },
+    {
+      "id": "angular",
+      "version": "1.0.0"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "profiles": {
+    "Lunapack.Cli": {
+      "commandName": "Project"
+    }
+  }
+}

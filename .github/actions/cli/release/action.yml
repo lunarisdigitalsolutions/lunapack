@@ -1,0 +1,349 @@
+name: Release Luna CLI
+description: Publish downloaded Luna CLI archives, checksums, and the changelog for an existing tag.
+
+inputs:
+  version:
+    description: Existing v-prefixed semantic version tag used as the release version.
+    required: true
+  artifact-pattern:
+    description: Pattern used to download CLI distribution artifacts.
+    required: false
+    default: cli-distribution-*
+  nuget-artifact-pattern:
+    description: Pattern used to download RID-specific .NET tool packages.
+    required: false
+    default: cli-nuget-*
+  run-id:
+    description: Optional workflow run ID from which to download release artifacts.
+    required: false
+    default: ''
+  changelog-path:
+    description: Source changelog from which the matching release section is extracted.
+    required: false
+    default: CHANGELOG.md
+  nuget-user:
+    description: NuGet username used to authenticate for publishing packages.
+    required: true
+  dry-run:
+    description: Validate and stage release artifacts without publishing them.
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Download CLI archives
+      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        github-token: ${{ github.token }}
+        pattern: ${{ inputs.artifact-pattern }}
+        path: release-staging/distributions
+        merge-multiple: true
+        run-id: ${{ inputs.run-id || github.run_id }}
+
+    - name: Download RID-specific .NET tools
+      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        github-token: ${{ github.token }}
+        pattern: ${{ inputs.nuget-artifact-pattern }}
+        path: release-staging/nuget
+        merge-multiple: true
+        run-id: ${{ inputs.run-id || github.run_id }}
+
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      with:
+        node-version: 24
+        registry-url: https://registry.npmjs.org
+
+    - name: Stage release assets
+      shell: bash
+      env:
+        CHANGELOG_PATH: ${{ inputs.changelog-path }}
+        TAG: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        if [[ ! "$TAG" =~ ^v((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?)$ ]]; then
+          echo 'Release tag must use v<semantic-version> without build metadata.' >&2
+          exit 1
+        fi
+
+        version="${BASH_REMATCH[1]}"
+        mkdir -p release-staging
+        if [[ ! -f "$CHANGELOG_PATH" ]]; then
+          echo "Warning: changelog file not found: $CHANGELOG_PATH. Continuing without release notes." >&2
+          : > release-staging/CHANGELOG.md
+        elif ! node projects/cli/distribution/extract-release-notes.mjs \
+          "$CHANGELOG_PATH" \
+          release-staging/CHANGELOG.md \
+          "$version"; then
+          echo 'Warning: failed to extract release notes. Continuing without release notes.' >&2
+          : > release-staging/CHANGELOG.md
+        fi
+
+        mapfile -d '' archives < <(find release-staging/distributions -type f -print0 | sort -z)
+        if [[ ${#archives[@]} -eq 0 ]]; then
+          echo 'No CLI archives were downloaded.' >&2
+          exit 1
+        fi
+
+        expected_archives=(
+          "luna-cli-${version}-linux-x64.tar.gz"
+          "luna-cli-${version}-linux-arm64.tar.gz"
+          "luna-cli-${version}-osx-x64.tar.gz"
+          "luna-cli-${version}-osx-arm64.tar.gz"
+          "luna-cli-${version}-win-x64.zip"
+        )
+        if [[ ${#archives[@]} -ne ${#expected_archives[@]} ]]; then
+          echo "Expected ${#expected_archives[@]} CLI archives, found ${#archives[@]}." >&2
+          exit 1
+        fi
+
+        declare -A seen_archives=()
+        for archive in "${archives[@]}"; do
+          archive_name="$(basename "$archive")"
+          if [[ ! " ${expected_archives[*]} " =~ " $archive_name " ]]; then
+            echo "Unexpected CLI archive name: $archive_name" >&2
+            exit 1
+          fi
+
+          if [[ -n "${seen_archives[$archive_name]:-}" ]]; then
+            echo "Duplicate CLI archive name: $archive_name" >&2
+            exit 1
+          fi
+
+          seen_archives[$archive_name]=1
+        done
+
+        for archive_name in "${expected_archives[@]}"; do
+          if [[ -z "${seen_archives[$archive_name]:-}" ]]; then
+            echo "Missing CLI archive: $archive_name" >&2
+            exit 1
+          fi
+        done
+
+        mapfile -d '' rid_packages < <(find release-staging/nuget -maxdepth 1 -type f -name '*.nupkg' -print0 | sort -z)
+        expected_rid_packages=(
+          "Lunaris.Lunapack.Luna.linux-x64.${version}.nupkg"
+          "Lunaris.Lunapack.Luna.linux-arm64.${version}.nupkg"
+          "Lunaris.Lunapack.Luna.osx-x64.${version}.nupkg"
+          "Lunaris.Lunapack.Luna.osx-arm64.${version}.nupkg"
+          "Lunaris.Lunapack.Luna.win-x64.${version}.nupkg"
+        )
+        if [[ ${#rid_packages[@]} -ne ${#expected_rid_packages[@]} ]]; then
+          echo "Expected ${#expected_rid_packages[@]} RID packages, found ${#rid_packages[@]}." >&2
+          exit 1
+        fi
+
+        declare -A seen_rid_packages=()
+        for package in "${rid_packages[@]}"; do
+          package_name="$(basename "$package")"
+          if [[ ! " ${expected_rid_packages[*]} " =~ " $package_name " ]]; then
+            echo "Unexpected RID package name: $package_name" >&2
+            exit 1
+          fi
+          seen_rid_packages[$package_name]=1
+        done
+
+        for package_name in "${expected_rid_packages[@]}"; do
+          if [[ -z "${seen_rid_packages[$package_name]:-}" ]]; then
+            echo "Missing RID package: $package_name" >&2
+            exit 1
+          fi
+        done
+
+        (
+          cd release-staging/distributions
+          printf '%s\0' "${expected_archives[@]}" | xargs -0 sha256sum
+        ) > release-staging/SHA256SUMS.txt
+
+    - name: Create GitHub Release
+      if: ${{ inputs.dry-run != 'true' }}
+      env:
+        GH_TOKEN: ${{ github.token }}
+        VERSION: ${{ inputs.version }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        if gh release view "$VERSION" >/dev/null 2>&1; then
+          release_directory="release-staging/existing-release"
+          rm -rf "$release_directory"
+          mkdir -p "$release_directory"
+          gh release download "$VERSION" --dir "$release_directory"
+          gh release view "$VERSION" --json body \
+            > release-staging/existing-release.json
+          node projects/cli/distribution/verify-release-assets.mjs \
+            release-staging \
+            "$release_directory" \
+            release-staging/existing-release.json \
+            "${VERSION#v}"
+
+          echo "Verified existing GitHub Release: $VERSION"
+        else
+          gh release create "$VERSION" \
+            --verify-tag \
+            --title "Luna $VERSION" \
+            --notes-file release-staging/CHANGELOG.md \
+            release-staging/distributions/* \
+            release-staging/SHA256SUMS.txt \
+            release-staging/CHANGELOG.md
+        fi
+
+    - name: Stage package distributions
+      id: packages
+      shell: bash
+      env:
+        TAG: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        version="${TAG#v}"
+        node projects/cli/distribution/package-distribution.mjs \
+          --archives release-staging/distributions \
+          --output release-staging/packages \
+          --version "$version"
+        printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+
+    - name: Set up .NET SDK
+      uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+      with:
+        global-json-file: global.json
+        cache: true
+        cache-dependency-path: '**/packages.lock.json'
+
+    - name: Restore NuGet tool dependencies
+      shell: bash
+      run: dotnet restore projects/cli/src/Lunapack.Cli/Lunapack.Cli.csproj --locked-mode
+
+    - name: Pack Luna .NET tool pointer
+      shell: bash
+      env:
+        VERSION: ${{ steps.packages.outputs.version }}
+      run: |
+        set -euo pipefail
+        dotnet pack projects/cli/src/Lunapack.Cli/Lunapack.Cli.csproj \
+          --configuration Release \
+          --no-restore \
+          --output release-staging/nuget \
+          -p:MinVerVersionOverride="$VERSION" \
+          -p:LunapackPackAsTool=true
+
+    - name: Stage container context
+      shell: bash
+      env:
+        VERSION: ${{ steps.packages.outputs.version }}
+      run: |
+        set -euo pipefail
+        container_directory="release-staging/container"
+        rm -rf "$container_directory"
+        mkdir -p "$container_directory"
+        cp "release-staging/packages/native/linux-x64/luna" "$container_directory/luna"
+        test -f "$container_directory/luna"
+
+    - name: Authenticate to GitHub Container Registry
+      if: ${{ inputs.dry-run != 'true' }}
+      shell: bash
+      env:
+        REGISTRY_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        test -n "$REGISTRY_TOKEN"
+        printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io \
+          --username "$GITHUB_ACTOR" \
+          --password-stdin
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+
+    - name: Build Luna container image
+      shell: bash
+      env:
+        DRY_RUN: ${{ inputs.dry-run }}
+        REVISION: ${{ github.sha }}
+        VERSION: ${{ steps.packages.outputs.version }}
+      run: |
+        set -euo pipefail
+        image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/lunapack"
+        channel=latest
+        if [[ "$VERSION" == *-* ]]; then
+          channel=next
+        fi
+
+        output=(--push --provenance=mode=max --sbom=true)
+        if [[ "$DRY_RUN" == 'true' ]]; then
+          output=(--load)
+        fi
+
+        docker buildx build \
+          --platform linux/amd64 \
+          --file projects/cli/distribution/Dockerfile \
+          --build-arg "VERSION=$VERSION" \
+          --build-arg "REVISION=$REVISION" \
+          --tag "$image:$VERSION" \
+          --tag "$image:$channel" \
+          "${output[@]}" \
+          release-staging/container
+
+    - name: Publish npm platform packages
+      if: ${{ inputs.dry-run != 'true' }}
+      shell: bash
+      env:
+        VERSION: ${{ steps.packages.outputs.version }}
+      run: |
+        set -euo pipefail
+        tag=latest
+        if [[ "$VERSION" == *-* ]]; then
+          tag=next
+        fi
+
+        for package_directory in release-staging/packages/npm/lunapack-win64 release-staging/packages/npm/lunapack-linux-x64 release-staging/packages/npm/lunapack-linux-arm64 release-staging/packages/npm/lunapack-macos-x64 release-staging/packages/npm/lunapack-macos-arm64; do
+          package_name="$(node -p "require('./' + process.argv[1] + '/package.json').name" "$package_directory")"
+          if npm view "$package_name@$VERSION" version --registry=https://registry.npmjs.org/ >/dev/null 2>&1; then
+            echo "npm package already published: $package_name@$VERSION"
+          else
+            npm publish "$package_directory" --access public --provenance --tag "$tag"
+          fi
+        done
+
+    - name: Publish npm entry package
+      if: ${{ inputs.dry-run != 'true' }}
+      shell: bash
+      env:
+        VERSION: ${{ steps.packages.outputs.version }}
+      run: |
+        set -euo pipefail
+        tag=latest
+        if [[ "$VERSION" == *-* ]]; then
+          tag=next
+        fi
+
+        if npm view "@lunarisdigitalsolutions/lunapack@$VERSION" version --registry=https://registry.npmjs.org/ >/dev/null 2>&1; then
+          echo "npm package already published: @lunarisdigitalsolutions/lunapack@$VERSION"
+        else
+          npm publish release-staging/packages/npm/lunapack --access public --provenance --tag "$tag"
+        fi
+
+    - name: NuGet login
+      id: login
+      if: ${{ inputs.dry-run != 'true' }}
+      uses: NuGet/login@ebc737b6fc418a6ca0073cf116ec8dc156d8b81e
+      with:
+        user: ${{ inputs.nuget-user }}
+
+    - name: Publish Luna .NET tool
+      if: ${{ inputs.dry-run != 'true' }}
+      shell: bash
+      env:
+        NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+        VERSION: ${{ steps.packages.outputs.version }}
+      run: |
+        set -euo pipefail
+        test -n "$NUGET_API_KEY"
+        for runtime_identifier in win-x64 linux-x64 linux-arm64 osx-x64 osx-arm64; do
+          dotnet nuget push "release-staging/nuget/Lunaris.Lunapack.Luna.${runtime_identifier}.${VERSION}.nupkg" \
+            --api-key "$NUGET_API_KEY" \
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate
+        done
+        dotnet nuget push "release-staging/nuget/Lunaris.Lunapack.Luna.${VERSION}.nupkg" \
+          --api-key "$NUGET_API_KEY" \
+          --source https://api.nuget.org/v3/index.json \
+          --skip-duplicate

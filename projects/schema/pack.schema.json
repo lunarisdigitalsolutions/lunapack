@@ -1,0 +1,309 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://lunapack.dev/schema/pack.schema.json",
+  "title": "LunaPack pack manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "version", "license", "author"],
+  "anyOf": [
+    {
+      "required": ["managedFiles"],
+      "properties": {
+        "managedFiles": {
+          "minItems": 1
+        }
+      }
+    },
+    {
+      "required": ["packs"],
+      "properties": {
+        "packs": {
+          "minItems": 1
+        }
+      }
+    }
+  ],
+  "properties": {
+    "author": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "license": {
+      "type": "string",
+      "minLength": 1
+    },
+    "parameters": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/parameter"
+      }
+    },
+    "tags": {
+      "type": "array",
+      "maxItems": 15,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+    },
+    "managedFiles": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/managedFile"
+      }
+    },
+    "packs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/packReference"
+      }
+    },
+    "scripts": {
+      "$ref": "#/definitions/lifecycleScripts"
+    }
+  },
+  "definitions": {
+    "lifecycleScript": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "arguments": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "command": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "file": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?![\\\\/])(?![A-Za-z]:[\\\\/])(?!.*(?:^|[\\\\/])\\.\\.(?:[\\\\/]|$)).+$"
+        },
+        "runner": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "oneOf": [
+        {
+          "required": ["file", "runner"],
+          "not": {
+            "required": ["command"]
+          }
+        },
+        {
+          "required": ["command"],
+          "not": {
+            "anyOf": [{ "required": ["file"] }, { "required": ["runner"] }]
+          }
+        }
+      ]
+    },
+    "lifecycleScripts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "postInstall": {
+          "$ref": "#/definitions/lifecycleScript"
+        },
+        "postUpdate": {
+          "$ref": "#/definitions/lifecycleScript"
+        },
+        "preInstall": {
+          "$ref": "#/definitions/lifecycleScript"
+        },
+        "preUpdate": {
+          "$ref": "#/definitions/lifecycleScript"
+        }
+      }
+    },
+    "managedFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target"],
+      "oneOf": [
+        {
+          "required": ["source"]
+        },
+        {
+          "required": ["glob"]
+        },
+        {
+          "required": ["directory"]
+        }
+      ],
+      "properties": {
+        "condition": {
+          "type": "string",
+          "minLength": 1
+        },
+        "directory": {
+          "type": "string",
+          "minLength": 1
+        },
+        "glob": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "strategy": {
+          "$ref": "#/definitions/managedFileStrategy"
+        },
+        "template": {
+          "type": "boolean",
+          "default": false
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "managedFileStrategy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "method"],
+      "properties": {
+        "type": {
+          "enum": ["copy", "merge"]
+        },
+        "method": {
+          "type": "string"
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "type": {
+              "enum": ["copy"]
+            },
+            "method": {
+              "enum": [
+                "overwrite",
+                "fail-if-exists",
+                "skip-if-exists",
+                "backup-and-overwrite"
+              ]
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "enum": ["merge"]
+            },
+            "method": {
+              "enum": ["lines", "section", "json"]
+            }
+          }
+        }
+      ]
+    },
+    "parameter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "required": {
+          "type": "boolean",
+          "default": false
+        },
+        "type": {
+          "enum": ["string", "bool", "enum"]
+        },
+        "values": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "type": {
+              "enum": ["enum"]
+            }
+          },
+          "required": ["values"]
+        },
+        {
+          "properties": {
+            "type": {
+              "enum": ["string", "bool"]
+            }
+          },
+          "not": {
+            "required": ["values"]
+          }
+        }
+      ]
+    },
+    "packReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version"],
+      "properties": {
+        "disabledHooks": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": ["preInstall", "postInstall", "preUpdate", "postUpdate"]
+          }
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parameters": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          },
+          "additionalProperties": {
+            "type": ["string", "boolean"]
+          }
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+        }
+      }
+    }
+  }
+}

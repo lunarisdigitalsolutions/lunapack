@@ -1,0 +1,11 @@
+id: dotnet-project
+
+version: 1.0.0
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Apply shared .NET build and package-management policy.
+packs:
+  - id: dotnet-build-props
+    version: 1.0.0
+  - id: dotnet-central-package-management
+    version: 1.0.0

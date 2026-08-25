@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "packs": [
+    {
+      "id": "foundation-composite",
+      "version": "1.0.0",
+      "destination": "docs/internal/development/coding-guidelines",
+      "sourcePath": "projects/packs",
+      "sourceName": "local",
+      "sourceIdentity": { "type": "local", "path": "projects/packs" },
+      "packPath": "foundation-composite",
+      "packs": [
+        {
+          "id": "dotnet-gitignore",
+          "version": "1.0.0"
+        }
+      ],
+      "managedFiles": []
+    },
+    {
+      "id": "dotnet-gitignore",
+      "version": "1.0.0",
+      "sourcePath": "projects/packs",
+      "sourceName": "local",
+      "sourceIdentity": { "type": "local", "path": "projects/packs" },
+      "packPath": "dotnet-gitignore",
+      "packs": [],
+      "managedFiles": [
+        {
+          "declaredTargetPath": ".gitignore",
+          "targetPath": ".gitignore",
+          "sha256": "46CBF75C6CD48E8D4F3D3830AE06D5C23F00F29A23DC521A95A5DCCDF53BDA15"
+        }
+      ]
+    }
+  ]
+}

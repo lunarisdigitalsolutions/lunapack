@@ -1,0 +1,117 @@
+name: Build Luna CLI
+description: Build, test, optionally publish, archive, and upload the Luna CLI.
+
+inputs:
+  runtime-identifier:
+    description: Runtime identifier for the CLI archive.
+    required: true
+  version:
+    description: Optional version supplied to the build and archive name.
+    required: false
+    default: ''
+  publish-artifacts:
+    description: Whether to publish, archive, and upload CLI artifacts.
+    required: false
+    default: 'false'
+  artifact-retention-days:
+    description: Retention period for uploaded artifacts.
+    required: false
+    default: '3'
+
+runs:
+  using: composite
+  steps:
+    - name: Restore .NET tools
+      shell: bash
+      run: dotnet tool restore
+
+    - name: Resolve CLI build version
+      id: version
+      shell: bash
+      env:
+        VERSION_OVERRIDE: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        version="${VERSION_OVERRIDE:-$(dotnet minver)}"
+        test -n "$version"
+        printf 'value=%s\n' "$version" >> "$GITHUB_OUTPUT"
+        printf 'MINVERVERSIONOVERRIDE=%s\n' "$version" >> "$GITHUB_ENV"
+
+    - name: Build and test CLI
+      uses: ./.github/actions/build-dotnet
+      with:
+        solution-path: projects/cli/src/Lunapack.slnx
+        publish-project-path: projects/cli/src/Lunapack.Cli/Lunapack.Cli.csproj
+        runtime-identifier: ${{ inputs.runtime-identifier }}
+        should-publish: ${{ inputs.publish-artifacts }}
+        additional-publish-arguments: --self-contained -p:PublishAot=true
+        artifact-name: cli-${{ inputs.runtime-identifier }}
+        artifact-output-path: ${{ runner.temp }}/luna-cli/${{ inputs.runtime-identifier }}/publish
+        artifact-retention-days: ${{ inputs.artifact-retention-days }}
+        should-upload-test-results: ${{ inputs.publish-artifacts }}
+
+    - name: Create Windows archive
+      id: archive-windows
+      if: ${{ inputs.publish-artifacts == 'true' && startsWith(inputs.runtime-identifier, 'win-') }}
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $publishDirectory = Join-Path $env:RUNNER_TEMP 'luna-cli/${{ inputs.runtime-identifier }}/publish'
+        $archiveDirectory = Join-Path $env:RUNNER_TEMP 'luna-cli/${{ inputs.runtime-identifier }}/archive'
+        $archivePath = Join-Path $archiveDirectory "luna-cli-${{ steps.version.outputs.value }}-${{ inputs.runtime-identifier }}.zip"
+
+        New-Item -ItemType Directory -Force -Path $archiveDirectory | Out-Null
+        Compress-Archive -Path (Join-Path $publishDirectory '*') -DestinationPath $archivePath -Force
+        "path=$archivePath" >> $env:GITHUB_OUTPUT
+
+    - name: Create Unix archive
+      id: archive-unix
+      if: ${{ inputs.publish-artifacts == 'true' && !startsWith(inputs.runtime-identifier, 'win-') }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        publish_directory="$RUNNER_TEMP/luna-cli/${{ inputs.runtime-identifier }}/publish"
+        archive_directory="$RUNNER_TEMP/luna-cli/${{ inputs.runtime-identifier }}/archive"
+        archive_path="$archive_directory/luna-cli-${{ steps.version.outputs.value }}-${{ inputs.runtime-identifier }}.tar.gz"
+
+        mkdir -p "$archive_directory"
+        tar -C "$publish_directory" -czf "$archive_path" .
+        printf 'path=%s\n' "$archive_path" >> "$GITHUB_OUTPUT"
+
+    - name: Pack RID-specific .NET tool
+      if: ${{ inputs.publish-artifacts == 'true' }}
+      shell: bash
+      env:
+        RUNTIME_IDENTIFIER: ${{ inputs.runtime-identifier }}
+        VERSION: ${{ steps.version.outputs.value }}
+      run: |
+        set -euo pipefail
+        output_directory="$RUNNER_TEMP/luna-cli/$RUNTIME_IDENTIFIER/nuget"
+        mkdir -p "$output_directory"
+        dotnet pack projects/cli/src/Lunapack.Cli/Lunapack.Cli.csproj \
+          --configuration Release \
+          --no-build \
+          --no-restore \
+          --output "$output_directory" \
+          -p:RuntimeIdentifier="$RUNTIME_IDENTIFIER" \
+          -p:MinVerVersionOverride="$VERSION" \
+          -p:LunapackPackAsTool=true
+        test -f "$output_directory/Lunaris.Lunapack.Luna.$RUNTIME_IDENTIFIER.$VERSION.nupkg"
+
+    - name: Upload CLI archive
+      if: ${{ inputs.publish-artifacts == 'true' && success() }}
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: cli-distribution-${{ inputs.runtime-identifier }}
+        path: ${{ steps.archive-windows.outputs.path || steps.archive-unix.outputs.path }}
+        if-no-files-found: error
+        retention-days: ${{ inputs.artifact-retention-days }}
+
+    - name: Upload RID-specific .NET tool
+      if: ${{ inputs.publish-artifacts == 'true' && success() }}
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: cli-nuget-${{ inputs.runtime-identifier }}
+        path: ${{ runner.temp }}/luna-cli/${{ inputs.runtime-identifier }}/nuget/*.nupkg
+        if-no-files-found: error
+        retention-days: ${{ inputs.artifact-retention-days }}

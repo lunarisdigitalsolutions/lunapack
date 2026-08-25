@@ -1,0 +1,184 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://lunapack.dev/schema/lunapack.schema.json",
+  "title": "LunaPack project configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "sources", "packs"],
+  "properties": {
+    "schemaVersion": {
+      "enum": [1]
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          { "$ref": "#/definitions/localSource" },
+          { "$ref": "#/definitions/gitSource" }
+        ]
+      }
+    },
+    "packs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/requestedPack"
+      }
+    },
+    "remap": {
+      "$ref": "#/definitions/remapping"
+    },
+    "trust": {
+      "$ref": "#/definitions/projectTrust"
+    },
+    "variables": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": ["string", "boolean"]
+      }
+    }
+  },
+  "definitions": {
+    "gitSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type", "url"],
+      "properties": {
+        "name": {
+          "$ref": "#/definitions/sourceName"
+        },
+        "type": {
+          "enum": ["git"]
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "$ref": "#/definitions/repositoryRelativePath"
+        },
+        "timeoutSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 300
+        }
+      }
+    },
+    "localSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type", "path"],
+      "properties": {
+        "name": {
+          "$ref": "#/definitions/sourceName"
+        },
+        "type": {
+          "enum": ["local"]
+        },
+        "path": {
+          "$ref": "#/definitions/relativePath"
+        }
+      }
+    },
+    "requestedPack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "destination": {
+          "$ref": "#/definitions/destination"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+        }
+      }
+    },
+    "remapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "directories": {
+          "$ref": "#/definitions/pathMapping"
+        },
+        "files": {
+          "$ref": "#/definitions/pathMapping"
+        }
+      }
+    },
+    "pathMapping": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^(?![A-Za-z]:[\\\\/])(?![\\\\/])(?!.*(?:^|[\\\\/])\\.\\.(?:[\\\\/]|$)).+"
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/repositoryRelativePath"
+      }
+    },
+    "projectTrust": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sources", "packs"],
+      "properties": {
+        "packs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/definitions/trustedPack"
+          }
+        },
+        "sources": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/definitions/sourceName"
+          }
+        }
+      }
+    },
+    "sourceName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "trustedPack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "source"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^@]+$"
+        },
+        "source": {
+          "$ref": "#/definitions/sourceName"
+        }
+      }
+    },
+    "destination": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![A-Za-z]:[\\\\/])(?!\\\\\\\\)(?!/)(?!.*(?:^|[\\\\/])\\.\\.(?:[\\\\/]|$)).+"
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![A-Za-z]:[\\\\/])(?![\\\\/]).+"
+    },
+    "repositoryRelativePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![A-Za-z]:[\\\\/])(?![\\\\/])(?!.*(?:^|[\\\\/])\\.\\.(?:[\\\\/]|$)).+"
+    }
+  }
+}

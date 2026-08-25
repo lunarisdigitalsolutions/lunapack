@@ -1,0 +1,13 @@
+{
+  "id": "foundation-composite",
+  "version": "1.0.0",
+  "packs": [
+    {
+      "id": "dotnet-gitignore",
+      "version": "1.0.0",
+      "parameters": {
+        "companyName": ["Lunaris Digital Solutions"]
+      }
+    }
+  ]
+}

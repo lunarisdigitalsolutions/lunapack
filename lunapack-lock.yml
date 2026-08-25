@@ -1,0 +1,178 @@
+packs:
+  - packs: []
+    id: dotnet-gitignore
+    managedFiles:
+      - content: IyAuTkVUIGJ1aWxkIG91dHB1dAoqKi9iaW4vCioqL29iai8KCiMgVmlzdWFsIFN0dWRpbyBhbmQgdXNlciBzZXR0aW5ncwoudnMvCioudXNlcgoqLnN1bwoqLnVzZXJvc3NjYWNoZQoqLnNsbi5kb2NzdGF0ZXMKCiMgVGVzdCByZXN1bHRzClRlc3RSZXN1bHRzLwoqLnRyeAo=
+        declaredTargetPath: .gitignore
+        sha256: 886F1A1604F5997AE5C497744045E974CF72DA21A71FEDACBB7F7B9E739E3537
+        strategy:
+          method: section
+          type: merge
+        targetPath: .gitignore
+    packPath: dotnet-gitignore
+    sourcePath: projects/packs
+    sourceName: repository-packs
+    sourceIdentity:
+      type: local
+      path: projects/packs
+    version: 1.0.0
+  - packs: []
+    id: dotnet-sdk-10
+    managedFiles:
+      - declaredTargetPath: global.json
+        sha256: 3E2BAAE41933F690DCE7E3C5C682DCE80E9C9942A0DBA6339E1A275EF1215B61
+        strategy:
+          method: json
+          type: merge
+        targetPath: global.json
+    packPath: dotnet-sdk-10
+    sourcePath: projects/packs
+    sourceName: repository-packs
+    sourceIdentity:
+      type: local
+      path: projects/packs
+    version: 1.0.0
+  - packs: []
+    id: dotnet-editorconfig
+    managedFiles:
+      - declaredTargetPath: .editorconfig
+        sha256: 17BCA5FC74C7DB2CB5C7B71CE1E7B8510F5CE8DE2E4972263607DB6A9351D160
+        targetPath: .editorconfig
+    packPath: dotnet-editorconfig
+    sourcePath: projects/packs
+    sourceName: repository-packs
+    sourceIdentity:
+      type: local
+      path: projects/packs
+    version: 1.0.0
+  - packs: []
+    id: dotnet-csharpier-tool
+    managedFiles:
+      - declaredTargetPath: dotnet-tools.json
+        sha256: 1C2DC30A012C734013C2E5030ED75EAEC2510403C3A30B727C50558B12A65712
+        strategy:
+          method: json
+          type: merge
+        targetPath: dotnet-tools.json
+    packPath: dotnet-csharpier-tool
+    sourcePath: projects/packs
+    sourceName: repository-packs
+    sourceIdentity:
+      type: local
+      path: projects/packs
+    version: 1.0.0
+  - packs: []
+    id: dotnet-build-props
+    managedFiles:
+      - declaredTargetPath: Directory.Build.props
+        sha256: EEA42174CF225B5EE2FB9914AA08B4C2A9FE29BA97A510BF91C0F7866E47F7BE
+        targetPath: Directory.Build.props
+    packPath: dotnet-build-props
+    sourcePath: projects/packs
+    sourceName: repository-packs
+    sourceIdentity:
+      type: local
+      path: projects/packs
+    version: 1.0.0
+  - packs: []
+    id: dotnet-central-package-management
+    managedFiles:
+      - declaredTargetPath: Directory.Packages.props
+        sha256: 716F039C9BB30F73F4E7928329ADBFD1D53D7A7B61D879609E53BEC9BC3147B8
+        targetPath: Directory.Packages.props
+    packPath: dotnet-central-package-management
+    sourcePath: projects/packs
+    sourceName: repository-packs
+    sourceIdentity:
+      type: local
+      path: projects/packs
+    version: 1.0.0
+  - packs:
+      - id: dotnet-build-props
+        version: 1.0.0
+      - id: dotnet-central-package-management
+        version: 1.0.0
+    id: dotnet-project
+    managedFiles: []
+    packPath: dotnet-project
+    sourcePath: projects/packs
+    sourceName: repository-packs
+    sourceIdentity:
+      type: local
+      path: projects/packs
+    version: 1.0.0
+  - packs: []
+    id: madr-adr-template
+    managedFiles:
+      - declaredTargetPath: docs/adr/template.md
+        sha256: E1BC4358E9C10C16C363796059641FB95B4B15E41CB9E45C79EBD221E8311BF1
+        targetPath: docs/adr/template.md
+    packPath: madr-adr-template
+    sourcePath: projects/packs
+    sourceName: repository-packs
+    sourceIdentity:
+      type: local
+      path: projects/packs
+    version: 1.0.0
+  - destination: docs/internal/development/coding-guidelines
+    packs: []
+    id: clean-code-guidelines
+    managedFiles:
+      - declaredTargetPath: clean-code.md
+        sha256: FCFB2189F090A79189BFC66BDD6E24B456BF6619290FA8165159C568DB1BE6C3
+        targetPath: docs/internal/development/coding-guidelines/clean-code.md
+    packPath: clean-code-guidelines
+    sourcePath: projects/packs
+    sourceName: repository-packs
+    sourceIdentity:
+      type: local
+      path: projects/packs
+    version: 1.0.0
+  - destination: docs/internal/development/coding-guidelines
+    packs: []
+    id: csharp-guidelines
+    managedFiles:
+      - declaredTargetPath: csharp.md
+        sha256: 1BA39421B5C119373BB6F7B57C9768CD53F84699E8397E5187B99EB0F31FB9FE
+        targetPath: docs/internal/development/coding-guidelines/csharp.md
+    packPath: csharp-guidelines
+    sourcePath: projects/packs
+    sourceName: repository-packs
+    sourceIdentity:
+      type: local
+      path: projects/packs
+    version: 1.0.0
+  - packs: []
+    id: license-mit
+    managedFiles:
+      - declaredTargetPath: LICENSE.md
+        sha256: 89146D825DA2766065BDD1612FDFFAB65D6E04CEAF5F8699FF575DB70A27D923
+        strategy:
+          method: overwrite
+          type: copy
+        targetPath: LICENSE.md
+    packPath: license-mit
+    sourcePath: projects/packs
+    sourceName: repository-packs
+    sourceIdentity:
+      type: local
+      path: projects/packs
+    version: 1.0.0
+  - packs: []
+    id: gitignore-general
+    managedFiles:
+      - content: IyBCRUdJTiBMdW5hcGFjayBnZW5lcmFsIGlnbm9yZXMKIyBPcGVyYXRpbmctc3lzdGVtIGZpbGVzCi5EU19TdG9yZQpUaHVtYnMuZGIKCiMgRWRpdG9yLWxvY2FsIGZpbGVzCi52c2NvZGUvKgohLnZzY29kZS9zZXR0aW5ncy5qc29uCiEudnNjb2RlL3Rhc2tzLmpzb24KIS52c2NvZGUvbGF1bmNoLmpzb24KIS52c2NvZGUvZXh0ZW5zaW9ucy5qc29uCiEudnNjb2RlLyouY29kZS1zbmlwcGV0cwohKi5jb2RlLXdvcmtzcGFjZQoqLnZzaXgKIyBFTkQgTHVuYXBhY2sgZ2VuZXJhbCBpZ25vcmVz
+        declaredTargetPath: .gitignore
+        sha256: 886F1A1604F5997AE5C497744045E974CF72DA21A71FEDACBB7F7B9E739E3537
+        strategy:
+          method: section
+          type: merge
+        targetPath: .gitignore
+    packPath: gitignore-general
+    sourcePath: projects/packs
+    sourceName: repository-packs
+    sourceIdentity:
+      type: local
+      path: projects/packs
+    version: 1.0.0
+schemaVersion: 1

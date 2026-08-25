@@ -1,0 +1,26 @@
+{
+  "id": "license-mit",
+  "version": "1.0.0",
+  "license": "MIT",
+  "author": "Lunaris Digital Solutions <info@lunaris.digital>",
+  "parameters": {
+    "companyName": {
+      "type": "string",
+      "required": true
+    },
+    "licenseKind": {
+      "type": "enum",
+      "values": ["mit", "apache-2.0"]
+    },
+    "includeCi": {
+      "type": "bool"
+    }
+  },
+  "managedFiles": [
+    {
+      "source": "LICENSE.md",
+      "target": "LICENSE.md",
+      "condition": "licenseKind == \"mit\""
+    }
+  ]
+}

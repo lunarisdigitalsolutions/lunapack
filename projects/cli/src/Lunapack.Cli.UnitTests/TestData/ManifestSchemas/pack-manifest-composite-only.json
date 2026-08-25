@@ -1,0 +1,12 @@
+{
+  "id": "foundation-composite",
+  "version": "1.0.0",
+  "license": "MIT",
+  "author": "Lunaris Digital Solutions <info@lunaris.digital>",
+  "packs": [
+    {
+      "id": "dotnet-gitignore",
+      "version": "1.0.0"
+    }
+  ]
+}

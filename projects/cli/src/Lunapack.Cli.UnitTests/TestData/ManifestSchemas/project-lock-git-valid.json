@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "packs": [
+    {
+      "id": "example",
+      "version": "1.0.0",
+      "packPath": "packs/example",
+      "sourceName": "git",
+      "sourceIdentity": {
+        "type": "git",
+        "url": "https://example.test/packs.git",
+        "ref": "main",
+        "path": "packs"
+      },
+      "gitSource": {
+        "type": "git",
+        "url": "https://example.test/packs.git",
+        "ref": "main",
+        "path": "packs",
+        "resolvedCommit": "0123456789abcdef0123456789abcdef01234567"
+      },
+      "packs": [],
+      "managedFiles": []
+    }
+  ]
+}

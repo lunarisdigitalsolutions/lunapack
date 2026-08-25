@@ -1,0 +1,747 @@
+.home {
+  background: var(--color-gray-100);
+  color: var(--color-text);
+}
+
+.hero {
+  border-bottom: 1px solid var(--color-gray-200);
+  overflow: hidden;
+}
+
+.heroInner,
+.sectionInner {
+  margin: 0 auto;
+  max-width: 1180px;
+  padding-left: 1.5rem;
+  padding-right: 1.5rem;
+}
+
+.heroInner {
+  align-items: center;
+  display: grid;
+  gap: 4rem;
+  grid-template-columns: minmax(0, 1.03fr) minmax(340px, 0.97fr);
+  min-height: 680px;
+  padding-bottom: 5rem;
+  padding-top: 5rem;
+}
+
+.eyebrow,
+.sectionLabel {
+  align-items: center;
+  color: var(--color-primary-700);
+  display: flex;
+  font-size: 0.8rem;
+  font-weight: 700;
+  gap: 0.6rem;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.mark {
+  height: 2rem;
+  width: 2rem;
+}
+
+.hero h1 {
+  color: var(--color-primary);
+  font-size: 4.35rem;
+  line-height: 0.95;
+  margin: 1.5rem 0 1rem;
+}
+
+.heroLead {
+  font-size: 1.35rem;
+  line-height: 1.55;
+  margin: 0;
+  max-width: 38rem;
+}
+
+.heroActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  margin-top: 2rem;
+}
+
+.heroActions :global(.button),
+.callToAction :global(.button) {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.5rem;
+}
+
+.heroFacts {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 3.4rem 0 0;
+}
+
+.heroFacts div {
+  border-left: 2px solid var(--color-alternate1);
+  padding-left: 0.75rem;
+}
+
+.heroFacts dt {
+  color: var(--color-primary-700);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.heroFacts dd {
+  font-size: 0.95rem;
+  line-height: 1.35;
+  margin: 0.25rem 0 0;
+}
+
+.heroVisual {
+  background: var(--color-primary);
+  border: 1px solid var(--color-primary-700);
+  border-radius: 6px;
+  box-shadow: 14px 14px 0 var(--color-alternate1);
+  color: var(--color-text-light);
+  min-height: 390px;
+  overflow: hidden;
+  position: relative;
+}
+
+.workflowImage {
+  bottom: -10%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.13;
+  position: absolute;
+  right: -14%;
+  transform: scale(1.25);
+  width: 100%;
+}
+
+.terminalHeader,
+.commandPanelHeader {
+  align-items: center;
+  background: var(--color-primary-800);
+  border-bottom: 1px solid var(--color-primary-700);
+  color: var(--color-text-light);
+  display: flex;
+  font-family: 'JetBrains Mono Variable', monospace;
+  font-size: 0.75rem;
+  justify-content: space-between;
+  min-height: 3rem;
+  padding: 0 1rem;
+  position: relative;
+}
+
+.terminalStatus {
+  align-items: center;
+  color: var(--color-accent);
+  display: inline-flex;
+  gap: 0.4rem;
+}
+
+.terminalStatus::before {
+  background: var(--color-secondary);
+  border-radius: 50%;
+  content: '';
+  height: 0.5rem;
+  width: 0.5rem;
+}
+
+.terminalBody {
+  font-family: 'JetBrains Mono Variable', monospace;
+  font-size: 0.85rem;
+  line-height: 1.65;
+  padding: 2.3rem 2rem;
+  position: relative;
+}
+
+.terminalLine {
+  color: var(--color-text-light);
+  margin-top: 1.3rem;
+}
+
+.terminalLine:first-child {
+  margin-top: 0;
+}
+
+.prompt {
+  color: var(--color-amber-light);
+  margin-right: 0.6rem;
+}
+
+.terminalOutput {
+  color: var(--color-accent);
+  font-size: 0.77rem;
+  padding-left: 1rem;
+}
+
+.packageList {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0.8rem 0 0.15rem 1rem;
+}
+
+.packageList span {
+  align-items: center;
+  color: var(--color-text-light);
+  display: flex;
+  gap: 0.65rem;
+}
+
+.packageList svg {
+  color: var(--color-amber-light);
+}
+
+.problem,
+.solution,
+.workflow,
+.commandSection,
+.benefits,
+.callToAction,
+.updates,
+.company {
+  padding: 6rem 0;
+}
+
+.problem {
+  background: var(--color-white);
+}
+
+.sectionIntro {
+  display: grid;
+  gap: 2rem;
+  grid-template-columns: minmax(0, 1.1fr) minmax(260px, 0.9fr);
+  margin-top: 1rem;
+}
+
+.sectionIntro h2,
+.sectionHeader h2,
+.workflow h2,
+.commandGrid h2,
+.benefits h2,
+.callToAction h2,
+.company h2 {
+  color: var(--color-primary);
+  font-size: 2.5rem;
+  line-height: 1.08;
+  margin: 0;
+}
+
+.sectionIntro p,
+.sectionHeader > p,
+.commandGrid > div > p {
+  color: var(--color-text);
+  font-size: 1.06rem;
+  line-height: 1.65;
+  margin: 0;
+}
+
+.problemGrid {
+  display: grid;
+  gap: 2.5rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 4.5rem;
+}
+
+.problemGrid > div {
+  border-top: 2px solid var(--color-alternate1);
+  padding-top: 1.15rem;
+}
+
+.problemNumber {
+  color: var(--color-primary-700);
+  font-family: 'JetBrains Mono Variable', monospace;
+  font-size: 0.9rem;
+}
+
+.problemGrid h3,
+.solutionCard h3,
+.lifecycleStep h3 {
+  color: var(--color-primary);
+  font-size: 1.3rem;
+  margin: 1rem 0 0.6rem;
+}
+
+.problemGrid p,
+.solutionCard p,
+.lifecycleStep p {
+  color: var(--color-text);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.solution {
+  background: var(--color-gray-200);
+}
+
+.sectionHeader,
+.commandGrid {
+  align-items: end;
+  display: grid;
+  gap: 3rem;
+  grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+}
+
+.sectionHeader h2 {
+  margin-top: 0.8rem;
+}
+
+.solutionGrid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 3.5rem;
+}
+
+.solutionCard {
+  background: var(--color-white);
+  border: 1px solid var(--color-secondary);
+  border-radius: 6px;
+  min-height: 220px;
+  padding: 1.8rem;
+}
+
+.solutionCard svg {
+  color: var(--color-primary-700);
+}
+
+.workflow {
+  background: var(--color-gray-100);
+}
+
+.workflow h2 {
+  margin-top: 0.8rem;
+  max-width: 42rem;
+}
+
+.lifecycleGrid {
+  display: grid;
+  gap: 2.5rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 4rem;
+}
+
+.lifecycleStep {
+  border-left: 1px solid var(--color-secondary);
+  padding-left: 1.25rem;
+}
+
+.lifecycleStep > span {
+  color: var(--color-primary-700);
+  font-family: 'JetBrains Mono Variable', monospace;
+  font-size: 0.9rem;
+}
+
+.commandSection {
+  background: var(--color-primary);
+}
+
+.commandSection .sectionLabel,
+.callToAction .sectionLabel {
+  color: var(--color-accent);
+}
+
+.commandGrid h2,
+.commandGrid > div > p {
+  color: var(--color-text-light);
+}
+
+.commandGrid h2 {
+  margin: 0.8rem 0 1.2rem;
+}
+
+.commandGrid > div > p {
+  color: var(--color-accent);
+}
+
+.commandNote {
+  color: var(--color-accent) !important;
+  font-size: 0.9rem !important;
+  margin-top: 1.5rem !important;
+}
+
+.commandPanel {
+  background: var(--color-primary-800);
+  border: 1px solid var(--color-secondary);
+  border-radius: 6px;
+  color: var(--color-text-light);
+  overflow: hidden;
+}
+
+.copyButton {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--color-secondary);
+  border-radius: 4px;
+  color: var(--color-text-light);
+  cursor: pointer;
+  display: inline-flex;
+  height: 2rem;
+  justify-content: center;
+  padding: 0;
+  width: 2rem;
+}
+
+.copyButton:hover,
+.copyButton:focus-visible {
+  background: var(--color-primary-700);
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.commandPanel pre {
+  background: transparent;
+  color: var(--color-text-light);
+  font-size: 0.83rem;
+  line-height: 1.8;
+  margin: 0;
+  overflow-x: auto;
+  padding: 1.7rem;
+}
+
+.benefits {
+  background: var(--color-white);
+}
+
+.benefits ul {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  list-style: none;
+  margin: 3.5rem 0 0;
+  padding: 0;
+}
+
+.benefits li {
+  align-items: flex-start;
+  border-top: 1px solid var(--color-gray-200);
+  display: flex;
+  gap: 0.8rem;
+  line-height: 1.55;
+  padding-top: 1rem;
+}
+
+.benefits li svg {
+  color: var(--color-primary-700);
+  flex: 0 0 auto;
+  margin-top: 0.15rem;
+}
+
+.callToAction {
+  background: var(--color-primary-700);
+}
+
+.callToAction .sectionInner {
+  align-items: center;
+  display: flex;
+  gap: 2rem;
+  justify-content: space-between;
+}
+
+.callToAction h2 {
+  color: var(--color-text-light);
+  margin-top: 0.8rem;
+}
+
+.callToAction :global(.button) {
+  background: var(--color-white);
+  border-color: var(--color-white);
+  color: var(--color-primary);
+  flex: 0 0 auto;
+}
+
+.commandSection :global(code:not(pre code)),
+.authoring :global(code:not(pre code)) {
+  background: var(--color-primary-800);
+  color: var(--color-accent);
+}
+
+.commandPanel pre code,
+.authorPanel pre code {
+  color: var(--color-text-light);
+}
+
+.featuredPacks,
+.community {
+  background: var(--color-white);
+  padding: 6rem 0;
+}
+
+.updates {
+  background: var(--color-gray-100);
+}
+
+.updateGrid {
+  display: grid;
+  gap: 2rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 3.5rem;
+}
+
+.updateGrid article {
+  border-top: 2px solid var(--color-alternate1);
+  padding-top: 1.25rem;
+}
+
+.updateGrid svg {
+  color: var(--color-primary-700);
+}
+
+.updateGrid h3 {
+  color: var(--color-primary);
+  font-size: 1.3rem;
+  margin: 1rem 0 0.6rem;
+}
+
+.updateGrid p {
+  line-height: 1.6;
+  margin: 0;
+}
+
+.featuredGrid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 3.5rem 0 2rem;
+}
+
+.featuredPack {
+  border-top: 2px solid var(--color-secondary);
+  padding: 1rem 0.25rem 0;
+}
+
+.featuredPack svg {
+  color: var(--color-primary-700);
+}
+
+.featuredPack h3 {
+  color: var(--color-primary);
+  font-size: 1.2rem;
+  margin: 1rem 0 0.55rem;
+}
+
+.featuredPack p {
+  color: var(--color-text);
+  line-height: 1.55;
+  margin: 0;
+}
+
+.featuredPacks :global(.button) {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.5rem;
+}
+
+.authoring {
+  background: var(--color-gray-200);
+  padding: 6rem 0;
+}
+
+.authoring .commandGrid {
+  align-items: center;
+}
+
+.authoring .commandGrid > div > p {
+  color: var(--color-text);
+  margin: 1.2rem 0 1.8rem;
+}
+
+.authoring .commandGrid h2 {
+  color: var(--color-primary);
+}
+
+.authoring :global(.button) {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.5rem;
+}
+
+.authorPanel {
+  background: var(--color-primary);
+  border: 1px solid var(--color-primary-700);
+  border-radius: 6px;
+  color: var(--color-text-light);
+  overflow: hidden;
+}
+
+.authorPanel pre {
+  background: transparent;
+  color: var(--color-text-light);
+  font-size: 0.83rem;
+  line-height: 1.8;
+  margin: 0;
+  overflow-x: auto;
+  padding: 1.7rem;
+}
+
+.community .sectionInner {
+  display: grid;
+  gap: 2rem;
+  grid-template-columns: 1fr;
+}
+
+.community h2 {
+  color: var(--color-primary);
+  font-size: 2.5rem;
+  line-height: 1.08;
+  margin: 0.8rem 0 0;
+}
+
+.communityLinks {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.communityLinks a {
+  align-items: center;
+  border: 1px solid var(--color-gray-200);
+  color: var(--color-primary);
+  display: flex;
+  font-weight: 700;
+  gap: 0.55rem;
+  min-height: 4.5rem;
+  padding: 0.8rem;
+}
+
+.communityLinks a:hover,
+.communityLinks a:focus-visible {
+  background: var(--color-accent);
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+.company {
+  background: var(--color-gray-200);
+}
+
+.company .sectionInner {
+  align-items: center;
+  display: grid;
+  gap: 2rem;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.company > div > svg {
+  color: var(--color-primary-700);
+}
+
+.company h2 {
+  color: var(--color-primary);
+  margin: 0.8rem 0 1rem;
+}
+
+.company p {
+  line-height: 1.65;
+  margin: 0;
+  max-width: 48rem;
+}
+
+.company :global(.button) {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.5rem;
+}
+
+@media (max-width: 996px) {
+  .heroInner,
+  .sectionIntro,
+  .sectionHeader,
+  .commandGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .heroInner {
+    gap: 3rem;
+    min-height: auto;
+  }
+
+  .sectionHeader,
+  .commandGrid {
+    align-items: start;
+  }
+
+  .heroVisual {
+    max-width: 620px;
+  }
+
+  .featuredGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .benefits ul,
+  .company .sectionInner {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .commandPanel pre,
+  .commandPanel pre code,
+  .authorPanel pre,
+  .authorPanel pre code {
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+
+  .heroInner,
+  .problem,
+  .solution,
+  .workflow,
+  .commandSection,
+  .benefits,
+  .callToAction,
+  .updates,
+  .company {
+    padding-bottom: 4rem;
+    padding-top: 4rem;
+  }
+
+  .hero h1 {
+    font-size: 3.75rem;
+  }
+
+  .heroFacts,
+  .problemGrid,
+  .solutionGrid,
+  .lifecycleGrid,
+  .benefits ul,
+  .featuredGrid,
+  .updateGrid,
+  .communityLinks {
+    grid-template-columns: 1fr;
+  }
+
+  .heroFacts,
+  .problemGrid,
+  .lifecycleGrid {
+    gap: 1.5rem;
+  }
+
+  .sectionIntro h2,
+  .sectionHeader h2,
+  .workflow h2,
+  .commandGrid h2,
+  .benefits h2,
+  .callToAction h2 {
+    font-size: 2rem;
+  }
+
+  .callToAction .sectionInner {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .featuredPacks,
+  .authoring,
+  .community,
+  .company {
+    padding-bottom: 4rem;
+    padding-top: 4rem;
+  }
+
+  .community h2 {
+    font-size: 2rem;
+  }
+}

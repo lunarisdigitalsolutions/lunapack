@@ -1,0 +1,11 @@
+{
+  "id": "dotnet-gitignore",
+  "version": "1.0.0",
+  "managedFiles": [
+    {
+      "source": "templates/dotnet.gitignore",
+      "target": ".gitignore"
+    }
+  ],
+  "sources": []
+}

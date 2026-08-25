@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    {
+      "name": "git",
+      "type": "git",
+      "url": "https://example.test/packs.git",
+      "timeoutSeconds": 301
+    }
+  ],
+  "packs": [],
+  "trust": { "sources": [], "packs": [] }
+}

@@ -1,0 +1,1613 @@
+namespace Lunapack.Cli.IntegrationTests;
+
+[Property("FileSystem", "Real")]
+public sealed class CliProcessTests
+{
+    [Test]
+    public async Task Cli_WhenHelpRequested_ReturnsCommandHelp()
+    {
+        using var workspace = new TestWorkspace();
+
+        var result = await CliProcess.InvokeAsync(workspace.Path, "--help");
+
+        await Assert.That(result.ExitCode).IsEqualTo(0);
+        await Assert.That(result.StandardOutput).Contains("Usage:");
+    }
+
+    [Test]
+    public async Task Cli_WhenLogLevelDebug_WritesPrefixedOutputAndWarningSuppressesIt()
+    {
+        using var workspace = new TestWorkspace();
+
+        var debugLogging = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "--log-level",
+            "debug",
+            "--help"
+        );
+        var warningLogging = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "--log-level",
+            "warning",
+            "--help"
+        );
+
+        await Assert.That(debugLogging.StandardOutput).Contains("debug: Running CLI command");
+        await Assert.That(debugLogging.StandardError).IsEmpty();
+        await Assert
+            .That(warningLogging.StandardOutput)
+            .DoesNotContain("debug: Running CLI command");
+        await Assert.That(warningLogging.StandardError).IsEmpty();
+    }
+
+    [Test]
+    public async Task SourcesList_WhenSourcesConfigured_OutputsTypesAndProperties()
+    {
+        using var workspace = new TestWorkspace();
+        Directory.CreateDirectory(Path.Combine(workspace.Path, "packs"));
+        await CliProcess.InvokeAsync(workspace.Path, "init");
+        await CliProcess.InvokeAsync(workspace.Path, "sources", "add", "local", "local", "packs");
+        await CliProcess.InvokeAsync(
+            workspace.Path,
+            "sources",
+            "add",
+            "git",
+            "git",
+            "https://example.test/platform-packs.git",
+            "--ref",
+            "main",
+            "--path",
+            "packs/platform"
+        );
+
+        var result = await CliProcess.InvokeAsync(workspace.Path, "sources", "list");
+        var output = result.StandardOutput.ReplaceLineEndings(string.Empty);
+
+        await Assert.That(result.ExitCode).IsEqualTo(0);
+        await Assert
+            .That(output)
+            .Contains("local - local - path: packs - identity: local(path=packs)");
+        await Assert
+            .That(output)
+            .Contains(
+                "git - git - url: https://example.test/platform-packs.git - ref: main - path: packs/platform"
+            );
+        await Assert
+            .That(output)
+            .Contains(
+                "identity: git(url=https://example.test/platform-packs.git, ref=main, path=packs/platform)"
+            );
+        await Assert
+            .That(output.IndexOf("local - local", StringComparison.Ordinal))
+            .IsLessThan(output.IndexOf("git - git", StringComparison.Ordinal));
+    }
+
+    [Test]
+    public async Task PackLifecycle_WhenManagedContentUnchanged_InstallsAndUninstalls()
+    {
+        using var workspace = new TestWorkspace();
+
+        await InitializeAndAddSampleSourceAsync(workspace.Path);
+        var install = await CliProcess.InvokeAsync(workspace.Path, "install", "dotnet-gitignore");
+        var managedFilePath = Path.Combine(workspace.Path, ".gitignore");
+
+        await Assert.That(install.ExitCode).IsEqualTo(0);
+        await Assert.That(File.Exists(managedFilePath)).IsTrue();
+
+        var uninstall = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "uninstall",
+            "dotnet-gitignore"
+        );
+
+        await Assert.That(uninstall.ExitCode).IsEqualTo(0);
+        await Assert.That(File.ReadAllText(managedFilePath)).IsEmpty();
+    }
+
+    [Test]
+    public async Task PackLifecycle_WhenGitSourceUsesDefaultBranch_InstallsAndLocksProvenance()
+    {
+        using var workspace = new TestWorkspace();
+        using var repository = await CreateGitPackSourceAsync();
+        var init = await CliProcess.InvokeAsync(workspace.Path, "init");
+        var source = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "sources",
+            "add",
+            "git",
+            "git",
+            repository.Path,
+            "--path",
+            "packs"
+        );
+
+        var install = await CliProcess.InvokeAsync(workspace.Path, "install", "example");
+        if (install.ExitCode != 0)
+        {
+            throw new InvalidOperationException(
+                $"Git source installation failed: {install.StandardOutput}{install.StandardError}"
+            );
+        }
+
+        await Assert.That(init.ExitCode).IsEqualTo(0);
+        await Assert.That(source.ExitCode).IsEqualTo(0);
+        await Assert.That(install.ExitCode).IsEqualTo(0);
+        await Assert
+            .That(File.ReadAllText(Path.Combine(workspace.Path, ".pack")))
+            .IsEqualTo("from git");
+        var lockFile = File.ReadAllText(Path.Combine(workspace.Path, "lunapack-lock.yml"));
+        await Assert.That(lockFile).Contains("gitSource:");
+        await Assert.That(lockFile).Contains($"url: {repository.Path}");
+        await Assert.That(lockFile).Contains("resolvedCommit:");
+    }
+
+    [Test]
+    public async Task PackLifecycle_WhenGitSourceUsesExplicitCommit_InstallsPinnedContent()
+    {
+        using var workspace = new TestWorkspace();
+        using var repository = await CreateGitPackSourceAsync();
+        var initialCommit = (
+            await GitProcess.InvokeAsync(repository.Path, "rev-parse", "HEAD")
+        ).Trim();
+        File.WriteAllText(
+            Path.Combine(repository.Path, "packs", "example", "templates", "content.txt"),
+            "from newer commit"
+        );
+        await GitProcess.InvokeAsync(repository.Path, "add", ".");
+        await GitProcess.InvokeAsync(
+            repository.Path,
+            "-c",
+            "user.email=lunapack@example.test",
+            "-c",
+            "user.name=Lunapack Test",
+            "commit",
+            "--quiet",
+            "-m",
+            "Advance pack source"
+        );
+        await CliProcess.InvokeAsync(workspace.Path, "init");
+        var source = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "sources",
+            "add",
+            "git",
+            "git",
+            repository.Path,
+            "--ref",
+            initialCommit,
+            "--path",
+            "packs"
+        );
+
+        var install = await CliProcess.InvokeAsync(workspace.Path, "install", "example");
+
+        await Assert.That(source.ExitCode).IsEqualTo(0);
+        await Assert.That(install.ExitCode).IsEqualTo(0);
+        await Assert
+            .That(File.ReadAllText(Path.Combine(workspace.Path, ".pack")))
+            .IsEqualTo("from git");
+        await Assert
+            .That(File.ReadAllText(Path.Combine(workspace.Path, "lunapack-lock.yml")))
+            .Contains($"ref: {initialCommit}");
+    }
+
+    [Test]
+    public async Task PackLifecycle_WhenGitSourceUsesExplicitBranch_InstallsBranchContent()
+    {
+        using var workspace = new TestWorkspace();
+        using var repository = await CreateGitPackSourceAsync();
+        await GitProcess.InvokeAsync(repository.Path, "checkout", "--quiet", "-b", "release");
+        File.WriteAllText(
+            Path.Combine(repository.Path, "packs", "example", "templates", "content.txt"),
+            "from release branch"
+        );
+        await GitProcess.InvokeAsync(repository.Path, "add", ".");
+        await GitProcess.InvokeAsync(
+            repository.Path,
+            "-c",
+            "user.email=lunapack@example.test",
+            "-c",
+            "user.name=Lunapack Test",
+            "commit",
+            "--quiet",
+            "-m",
+            "Release pack source"
+        );
+        await GitProcess.InvokeAsync(repository.Path, "checkout", "--quiet", "main");
+        await CliProcess.InvokeAsync(workspace.Path, "init");
+        var source = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "sources",
+            "add",
+            "git",
+            "git",
+            repository.Path,
+            "--ref",
+            "release",
+            "--path",
+            "packs"
+        );
+
+        var install = await CliProcess.InvokeAsync(workspace.Path, "install", "example");
+
+        await Assert.That(source.ExitCode).IsEqualTo(0);
+        await Assert.That(install.ExitCode).IsEqualTo(0);
+        await Assert
+            .That(File.ReadAllText(Path.Combine(workspace.Path, ".pack")))
+            .IsEqualTo("from release branch");
+        await Assert
+            .That(File.ReadAllText(Path.Combine(workspace.Path, "lunapack-lock.yml")))
+            .Contains("ref: release");
+    }
+
+    [Test]
+    public async Task Discover_WhenGitSourceContainsInvalidManifest_ExcludesInvalidCandidate()
+    {
+        using var workspace = new TestWorkspace();
+        using var repository = await CreateGitPackSourceAsync();
+        var invalidPackDirectory = Directory.CreateDirectory(
+            Path.Combine(repository.Path, "packs", "invalid")
+        );
+        File.WriteAllText(
+            Path.Combine(invalidPackDirectory.FullName, "pack.yml"),
+            "id: invalid\nversion: not-a-version\n"
+        );
+        await GitProcess.InvokeAsync(repository.Path, "add", ".");
+        await GitProcess.InvokeAsync(
+            repository.Path,
+            "-c",
+            "user.email=lunapack@example.test",
+            "-c",
+            "user.name=Lunapack Test",
+            "commit",
+            "--quiet",
+            "-m",
+            "Add invalid candidate"
+        );
+        await CliProcess.InvokeAsync(workspace.Path, "init");
+        await CliProcess.InvokeAsync(
+            workspace.Path,
+            "sources",
+            "add",
+            "git",
+            "git",
+            repository.Path,
+            "--path",
+            "packs"
+        );
+
+        var discover = await CliProcess.InvokeAsync(workspace.Path, "discover");
+
+        await Assert.That(discover.ExitCode).IsEqualTo(0);
+        await Assert.That(discover.StandardOutput).Contains("example");
+        await Assert.That(discover.StandardOutput).Contains("1.0.0");
+        await Assert.That(discover.StandardOutput).DoesNotContain("invalid");
+        await Assert.That(discover.StandardOutput).DoesNotContain("excluded");
+    }
+
+    [Test]
+    public async Task Discover_WhenGitDefaultBranchAdvances_RefreshesCachedCatalog()
+    {
+        using var workspace = new TestWorkspace();
+        using var repository = await CreateGitPackSourceAsync();
+        await CliProcess.InvokeAsync(workspace.Path, "init");
+        await CliProcess.InvokeAsync(
+            workspace.Path,
+            "sources",
+            "add",
+            "git",
+            "git",
+            repository.Path,
+            "--path",
+            "packs"
+        );
+        var initialDiscover = await CliProcess.InvokeAsync(workspace.Path, "discover");
+        var cacheFilePath = Directory
+            .GetFiles(Path.Combine(workspace.Path, ".lunapack", "git-sources"))
+            .Single();
+        var expectedCacheTimestamp = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        File.SetLastWriteTimeUtc(cacheFilePath, expectedCacheTimestamp);
+
+        var cachedDiscover = await CliProcess.InvokeAsync(workspace.Path, "discover");
+        var cacheHitTimestamp = File.GetLastWriteTimeUtc(cacheFilePath);
+
+        var updatedPackDirectory = Directory.CreateDirectory(
+            Path.Combine(repository.Path, "packs", "example-2", "templates")
+        );
+        File.WriteAllText(
+            Path.Combine(updatedPackDirectory.Parent!.FullName, "pack.yml"),
+            "id: example\nversion: 2.0.0\nlicense: MIT\nauthor: Lunaris Digital Solutions <info@lunaris.digital>\nmanagedFiles:\n  - source: templates/content.txt\n    target: .pack\n"
+        );
+        File.WriteAllText(
+            Path.Combine(updatedPackDirectory.FullName, "content.txt"),
+            "from updated cache"
+        );
+        await GitProcess.InvokeAsync(repository.Path, "add", ".");
+        await GitProcess.InvokeAsync(
+            repository.Path,
+            "-c",
+            "user.email=lunapack@example.test",
+            "-c",
+            "user.name=Lunapack Test",
+            "commit",
+            "--quiet",
+            "-m",
+            "Add newer pack version"
+        );
+
+        var refreshedDiscover = await CliProcess.InvokeAsync(workspace.Path, "discover");
+
+        await Assert.That(initialDiscover.ExitCode).IsEqualTo(0);
+        await Assert.That(cachedDiscover.ExitCode).IsEqualTo(0);
+        await Assert.That(cacheHitTimestamp).IsEqualTo(expectedCacheTimestamp);
+        await Assert
+            .That(File.GetLastWriteTimeUtc(cacheFilePath))
+            .IsGreaterThan(expectedCacheTimestamp);
+        await Assert.That(refreshedDiscover.ExitCode).IsEqualTo(0);
+        await Assert.That(refreshedDiscover.StandardOutput).Contains("example");
+        await Assert.That(refreshedDiscover.StandardOutput).Contains("2.0.0");
+    }
+
+    [Test]
+    public async Task Discover_WhenGitSourceIsUnavailable_ReportsFailureAndPreservesState()
+    {
+        using var workspace = new TestWorkspace();
+        var unavailableRepositoryPath = Path.Combine(
+            Path.GetTempPath(),
+            $"lunapack-missing-git-source-{Guid.NewGuid():N}"
+        );
+        await CliProcess.InvokeAsync(workspace.Path, "init");
+        await CliProcess.InvokeAsync(
+            workspace.Path,
+            "sources",
+            "add",
+            "git",
+            "git",
+            unavailableRepositoryPath
+        );
+        var configurationPath = Path.Combine(workspace.Path, "lunapack.yml");
+        var lockFilePath = Path.Combine(workspace.Path, "lunapack-lock.yml");
+        var initialConfiguration = File.ReadAllText(configurationPath);
+        var initialLockFile = File.ReadAllText(lockFilePath);
+
+        var discover = await CliProcess.InvokeAsync(workspace.Path, "discover");
+
+        await Assert.That(discover.ExitCode).IsEqualTo(1);
+        await Assert.That(discover.StandardOutput).Contains("error: Git exited with code");
+        await Assert.That(File.ReadAllText(configurationPath)).IsEqualTo(initialConfiguration);
+        await Assert.That(File.ReadAllText(lockFilePath)).IsEqualTo(initialLockFile);
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, ".pack"))).IsFalse();
+    }
+
+    [Test]
+    public async Task PackLifecycle_WhenGitCompositeSelected_InstallsDependenciesAndLocksProvenance()
+    {
+        using var workspace = new TestWorkspace();
+        using var repository = await CreateGitPackSourceAsync(
+            (
+                "shared",
+                "id: shared\nversion: 1.0.0\nmanagedFiles:\n  - source: templates/content.txt\n    target: shared.txt\n",
+                "shared from git"
+            ),
+            (
+                "foundation",
+                "id: foundation\nversion: 1.0.0\npacks:\n  - id: shared\n    version: 1.0.0\n",
+                null
+            )
+        );
+        await CliProcess.InvokeAsync(workspace.Path, "init");
+        await CliProcess.InvokeAsync(
+            workspace.Path,
+            "sources",
+            "add",
+            "git",
+            "git",
+            repository.Path,
+            "--path",
+            "packs"
+        );
+
+        var install = await CliProcess.InvokeAsync(workspace.Path, "install", "foundation");
+
+        var lockFile = File.ReadAllText(Path.Combine(workspace.Path, "lunapack-lock.yml"));
+        await Assert.That(install.ExitCode).IsEqualTo(0);
+        await Assert
+            .That(File.ReadAllText(Path.Combine(workspace.Path, "shared.txt")))
+            .IsEqualTo("shared from git");
+        await Assert.That(lockFile).Contains("id: foundation");
+        await Assert.That(lockFile).Contains("id: shared");
+        await Assert
+            .That(lockFile.Split("gitSource:", StringSplitOptions.None).Length)
+            .IsEqualTo(3);
+        await Assert.That(lockFile).Contains($"url: {repository.Path}");
+        await Assert.That(lockFile).Contains("resolvedCommit:");
+    }
+
+    [Test]
+    public async Task PackLifecycle_WhenLocalAndGitPacksTie_UsesEarlierConfiguredSource()
+    {
+        using var workspace = new TestWorkspace();
+        using var repository = await CreateGitPackSourceAsync();
+        var localSourcePath = CreatePackSource(
+            workspace.Path,
+            ("example", "example", "1.0.0", null, "from local")
+        );
+        await CliProcess.InvokeAsync(workspace.Path, "init");
+        await CliProcess.InvokeAsync(
+            workspace.Path,
+            "sources",
+            "add",
+            "local",
+            "local",
+            localSourcePath
+        );
+        await CliProcess.InvokeAsync(
+            workspace.Path,
+            "sources",
+            "add",
+            "git",
+            "git",
+            repository.Path,
+            "--path",
+            "packs"
+        );
+
+        var install = await CliProcess.InvokeAsync(workspace.Path, "install", "example");
+
+        await Assert.That(install.ExitCode).IsEqualTo(0);
+        await Assert
+            .That(File.ReadAllText(Path.Combine(workspace.Path, ".pack")))
+            .IsEqualTo("from local");
+        await Assert
+            .That(File.ReadAllText(Path.Combine(workspace.Path, "lunapack-lock.yml")))
+            .DoesNotContain("gitSource:");
+    }
+
+    [Test]
+    public async Task PackLifecycle_WhenGitSourceAdvances_UpdatesInstalledRelease()
+    {
+        using var workspace = new TestWorkspace();
+        using var repository = await CreateGitPackSourceAsync();
+        await CliProcess.InvokeAsync(workspace.Path, "init");
+        await CliProcess.InvokeAsync(
+            workspace.Path,
+            "sources",
+            "add",
+            "git",
+            "git",
+            repository.Path,
+            "--path",
+            "packs"
+        );
+        var install = await CliProcess.InvokeAsync(workspace.Path, "install", "example@1.0.0");
+        CreateGitPack(
+            repository.Path,
+            (
+                "example-1-1",
+                "id: example\nversion: 1.1.0\nmanagedFiles:\n  - source: templates/content.txt\n    target: .pack\n",
+                "from updated git"
+            )
+        );
+        await GitProcess.InvokeAsync(repository.Path, "add", ".");
+        await GitProcess.InvokeAsync(
+            repository.Path,
+            "-c",
+            "user.email=lunapack@example.test",
+            "-c",
+            "user.name=Lunapack Test",
+            "commit",
+            "--quiet",
+            "-m",
+            "Add Git update"
+        );
+
+        var update = await CliProcess.InvokeAsync(workspace.Path, "update", "example");
+
+        await Assert.That(install.ExitCode).IsEqualTo(0);
+        await Assert.That(update.ExitCode).IsEqualTo(0);
+        await Assert
+            .That(File.ReadAllText(Path.Combine(workspace.Path, ".pack")))
+            .IsEqualTo("from updated git");
+        var lockFile = File.ReadAllText(Path.Combine(workspace.Path, "lunapack-lock.yml"));
+        await Assert.That(lockFile).Contains("version: 1.1.0");
+        await Assert.That(lockFile).Contains("gitSource:");
+        await Assert.That(lockFile).Contains("resolvedCommit:");
+    }
+
+    [Test]
+    public async Task PackLifecycle_WhenDestinationSelected_InstallsAndUninstallsEffectiveTarget()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreatePackSource(workspace.Path, ("one", "example", "1.0.0", null, "one"));
+        await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
+        var managedFilePath = Path.Combine(workspace.Path, "docs", "guidance", ".pack");
+
+        var install = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "install",
+            "example",
+            "--destination",
+            "docs/guidance"
+        );
+
+        await Assert.That(install.ExitCode).IsEqualTo(0);
+        await Assert.That(File.Exists(managedFilePath)).IsTrue();
+
+        var uninstall = await CliProcess.InvokeAsync(workspace.Path, "uninstall", "example");
+
+        await Assert.That(uninstall.ExitCode).IsEqualTo(0);
+        await Assert.That(File.Exists(managedFilePath)).IsFalse();
+    }
+
+    [Test]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Maintainability",
+        "MA0051:Method is too long",
+        Justification = "ADR-0036 relocation integration requires one end-to-end lifecycle assertion."
+    )]
+    public async Task PackLifecycle_WhenManagedTargetRemapped_RetainsAndRelocatesLockTarget()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreateRemappableVersionedPackSource(workspace.Path);
+        await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
+        var remap = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "remap",
+            "set",
+            "directory",
+            "docs/adr",
+            "docs/architecture/adr"
+        );
+        await Assert.That(remap.ExitCode).IsEqualTo(0);
+
+        var inspect = await CliProcess.InvokeAsync(workspace.Path, "inspect", "example");
+        await Assert.That(inspect.ExitCode).IsEqualTo(0);
+        await Assert
+            .That(inspect.StandardOutput)
+            .Contains("docs/adr/template.md -> docs/architecture/adr/template.md");
+
+        var install = await CliProcess.InvokeAsync(workspace.Path, "install", "example@1.0.0");
+        var initialTarget = Path.Combine(
+            workspace.Path,
+            "docs",
+            "architecture",
+            "adr",
+            "template.md"
+        );
+        await Assert.That(install.ExitCode).IsEqualTo(0);
+        await Assert.That(File.ReadAllText(initialTarget)).IsEqualTo("version one");
+
+        var update = await CliProcess.InvokeAsync(workspace.Path, "update", "example");
+        await Assert.That(update.ExitCode).IsEqualTo(0);
+        await Assert.That(File.ReadAllText(initialTarget)).IsEqualTo("version two");
+
+        var movedTarget = Path.Combine(workspace.Path, "docs", "managed", "template.md");
+        var move = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "mv",
+            "docs/architecture/adr/template.md",
+            "docs/managed/template.md"
+        );
+        await Assert.That(move.ExitCode).IsEqualTo(0);
+        await Assert.That(File.ReadAllText(movedTarget)).IsEqualTo("version two");
+
+        var reboundTarget = Path.Combine(workspace.Path, "docs", "rebinding", "template.md");
+        Directory.CreateDirectory(Path.GetDirectoryName(reboundTarget)!);
+        File.Move(movedTarget, reboundTarget);
+        var rebind = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "mv",
+            "docs/managed/template.md",
+            "docs/rebinding/template.md"
+        );
+        await Assert.That(rebind.ExitCode).IsEqualTo(0);
+        await Assert.That(File.ReadAllText(reboundTarget)).IsEqualTo("version two");
+
+        var uninstall = await CliProcess.InvokeAsync(workspace.Path, "uninstall", "example");
+
+        await Assert.That(uninstall.ExitCode).IsEqualTo(0);
+        await Assert.That(File.Exists(reboundTarget)).IsFalse();
+    }
+
+    [Test]
+    public async Task Scenario_DotnetProjectManagedContentUnchanged_InstallsAndUninstalls()
+    {
+        using var workspace = new TestWorkspace();
+        await InitializeAndAddSampleSourceAsync(workspace.Path);
+        var buildPropsPath = Path.Combine(workspace.Path, "Directory.Build.props");
+        var packagesPropsPath = Path.Combine(workspace.Path, "Directory.Packages.props");
+
+        var install = await CliProcess.InvokeAsync(workspace.Path, "install", "dotnet-project");
+
+        await Assert.That(install.ExitCode).IsEqualTo(0);
+        await Assert.That(File.Exists(buildPropsPath)).IsTrue();
+        await Assert.That(File.Exists(packagesPropsPath)).IsTrue();
+        var packageVersions = File.ReadAllText(packagesPropsPath);
+        await Assert.That(packageVersions).Contains("PackageVersion Include=\"CSharpier.MsBuild\"");
+        await Assert.That(packageVersions).DoesNotContain("PackageVersion Include=\"NJsonSchema\"");
+
+        var uninstall = await CliProcess.InvokeAsync(workspace.Path, "uninstall", "dotnet-project");
+
+        await Assert.That(uninstall.ExitCode).IsEqualTo(0);
+        await Assert.That(File.Exists(buildPropsPath)).IsFalse();
+        await Assert.That(File.Exists(packagesPropsPath)).IsFalse();
+    }
+
+    [Test]
+    public async Task Scenario_MadrDirectoryExists_InstallsTemplate()
+    {
+        using var workspace = new TestWorkspace();
+        await InitializeAndAddSampleSourceAsync(workspace.Path);
+        var adrDirectory = Directory.CreateDirectory(Path.Combine(workspace.Path, "docs", "adr"));
+
+        var install = await CliProcess.InvokeAsync(workspace.Path, "install", "madr-adr-template");
+
+        await Assert.That(install.ExitCode).IsEqualTo(0);
+        await Assert.That(File.Exists(Path.Combine(adrDirectory.FullName, "template.md"))).IsTrue();
+    }
+
+    [Test]
+    public async Task PackLifecycle_WhenManagedContentModified_PreservesFileAndState()
+    {
+        using var workspace = new TestWorkspace();
+
+        await InitializeAndAddSampleSourceAsync(workspace.Path);
+        await CliProcess.InvokeAsync(workspace.Path, "install", "dotnet-gitignore");
+        var managedFilePath = Path.Combine(workspace.Path, ".gitignore");
+        File.AppendAllText(managedFilePath, "# user change\n");
+
+        var uninstall = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "uninstall",
+            "dotnet-gitignore"
+        );
+
+        await Assert.That(uninstall.ExitCode).IsEqualTo(1);
+        await Assert.That(File.Exists(managedFilePath)).IsTrue();
+        await Assert
+            .That(File.ReadAllText(Path.Combine(workspace.Path, "lunapack.yml")))
+            .Contains("dotnet-gitignore");
+    }
+
+    [Test]
+    public async Task CatalogCommands_WhenPacksAvailable_EmitCompactOrderedResults()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreatePackSource(
+            workspace.Path,
+            ("exact-v1", "cli", "1.0.0", "first release", "exact"),
+            ("exact-v2", "cli", "2.0.0", "second release", "exact"),
+            ("exact-v3", "cli", "3.0.0", "third release", "exact"),
+            ("exact-v4", "cli", "4.0.0", "fourth release", "exact"),
+            ("prefix", "cli-pack", "1.0.0", null, "prefix"),
+            ("substring", "pack-cli", "1.0.0", null, "substring"),
+            ("description", "documentation", "1.0.0", "CLI reference", "description"),
+            ("preview", "preview", "1.0.0", new string('a', 81), "preview")
+        );
+        await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
+
+        var discover = await CliProcess.InvokeAsync(workspace.Path, "discover");
+        var search = await CliProcess.InvokeAsync(workspace.Path, "search", "cli");
+        var expandedSearch = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "search",
+            "cli",
+            "--versions",
+            "4"
+        );
+        await Assert.That(discover.ExitCode).IsEqualTo(0);
+        await Assert.That(discover.StandardOutput).Contains("preview");
+        await Assert.That(discover.StandardOutput).Contains("1.0.0");
+        await Assert.That(search.ExitCode).IsEqualTo(0);
+        await Assert.That(search.StandardOutput).Contains("cli");
+        await Assert.That(search.StandardOutput).Contains("4.0.0");
+        await Assert.That(search.StandardOutput).Contains("fourth release");
+        await Assert.That(search.StandardOutput).DoesNotContain("first release");
+        await Assert.That(search.StandardOutput).Contains("cli-pack");
+        await Assert.That(search.StandardOutput).Contains("pack-cli");
+        await Assert.That(search.StandardOutput).Contains("CLI reference");
+        await Assert.That(expandedSearch.ExitCode).IsEqualTo(0);
+        await Assert.That(expandedSearch.StandardOutput).Contains("3.0.0");
+        await Assert.That(expandedSearch.StandardOutput).Contains("third release");
+        await Assert.That(expandedSearch.StandardOutput).Contains("2.0.0");
+        await Assert.That(expandedSearch.StandardOutput).Contains("second release");
+        await Assert.That(expandedSearch.StandardOutput).Contains("first release");
+    }
+
+    [Test]
+    public async Task Scenario_RepositorySourceConfigured_DiscoversAllBundledPacks()
+    {
+        var repositoryRoot = GetRepositoryRoot();
+
+        var discover = await CliProcess.InvokeAsync(repositoryRoot, "discover");
+
+        await Assert.That(discover.ExitCode).IsEqualTo(0);
+        foreach (var (packId, version) in GetBundledPacks())
+        {
+            await Assert
+                .That(discover.StandardOutput)
+                .Contains(packId[..Math.Min(packId.Length, 28)]);
+            await Assert.That(discover.StandardOutput).Contains(version);
+        }
+    }
+
+    [Test]
+    public async Task Scenario_BundledIgnorePacks_MergeMarkedSections()
+    {
+        using var workspace = new TestWorkspace();
+        await InitializeAndAddSampleSourceAsync(workspace.Path);
+
+        var dotnetInstall = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "install",
+            "dotnet-gitignore"
+        );
+        var generalInstall = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "install",
+            "gitignore-general"
+        );
+        var gitIgnore = File.ReadAllText(Path.Combine(workspace.Path, ".gitignore"));
+        var lockFile = File.ReadAllText(Path.Combine(workspace.Path, "lunapack-lock.yml"));
+
+        await Assert.That(dotnetInstall.ExitCode).IsEqualTo(0);
+        await Assert.That(generalInstall.ExitCode).IsEqualTo(0);
+        await Assert.That(gitIgnore).Contains("# BEGIN Lunapack .NET ignores");
+        await Assert.That(gitIgnore).Contains("# END Lunapack .NET ignores");
+        await Assert.That(gitIgnore).Contains("# BEGIN Lunapack general ignores");
+        await Assert.That(gitIgnore).Contains("# END Lunapack general ignores");
+        await Assert.That(lockFile).Contains("id: dotnet-gitignore");
+        await Assert.That(lockFile).Contains("id: gitignore-general");
+    }
+
+    [Test]
+    public async Task Scenario_UpdateCommands_ReportOutdatedAndApplyNamedRelease()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreatePackSource(
+            workspace.Path,
+            ("one", "example", "1.0.0", null, "one"),
+            ("two", "example", "1.1.0", null, "two")
+        );
+        await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
+        await CliProcess.InvokeAsync(workspace.Path, "install", "example@1.0.0");
+        var initialState = string.Concat(
+            File.ReadAllText(Path.Combine(workspace.Path, "lunapack.yml")),
+            File.ReadAllText(Path.Combine(workspace.Path, "lunapack-lock.yml"))
+        );
+
+        var outdated = await CliProcess.InvokeAsync(workspace.Path, "outdated");
+
+        await Assert.That(outdated.ExitCode).IsEqualTo(0);
+        await Assert.That(outdated.StandardOutput).Contains("example");
+        await Assert.That(outdated.StandardOutput).Contains("1.0.0");
+        await Assert.That(outdated.StandardOutput).Contains("1.1.0");
+        await Assert
+            .That(
+                string.Concat(
+                    File.ReadAllText(Path.Combine(workspace.Path, "lunapack.yml")),
+                    File.ReadAllText(Path.Combine(workspace.Path, "lunapack-lock.yml"))
+                )
+            )
+            .IsEqualTo(initialState);
+
+        var update = await CliProcess.InvokeAsync(workspace.Path, "update", "example");
+
+        await Assert.That(update.ExitCode).IsEqualTo(0);
+        await Assert.That(update.StandardOutput).Contains("example 1.0.0 -> 1.1.0");
+        await Assert.That(File.ReadAllText(Path.Combine(workspace.Path, ".pack"))).IsEqualTo("two");
+    }
+
+    [Test]
+    public async Task Scenario_RepositoryPacksInstalledWithOverlays_RejectsDuplicateInstallation()
+    {
+        var repositoryRoot = GetRepositoryRoot();
+        var editorConfigPath = Path.Combine(repositoryRoot, ".editorconfig");
+        var gitIgnorePath = Path.Combine(repositoryRoot, ".gitignore");
+        var manifestPath = Path.Combine(repositoryRoot, "lunapack.yml");
+        var packageVersionsPath = Path.Combine(repositoryRoot, "Directory.Packages.props");
+        var initialEditorConfig = File.ReadAllText(editorConfigPath);
+        var initialGitIgnore = File.ReadAllText(gitIgnorePath);
+        var initialManifest = File.ReadAllText(manifestPath);
+        var packageVersions = File.ReadAllText(packageVersionsPath);
+
+        var install = await CliProcess.InvokeAsync(
+            repositoryRoot,
+            "install",
+            "dotnet-editorconfig"
+        );
+
+        await Assert.That(install.ExitCode).IsEqualTo(1);
+        await Assert.That(File.ReadAllText(editorConfigPath)).IsEqualTo(initialEditorConfig);
+        await Assert.That(File.ReadAllText(gitIgnorePath)).IsEqualTo(initialGitIgnore);
+        await Assert.That(File.ReadAllText(manifestPath)).IsEqualTo(initialManifest);
+        await Assert.That(packageVersions).DoesNotContain("PackageVersion Include=\"NJsonSchema\"");
+        foreach (var packId in GetConfiguredRootPackIds())
+        {
+            await Assert.That(initialManifest).Contains($"id: {packId}");
+        }
+    }
+
+    [Test]
+    public async Task Discover_WhenNoSourcesConfigured_ReturnsFailureWithDiagnostic()
+    {
+        using var workspace = new TestWorkspace();
+        await InitializeAndAddNoSourcesAsync(workspace.Path);
+
+        var discover = await CliProcess.InvokeAsync(workspace.Path, "discover");
+
+        await Assert.That(discover.ExitCode).IsEqualTo(1);
+        await Assert.That(discover.StandardOutput).Contains("error: No sources are configured.");
+    }
+
+    [Test]
+    public async Task Discover_WhenConfiguredSourcesContainNoPacks_ReturnsFailureWithDiagnostic()
+    {
+        using var workspace = new TestWorkspace();
+        Directory.CreateDirectory(Path.Combine(workspace.Path, "source"));
+        await InitializeAndAddSourceAsync(workspace.Path, "source");
+
+        var discover = await CliProcess.InvokeAsync(workspace.Path, "discover");
+
+        await Assert.That(discover.ExitCode).IsEqualTo(1);
+        await Assert
+            .That(discover.StandardOutput)
+            .Contains("error: No packs were found in configured sources.");
+    }
+
+    [Test]
+    public async Task Search_WhenNoPacksMatchTerm_ReturnsFailureWithDiagnostic()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreatePackSource(
+            workspace.Path,
+            ("example", "example", "1.0.0", null, "example")
+        );
+        await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
+
+        var search = await CliProcess.InvokeAsync(workspace.Path, "search", "missing");
+
+        await Assert.That(search.ExitCode).IsEqualTo(1);
+        await Assert
+            .That(search.StandardOutput)
+            .Contains("error: No packs were found for 'missing'.");
+    }
+
+    [Test]
+    public async Task Init_WhenWorkspaceProvided_CreatesManifestInWorkspace()
+    {
+        using var workspace = new TestWorkspace();
+        var projectDirectory = Directory
+            .CreateDirectory(Path.Combine(workspace.Path, "sandbox"))
+            .FullName;
+
+        var init = await CliProcess.InvokeAsync(workspace.Path, "init", "--workspace", "sandbox");
+
+        await Assert.That(init.ExitCode).IsEqualTo(0);
+        await Assert.That(File.Exists(Path.Combine(projectDirectory, "lunapack.yml"))).IsTrue();
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, "lunapack.yml"))).IsFalse();
+    }
+
+    [Test]
+    public async Task Install_WhenVersionExplicit_InstallsRequestedRelease()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreatePackSource(
+            workspace.Path,
+            ("one", "example", "1.0.0", null, "one"),
+            ("two", "example", "2.0.0", null, "two")
+        );
+        await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
+
+        var install = await CliProcess.InvokeAsync(workspace.Path, "install", "example@1.0.0");
+
+        await Assert.That(install.ExitCode).IsEqualTo(0);
+        await Assert.That(File.ReadAllText(Path.Combine(workspace.Path, ".pack"))).IsEqualTo("one");
+        await Assert
+            .That(File.ReadAllText(Path.Combine(workspace.Path, "lunapack.yml")))
+            .Contains("version: 1.0.0");
+    }
+
+    [Test]
+    public async Task Install_WhenVersionOmitted_InstallsLatestRelease()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreatePackSource(
+            workspace.Path,
+            ("one", "example", "1.0.0", null, "one"),
+            ("two", "example", "2.0.0", null, "two")
+        );
+        await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
+
+        var install = await CliProcess.InvokeAsync(workspace.Path, "install", "example");
+
+        await Assert.That(install.ExitCode).IsEqualTo(0);
+        await Assert.That(File.ReadAllText(Path.Combine(workspace.Path, ".pack"))).IsEqualTo("two");
+    }
+
+    [Test]
+    public async Task Validate_WhenReferenceIncludesVersion_ValidatesRequestedRelease()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreatePackSource(
+            workspace.Path,
+            ("one", "example", "1.0.0", null, "one"),
+            ("two", "example", "2.0.0", null, "two")
+        );
+        await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
+
+        var validate = await CliProcess.InvokeAsync(workspace.Path, "validate", "example@1.0.0");
+
+        await Assert.That(validate.ExitCode).IsEqualTo(0);
+        await Assert.That(validate.StandardOutput).Contains("example@1.0.0 is valid.");
+    }
+
+    [Test]
+    public async Task Inspect_WhenPackHasMetadataParametersAndReferences_FormatsEachSection()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreateCompositePackSource(
+            workspace.Path,
+            (
+                "shared",
+                "id: shared\nversion: 1.0.0\nlicense: MIT\nauthor: Lunaris Digital Solutions <info@lunaris.digital>\nmanagedFiles:\n  - source: templates/content.txt\n    target: shared.txt\n",
+                "shared"
+            ),
+            (
+                "foundation",
+                "id: foundation\nversion: 1.0.0\nlicense: MIT\nauthor: Lunaris Digital Solutions <info@lunaris.digital>\ndescription: Foundation pack\nparameters:\n  companyName:\n    type: string\n    required: true\n    displayName: Company name\n    description: Legal entity name.\nmanagedFiles:\n  - source: templates/content.txt\n    target: foundation.txt\npacks:\n  - id: shared\n    version: 1.0.0\n",
+                "foundation"
+            )
+        );
+        await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
+
+        var inspect = await CliProcess.InvokeAsync(workspace.Path, "inspect", "foundation@1.0.0");
+
+        await Assert.That(inspect.ExitCode).IsEqualTo(0);
+        await Assert.That(inspect.StandardOutput).Contains("Foundation pack");
+        await Assert.That(inspect.StandardOutput).Contains("MIT");
+        await Assert.That(inspect.StandardOutput).Contains("Lunaris Digital Solutions");
+        await Assert.That(inspect.StandardOutput).Contains("companyName");
+        await Assert.That(inspect.StandardOutput).Contains("Company name");
+        await Assert.That(inspect.StandardOutput).Contains("Legal entity name.");
+        await Assert.That(inspect.StandardOutput).Contains("Referenced packs");
+        await Assert.That(inspect.StandardOutput).Contains("shared");
+    }
+
+    [Test]
+    public async Task Inspect_WhenVersionOmitted_UsesLatestAndOmitsEmptyReferenceSection()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreatePackSource(
+            workspace.Path,
+            ("one", "example", "1.0.0", "First release", "one"),
+            ("two", "example", "2.0.0", "Latest release", "two")
+        );
+        await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
+
+        var inspect = await CliProcess.InvokeAsync(workspace.Path, "inspect", "example");
+
+        await Assert.That(inspect.ExitCode).IsEqualTo(0);
+        await Assert.That(inspect.StandardOutput).Contains("2.0.0");
+        await Assert.That(inspect.StandardOutput).Contains("Latest release");
+        await Assert.That(inspect.StandardOutput).DoesNotContain("Referenced packs");
+    }
+
+    [Test]
+    public async Task Install_WhenLicenseParameterExplicit_RendersProvidedCompanyName()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreateCompositePackSource(
+            workspace.Path,
+            (
+                "license-mit",
+                "id: license-mit\nversion: 1.0.0\nparameters:\n  companyName:\n    type: string\n    required: true\nmanagedFiles:\n  - source: templates/content.txt\n    target: LICENSE.md\n    template: true\n",
+                "Copyright {{ companyName }}"
+            )
+        );
+        await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
+
+        var install = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "install",
+            "license-mit",
+            "--parameter",
+            "companyName=Example Corporation"
+        );
+
+        await Assert.That(install.ExitCode).IsEqualTo(0);
+        await Assert
+            .That(File.ReadAllText(Path.Combine(workspace.Path, "LICENSE.md")))
+            .IsEqualTo("Copyright Example Corporation");
+    }
+
+    [Test]
+    public async Task Install_WhenLicenseProjectVariableConfigured_RendersProjectCompanyName()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreateCompositePackSource(
+            workspace.Path,
+            (
+                "license-mit",
+                "id: license-mit\nversion: 1.0.0\nparameters:\n  companyName:\n    type: string\n    required: true\nmanagedFiles:\n  - source: templates/content.txt\n    target: LICENSE.md\n    template: true\n",
+                "Copyright {{ companyName }}"
+            )
+        );
+        await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
+        var configurationPath = Path.Combine(workspace.Path, "lunapack.yml");
+        File.WriteAllText(
+            configurationPath,
+            File.ReadAllText(configurationPath)
+                .Replace(
+                    "variables: {}",
+                    "variables:\n  companyName: Project Corporation",
+                    StringComparison.Ordinal
+                )
+        );
+
+        var install = await CliProcess.InvokeAsync(workspace.Path, "install", "license-mit");
+
+        await Assert.That(install.ExitCode).IsEqualTo(0);
+        await Assert
+            .That(File.ReadAllText(Path.Combine(workspace.Path, "LICENSE.md")))
+            .IsEqualTo("Copyright Project Corporation");
+    }
+
+    [Test]
+    public async Task Install_WhenCompositePacksShareParameter_BindsSingleInputForEveryPack()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreateCompositePackSource(
+            workspace.Path,
+            (
+                "shared",
+                "id: shared\nversion: 1.0.0\nparameters:\n  companyName:\n    type: string\n    required: true\nmanagedFiles:\n  - source: templates/content.txt\n    target: shared.txt\n    template: true\n",
+                "Shared {{ companyName }}"
+            ),
+            (
+                "foundation",
+                "id: foundation\nversion: 1.0.0\nparameters:\n  companyName:\n    type: string\n    required: true\nmanagedFiles:\n  - source: templates/content.txt\n    target: foundation.txt\n    template: true\npacks:\n  - id: shared\n    version: 1.0.0\n",
+                "Foundation {{ companyName }}"
+            )
+        );
+        await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
+
+        var install = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "install",
+            "foundation",
+            "-p",
+            "companyName=Lunaris"
+        );
+
+        await Assert.That(install.ExitCode).IsEqualTo(0);
+        await Assert
+            .That(File.ReadAllText(Path.Combine(workspace.Path, "foundation.txt")))
+            .IsEqualTo("Foundation Lunaris");
+        await Assert
+            .That(File.ReadAllText(Path.Combine(workspace.Path, "shared.txt")))
+            .IsEqualTo("Shared Lunaris");
+    }
+
+    [Test]
+    public async Task Install_WhenRequestedVersionUnavailable_LeavesProjectUnchanged()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreatePackSource(workspace.Path, ("one", "example", "1.0.0", null, "one"));
+        await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
+        var manifestPath = Path.Combine(workspace.Path, "lunapack.yml");
+        var initialManifest = File.ReadAllText(manifestPath);
+
+        var install = await CliProcess.InvokeAsync(workspace.Path, "install", "example@2.0.0");
+
+        await Assert.That(install.ExitCode).IsEqualTo(1);
+        await Assert.That(File.ReadAllText(manifestPath)).IsEqualTo(initialManifest);
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, ".pack"))).IsFalse();
+    }
+
+    [Test]
+    public async Task Install_WhenCompositeContentless_InstallsDependencyAndLocksCompleteGraph()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreateCompositePackSource(
+            workspace.Path,
+            (
+                "shared",
+                "id: shared\nversion: 1.0.0\nmanagedFiles:\n  - source: templates/content.txt\n    target: shared.txt\n",
+                "shared"
+            ),
+            (
+                "foundation",
+                "id: foundation\nversion: 1.0.0\npacks:\n  - id: shared\n    version: 1.0.0\n",
+                null
+            )
+        );
+        await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
+
+        var install = await CliProcess.InvokeAsync(workspace.Path, "install", "foundation");
+
+        await Assert.That(install.ExitCode).IsEqualTo(0);
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, "shared.txt"))).IsTrue();
+        var configuration = File.ReadAllText(Path.Combine(workspace.Path, "lunapack.yml"));
+        var lockFile = File.ReadAllText(Path.Combine(workspace.Path, "lunapack-lock.yml"));
+        await Assert.That(configuration).Contains("id: foundation");
+        await Assert.That(configuration).DoesNotContain("id: shared");
+        await Assert.That(lockFile).Contains("id: foundation");
+        await Assert.That(lockFile).Contains("id: shared");
+    }
+
+    [Test]
+    public async Task Scenario_PlatformCompositionReferences_ResolveFromConsumerSource()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreateCompositePackSource(
+            workspace.Path,
+            (
+                "azure-bicep",
+                "id: azure-bicep\nversion: 1.0.0\nmanagedFiles:\n  - source: templates/content.txt\n    target: infrastructure/main.bicep\n",
+                "bicep"
+            ),
+            (
+                "github-actions",
+                "id: github-actions\nversion: 1.0.0\nmanagedFiles:\n  - source: templates/content.txt\n    target: .github/workflows/ci.yml\n",
+                "actions"
+            ),
+            (
+                "aspnetcore",
+                "id: aspnetcore\nversion: 1.0.0\nmanagedFiles:\n  - source: templates/content.txt\n    target: src/Api/Api.csproj\n",
+                "aspnetcore"
+            ),
+            (
+                "angular",
+                "id: angular\nversion: 1.0.0\nmanagedFiles:\n  - source: templates/content.txt\n    target: src/web/package.json\n",
+                "angular"
+            ),
+            (
+                "platform-composite",
+                "id: platform-composite\nversion: 1.0.0\npacks:\n  - id: azure-bicep\n    version: 1.0.0\n  - id: github-actions\n    version: 1.0.0\n  - id: aspnetcore\n    version: 1.0.0\n  - id: angular\n    version: 1.0.0\n",
+                null
+            )
+        );
+        await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
+        Directory.CreateDirectory(Path.Combine(workspace.Path, "infrastructure"));
+        Directory.CreateDirectory(Path.Combine(workspace.Path, ".github", "workflows"));
+        Directory.CreateDirectory(Path.Combine(workspace.Path, "src", "Api"));
+        Directory.CreateDirectory(Path.Combine(workspace.Path, "src", "web"));
+
+        var install = await CliProcess.InvokeAsync(workspace.Path, "install", "platform-composite");
+
+        await Assert.That(install.ExitCode).IsEqualTo(0);
+        await Assert
+            .That(File.Exists(Path.Combine(workspace.Path, "infrastructure", "main.bicep")))
+            .IsTrue();
+        await Assert
+            .That(File.Exists(Path.Combine(workspace.Path, ".github", "workflows", "ci.yml")))
+            .IsTrue();
+        await Assert
+            .That(File.Exists(Path.Combine(workspace.Path, "src", "Api", "Api.csproj")))
+            .IsTrue();
+        await Assert
+            .That(File.Exists(Path.Combine(workspace.Path, "src", "web", "package.json")))
+            .IsTrue();
+    }
+
+    [Test]
+    public async Task Install_WhenCompositeMixed_InstallsOwnedAndDependencyFiles()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreateCompositePackSource(
+            workspace.Path,
+            (
+                "shared",
+                "id: shared\nversion: 1.0.0\nmanagedFiles:\n  - source: templates/content.txt\n    target: shared.txt\n",
+                "shared"
+            ),
+            (
+                "foundation",
+                "id: foundation\nversion: 1.0.0\nmanagedFiles:\n  - source: templates/content.txt\n    target: foundation.txt\npacks:\n  - id: shared\n    version: 1.0.0\n",
+                "foundation"
+            )
+        );
+        await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
+
+        var install = await CliProcess.InvokeAsync(workspace.Path, "install", "foundation");
+
+        await Assert.That(install.ExitCode).IsEqualTo(0);
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, "foundation.txt"))).IsTrue();
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, "shared.txt"))).IsTrue();
+    }
+
+    [Test]
+    public async Task Uninstall_WhenDependencyShared_RetainsItUntilLastRootRemoved()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreateCompositePackSource(
+            workspace.Path,
+            (
+                "shared",
+                "id: shared\nversion: 1.0.0\nmanagedFiles:\n  - source: templates/content.txt\n    target: shared.txt\n",
+                "shared"
+            ),
+            (
+                "first",
+                "id: first\nversion: 1.0.0\npacks:\n  - id: shared\n    version: 1.0.0\n",
+                null
+            ),
+            (
+                "second",
+                "id: second\nversion: 1.0.0\npacks:\n  - id: shared\n    version: 1.0.0\n",
+                null
+            )
+        );
+        await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
+        await CliProcess.InvokeAsync(workspace.Path, "install", "first");
+        await CliProcess.InvokeAsync(workspace.Path, "install", "second");
+
+        var firstRemoval = await CliProcess.InvokeAsync(workspace.Path, "uninstall", "first");
+
+        await Assert.That(firstRemoval.ExitCode).IsEqualTo(0);
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, "shared.txt"))).IsTrue();
+
+        var secondRemoval = await CliProcess.InvokeAsync(workspace.Path, "uninstall", "second");
+
+        await Assert.That(secondRemoval.ExitCode).IsEqualTo(0);
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, "shared.txt"))).IsFalse();
+    }
+
+    [Test]
+    public async Task Install_WhenStateWriteFails_RollsBackCopiedFilesAndDocuments()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreatePackSource(workspace.Path, ("one", "example", "1.0.0", null, "one"));
+        await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
+        var configurationPath = Path.Combine(workspace.Path, "lunapack.yml");
+        var lockFilePath = Path.Combine(workspace.Path, "lunapack-lock.yml");
+        var initialConfiguration = File.ReadAllText(configurationPath);
+        var initialLockFile = File.ReadAllText(lockFilePath);
+        using var lockStream = File.Open(
+            lockFilePath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read
+        );
+
+        var install = await CliProcess.InvokeAsync(workspace.Path, "install", "example");
+
+        await Assert.That(install.ExitCode).IsEqualTo(1);
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, ".pack"))).IsFalse();
+        await Assert.That(File.ReadAllText(configurationPath)).IsEqualTo(initialConfiguration);
+        await Assert.That(File.ReadAllText(lockFilePath)).IsEqualTo(initialLockFile);
+    }
+
+    private static async Task InitializeAndAddSampleSourceAsync(string projectDirectory) =>
+        await InitializeAndAddSourceAsync(
+            projectDirectory,
+            CopySamplePackSourceToWorkspace(projectDirectory)
+        );
+
+    private static async Task InitializeAndAddNoSourcesAsync(string projectDirectory)
+    {
+        var init = await CliProcess.InvokeAsync(projectDirectory, "init");
+
+        await Assert.That(init.ExitCode).IsEqualTo(0);
+    }
+
+    private static async Task InitializeAndAddSourceAsync(
+        string projectDirectory,
+        string sourcePath
+    )
+    {
+        var init = await CliProcess.InvokeAsync(projectDirectory, "init");
+        var source = await CliProcess.InvokeAsync(
+            projectDirectory,
+            "sources",
+            "add",
+            "local",
+            "local",
+            sourcePath
+        );
+
+        await Assert.That(init.ExitCode).IsEqualTo(0);
+        await Assert.That(source.ExitCode).IsEqualTo(0);
+    }
+
+    private static string CreatePackSource(
+        string projectDirectory,
+        params (
+            string Directory,
+            string Id,
+            string Version,
+            string? Description,
+            string Contents
+        )[] packs
+    )
+    {
+        var sourcePath = Directory
+            .CreateDirectory(Path.Combine(projectDirectory, "source"))
+            .FullName;
+        foreach (var pack in packs)
+        {
+            var descriptionLine = pack.Description is null
+                ? null
+                : $"description: {pack.Description}\n";
+            var packDirectory = Directory
+                .CreateDirectory(Path.Combine(sourcePath, pack.Directory))
+                .FullName;
+            var templatesDirectory = Directory
+                .CreateDirectory(Path.Combine(packDirectory, "templates"))
+                .FullName;
+            File.WriteAllText(
+                Path.Combine(packDirectory, "pack.yml"),
+                $"id: {pack.Id}\nversion: {pack.Version}\nlicense: MIT\nauthor: Lunaris Digital Solutions <info@lunaris.digital>\n{descriptionLine}managedFiles:\n  - source: templates/content.txt\n    target: .pack\n"
+            );
+            File.WriteAllText(Path.Combine(templatesDirectory, "content.txt"), pack.Contents);
+        }
+
+        return "source";
+    }
+
+    private static string CreateRemappableVersionedPackSource(string projectDirectory)
+    {
+        var sourcePath = Directory
+            .CreateDirectory(Path.Combine(projectDirectory, "source"))
+            .FullName;
+        foreach (
+            var (directory, version, contents) in new[]
+            {
+                ("example-v1", "1.0.0", "version one"),
+                ("example-v2", "2.0.0", "version two"),
+            }
+        )
+        {
+            var packDirectory = Directory
+                .CreateDirectory(Path.Combine(sourcePath, directory))
+                .FullName;
+            var templatesDirectory = Directory
+                .CreateDirectory(Path.Combine(packDirectory, "templates"))
+                .FullName;
+            File.WriteAllText(
+                Path.Combine(packDirectory, "pack.yml"),
+                $"id: example\nversion: {version}\nlicense: MIT\nauthor: Lunaris Digital Solutions <info@lunaris.digital>\nmanagedFiles:\n  - source: templates/content.txt\n    target: docs/adr/template.md\n"
+            );
+            File.WriteAllText(Path.Combine(templatesDirectory, "content.txt"), contents);
+        }
+
+        return "source";
+    }
+
+    private static async Task<GitPackSource> CreateGitPackSourceAsync(
+        params (string Directory, string Manifest, string? TemplateContents)[] additionalPacks
+    )
+    {
+        var repositoryPath = Path.Combine(
+            Path.GetTempPath(),
+            "lunapack-tests",
+            "git-sources",
+            Guid.NewGuid().ToString("N")
+        );
+        Directory.CreateDirectory(repositoryPath);
+        var packDirectory = Directory
+            .CreateDirectory(Path.Combine(repositoryPath, "packs", "example"))
+            .FullName;
+        var templatesDirectory = Directory
+            .CreateDirectory(Path.Combine(packDirectory, "templates"))
+            .FullName;
+        File.WriteAllText(
+            Path.Combine(packDirectory, "pack.yml"),
+            "id: example\nversion: 1.0.0\nlicense: MIT\nauthor: Lunaris Digital Solutions <info@lunaris.digital>\nmanagedFiles:\n  - source: templates/content.txt\n    target: .pack\n"
+        );
+        File.WriteAllText(Path.Combine(templatesDirectory, "content.txt"), "from git");
+        Directory.CreateDirectory(Path.Combine(repositoryPath, "excluded", "other"));
+        File.WriteAllText(
+            Path.Combine(repositoryPath, "excluded", "other", "pack.yml"),
+            "id: excluded\nversion: 1.0.0\nmanagedFiles:\n  - source: missing.txt\n    target: excluded.txt\n"
+        );
+        foreach (var pack in additionalPacks)
+        {
+            CreateGitPack(repositoryPath, pack);
+        }
+
+        await GitProcess.InvokeAsync(repositoryPath, "init", "--initial-branch=main");
+        await GitProcess.InvokeAsync(repositoryPath, "add", ".");
+        await GitProcess.InvokeAsync(
+            repositoryPath,
+            "-c",
+            "user.email=lunapack@example.test",
+            "-c",
+            "user.name=Lunapack Test",
+            "commit",
+            "--quiet",
+            "-m",
+            "Initial pack source"
+        );
+
+        return new GitPackSource(repositoryPath);
+    }
+
+    private static void CreateGitPack(
+        string repositoryPath,
+        (string Directory, string Manifest, string? TemplateContents) pack
+    )
+    {
+        var packDirectory = Directory
+            .CreateDirectory(Path.Combine(repositoryPath, "packs", pack.Directory))
+            .FullName;
+        File.WriteAllText(
+            Path.Combine(packDirectory, "pack.yml"),
+            AddRequiredMetadata(pack.Manifest)
+        );
+        if (pack.TemplateContents is not { } templateContents)
+        {
+            return;
+        }
+
+        var templatesDirectory = Directory
+            .CreateDirectory(Path.Combine(packDirectory, "templates"))
+            .FullName;
+        File.WriteAllText(Path.Combine(templatesDirectory, "content.txt"), templateContents);
+    }
+
+    private sealed class GitPackSource(string path) : IDisposable
+    {
+        public string Path { get; } = path;
+
+        public void Dispose()
+        {
+            if (!Directory.Exists(Path))
+            {
+                return;
+            }
+
+            foreach (
+                var filePath in Directory.EnumerateFiles(Path, "*", SearchOption.AllDirectories)
+            )
+            {
+                File.SetAttributes(filePath, FileAttributes.Normal);
+            }
+
+            Directory.Delete(Path, recursive: true);
+        }
+    }
+
+    private static string CreateCompositePackSource(
+        string projectDirectory,
+        params (string Directory, string Manifest, string? TemplateContents)[] packs
+    )
+    {
+        var sourcePath = Directory
+            .CreateDirectory(Path.Combine(projectDirectory, "source"))
+            .FullName;
+        foreach (var pack in packs)
+        {
+            var packDirectory = Directory
+                .CreateDirectory(Path.Combine(sourcePath, pack.Directory))
+                .FullName;
+            File.WriteAllText(
+                Path.Combine(packDirectory, "pack.yml"),
+                AddRequiredMetadata(pack.Manifest)
+            );
+            if (pack.TemplateContents is not { } templateContents)
+            {
+                continue;
+            }
+
+            var templatesDirectory = Directory
+                .CreateDirectory(Path.Combine(packDirectory, "templates"))
+                .FullName;
+            File.WriteAllText(Path.Combine(templatesDirectory, "content.txt"), templateContents);
+        }
+
+        return "source";
+    }
+
+    private static string GetSamplePackSourcePath()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            var candidate = Path.Combine(directory.FullName, "projects", "packs");
+            if (Directory.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new DirectoryNotFoundException("Unable to locate the sample pack source.");
+    }
+
+    private static string CopySamplePackSourceToWorkspace(string projectDirectory)
+    {
+        const string sourceDirectoryName = "sample-packs";
+        var sourcePath = GetSamplePackSourcePath();
+        var destinationPath = Path.Combine(projectDirectory, sourceDirectoryName);
+        Directory.CreateDirectory(destinationPath);
+
+        foreach (
+            var sourceFile in Directory.EnumerateFiles(sourcePath, "*", SearchOption.AllDirectories)
+        )
+        {
+            var relativePath = Path.GetRelativePath(sourcePath, sourceFile);
+            var destinationFile = Path.Combine(destinationPath, relativePath);
+            var destinationDirectory = Path.GetDirectoryName(destinationFile);
+            if (destinationDirectory is null)
+            {
+                throw new InvalidOperationException(
+                    $"Unable to determine destination directory for '{destinationFile}'."
+                );
+            }
+
+            Directory.CreateDirectory(destinationDirectory);
+            File.Copy(sourceFile, destinationFile);
+        }
+
+        return sourceDirectoryName;
+    }
+
+    private static string AddRequiredMetadata(string manifest)
+    {
+        if (manifest.Contains("\nlicense:", StringComparison.Ordinal))
+        {
+            return manifest;
+        }
+
+        var versionLineEnd = manifest.IndexOf(
+            '\n',
+            manifest.IndexOf("version:", StringComparison.Ordinal)
+        );
+        return manifest.Insert(
+            versionLineEnd + 1,
+            "license: MIT\nauthor: Lunaris Digital Solutions <info@lunaris.digital>\n"
+        );
+    }
+
+    private static string GetRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            var packsDirectory = Path.Combine(directory.FullName, "projects", "packs");
+            if (Directory.Exists(packsDirectory))
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new DirectoryNotFoundException("Unable to locate the repository root.");
+    }
+
+    private static IReadOnlyList<(string Id, string Version)> GetBundledPacks() =>
+        [
+            ("clean-code-guidelines", "1.0.0"),
+            ("csharp-guidelines", "1.0.0"),
+            ("dotnet-csharpier-tool", "1.0.0"),
+            ("dotnet-build-props", "1.0.0"),
+            ("dotnet-central-package-management", "1.0.0"),
+            ("dotnet-editorconfig", "1.0.0"),
+            ("dotnet-gitignore", "1.0.0"),
+            ("dotnet-project", "1.0.0"),
+            ("dotnet-sdk-10", "1.0.0"),
+            ("gitignore-general", "1.0.0"),
+            ("license-mit", "1.0.0"),
+            ("madr-adr-template", "1.0.0"),
+        ];
+
+    private static IReadOnlyList<string> GetConfiguredRootPackIds() =>
+        [
+            "dotnet-csharpier-tool",
+            "dotnet-editorconfig",
+            "dotnet-gitignore",
+            "gitignore-general",
+            "dotnet-project",
+            "dotnet-sdk-10",
+            "madr-adr-template",
+        ];
+}

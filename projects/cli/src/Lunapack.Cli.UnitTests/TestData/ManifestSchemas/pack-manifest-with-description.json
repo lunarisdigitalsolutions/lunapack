@@ -1,0 +1,8 @@
+{
+  "id": "example",
+  "version": "1.0.0",
+  "license": "MIT",
+  "author": "Lunaris Digital Solutions <info@lunaris.digital>",
+  "description": "An example pack.",
+  "managedFiles": [{ "source": "source.txt", "target": "target.txt" }]
+}

@@ -1,0 +1,36 @@
+schema: spec-driven
+
+context: |
+  Product: LunaPack Engineering Foundation Platform, a pack-based platform for
+  distributing, governing, validating, synchronizing, and upgrading engineering
+  capabilities across software projects.
+
+  Documentation is organized by audience:
+  - docs/product: product vision, requirements, epics, and milestones.
+  - docs/internal: architecture and implementation guidance for maintainers.
+  - docs/developer: public guidance for CLI users, pack authors, and pack consumers.
+
+  The CLI and public contracts use lunapack.yml, lunapack-lock.yml, and pack.yml.
+  Schema sources belong in projects/schema/. Public schema documentation belongs
+  in docs/developer; internal schema design belongs in docs/internal.
+
+rules:
+  proposal:
+    - Identify the affected product, internal, and developer documentation.
+    - Keep implementation and public-consumption concerns distinct.
+  design:
+    - Preserve the boundaries among catalog, dependency resolution, pack lifecycle, providers, CLI, governance, and AI interfaces.
+    - Define schema changes together with compatibility and migration behavior.
+  specs:
+    - Specify observable CLI and schema behavior without documenting unimplemented features as available.
+  tasks:
+    - Include documentation updates for every user-visible CLI, schema, or pack lifecycle change.
+
+operations:
+  apply:
+    guidance:
+      - Keep documentation in the audience directory that matches its reader.
+      - Validate Markdown links after moving or renaming documentation.
+  archive:
+    guidance:
+      - Summarize documentation and contract changes alongside implementation results.

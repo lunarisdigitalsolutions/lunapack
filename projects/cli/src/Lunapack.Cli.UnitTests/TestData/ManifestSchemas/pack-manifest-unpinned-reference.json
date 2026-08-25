@@ -1,0 +1,9 @@
+{
+  "id": "foundation-composite",
+  "version": "1.0.0",
+  "packs": [
+    {
+      "id": "dotnet-gitignore"
+    }
+  ]
+}

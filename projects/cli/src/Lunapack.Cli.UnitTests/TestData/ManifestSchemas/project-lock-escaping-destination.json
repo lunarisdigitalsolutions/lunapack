@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "packs": [
+    {
+      "id": "csharp-guidelines",
+      "version": "1.0.0",
+      "destination": "docs/../../outside",
+      "sourcePath": "projects/packs",
+      "sourceName": "local",
+      "sourceIdentity": { "type": "local", "path": "projects/packs" },
+      "packPath": "csharp-guidelines",
+      "packs": [],
+      "managedFiles": []
+    }
+  ]
+}

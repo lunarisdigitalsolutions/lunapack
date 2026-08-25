@@ -1,0 +1,22 @@
+name: Build Developer Website
+description: Check out, install, and build the Docusaurus developer website.
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Node.js
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      with:
+        node-version: 22
+        cache: npm
+        cache-dependency-path: projects/website/package-lock.json
+
+    - name: Install website dependencies
+      shell: bash
+      working-directory: projects/website
+      run: npm ci
+
+    - name: Build website
+      shell: bash
+      working-directory: projects/website
+      run: npm run build

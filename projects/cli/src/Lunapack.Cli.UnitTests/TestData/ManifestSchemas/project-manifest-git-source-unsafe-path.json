@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    {
+      "name": "git",
+      "type": "git",
+      "url": "https://example.test/packs.git",
+      "path": "../packs"
+    }
+  ],
+  "packs": [],
+  "trust": { "sources": [], "packs": [] }
+}

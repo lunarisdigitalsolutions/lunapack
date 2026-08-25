@@ -1,0 +1,119 @@
+using System.Globalization;
+using System.IO.Abstractions.TestingHelpers;
+using System.Text;
+
+namespace Lunapack.Cli.UnitTests;
+
+public sealed class PackTemplateRendererTests
+{
+    [Test]
+    public async Task Render_WhenResolvedParametersProvided_RendersUtf8Content()
+    {
+        var fileSystem = CreateFileSystem("Copyright {{ companyName }}");
+        var result = new PackTemplateRenderer(fileSystem).Render(
+            TemplatePath,
+            true,
+            CreateParameters("Lunaris Digital Solutions")
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert
+            .That(Encoding.UTF8.GetString(result.RequireValue()))
+            .IsEqualTo("Copyright Lunaris Digital Solutions");
+    }
+
+    [Test]
+    public async Task Render_WhenTemplateUsesCurrentDate_RendersCurrentYear()
+    {
+        var fileSystem = CreateFileSystem("{{ date.now.year }}");
+        var result = new PackTemplateRenderer(fileSystem).Render(
+            TemplatePath,
+            true,
+            CreateParameters("Lunaris Digital Solutions")
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert
+            .That(Encoding.UTF8.GetString(result.RequireValue()))
+            .IsEqualTo(DateTime.Now.Year.ToString(CultureInfo.InvariantCulture));
+    }
+
+    [Test]
+    public async Task Render_WhenTemplateReferencesUnknownVariable_ReturnsFailure()
+    {
+        var fileSystem = CreateFileSystem("{{ unknownVariable }}");
+        var result = new PackTemplateRenderer(fileSystem).Render(
+            TemplatePath,
+            true,
+            CreateParameters("Lunaris Digital Solutions")
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+    }
+
+    [Test]
+    public async Task Render_WhenTemplateDisabled_PreservesLiteralContent()
+    {
+        var fileSystem = CreateFileSystem("{{ unknownVariable }}");
+        var result = new PackTemplateRenderer(fileSystem).Render(
+            TemplatePath,
+            false,
+            CreateParameters("Lunaris Digital Solutions")
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert
+            .That(Encoding.UTF8.GetString(result.RequireValue()))
+            .IsEqualTo("{{ unknownVariable }}");
+    }
+
+    [Test]
+    public async Task Render_WhenTemplateInvalid_ReturnsFailure()
+    {
+        var fileSystem = CreateFileSystem("{{ 1 + }}");
+        var result = new PackTemplateRenderer(fileSystem).Render(
+            TemplatePath,
+            true,
+            CreateParameters("Lunaris Digital Solutions")
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+    }
+
+    [Test]
+    public async Task Render_WhenTemplateIsNotUtf8_ReturnsFailure()
+    {
+        var fileSystem = new MockFileSystem();
+        fileSystem.AddDirectory("C:\\pack");
+        fileSystem.AddFile(TemplatePath, new MockFileData([0xFF, 0xFE]));
+        var result = new PackTemplateRenderer(fileSystem).Render(
+            TemplatePath,
+            true,
+            CreateParameters("Lunaris Digital Solutions")
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+    }
+
+    private const string TemplatePath = "C:\\pack\\template.txt";
+
+    private static MockFileSystem CreateFileSystem(string content)
+    {
+        var fileSystem = new MockFileSystem();
+        fileSystem.AddDirectory("C:\\pack");
+        fileSystem.AddFile(TemplatePath, new MockFileData(content));
+        return fileSystem;
+    }
+
+    private static ResolvedPackParameters CreateParameters(string companyName) =>
+        new(
+            new Dictionary<string, PackParameterDefinition>(StringComparer.Ordinal)
+            {
+                ["companyName"] = new(PackParameterType.String, true, []),
+            },
+            new Dictionary<string, ResolvedPackParameterValue>(StringComparer.Ordinal)
+            {
+                ["companyName"] = new(PackParameterType.String, companyName, false),
+            }
+        );
+}

@@ -1,0 +1,70 @@
+@import '@fontsource-variable/jetbrains-mono';
+@import '@fontsource-variable/space-grotesk';
+
+:root {
+  --color-primary: #00243d;
+  --color-primary-700: #004e86;
+  --color-primary-800: #00375a;
+  --color-secondary: #6cafd9;
+  --color-accent: #a8e7f6;
+  --color-alternate1: #00629e;
+  --color-alternate2: #477352;
+  --color-alternate3: #1c5713;
+  --color-text: #545454;
+  --color-text-light: #ffffff;
+  --color-text-muted: #ffffff;
+  --color-white: #ffffff;
+  --color-gray-100: #f8f8f8;
+  --color-gray-200: #e5e7eb;
+  --color-gray-800: #1f2b3a;
+  --color-amber: #d97706;
+  --color-amber-light: #fbbf24;
+  --ifm-font-family-base: 'Space Grotesk Variable', sans-serif;
+  --ifm-font-family-monospace: 'JetBrains Mono Variable', monospace;
+  --ifm-color-primary: var(--color-primary-700);
+  --ifm-color-primary-dark: var(--color-primary-800);
+  --ifm-color-primary-darker: var(--color-primary);
+  --ifm-color-primary-darkest: var(--color-primary);
+  --ifm-color-primary-light: var(--color-alternate1);
+  --ifm-color-primary-lighter: var(--color-secondary);
+  --ifm-color-primary-lightest: var(--color-accent);
+  --ifm-background-color: var(--color-gray-100);
+  --ifm-background-surface-color: var(--color-white);
+  --ifm-font-color-base: var(--color-text);
+  --ifm-heading-color: var(--color-primary);
+  --ifm-navbar-background-color: var(--color-white);
+  --ifm-footer-background-color: var(--color-primary);
+  --ifm-code-background: var(--color-gray-200);
+  --ifm-pre-background: var(--color-primary);
+  --ifm-pre-color: var(--color-text-light);
+  --ifm-code-font-size: 92%;
+  --ifm-global-radius: 4px;
+}
+
+[data-theme='dark'] {
+  --ifm-background-color: var(--color-primary);
+  --ifm-background-surface-color: var(--color-gray-800);
+  --ifm-font-color-base: var(--color-text-light);
+  --ifm-heading-color: var(--color-text-light);
+  --ifm-navbar-background-color: var(--color-primary);
+  --ifm-code-background: var(--color-primary-800);
+}
+
+code {
+  color: var(--color-primary-700);
+}
+
+[data-theme='dark'] code {
+  color: var(--color-accent);
+}
+
+@media (max-width: 996px) {
+  .navbar__toggle,
+  .navbar-sidebar__close {
+    align-items: center;
+    display: inline-flex;
+    height: 2.75rem;
+    justify-content: center;
+    width: 2.75rem;
+  }
+}

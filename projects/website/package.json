@@ -1,0 +1,22 @@
+{
+  "name": "@lunaris/lunapack-developer-site",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LunaPack developer documentation website.",
+  "scripts": {
+    "start": "docusaurus start src",
+    "build": "docusaurus build src",
+    "serve": "docusaurus serve src",
+    "clear": "docusaurus clear src"
+  },
+  "dependencies": {
+    "@docusaurus/core": "3.10.2",
+    "@docusaurus/preset-classic": "3.10.2",
+    "@fontsource-variable/jetbrains-mono": "5.3.0",
+    "@fontsource-variable/space-grotesk": "5.3.0",
+    "@mdx-js/react": "3.1.1",
+    "lucide-react": "1.33.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  }
+}
