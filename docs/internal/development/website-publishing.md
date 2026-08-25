@@ -54,5 +54,5 @@ source as **GitHub Actions** in GitHub repository settings. The initial site
 address is:
 
 ```text
-https://lunarisdigitalsolutions.github.io/lunapack/
+https://lunapack.dev/
 ```
