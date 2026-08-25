@@ -6,11 +6,14 @@ public sealed class ProjectInitializationCommandHandlerTests
     public async Task Initialize_WhenProjectStateMissing_CreatesSchemaValidDocuments()
     {
         using var workspace = new TestWorkspace();
+        var console = TestConsole.Create();
         var handler = new ProjectInitializationCommandHandler(
             workspace.FileSystem,
             workspace.StateStore,
             new WorkspaceDirectoryResolver(workspace.FileSystem),
-            TestConsole.Create()
+            new NextStepAdvisor(workspace.FileSystem, workspace.StateStore),
+            new NextStepRenderer(console),
+            console
         );
 
         var exitCode = await handler.InitializeAsync(workspace.Path);

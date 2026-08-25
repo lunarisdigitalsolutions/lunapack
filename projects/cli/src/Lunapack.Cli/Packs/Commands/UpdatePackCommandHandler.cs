@@ -7,6 +7,9 @@ internal sealed class UpdatePackCommandHandler(
     PackUpdateSelectionService updateSelectionService,
     IPackUpdatePrompter packUpdatePrompter,
     WorkspaceDirectoryResolver workspaceDirectoryResolver,
+    INextStepAdvisor nextStepAdvisor,
+    NextStepRenderer nextStepRenderer,
+    WorkflowPrerequisiteGuard prerequisiteGuard,
     CliConsole console
 )
 {
@@ -55,6 +58,14 @@ internal sealed class UpdatePackCommandHandler(
                 projectDirectory,
                 parseResult.GetValue(workspaceOption)
             );
+            var prerequisiteFailure = await prerequisiteGuard.RequireSourcesAsync(
+                workspaceDirectory
+            );
+            if (prerequisiteFailure is not null)
+            {
+                return prerequisiteFailure.Value;
+            }
+
             var dryRun = parseResult.GetValue(dryRunOption);
             var scriptMode = ScriptExecutionMode.Parse(
                 parseResult.GetValue(scriptsOption) ?? ScriptExecutionMode.Prompt.Value
@@ -197,6 +208,15 @@ internal sealed class UpdatePackCommandHandler(
         else
         {
             WriteOutcomes(console, result.Outcomes);
+            var updatedCount = result.Outcomes.Count(outcome => !outcome.IsCurrent);
+            if (updatedCount > 0)
+            {
+                console.Info($"✓ Updated {updatedCount} packs");
+                nextStepRenderer.Render(
+                    nextStepAdvisor.Recommend(NextStepContext.PacksUpdated),
+                    "Suggested commands:"
+                );
+            }
         }
 
         return 0;

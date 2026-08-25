@@ -4,6 +4,38 @@ namespace Lunapack.Cli.IntegrationTests;
 public sealed class CliProcessTests
 {
     [Test]
+    public async Task CoreWorkflow_WhenCommandsSucceed_GuidesEachNextTransition()
+    {
+        using var workspace = new TestWorkspace();
+
+        var root = await CliProcess.InvokeAsync(workspace.Path);
+        var initialized = await CliProcess.InvokeAsync(workspace.Path, "init");
+        var sourceDirectory = CreatePackSource(
+            workspace.Path,
+            ("example-v1", "example", "1.0.0", null, "version one")
+        );
+        var sourced = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "sources",
+            "add",
+            "local",
+            "local",
+            sourceDirectory
+        );
+        var discovered = await CliProcess.InvokeAsync(workspace.Path, "discover");
+        var installed = await CliProcess.InvokeAsync(workspace.Path, "install", "example");
+        CreatePackSource(workspace.Path, ("example-v2", "example", "2.0.0", null, "version two"));
+        var updated = await CliProcess.InvokeAsync(workspace.Path, "update");
+
+        await Assert.That(root.StandardOutput).Contains("luna init");
+        await Assert.That(initialized.StandardOutput).Contains("luna sources add git");
+        await Assert.That(sourced.StandardOutput).Contains("luna discover");
+        await Assert.That(discovered.StandardOutput).Contains("luna install <pack>");
+        await Assert.That(installed.StandardOutput).Contains("luna outdated");
+        await Assert.That(updated.StandardOutput).Contains("luna audit");
+    }
+
+    [Test]
     public async Task Cli_WhenHelpRequested_ReturnsCommandHelp()
     {
         using var workspace = new TestWorkspace();

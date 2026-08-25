@@ -49,6 +49,7 @@ internal sealed class CliApplication(
         rootCommand.Options.Add(workspaceOption);
         rootCommand.Options.Add(logLevelOption);
         var services = CreateCommandServices(console);
+        ConfigureRootAction(rootCommand, services, projectDirectory, workspaceOption, console);
 
         AddProjectCommands(
             rootCommand,
@@ -58,6 +59,8 @@ internal sealed class CliApplication(
             services.WorkspaceDirectoryResolver,
             projectDirectory,
             workspaceOption,
+            services.NextStepAdvisor,
+            services.NextStepRenderer,
             console
         );
         AddCatalogCommands(
@@ -67,6 +70,9 @@ internal sealed class CliApplication(
             services.WorkspaceDirectoryResolver,
             projectDirectory,
             workspaceOption,
+            services.NextStepAdvisor,
+            services.NextStepRenderer,
+            services.PrerequisiteGuard,
             console
         );
         AddLifecycleCommands(
@@ -79,6 +85,9 @@ internal sealed class CliApplication(
             services.WorkspaceDirectoryResolver,
             projectDirectory,
             workspaceOption,
+            services.NextStepAdvisor,
+            services.NextStepRenderer,
+            services.PrerequisiteGuard,
             console
         );
         AddAuditCommand(
@@ -87,11 +96,31 @@ internal sealed class CliApplication(
             services.WorkspaceDirectoryResolver,
             projectDirectory,
             workspaceOption,
+            services.PrerequisiteGuard,
             console
         );
 
         return rootCommand;
     }
+
+    private static void ConfigureRootAction(
+        RootCommand rootCommand,
+        CommandServices services,
+        string projectDirectory,
+        Option<string?> workspaceOption,
+        CliConsole console
+    ) =>
+        rootCommand.SetAction(async parseResult =>
+            await RenderWorkspaceGuidanceAsync(
+                services.NextStepAdvisor,
+                services.NextStepRenderer,
+                services.WorkspaceDirectoryResolver.Resolve(
+                    projectDirectory,
+                    parseResult.GetValue(workspaceOption)
+                ),
+                console
+            )
+        );
 
     private CommandServices CreateCommandServices(CliConsole console)
     {
@@ -99,6 +128,13 @@ internal sealed class CliApplication(
         var effectiveUserSettingsStore = userSettingsStore ?? new UserSettingsStore(fileSystem);
         var workspaceDirectoryResolver = new WorkspaceDirectoryResolver(fileSystem);
         var packCatalog = new PackCatalog(fileSystem, console);
+        var nextStepAdvisor = new NextStepAdvisor(fileSystem, projectStateStore);
+        var nextStepRenderer = new NextStepRenderer(console);
+        var prerequisiteGuard = new WorkflowPrerequisiteGuard(
+            nextStepAdvisor,
+            nextStepRenderer,
+            console
+        );
         var lifecycleServices = CreateLifecycleServices(
             fileSystem,
             packCatalog,
@@ -116,6 +152,9 @@ internal sealed class CliApplication(
             ),
             lifecycleServices,
             packUpdatePrompter ?? new ConsolePackUpdatePrompter(console),
+            nextStepAdvisor,
+            nextStepRenderer,
+            prerequisiteGuard,
             new TrustService(
                 fileSystem,
                 projectStateStore,
@@ -132,6 +171,9 @@ internal sealed class CliApplication(
         WorkspaceDirectoryResolver workspaceDirectoryResolver,
         string projectDirectory,
         Option<string?> workspaceOption,
+        INextStepAdvisor nextStepAdvisor,
+        NextStepRenderer nextStepRenderer,
+        WorkflowPrerequisiteGuard prerequisiteGuard,
         CliConsole console
     )
     {
@@ -139,6 +181,9 @@ internal sealed class CliApplication(
             new DiscoverPacksCommandHandler(
                 catalogService,
                 workspaceDirectoryResolver,
+                nextStepAdvisor,
+                nextStepRenderer,
+                prerequisiteGuard,
                 console
             ).CreateCommand(projectDirectory, workspaceOption)
         );
@@ -146,6 +191,9 @@ internal sealed class CliApplication(
             new SearchPacksCommandHandler(
                 catalogService,
                 workspaceDirectoryResolver,
+                nextStepAdvisor,
+                nextStepRenderer,
+                prerequisiteGuard,
                 console
             ).CreateCommand(projectDirectory, workspaceOption)
         );
@@ -160,6 +208,9 @@ internal sealed class CliApplication(
             new InspectPackCommandHandler(
                 catalogService,
                 workspaceDirectoryResolver,
+                nextStepAdvisor,
+                nextStepRenderer,
+                prerequisiteGuard,
                 console
             ).CreateCommand(projectDirectory, workspaceOption)
         );
@@ -224,6 +275,8 @@ internal sealed class CliApplication(
         WorkspaceDirectoryResolver workspaceDirectoryResolver,
         string projectDirectory,
         Option<string?> workspaceOption,
+        INextStepAdvisor nextStepAdvisor,
+        NextStepRenderer nextStepRenderer,
         CliConsole console
     )
     {
@@ -232,6 +285,8 @@ internal sealed class CliApplication(
                 fileSystem,
                 projectStateStore,
                 workspaceDirectoryResolver,
+                nextStepAdvisor,
+                nextStepRenderer,
                 console
             ).CreateCommand(projectDirectory, workspaceOption)
         );
@@ -240,6 +295,8 @@ internal sealed class CliApplication(
                 fileSystem,
                 projectStateStore,
                 workspaceDirectoryResolver,
+                nextStepAdvisor,
+                nextStepRenderer,
                 console
             ).CreateCommand(projectDirectory, workspaceOption)
         );
@@ -277,6 +334,9 @@ internal sealed class CliApplication(
         WorkspaceDirectoryResolver workspaceDirectoryResolver,
         string projectDirectory,
         Option<string?> workspaceOption,
+        INextStepAdvisor nextStepAdvisor,
+        NextStepRenderer nextStepRenderer,
+        WorkflowPrerequisiteGuard prerequisiteGuard,
         CliConsole console
     )
     {
@@ -285,6 +345,9 @@ internal sealed class CliApplication(
                 fileSystem,
                 packLifecycleService,
                 workspaceDirectoryResolver,
+                nextStepAdvisor,
+                nextStepRenderer,
+                prerequisiteGuard,
                 console
             ).CreateCommand(projectDirectory, workspaceOption)
         );
@@ -292,6 +355,9 @@ internal sealed class CliApplication(
             new UninstallPackCommandHandler(
                 packLifecycleService,
                 workspaceDirectoryResolver,
+                nextStepAdvisor,
+                nextStepRenderer,
+                prerequisiteGuard,
                 console
             ).CreateCommand(projectDirectory, workspaceOption)
         );
@@ -308,6 +374,9 @@ internal sealed class CliApplication(
                 updateSelectionService,
                 packUpdatePrompter,
                 workspaceDirectoryResolver,
+                nextStepAdvisor,
+                nextStepRenderer,
+                prerequisiteGuard,
                 console
             ).CreateCommand(projectDirectory, workspaceOption)
         );
@@ -315,6 +384,7 @@ internal sealed class CliApplication(
             new OutdatedPackCommandHandler(
                 updateSelectionService,
                 workspaceDirectoryResolver,
+                prerequisiteGuard,
                 console
             ).CreateCommand(projectDirectory, workspaceOption)
         );
@@ -326,12 +396,14 @@ internal sealed class CliApplication(
         WorkspaceDirectoryResolver workspaceDirectoryResolver,
         string projectDirectory,
         Option<string?> workspaceOption,
+        WorkflowPrerequisiteGuard prerequisiteGuard,
         CliConsole console
     ) =>
         rootCommand.Add(
             new AuditCommandHandler(
                 projectStateStore,
                 workspaceDirectoryResolver,
+                prerequisiteGuard,
                 console
             ).CreateCommand(projectDirectory, workspaceOption)
         );
@@ -349,6 +421,56 @@ internal sealed class CliApplication(
         PackValidationService PackValidationService,
         LifecycleServices LifecycleServices,
         IPackUpdatePrompter PackUpdatePrompter,
+        INextStepAdvisor NextStepAdvisor,
+        NextStepRenderer NextStepRenderer,
+        WorkflowPrerequisiteGuard PrerequisiteGuard,
         TrustService TrustService
     );
+
+    private static async Task<int> RenderWorkspaceGuidanceAsync(
+        INextStepAdvisor nextStepAdvisor,
+        NextStepRenderer nextStepRenderer,
+        string projectDirectory,
+        CliConsole console
+    )
+    {
+        var inspectedWorkspace = await nextStepAdvisor.InspectWorkspaceAsync(projectDirectory);
+        if (inspectedWorkspace.Value is not { } workspace)
+        {
+            return console.Fail(inspectedWorkspace.Error);
+        }
+
+        switch (workspace.Stage)
+        {
+            case WorkspaceStage.NoWorkspace:
+                console.Info("No LunaPack workspace found.");
+                nextStepRenderer.Render(workspace.Recommendations, "Get started with:");
+                console.Info(string.Empty);
+                console.Info("This creates:");
+                console.Info(string.Empty);
+                console.Info($"  {ProjectStateStore.ConfigurationFileName}");
+                console.Info($"  {ProjectStateStore.LockFileName}");
+                break;
+            case WorkspaceStage.EmptyWorkspace:
+                console.Info("Workspace detected.");
+                console.Info(string.Empty);
+                console.Info("No sources are configured.");
+                nextStepRenderer.Render(workspace.Recommendations);
+                break;
+            case WorkspaceStage.SourcesConfigured:
+            case WorkspaceStage.ActiveWorkspace:
+                console.Info("Workspace detected.");
+                console.Info(string.Empty);
+                console.Info($"Configured sources: {workspace.SourceCount}");
+                console.Info($"Installed packs: {workspace.InstalledPackCount}");
+                nextStepRenderer.Render(workspace.Recommendations, "Suggested commands:");
+                break;
+            default:
+                throw new InvalidOperationException(
+                    $"Unsupported workspace stage '{workspace.Stage}'."
+                );
+        }
+
+        return 0;
+    }
 }

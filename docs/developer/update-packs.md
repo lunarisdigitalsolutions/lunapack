@@ -3,6 +3,9 @@
 Check whether an installed root pack has a newer release, then preview the
 update before applying it.
 
+After applying one or more updates, Luna recommends auditing resolved state and
+checking again for outdated roots. A dry run shows only planned changes.
+
 ```powershell
 luna outdated
 luna update dotnet-project --dry-run

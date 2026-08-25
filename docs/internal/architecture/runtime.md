@@ -45,3 +45,18 @@ user-selected minimum level. Info output is plain; verbose, debug, warning, and
 error output has colored level prefixes. Long-running catalog and lifecycle
 commands show status spinners. Source trust is established by consumer
 configuration and preserved through provenance, not by pack manifests.
+
+## Workflow Guidance
+
+The application-layer next-step advisor classifies a validated workspace from
+configured sources and requested root packs. Typed command outcomes select up to
+three ordered recommendations; a separate renderer escapes and writes them.
+Guidance never executes commands, changes exit codes, or treats dry runs as
+completed state transitions.
+
+Source removal atomically removes source configuration and project trust bound
+to that source name. Requested roots, immutable lock evidence, and managed files
+remain. State loading therefore accepts resolved source identities that are no
+longer configured, while ordinary state writes continue to validate configured
+source matching. Source and uninstall writes use the narrow unavailable-source
+path.

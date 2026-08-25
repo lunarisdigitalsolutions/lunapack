@@ -6,6 +6,9 @@ namespace Lunapack.Cli;
 internal sealed class DiscoverPacksCommandHandler(
     CatalogService catalogService,
     WorkspaceDirectoryResolver workspaceDirectoryResolver,
+    INextStepAdvisor nextStepAdvisor,
+    NextStepRenderer nextStepRenderer,
+    WorkflowPrerequisiteGuard prerequisiteGuard,
     CliConsole console
 )
 {
@@ -38,6 +41,12 @@ internal sealed class DiscoverPacksCommandHandler(
             return console.Fail(
                 $"The version limit must be between 1 and {PackCatalog.MaximumVersionCount}."
             );
+        }
+
+        var prerequisiteFailure = await prerequisiteGuard.RequireSourcesAsync(projectDirectory);
+        if (prerequisiteFailure is not null)
+        {
+            return prerequisiteFailure.Value;
         }
 
         var catalog = await console.RunWithStatusAsync(
@@ -77,6 +86,8 @@ internal sealed class DiscoverPacksCommandHandler(
         }
 
         console.Render(table);
+        console.Info($"Found {packs.Count} packs.");
+        nextStepRenderer.Render(nextStepAdvisor.Recommend(NextStepContext.PacksDiscovered));
         return 0;
     }
 }
