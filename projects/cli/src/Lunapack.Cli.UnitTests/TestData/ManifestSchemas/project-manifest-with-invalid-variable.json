@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "sources": [],
+  "packs": [],
+  "trust": { "sources": [], "packs": [] },
+  "variables": {
+    "companyName": {
+      "value": "Lunaris Digital Solutions"
+    }
+  }
+}

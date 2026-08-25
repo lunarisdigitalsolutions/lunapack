@@ -1,0 +1,83 @@
+using System.CommandLine;
+
+namespace Lunapack.Cli;
+
+internal sealed class InspectPackCommandHandler(
+    CatalogService catalogService,
+    WorkspaceDirectoryResolver workspaceDirectoryResolver,
+    CliConsole console
+)
+{
+    public Command CreateCommand(string projectDirectory, Option<string?> workspaceOption)
+    {
+        var packReferenceArgument = new Argument<string>("pack-reference")
+        {
+            Description = "Pack ID, optionally followed by @version.",
+        };
+        var command = new Command("inspect", "Show a pack manifest.") { packReferenceArgument };
+        command.SetAction(async parseResult =>
+        {
+            var packReferenceValue = parseResult.GetValue(packReferenceArgument);
+            if (packReferenceValue is null)
+            {
+                return console.Fail("A pack ID is required.");
+            }
+
+            var packReference = PackReference.Parse(packReferenceValue);
+            if (packReference.Value is not { } reference)
+            {
+                return console.Fail(packReference.Error);
+            }
+
+            return await InspectAsync(
+                workspaceDirectoryResolver.Resolve(
+                    projectDirectory,
+                    parseResult.GetValue(workspaceOption)
+                ),
+                reference
+            );
+        });
+
+        return command;
+    }
+
+    private async Task<int> InspectAsync(string projectDirectory, PackReference packReference)
+    {
+        var catalog = await console.RunWithStatusAsync(
+            $"Inspecting {packReference.Id}...",
+            () => catalogService.LoadAsync(projectDirectory)
+        );
+        if (catalog.Value is not { } catalogPacks)
+        {
+            return console.Fail(catalog.Error);
+        }
+
+        var resolvedPack = PackCatalog.ResolveFromCatalog(
+            catalogPacks,
+            packReference.Id,
+            packReference.Version
+        );
+        if (resolvedPack.Value is not { } pack)
+        {
+            return console.Fail(resolvedPack.Error);
+        }
+
+        var configuration = await catalogService.LoadConfigurationAsync(projectDirectory);
+        if (configuration.Value is not { } projectConfiguration)
+        {
+            return console.Fail(configuration.Error);
+        }
+
+        foreach (
+            var renderable in PackManifestInspectionFormatter.Format(
+                pack.Manifest,
+                projectConfiguration.Remap
+            )
+        )
+        {
+            console.Render(renderable);
+        }
+
+        return 0;
+    }
+}

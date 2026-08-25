@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "packs": [
+    {
+      "id": "dotnet-gitignore",
+      "version": "1.0.0",
+      "sourcePath": "\\packs",
+      "sourceName": "local",
+      "sourceIdentity": { "type": "local", "path": "\\packs" },
+      "packPath": "dotnet-gitignore",
+      "packs": [],
+      "managedFiles": []
+    }
+  ]
+}

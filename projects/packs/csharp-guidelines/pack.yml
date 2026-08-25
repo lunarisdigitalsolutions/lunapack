@@ -1,0 +1,8 @@
+id: csharp-guidelines
+version: 1.0.0
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Portable C# coding guidance for software projects.
+managedFiles:
+  - source: templates/csharp.md
+    target: csharp.md

@@ -1,0 +1,9 @@
+id: dotnet-central-package-management
+
+version: 1.0.0
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Configure central package management for shared .NET dependencies.
+managedFiles:
+  - source: templates/Directory.Packages.props
+    target: Directory.Packages.props

@@ -1,0 +1,605 @@
+namespace Lunapack.Cli.UnitTests;
+
+public sealed class ManifestSchemaTests
+{
+    [Test]
+    public async Task PackManifest_WhenManagedFileStrategyInvalid_IsRejected()
+    {
+        var manifest = CreateValidPackManifest();
+        manifest.ManagedFiles[0].Strategy = new PackManifest.PackManagedFileStrategy
+        {
+            Type = "copy",
+            Method = "lines",
+        };
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert.That(issues).IsNotEmpty();
+    }
+
+    [Test]
+    public async Task PackManifest_WhenEnumValuesDuplicated_IsRejected()
+    {
+        var manifest = CreateValidPackManifest();
+        manifest.Parameters["environment"] = new PackManifest.PackParameter
+        {
+            Type = "enum",
+            Values = ["development", "development"],
+        };
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert.That(issues).IsNotEmpty();
+    }
+
+    [Test]
+    public async Task PackManifest_WhenScriptsOmitted_IsAccepted()
+    {
+        var manifest = CreateValidPackManifest();
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert.That(issues).IsEmpty();
+    }
+
+    [Test]
+    public async Task PackManifest_WhenPackedAndCommandScriptsValid_IsAccepted()
+    {
+        var manifest = CreateValidPackManifest();
+        manifest.Scripts = new PackManifest.PackScripts
+        {
+            PreInstall = new PackManifest.LifecycleScript
+            {
+                File = "scripts/setup.ps1",
+                Runner = "pwsh",
+                Arguments = ["-ProjectType", "library"],
+                Description = "Configure project tooling.",
+            },
+            PostInstall = new PackManifest.LifecycleScript
+            {
+                Command = "dotnet",
+                Arguments = ["tool", "restore"],
+            },
+        };
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert.That(issues).IsEmpty();
+    }
+
+    [Test]
+    public async Task PackManifest_WhenScriptFormsMixed_IsRejected()
+    {
+        var manifest = CreateValidPackManifest();
+        manifest.Scripts = new PackManifest.PackScripts
+        {
+            PreInstall = new PackManifest.LifecycleScript
+            {
+                File = "scripts/setup.ps1",
+                Runner = "pwsh",
+                Command = "dotnet",
+            },
+        };
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert.That(issues).IsNotEmpty();
+    }
+
+    [Test]
+    public async Task PackManifest_WhenPackedScriptRunnerMissing_IsRejected()
+    {
+        var manifest = CreateValidPackManifest();
+        manifest.Scripts = new PackManifest.PackScripts
+        {
+            PreInstall = new PackManifest.LifecycleScript { File = "scripts/setup.ps1" },
+        };
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert.That(issues).IsNotEmpty();
+    }
+
+    [Test]
+    public async Task PackManifest_WhenPackedScriptPathUnsafe_IsRejected()
+    {
+        var manifest = CreateValidPackManifest();
+        manifest.Scripts = new PackManifest.PackScripts
+        {
+            PreInstall = new PackManifest.LifecycleScript
+            {
+                File = @"scripts\..\outside.ps1",
+                Runner = "pwsh",
+            },
+        };
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert.That(issues).IsNotEmpty();
+    }
+
+    [Test]
+    public async Task PackManifest_WhenPackedScriptUsesWindowsSeparators_NormalizesPath()
+    {
+        var manifest = CreateValidPackManifest();
+        manifest.Scripts = new PackManifest.PackScripts
+        {
+            PreInstall = new PackManifest.LifecycleScript
+            {
+                File = @"scripts\setup.ps1",
+                Runner = "pwsh",
+            },
+        };
+
+        var normalized = PackManifestPathNormalizer.Normalize(manifest);
+
+        await Assert.That(normalized.Scripts!.PreInstall!.File).IsEqualTo("scripts/setup.ps1");
+    }
+
+    [Test]
+    public async Task PackManifest_WhenReferenceSuppressionValid_IsAccepted()
+    {
+        var manifest = CreateValidPackManifest();
+        manifest.Packs =
+        [
+            new PackManifest.PackReference
+            {
+                Id = "dependency",
+                Version = "1.0.0",
+                DisabledHooks = ["preInstall", "postUpdate"],
+            },
+        ];
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert.That(issues).IsEmpty();
+    }
+
+    [Test]
+    public async Task PackManifest_WhenReferenceSuppressionDuplicated_IsRejected()
+    {
+        var manifest = CreateValidPackManifest();
+        manifest.Packs =
+        [
+            new PackManifest.PackReference
+            {
+                Id = "dependency",
+                Version = "1.0.0",
+                DisabledHooks = ["preInstall", "preInstall"],
+            },
+        ];
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert.That(issues).IsNotEmpty();
+    }
+
+    [Test]
+    public async Task PackManifest_WhenReferenceSuppressionUnknown_IsRejected()
+    {
+        var manifest = CreateValidPackManifest();
+        manifest.Packs =
+        [
+            new PackManifest.PackReference
+            {
+                Id = "dependency",
+                Version = "1.0.0",
+                DisabledHooks = ["preRemove"],
+            },
+        ];
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert.That(issues).IsNotEmpty();
+    }
+
+    [Test]
+    public async Task ProjectConfiguration_WhenLocalSourceAbsolute_IsRejected()
+    {
+        var configuration = new ProjectConfiguration
+        {
+            SchemaVersion = 1,
+            Sources = [new ProjectConfiguration.LocalSource { Name = "local", Path = @"C:\packs" }],
+        };
+
+        var issues = ManifestModelValidator.Validate(configuration);
+
+        await Assert.That(issues).IsNotEmpty();
+    }
+
+    [Test]
+    public async Task ProjectConfiguration_WhenGitSourcePathUnsafe_IsRejected()
+    {
+        var configuration = new ProjectConfiguration
+        {
+            SchemaVersion = 1,
+            Sources =
+            [
+                new ProjectConfiguration.GitSource
+                {
+                    Name = "git",
+                    Url = "https://example.test/packs.git",
+                    Path = "../packs",
+                },
+            ],
+        };
+
+        var issues = ManifestModelValidator.Validate(configuration);
+
+        await Assert.That(issues).IsNotEmpty();
+    }
+
+    [Test]
+    public async Task ProjectConfiguration_WhenSourceAndRequestedPackValid_IsAccepted()
+    {
+        var configuration = new ProjectConfiguration
+        {
+            SchemaVersion = 1,
+            Sources = [new ProjectConfiguration.LocalSource { Name = "local", Path = "packs" }],
+            Packs =
+            [
+                new ProjectConfiguration.RequestedPack
+                {
+                    Id = "example",
+                    Version = "1.0.0",
+                    Destination = "config",
+                },
+            ],
+            Variables = new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                ["enableFeature"] = true,
+            },
+        };
+
+        var issues = ManifestModelValidator.Validate(configuration);
+
+        await Assert.That(issues).IsEmpty();
+    }
+
+    [Test]
+    public async Task ProjectConfiguration_WhenSourceNamesDuplicated_IsRejected()
+    {
+        var configuration = new ProjectConfiguration
+        {
+            SchemaVersion = 1,
+            Sources =
+            [
+                new ProjectConfiguration.LocalSource { Name = "shared", Path = "packs" },
+                new ProjectConfiguration.GitSource
+                {
+                    Name = "shared",
+                    Url = "https://example.test/packs.git",
+                },
+            ],
+        };
+
+        var issues = ManifestModelValidator.Validate(configuration);
+
+        await Assert.That(issues).IsNotEmpty();
+    }
+
+    [Test]
+    public async Task ProjectConfiguration_WhenProjectTrustValid_IsAccepted()
+    {
+        var configuration = CreateConfigurationWithSource();
+        configuration.Trust = new ProjectConfiguration.ProjectTrust
+        {
+            Sources = ["local"],
+            Packs = [new ProjectConfiguration.TrustedPack { Id = "example", Source = "local" }],
+        };
+
+        var issues = ManifestModelValidator.Validate(configuration);
+
+        await Assert.That(issues).IsEmpty();
+    }
+
+    [Test]
+    public async Task ProjectConfiguration_WhenProjectTrustDuplicated_IsRejected()
+    {
+        var configuration = CreateConfigurationWithSource();
+        configuration.Trust = new ProjectConfiguration.ProjectTrust
+        {
+            Sources = ["local", "local"],
+            Packs =
+            [
+                new ProjectConfiguration.TrustedPack { Id = "example", Source = "local" },
+                new ProjectConfiguration.TrustedPack { Id = "example", Source = "local" },
+            ],
+        };
+
+        var issues = ManifestModelValidator.Validate(configuration);
+
+        await Assert.That(issues).IsNotEmpty();
+    }
+
+    [Test]
+    public async Task ProjectConfiguration_WhenPackTrustUnboundOrVersioned_IsRejected()
+    {
+        var configuration = CreateConfigurationWithSource();
+        configuration.Trust = new ProjectConfiguration.ProjectTrust
+        {
+            Packs =
+            [
+                new ProjectConfiguration.TrustedPack { Id = "example@1.0.0", Source = "unknown" },
+            ],
+        };
+
+        var issues = ManifestModelValidator.Validate(configuration);
+
+        await Assert.That(issues).IsNotEmpty();
+    }
+
+    [Test]
+    public async Task ProjectLockFile_WhenGitCommitMissing_IsRejected()
+    {
+        var lockFile = new ProjectLockFile
+        {
+            SchemaVersion = 1,
+            Packs =
+            [
+                new ProjectLockFile.ResolvedPack
+                {
+                    Id = "example",
+                    Version = "1.0.0",
+                    PackPath = "example",
+                    GitSource = new GitSourceProvenance
+                    {
+                        Url = "https://example.test/packs.git",
+                        ResolvedCommit = "not-a-commit",
+                    },
+                },
+            ],
+        };
+
+        var issues = ManifestModelValidator.Validate(lockFile);
+
+        await Assert.That(issues).IsNotEmpty();
+    }
+
+    [Test]
+    public async Task ProjectLockFile_WhenManagedFileHashInvalid_IsRejected()
+    {
+        var lockFile = new ProjectLockFile
+        {
+            SchemaVersion = 1,
+            Packs =
+            [
+                new ProjectLockFile.ResolvedPack
+                {
+                    Id = "example",
+                    Version = "1.0.0",
+                    SourcePath = "packs",
+                    PackPath = "example",
+                    ManagedFiles =
+                    [
+                        new ProjectLockFile.ManagedFile
+                        {
+                            TargetPath = "content.txt",
+                            Sha256 = "invalid",
+                        },
+                    ],
+                },
+            ],
+        };
+
+        var issues = ManifestModelValidator.Validate(lockFile);
+
+        await Assert.That(issues).IsNotEmpty();
+    }
+
+    [Test]
+    public async Task ProjectLockFile_WhenLocalSourceIdentityValid_IsAccepted()
+    {
+        var lockFile = new ProjectLockFile
+        {
+            SchemaVersion = 1,
+            Packs =
+            [
+                new ProjectLockFile.ResolvedPack
+                {
+                    Id = "example",
+                    Version = "1.0.0",
+                    SourceName = "local",
+                    SourceIdentity = new ConfiguredSourceIdentity
+                    {
+                        Type = "local",
+                        Path = "packs",
+                    },
+                    SourcePath = "packs",
+                    PackPath = "example",
+                },
+            ],
+        };
+
+        var issues = ManifestModelValidator.Validate(lockFile);
+
+        await Assert.That(issues).IsEmpty();
+    }
+
+    [Test]
+    public async Task ProjectLockFile_WhenSourceIdentityMissing_IsRejected()
+    {
+        var lockFile = new ProjectLockFile
+        {
+            SchemaVersion = 1,
+            Packs =
+            [
+                new ProjectLockFile.ResolvedPack
+                {
+                    Id = "example",
+                    Version = "1.0.0",
+                    SourcePath = "packs",
+                    PackPath = "example",
+                },
+            ],
+        };
+
+        var issues = ManifestModelValidator.Validate(lockFile);
+
+        await Assert.That(issues).IsNotEmpty();
+    }
+
+    [Test]
+    public async Task ProjectLockFile_WhenGitIdentityAndProvenanceValid_IsAccepted()
+    {
+        var lockFile = new ProjectLockFile
+        {
+            SchemaVersion = 1,
+            Packs =
+            [
+                new ProjectLockFile.ResolvedPack
+                {
+                    Id = "example",
+                    Version = "1.0.0",
+                    SourceName = "git",
+                    SourceIdentity = new ConfiguredSourceIdentity
+                    {
+                        Type = "git",
+                        Url = "https://example.test/packs.git",
+                        Ref = "main",
+                        Path = "packs",
+                    },
+                    GitSource = new GitSourceProvenance
+                    {
+                        Url = "https://example.test/packs.git",
+                        Ref = "main",
+                        Path = "packs",
+                        ResolvedCommit = "0123456789abcdef0123456789abcdef01234567",
+                    },
+                    PackPath = "example",
+                },
+            ],
+        };
+
+        var issues = ManifestModelValidator.Validate(lockFile);
+
+        await Assert.That(issues).IsEmpty();
+    }
+
+    [Test]
+    public async Task ProjectLockFile_WhenGitIdentityDiffersFromProvenance_IsRejected()
+    {
+        var lockFile = new ProjectLockFile
+        {
+            SchemaVersion = 1,
+            Packs =
+            [
+                new ProjectLockFile.ResolvedPack
+                {
+                    Id = "example",
+                    Version = "1.0.0",
+                    SourceName = "git",
+                    SourceIdentity = new ConfiguredSourceIdentity
+                    {
+                        Type = "git",
+                        Url = "https://other.example.test/packs.git",
+                    },
+                    GitSource = new GitSourceProvenance
+                    {
+                        Url = "https://example.test/packs.git",
+                        ResolvedCommit = "0123456789abcdef0123456789abcdef01234567",
+                    },
+                    PackPath = "example",
+                },
+            ],
+        };
+
+        var issues = ManifestModelValidator.Validate(lockFile);
+
+        await Assert.That(issues).IsNotEmpty();
+    }
+
+    [Test]
+    public async Task UserSettings_WhenProjectPathRelative_IsRejected()
+    {
+        var settings = new UserSettings
+        {
+            Projects = new Dictionary<string, LocalProjectTrust>(StringComparer.Ordinal)
+            {
+                ["relative/project"] = new(),
+            },
+        };
+
+        var issues = ManifestModelValidator.Validate(settings);
+
+        await Assert.That(issues).IsNotEmpty();
+    }
+
+    [Test]
+    public async Task UserSettings_WhenGlobalSourceAndPackTrustValid_IsAccepted()
+    {
+        var source = new ConfiguredSourceIdentity
+        {
+            Type = "local",
+            Path = ProjectPath.Normalize(Path.GetFullPath("packs")),
+        };
+        var settings = new UserSettings
+        {
+            Global = new UserTrust
+            {
+                Sources = [source],
+                Packs = [new TrustedPackIdentity { Id = "example", Source = source }],
+            },
+        };
+
+        var issues = ManifestModelValidator.Validate(settings);
+
+        await Assert.That(issues).IsEmpty();
+    }
+
+    [Test]
+    public async Task UserSettings_WhenCanonicalProjectKeyValid_IsAccepted()
+    {
+        var projectPath = ProjectPath.Normalize(Path.GetFullPath("project"));
+        var settings = new UserSettings
+        {
+            Projects = new Dictionary<string, LocalProjectTrust>(StringComparer.Ordinal)
+            {
+                [projectPath] = new(),
+            },
+        };
+
+        var issues = ManifestModelValidator.Validate(settings);
+
+        await Assert.That(issues).IsEmpty();
+    }
+
+    [Test]
+    public async Task UserSettings_WhenTrustEntriesDuplicated_IsRejected()
+    {
+        var source = new ConfiguredSourceIdentity
+        {
+            Type = "local",
+            Path = ProjectPath.Normalize(Path.GetFullPath("packs")),
+        };
+        var pack = new TrustedPackIdentity { Id = "example", Source = source };
+        var settings = new UserSettings
+        {
+            Global = new UserTrust { Sources = [source, source], Packs = [pack, pack] },
+        };
+
+        var issues = ManifestModelValidator.Validate(settings);
+
+        await Assert.That(issues).IsNotEmpty();
+    }
+
+    private static ProjectConfiguration CreateConfigurationWithSource() =>
+        new()
+        {
+            SchemaVersion = 1,
+            Sources = [new ProjectConfiguration.LocalSource { Name = "local", Path = "packs" }],
+        };
+
+    private static PackManifest CreateValidPackManifest() =>
+        new()
+        {
+            Id = "example",
+            Version = "1.0.0",
+            Author = "Lunaris Digital Solutions",
+            License = "MIT",
+            ManagedFiles =
+            [
+                new PackManifest.PackManagedFile { Source = "source.txt", Target = "target.txt" },
+            ],
+        };
+}

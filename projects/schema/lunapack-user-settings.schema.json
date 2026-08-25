@@ -1,0 +1,131 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://lunapack.dev/schema/lunapack-user-settings.schema.json",
+  "title": "LunaPack user settings",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "global": {
+      "$ref": "#/definitions/userTrust"
+    },
+    "projects": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^(?!.*(?:^|[\\/])\\.\\.(?:[\\/]|$))(?:/|[A-Za-z]:[\\/]|\\\\).*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/localProjectTrust"
+      }
+    }
+  },
+  "definitions": {
+    "configuredSourceIdentity": {
+      "oneOf": [
+        { "$ref": "#/definitions/localSourceIdentity" },
+        { "$ref": "#/definitions/gitSourceIdentity" }
+      ]
+    },
+    "gitSourceIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "url"],
+      "properties": {
+        "path": {
+          "$ref": "#/definitions/repositoryRelativePath"
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "enum": ["git"]
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "localProjectTrust": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sources", "packs"],
+      "properties": {
+        "acknowledgements": {
+          "$ref": "#/definitions/userTrust"
+        },
+        "packs": {
+          "$ref": "#/definitions/trustedPacks"
+        },
+        "sources": {
+          "$ref": "#/definitions/trustedSources"
+        }
+      }
+    },
+    "localSourceIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "path"],
+      "properties": {
+        "path": {
+          "$ref": "#/definitions/canonicalAbsolutePath"
+        },
+        "type": {
+          "enum": ["local"]
+        }
+      }
+    },
+    "trustedPack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "source"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^@]+$"
+        },
+        "source": {
+          "$ref": "#/definitions/configuredSourceIdentity"
+        }
+      }
+    },
+    "trustedPacks": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/definitions/trustedPack"
+      }
+    },
+    "trustedSources": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/definitions/configuredSourceIdentity"
+      }
+    },
+    "userTrust": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sources", "packs"],
+      "properties": {
+        "packs": {
+          "$ref": "#/definitions/trustedPacks"
+        },
+        "sources": {
+          "$ref": "#/definitions/trustedSources"
+        }
+      }
+    },
+    "canonicalAbsolutePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!.*(?:^|[\\/])\\.\\.(?:[\\/]|$))(?:/|[A-Za-z]:[\\/]|\\\\).*$"
+    },
+    "repositoryRelativePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![A-Za-z]:[\\/])(?![\\/])(?!.*(?:^|[\\/])\\.\\.(?:[\\/]|$)).+"
+    }
+  }
+}

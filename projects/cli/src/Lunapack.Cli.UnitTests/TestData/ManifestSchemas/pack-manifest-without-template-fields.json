@@ -1,0 +1,12 @@
+{
+  "id": "legacy-pack",
+  "version": "1.0.0",
+  "license": "MIT",
+  "author": "Lunaris Digital Solutions <info@lunaris.digital>",
+  "managedFiles": [
+    {
+      "source": "README.md",
+      "target": "README.md"
+    }
+  ]
+}

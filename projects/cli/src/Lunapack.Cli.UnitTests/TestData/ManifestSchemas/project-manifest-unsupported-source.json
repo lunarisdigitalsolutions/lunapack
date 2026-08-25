@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    {
+      "name": "remote",
+      "type": "remote",
+      "path": "https://example.test/packs"
+    }
+  ],
+  "packs": [],
+  "trust": { "sources": [], "packs": [] }
+}

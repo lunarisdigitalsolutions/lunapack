@@ -1,0 +1,30 @@
+name: Feature request
+description: Propose a focused improvement to LunaPack.
+title: 'feat: '
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Describe the user or maintainer problem, not only a proposed implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe observable behavior and affected users.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Note current workarounds or smaller options.
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility impact
+      description: Identify possible CLI, schema, pack, lock-file, or workflow changes.

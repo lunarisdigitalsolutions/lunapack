@@ -1,0 +1,262 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://lunapack.dev/schema/lunapack-lock.schema.json",
+  "title": "LunaPack project lock file",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "packs"],
+  "properties": {
+    "schemaVersion": {
+      "enum": [1]
+    },
+    "packs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/resolvedPack"
+      }
+    }
+  },
+  "definitions": {
+    "managedFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["declaredTargetPath", "targetPath", "sha256"],
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "declaredTargetPath": {
+          "$ref": "#/definitions/repositoryRelativePath"
+        },
+        "targetPath": {
+          "$ref": "#/definitions/relativePath"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[A-Fa-f0-9]{64}$"
+        },
+        "strategy": {
+          "$ref": "#/definitions/managedFileStrategy"
+        }
+      }
+    },
+    "managedFileStrategy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "method"],
+      "properties": {
+        "type": {
+          "enum": ["copy", "merge"]
+        },
+        "method": {
+          "type": "string"
+        }
+      }
+    },
+    "destination": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![A-Za-z]:[\\\\/])(?!\\\\\\\\)(?!/)(?!.*(?:^|[\\\\/])\\.\\.(?:[\\\\/]|$)).+"
+    },
+    "packReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "$ref": "#/definitions/semanticVersion"
+        }
+      }
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![A-Za-z]:[\\\\/])(?![\\\\/]).+"
+    },
+    "gitSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "url", "resolvedCommit"],
+      "properties": {
+        "type": {
+          "enum": ["git"]
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "$ref": "#/definitions/repositoryRelativePath"
+        },
+        "resolvedCommit": {
+          "type": "string",
+          "pattern": "^[A-Fa-f0-9]{40}(?:[A-Fa-f0-9]{24})?$"
+        }
+      }
+    },
+    "gitResolvedPack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "packPath",
+        "sourceName",
+        "sourceIdentity",
+        "gitSource",
+        "packs",
+        "managedFiles"
+      ],
+      "properties": {
+        "destination": {
+          "$ref": "#/definitions/destination"
+        },
+        "sourceName": {
+          "$ref": "#/definitions/sourceName"
+        },
+        "sourceIdentity": {
+          "$ref": "#/definitions/gitSourceIdentity"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "$ref": "#/definitions/semanticVersion"
+        },
+        "sourcePath": {
+          "$ref": "#/definitions/relativePath"
+        },
+        "packPath": {
+          "$ref": "#/definitions/relativePath"
+        },
+        "gitSource": {
+          "$ref": "#/definitions/gitSource"
+        },
+        "packs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/packReference"
+          }
+        },
+        "managedFiles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/managedFile"
+          }
+        }
+      }
+    },
+    "localResolvedPack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "sourceName",
+        "sourceIdentity",
+        "sourcePath",
+        "packPath",
+        "packs",
+        "managedFiles"
+      ],
+      "properties": {
+        "destination": {
+          "$ref": "#/definitions/destination"
+        },
+        "sourceName": {
+          "$ref": "#/definitions/sourceName"
+        },
+        "sourceIdentity": {
+          "$ref": "#/definitions/localSourceIdentity"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "$ref": "#/definitions/semanticVersion"
+        },
+        "sourcePath": {
+          "$ref": "#/definitions/relativePath"
+        },
+        "packPath": {
+          "$ref": "#/definitions/relativePath"
+        },
+        "packs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/packReference"
+          }
+        },
+        "managedFiles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/managedFile"
+          }
+        }
+      }
+    },
+    "repositoryRelativePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![A-Za-z]:[\\\\/])(?![\\\\/])(?!.*(?:^|[\\\\/])\\.\\.(?:[\\\\/]|$)).+"
+    },
+    "gitSourceIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "url"],
+      "properties": {
+        "path": {
+          "$ref": "#/definitions/repositoryRelativePath"
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "enum": ["git"]
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "localSourceIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "path"],
+      "properties": {
+        "path": {
+          "$ref": "#/definitions/relativePath"
+        },
+        "type": {
+          "enum": ["local"]
+        }
+      }
+    },
+    "resolvedPack": {
+      "oneOf": [
+        { "$ref": "#/definitions/localResolvedPack" },
+        { "$ref": "#/definitions/gitResolvedPack" }
+      ]
+    },
+    "sourceName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "semanticVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+    }
+  }
+}

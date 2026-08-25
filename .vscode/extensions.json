@@ -1,0 +1,11 @@
+{
+  "recommendations": [
+    "csharpier.csharpier-vscode",
+    "hbenl.vscode-test-explorer",
+    "ms-dotnettools.csdevkit",
+    "ms-dotnettools.csharp",
+    "editorconfig.editorconfig",
+    "esbenp.prettier-vscode",
+    "DotJoshJohnson.xml"
+  ]
+}

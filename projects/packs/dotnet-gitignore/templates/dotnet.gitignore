@@ -1,0 +1,16 @@
+# BEGIN Lunapack .NET ignores
+# .NET build output
+**/bin/
+**/obj/
+
+# Visual Studio and user settings
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Test results
+TestResults/
+*.trx
+# END Lunapack .NET ignores

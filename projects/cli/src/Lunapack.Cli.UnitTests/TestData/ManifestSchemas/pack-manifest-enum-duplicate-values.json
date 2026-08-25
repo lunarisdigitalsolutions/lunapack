@@ -1,0 +1,16 @@
+{
+  "id": "license-mit",
+  "version": "1.0.0",
+  "parameters": {
+    "licenseKind": {
+      "type": "enum",
+      "values": ["mit", "mit"]
+    }
+  },
+  "managedFiles": [
+    {
+      "source": "LICENSE.md",
+      "target": "LICENSE.md"
+    }
+  ]
+}

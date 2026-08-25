@@ -1,0 +1,18 @@
+<Project>
+  <PropertyGroup Condition="'$(LunapackPackAsTool)' == 'true'">
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>luna</ToolCommandName>
+    <ToolPackageRuntimeIdentifiers>$(RuntimeIdentifiers)</ToolPackageRuntimeIdentifiers>
+    <PackageId>Lunaris.Lunapack.Luna</PackageId>
+    <Title>Luna</Title>
+    <Description>Luna CLI native distribution tool.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/lunarisdigitalsolutions/lunapack</RepositoryUrl>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(LunapackPackAsTool)' == 'true'">
+    <None Include="..\..\..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+</Project>

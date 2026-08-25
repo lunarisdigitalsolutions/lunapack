@@ -1,0 +1,11 @@
+id: dotnet-gitignore
+version: 1.0.0
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Merge .NET build, test, and IDE ignores into a marked section.
+managedFiles:
+  - source: templates/dotnet.gitignore
+    target: .gitignore
+    strategy:
+      type: merge
+      method: section

@@ -1,0 +1,188 @@
+name: Build .NET
+description: Restore, build, test, and optionally publish a .NET project.
+
+inputs:
+  solution-path:
+    description: Path to the solution to restore and build.
+    required: true
+  publish-project-path:
+    description: Path to the project built and published when a runtime identifier is supplied.
+    required: false
+    default: ''
+  runtime-identifier:
+    description: Runtime identifier used when building and publishing a project.
+    required: false
+    default: ''
+  build-configuration:
+    description: Build configuration.
+    required: false
+    default: Release
+  should-run-tests:
+    description: Whether to run the solution's tests with coverage.
+    required: false
+    default: 'true'
+  should-publish:
+    description: Whether to publish the configured project.
+    required: false
+    default: 'false'
+  additional-publish-arguments:
+    description: Optional whitespace-delimited dotnet publish arguments, such as --self-contained true -p:PublishAot=true.
+    required: false
+    default: ''
+  artifact-name:
+    description: Prefix used when uploading test, coverage, or build artifacts.
+    required: false
+    default: dotnet-build
+  artifact-output-path:
+    description: Output directory for an optional published project.
+    required: false
+    default: ''
+  artifact-retention-days:
+    description: Retention period for uploaded artifacts.
+    required: false
+    default: '3'
+  should-upload-test-results:
+    description: Whether to upload test and coverage artifacts.
+    required: false
+    default: 'false'
+  should-upload-build-artifact:
+    description: Whether to upload the published project output.
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Set up .NET SDK
+      uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+      with:
+        global-json-file: global.json
+        cache: true
+        cache-dependency-path: '**/packages.lock.json'
+
+    - name: Restore locked solution dependencies
+      shell: bash
+      run: dotnet restore "${{ inputs.solution-path }}" --locked-mode
+
+    - name: Build solution
+      shell: bash
+      run: dotnet build "${{ inputs.solution-path }}" --configuration "${{ inputs.build-configuration }}" --no-restore
+
+    - name: Publish runtime-specific project
+      if: ${{ inputs.runtime-identifier != '' }}
+      shell: pwsh
+      env:
+        ADDITIONAL_PUBLISH_ARGUMENTS: ${{ inputs.additional-publish-arguments }}
+        BUILD_CONFIGURATION: ${{ inputs.build-configuration }}
+        PUBLISH_PROJECT_PATH: ${{ inputs.publish-project-path }}
+        RUNTIME_IDENTIFIER: ${{ inputs.runtime-identifier }}
+      run: |
+        $ErrorActionPreference = 'Stop'
+
+        if ([string]::IsNullOrWhiteSpace($env:PUBLISH_PROJECT_PATH)) {
+          throw 'PUBLISH_PROJECT_PATH must be supplied when a runtime identifier is specified.'
+        }
+
+        $additionalArguments = @($env:ADDITIONAL_PUBLISH_ARGUMENTS -split '\s+' | Where-Object { $_ })
+        $buildArguments = @(
+          'publish'
+          $env:PUBLISH_PROJECT_PATH
+          '--configuration'
+          $env:BUILD_CONFIGURATION
+          '--runtime'
+          $env:RUNTIME_IDENTIFIER
+          '--no-restore'
+        )
+
+        dotnet @buildArguments @additionalArguments
+
+    - name: Run tests
+      if: ${{ inputs.should-run-tests == 'true' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        dotnet test --solution "${{ inputs.solution-path }}" \
+          --configuration "${{ inputs.build-configuration }}" \
+          --no-build \
+          --no-restore \
+          --results-directory "$RUNNER_TEMP/dotnet-test-results" \
+          --coverage \
+          --coverage-output-format cobertura
+
+    - name: Upload test results
+      if: ${{ always() && inputs.should-run-tests == 'true' && inputs.should-upload-test-results == 'true' }}
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: ${{ inputs.artifact-name }}-test-results
+        path: ${{ runner.temp }}/dotnet-test-results/**/*.trx
+        if-no-files-found: warn
+        retention-days: ${{ inputs.artifact-retention-days }}
+
+    - name: Upload coverage results
+      if: ${{ always() && inputs.should-run-tests == 'true' && inputs.should-upload-test-results == 'true' }}
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: ${{ inputs.artifact-name }}-coverage
+        path: ${{ runner.temp }}/dotnet-test-results/**/*.cobertura.xml
+        if-no-files-found: warn
+        retention-days: ${{ inputs.artifact-retention-days }}
+
+    - name: Publish project
+      if: ${{ inputs.should-publish == 'true' }}
+      shell: pwsh
+      env:
+        ADDITIONAL_PUBLISH_ARGUMENTS: ${{ inputs.additional-publish-arguments }}
+        PUBLISH_PROJECT_PATH: ${{ inputs.publish-project-path }}
+        RUNTIME_IDENTIFIER: ${{ inputs.runtime-identifier }}
+        ARTIFACT_OUTPUT_PATH: ${{ inputs.artifact-output-path }}
+        BUILD_CONFIGURATION: ${{ inputs.build-configuration }}
+      run: |
+        $ErrorActionPreference = 'Stop'
+
+        foreach ($inputName in @('PUBLISH_PROJECT_PATH', 'ARTIFACT_OUTPUT_PATH')) {
+          if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($inputName))) {
+            throw "$inputName must be supplied when publication is enabled."
+          }
+        }
+
+        $additionalArguments = @($env:ADDITIONAL_PUBLISH_ARGUMENTS -split '\s+' | Where-Object { $_ })
+        $publishArguments = @(
+          'publish'
+          $env:PUBLISH_PROJECT_PATH
+          '--configuration'
+          $env:BUILD_CONFIGURATION
+          '--no-build'
+          '--no-restore'
+          '--output'
+          $env:ARTIFACT_OUTPUT_PATH
+        )
+
+        if (-not [string]::IsNullOrWhiteSpace($env:RUNTIME_IDENTIFIER)) {
+          $publishArguments += @('--runtime', $env:RUNTIME_IDENTIFIER)
+        }
+
+        dotnet @publishArguments @additionalArguments
+
+    - name: Publish artifact file list
+      if: ${{ inputs.should-publish == 'true' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        {
+          echo '<details>'
+          echo '<summary><strong>Published files</strong></summary>'
+          echo
+          echo '```text'
+          find "${{ inputs.artifact-output-path }}" -type f | sort
+          echo '```'
+          echo '</details>'
+        } >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Upload published artifact
+      if: ${{ inputs.should-upload-build-artifact == 'true' && success() }}
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ inputs.artifact-output-path }}
+        if-no-files-found: error
+        retention-days: ${{ inputs.artifact-retention-days }}

@@ -1,0 +1,161 @@
+name: 'CLI: Release'
+
+on:
+  push:
+    tags:
+      - '**'
+  workflow_dispatch:
+    inputs:
+      publish-release:
+        description: Publish GitHub Release for selected v<semantic-version> tag after building.
+        required: false
+        type: boolean
+        default: false
+      run-id:
+        description: Workflow run ID containing release artifacts. Skips build jobs and publishes from that run.
+        required: false
+        type: string
+        default: ''
+      dry-run:
+        description: Dry run. Skips publishing to GitHub and NuGet.
+        required: false
+        type: boolean
+        default: false
+      version:
+        description: Optional v<semantic-version> release tag. Defaults to the selected ref.
+        required: false
+        type: string
+        default: ''
+      targets:
+        description: Comma-separated runtime identifiers to build.
+        required: false
+        type: string
+        default: win-x64,linux-x64,linux-arm64,osx-x64,osx-arm64
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cli-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Select build targets
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.run-id == '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.targets.outputs.matrix }}
+    steps:
+      - name: Create target matrix
+        id: targets
+        shell: pwsh
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          PUBLISH_RELEASE: ${{ inputs.publish-release }}
+          TARGETS: ${{ inputs.targets }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $buildVersion = ''
+
+          if ($env:EVENT_NAME -eq 'push' -or $env:PUBLISH_RELEASE -eq 'true') {
+            if ($env:REF_NAME -cnotmatch '^v(?<version>(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?)$') {
+              throw 'Release builds must run against a v<semantic-version> tag without build metadata.'
+            }
+
+            $buildVersion = $Matches['version']
+            $selectedRuntimeIdentifiers = @(
+              'win-x64',
+              'linux-x64',
+              'linux-arm64',
+              'osx-x64',
+              'osx-arm64'
+            )
+          }
+          else {
+            $selectedRuntimeIdentifiers = @(
+              $env:TARGETS -split ',' |
+                ForEach-Object { $_.Trim() } |
+                Where-Object { $_ }
+            )
+          }
+
+          if ($selectedRuntimeIdentifiers.Count -eq 0) {
+            throw 'Select at least one runtime identifier.'
+          }
+
+          $targets = @{
+            'linux-x64' = [PSCustomObject]@{ runner = 'ubuntu-latest'; runtimeIdentifier = 'linux-x64' }
+            'linux-arm64' = [PSCustomObject]@{ runner = 'ubuntu-24.04-arm'; runtimeIdentifier = 'linux-arm64' }
+            'osx-x64' = [PSCustomObject]@{ runner = 'macos-15-intel'; runtimeIdentifier = 'osx-x64' }
+            'osx-arm64' = [PSCustomObject]@{ runner = 'macos-15'; runtimeIdentifier = 'osx-arm64' }
+            'win-x64' = [PSCustomObject]@{ runner = 'windows-latest'; runtimeIdentifier = 'win-x64' }
+          }
+          $selectedTargets = @(
+            foreach ($runtimeIdentifier in $selectedRuntimeIdentifiers) {
+              if (-not $targets.ContainsKey($runtimeIdentifier)) {
+                throw "Unsupported runtime identifier: $runtimeIdentifier. Supported values: $($targets.Keys -join ', ')."
+              }
+
+              [PSCustomObject]@{
+                runner = $targets[$runtimeIdentifier].runner
+                runtimeIdentifier = $targets[$runtimeIdentifier].runtimeIdentifier
+                buildVersion = $buildVersion
+              }
+            }
+          )
+
+          $matrix = ConvertTo-Json -InputObject ([object[]]$selectedTargets) -Compress
+          "matrix=$matrix" >> $env:GITHUB_OUTPUT
+
+  build:
+    name: ${{ matrix.runtimeIdentifier }}
+    needs: plan
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.run-id == '' }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Build Luna CLI
+        uses: ./.github/actions/cli/build
+        with:
+          runtime-identifier: ${{ matrix.runtimeIdentifier }}
+          version: ${{ matrix.buildVersion }}
+          publish-artifacts: 'true'
+
+  release:
+    name: Publish GitHub Release
+    needs: [plan, build]
+    if: ${{ always() && (inputs.run-id != '' || (needs.plan.result == 'success' && needs.build.result == 'success' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish-release)))) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: write
+      id-token: write
+      packages: write
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Release Luna CLI
+        uses: ./.github/actions/cli/release
+        with:
+          version: ${{ inputs.version || github.ref_name }}
+          run-id: ${{ inputs.run-id || github.run_id }}
+          nuget-user: ${{ secrets.NUGET_USER }}
+          dry-run: ${{ inputs.dry-run || 'false' }}

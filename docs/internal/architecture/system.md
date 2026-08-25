@@ -1,0 +1,20 @@
+# System
+
+LunaPack manages versioned engineering packs in consumer projects through its
+`luna` .NET CLI. The command layer parses input and selects a workspace;
+application services own catalog lookup, graph resolution, planning,
+transactions, and state persistence.
+
+The project holds declared intent in `lunapack.yml` and resolved state in
+`lunapack-lock.yml`. The configuration is portable; the lock document is generated
+evidence of selected packs, source provenance, dependency edges, effective
+targets, and rendered-content digests.
+
+The CLI source groups the current behavior by project initialization, sources,
+catalog, pack lifecycle, audit, and schema-backed persistence. Unit tests cover
+isolated behavior with an abstract filesystem. Integration tests invoke the
+built CLI in temporary projects with a real filesystem.
+
+The source boundary is consumer-owned. Pack manifests select exact pack IDs and
+versions, never sources. Local and Git catalogs produce provenance that the
+resolver and lifecycle services retain in lock state.

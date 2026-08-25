@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "sources": [{ "name": "local", "type": "local", "path": "C:\\packs" }],
+  "packs": [],
+  "trust": { "sources": [], "packs": [] }
+}

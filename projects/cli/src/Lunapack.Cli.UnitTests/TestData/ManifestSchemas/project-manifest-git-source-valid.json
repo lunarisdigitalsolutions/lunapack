@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    {
+      "name": "git",
+      "type": "git",
+      "url": "https://example.test/packs.git",
+      "ref": "main",
+      "path": "packs/platform",
+      "timeoutSeconds": 120
+    }
+  ],
+  "packs": [],
+  "trust": { "sources": [], "packs": [] }
+}

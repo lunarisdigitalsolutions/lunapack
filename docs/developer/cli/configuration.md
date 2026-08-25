@@ -1,0 +1,31 @@
+# Configuration
+
+Project state consists of portable configuration in `lunapack.yml` and generated
+resolved state in `lunapack-lock.yml`. Both documents use `schemaVersion: 1` and
+are created together by `luna init`.
+
+- `lunapack.yml`: Owned by the project team. It contains project-relative local and Git sources, requested root packs, and optional string and Boolean variables.
+- `lunapack-lock.yml`: Owned by LunaPack. It records exact resolved packs, provenance, dependency edges, effective targets, and rendered-content SHA-256 digests.
+
+Variables can satisfy matching pack parameters but do not persist explicit
+install input. Commands that change sources or roots validate and update both
+documents as one recoverable state change.
+
+During `luna install`, LunaPack prompts for each required parameter that is not
+already supplied by an explicit parameter, a composite-pack binding, or a
+matching project variable.
+
+Local-source paths must be relative to the project. A Git source requires a
+repository URL; it may select a branch or commit and a repository-relative
+subdirectory. Git operations use a configurable timeout from 1 through 300
+seconds, with 300 seconds by default.
+
+Git must be available on the process path. LunaPack caches discovered Git metadata
+under the workspace `.lunapack` directory and never stores Git credentials there.
+The lock document records the resolved commit used for each Git pack.
+
+## Trust storage
+
+Project trust is stored in `lunapack.yml`. Local-user and global-user trust are
+stored outside the repository in user settings. Packs cannot grant themselves
+trust through `pack.yml`; consumers control every persisted trust entry.
