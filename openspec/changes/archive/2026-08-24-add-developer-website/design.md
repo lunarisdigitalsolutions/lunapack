@@ -7,7 +7,7 @@ to commit SHAs. Root `package.json` serves repository tooling, whereas this
 website must own all of its npm metadata beneath `projects/website/src`.
 
 The repository owner and name establish the initial project Pages address:
-`https://lunarisdigitalsolutions.github.io/lunapack/`. This change
+`https://lunapack.dev/`. This change
 does not introduce a custom domain.
 
 ## Goals / Non-Goals
