@@ -17,7 +17,7 @@ use a concrete pack ID when the completed command supplies one.
 
 - **WHEN** `luna update` successfully completes one or more updates
 - **THEN** Luna reports the updated requested-root count and recommends `luna
-  audit` and `luna outdated`
+audit` and `luna outdated`
 
 #### Scenario: Uninstall a pack while others remain
 
@@ -44,5 +44,5 @@ and append commands that help locate an available pack.
 - **WHEN** a user runs `luna install unknown-pack` and no configured source
   provides that pack
 - **THEN** Luna reports that `unknown-pack` was not found, recommends `luna
-  search unknown-pack` followed by `luna discover`, and leaves project files and
+search unknown-pack` followed by `luna discover`, and leaves project files and
   state unchanged

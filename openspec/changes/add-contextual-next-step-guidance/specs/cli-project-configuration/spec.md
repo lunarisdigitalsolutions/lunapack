@@ -10,13 +10,13 @@ persisted state after the operation.
 
 - **WHEN** `luna init` successfully creates project state
 - **THEN** Luna confirms initialization and recommends `luna sources add git
-  <name> <repository-url>` followed by `luna sources list`
+<name> <repository-url>` followed by `luna sources list`
 
 #### Scenario: Add a source
 
 - **WHEN** any `luna sources add` variant successfully persists a source
 - **THEN** Luna confirms the named source and recommends `luna discover`, `luna
-  search <keyword>`, and `luna install <pack>`
+search <keyword>`, and `luna install <pack>`
 
 ### Requirement: Remove a configured source safely
 
@@ -38,7 +38,7 @@ for all other sources.
 - **WHEN** a user removes the only configured source
 - **THEN** Luna persists the source and associated trust removal, reports that
   no sources remain, and recommends `luna sources add git <name>
-  <repository-url>`
+<repository-url>`
 
 #### Scenario: Remove a source used by an installed pack
 
