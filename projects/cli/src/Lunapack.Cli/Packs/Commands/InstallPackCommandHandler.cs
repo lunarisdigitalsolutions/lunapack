@@ -6,6 +6,7 @@ namespace Lunapack.Cli;
 internal sealed class InstallPackCommandHandler(
     IFileSystem fileSystem,
     PackLifecycleService packLifecycleService,
+    LinkCommandDispatcher linkCommandDispatcher,
     WorkspaceDirectoryResolver workspaceDirectoryResolver,
     INextStepAdvisor nextStepAdvisor,
     NextStepRenderer nextStepRenderer,
@@ -146,6 +147,16 @@ internal sealed class InstallPackCommandHandler(
         if (prerequisiteFailure is not null)
         {
             return prerequisiteFailure.Value;
+        }
+
+        var linkExitCode = await linkCommandDispatcher.TryInstallAsync(
+            workspaceDirectory,
+            packReference,
+            adoptExisting
+        );
+        if (linkExitCode is not null)
+        {
+            return linkExitCode.Value;
         }
 
         var installationRequest = CreateInstallationRequest(

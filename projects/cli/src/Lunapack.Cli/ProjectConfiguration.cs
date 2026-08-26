@@ -2,6 +2,8 @@ namespace Lunapack.Cli;
 
 internal sealed record ProjectConfiguration
 {
+    public Dictionary<string, Link> Links { get; set; } = [];
+
     public List<RequestedPack> Packs { get; set; } = [];
 
     public Remapping? Remap { get; set; }
@@ -17,6 +19,25 @@ internal sealed record ProjectConfiguration
     internal record Source
     {
         public required string Name { get; set; }
+    }
+
+    internal sealed record Link
+    {
+        public List<string> Excludes { get; set; } = [];
+
+        public bool? Flatten { get; set; }
+
+        public List<string> Includes { get; set; } = [];
+
+        public string? Path { get; set; }
+
+        public string? Ref { get; set; }
+
+        public required string Source { get; set; }
+
+        public string? StripPrefix { get; set; }
+
+        public string? Target { get; set; }
     }
 
     internal sealed record GitSource : Source

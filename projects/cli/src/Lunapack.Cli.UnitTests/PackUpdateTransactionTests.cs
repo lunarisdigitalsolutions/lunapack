@@ -52,8 +52,17 @@ public sealed class PackUpdateTransactionTests
             new PackUpdatePlan([
                 new CreateManagedFileUpdateAction(createdFile),
                 new DeleteManagedFileUpdateAction(
-                    previousPack,
-                    previousPack.ManagedFiles.Single(),
+                    new ManagedRootOwner(
+                        ManagedRootKind.Pack,
+                        previousPack.Id,
+                        previousPack.Version
+                    ),
+                    new ManagedRootFile(
+                        previousPack.PackPath,
+                        previousPack.ManagedFiles.Single().TargetPath,
+                        previousPack.ManagedFiles.Single().TargetPath,
+                        previousPack.ManagedFiles.Single().Sha256
+                    ),
                     ProjectPath("removed.txt")
                 ),
             ])

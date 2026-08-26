@@ -394,10 +394,59 @@ internal static partial class ManifestModelValidator
         }
 
         ValidateRequestedPacks(configuration.Packs, issues);
+        ValidateLinks(configuration.Links, sourceNames, issues);
         ValidateProjectTrust(configuration.Trust, sourceNames, issues);
         ValidateVariables(configuration.Variables, issues);
 
         return issues;
+    }
+
+    private static void ValidateLinks(
+        Dictionary<string, ProjectConfiguration.Link> links,
+        HashSet<string> configuredSourceNames,
+        List<string> issues
+    )
+    {
+        foreach (var (name, link) in links)
+        {
+            if (!IsPackId(name))
+            {
+                issues.Add($"Link name '{name}' must use pack-ID syntax.");
+            }
+
+            if (string.IsNullOrEmpty(link.Source) || !configuredSourceNames.Contains(link.Source))
+            {
+                issues.Add($"Link '{name}' must reference a configured source name.");
+            }
+
+            if (link.Includes.Count == 0 || link.Includes.Any(string.IsNullOrEmpty))
+            {
+                issues.Add($"Link '{name}' must declare at least one non-empty include pattern.");
+            }
+
+            if (
+                link
+                    .Includes.Concat(link.Excludes)
+                    .Any(pattern => !IsSafeProjectRelativePath(pattern))
+            )
+            {
+                issues.Add($"Link '{name}' patterns must be safe source-relative paths.");
+            }
+
+            if (
+                (link.Path is not null && !IsSafeProjectRelativePath(link.Path))
+                || (link.Target is not null && !IsSafeProjectRelativePath(link.Target))
+                || (link.StripPrefix is not null && !IsSafeProjectRelativePath(link.StripPrefix))
+            )
+            {
+                issues.Add($"Link '{name}' paths must be safe relative paths.");
+            }
+
+            if (link.Ref is { Length: 0 })
+            {
+                issues.Add($"Link '{name}' ref must not be empty.");
+            }
+        }
     }
 
     private static void ValidateProjectTrust(
@@ -447,7 +496,54 @@ internal static partial class ManifestModelValidator
             ValidateResolvedPack(resolvedPack, issues);
         }
 
+        foreach (var (name, resolvedLink) in lockFile.Links)
+        {
+            ValidateResolvedLink(name, resolvedLink, issues);
+        }
+
         return issues;
+    }
+
+    private static void ValidateResolvedLink(
+        string name,
+        ProjectLockFile.ResolvedLink resolvedLink,
+        List<string> issues
+    )
+    {
+        if (!IsPackId(name))
+        {
+            issues.Add($"Resolved link name '{name}' must use pack-ID syntax.");
+        }
+
+        if (string.IsNullOrEmpty(resolvedLink.SourceName) || resolvedLink.SourceIdentity is null)
+        {
+            issues.Add($"Resolved link '{name}' must define source name and identity.");
+        }
+
+        if (!IsSha256(resolvedLink.DefinitionSha256))
+        {
+            issues.Add($"Resolved link '{name}' must define a SHA-256 definition hash.");
+        }
+
+        if (resolvedLink.GitSource is { } gitSource && !IsGitCommit(gitSource.ResolvedCommit))
+        {
+            issues.Add($"Resolved link '{name}' must record a resolved Git commit.");
+        }
+
+        foreach (var file in resolvedLink.Files)
+        {
+            if (
+                !IsSafeProjectRelativePath(file.SourcePath)
+                || !IsSafeProjectRelativePath(file.DeclaredTargetPath)
+                || !IsRelativePath(file.TargetPath)
+                || !IsSha256(file.Sha256)
+            )
+            {
+                issues.Add(
+                    $"Resolved link '{name}' files must define safe source, declared, and effective target paths and a SHA-256 hash."
+                );
+            }
+        }
     }
 
     public static IReadOnlyList<string> Validate(UserSettings settings)
