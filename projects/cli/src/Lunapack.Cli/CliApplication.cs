@@ -227,6 +227,8 @@ internal sealed class CliApplication(
         RootCommand rootCommand,
         IFileSystem fileSystem,
         WorkspaceDirectoryResolver workspaceDirectoryResolver,
+        INextStepAdvisor nextStepAdvisor,
+        NextStepRenderer nextStepRenderer,
         string projectDirectory,
         Option<string?> workspaceOption,
         CliConsole console
@@ -236,6 +238,8 @@ internal sealed class CliApplication(
                 fileSystem,
                 new PackManifestStore(fileSystem),
                 workspaceDirectoryResolver,
+                nextStepAdvisor,
+                nextStepRenderer,
                 console
             ).CreateCommand(projectDirectory, workspaceOption)
         );
@@ -252,6 +256,8 @@ internal sealed class CliApplication(
             rootCommand,
             fileSystem,
             services.WorkspaceDirectoryResolver,
+            services.NextStepAdvisor,
+            services.NextStepRenderer,
             projectDirectory,
             workspaceOption,
             console

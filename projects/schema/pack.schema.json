@@ -15,7 +15,7 @@
     },
     "id": {
       "type": "string",
-      "minLength": 1
+      "pattern": "^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$"
     },
     "homepage": {
       "type": "string",
@@ -280,7 +280,7 @@
         },
         "id": {
           "type": "string",
-          "minLength": 1
+          "pattern": "^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$"
         },
         "parameters": {
           "type": "object",

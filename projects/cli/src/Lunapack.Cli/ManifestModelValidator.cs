@@ -20,6 +20,7 @@ internal static partial class ManifestModelValidator
 
         var issues = new List<string>();
         ValidateRequiredValue(manifest.Id, "id", issues);
+        ValidatePackId(manifest.Id, "Pack", issues);
         ValidateRequiredValue(manifest.Version, "version", issues);
         ValidateRequiredMetadata(manifest.Author, "author", issues);
         ValidateRequiredMetadata(manifest.License, "license", issues);
@@ -89,6 +90,14 @@ internal static partial class ManifestModelValidator
         if (value is null)
         {
             issues.Add($"Pack {propertyName} is required.");
+        }
+    }
+
+    private static void ValidatePackId(string? id, string subject, List<string> issues)
+    {
+        if (!string.IsNullOrEmpty(id) && !PackIdRegex().IsMatch(id))
+        {
+            issues.Add($"{subject} ID '{id}' must use hyphen-separated alphanumeric segments.");
         }
     }
 
@@ -256,6 +265,10 @@ internal static partial class ManifestModelValidator
             {
                 issues.Add("Pack reference must define an ID and semantic version.");
             }
+            else
+            {
+                ValidatePackId(packReference.Id, "Pack reference", issues);
+            }
 
             foreach (var (name, value) in packReference.Parameters)
             {
@@ -332,6 +345,9 @@ internal static partial class ManifestModelValidator
 
     public static bool IsSemanticVersion(string? value) =>
         value is not null && SemanticVersionRegex().IsMatch(value);
+
+    public static bool IsPackId(string? value) =>
+        !string.IsNullOrEmpty(value) && PackIdRegex().IsMatch(value);
 
     public static IReadOnlyList<string> Validate(ProjectConfiguration configuration)
     {
@@ -811,6 +827,12 @@ internal static partial class ManifestModelValidator
         RegexOptions.CultureInvariant | RegexOptions.NonBacktracking
     )]
     private static partial Regex ParameterNameRegex();
+
+    [GeneratedRegex(
+        "^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$",
+        RegexOptions.CultureInvariant | RegexOptions.NonBacktracking
+    )]
+    private static partial Regex PackIdRegex();
 
     [GeneratedRegex(
         "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$",

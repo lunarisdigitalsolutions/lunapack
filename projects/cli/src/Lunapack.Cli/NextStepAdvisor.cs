@@ -76,6 +76,37 @@ internal sealed class NextStepAdvisor(IFileSystem fileSystem, IProjectStateStore
     ) =>
         context switch
         {
+            NextStepContext.PackManifestMissing =>
+            [
+                new("Create a pack manifest", "luna pack init"),
+            ],
+            NextStepContext.PackManifestPresent =>
+            [
+                new("Show the manifest", "luna pack show"),
+                new("Add a managed file", "luna pack add file <path>"),
+                new("Validate the manifest", "luna pack validate"),
+            ],
+            NextStepContext.PackInitialized =>
+            [
+                new("Add a managed file", "luna pack add file <path>"),
+                new("Set pack metadata", "luna pack set description <value>"),
+                new("Validate the manifest", "luna pack validate"),
+            ],
+            NextStepContext.PackModified =>
+            [
+                new("Show the manifest", "luna pack show"),
+                new("Validate the manifest", "luna pack validate"),
+            ],
+            NextStepContext.PackDisplayed =>
+            [
+                new("Add a managed file", "luna pack add file <path>"),
+                new("Validate the manifest", "luna pack validate"),
+            ],
+            NextStepContext.PackValidated =>
+            [
+                new("Show the manifest", "luna pack show"),
+                new("Add a managed file", "luna pack add file <path>"),
+            ],
             NextStepContext.WorkspaceInitialized =>
             [
                 new("Add a source", "luna sources add git <name> <repository-url>"),

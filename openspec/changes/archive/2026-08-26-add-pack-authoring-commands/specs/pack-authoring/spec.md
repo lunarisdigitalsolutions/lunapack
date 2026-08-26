@@ -12,7 +12,8 @@ collecting every required manifest value. It SHALL accept `--id` and `--version`
 default the version to `1.0.0`, prompt for missing required values only when an
 interactive terminal is available, and refuse to overwrite an existing
 manifest. The generated manifest SHALL pass the published pack schema and use
-canonical YAML property names.
+canonical YAML property names. Pack IDs SHALL use alphanumeric segments joined
+by single hyphens. The interactive license prompt SHALL default to `MIT`.
 
 #### Scenario: Initialize from options
 
@@ -23,7 +24,14 @@ canonical YAML property names.
 
 - **WHEN** an author runs `luna pack init` in an interactive terminal
 - **THEN** LunaPack prompts for the missing pack ID, offers `1.0.0` as the
-  version default, and writes only after the resulting manifest validates
+  version default and `MIT` as the license default, and writes only after the
+  resulting manifest validates
+
+#### Scenario: Reject an invalid pack ID
+
+- **WHEN** an author supplies a pack ID with any non-alphanumeric, non-hyphen
+  character, repeated hyphens, or leading or trailing hyphen
+- **THEN** LunaPack rejects the manifest and preserves any existing file
 
 #### Scenario: Reject missing non-interactive input
 

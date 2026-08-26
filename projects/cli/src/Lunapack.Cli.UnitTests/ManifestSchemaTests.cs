@@ -33,6 +33,87 @@ public sealed class ManifestSchemaTests
     }
 
     [Test]
+    [Arguments("example-pack", true)]
+    [Arguments("Example-Pack2", true)]
+    [Arguments("example_pack", false)]
+    [Arguments("-example", false)]
+    [Arguments("example-", false)]
+    [Arguments("example--pack", false)]
+    public async Task PackManifest_WhenIdProvided_RequiresKebabCase(string id, bool expectedValid)
+    {
+        var manifest = new PackManifest
+        {
+            Id = id,
+            Version = "1.0.0",
+            Author = "Example Author",
+            License = "MIT",
+        };
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert.That(issues.Count == 0).IsEqualTo(expectedValid);
+    }
+
+    [Test]
+    public async Task PackManifest_WhenCompositeReferenceIdIsNotKebabCase_IsRejected()
+    {
+        var manifest = new PackManifest
+        {
+            Id = "example",
+            Version = "1.0.0",
+            Author = "Example Author",
+            License = "MIT",
+            Packs = [new PackManifest.PackReference { Id = "example_pack", Version = "1.0.0" }],
+        };
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert
+            .That(issues)
+            .Contains(
+                "Pack reference ID 'example_pack' must use hyphen-separated alphanumeric segments."
+            );
+    }
+
+    [Test]
+    public async Task PackSchema_WhenIdDeclared_RequiresKebabCase()
+    {
+        using var schema = JsonDocument.Parse(
+            File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "pack.schema.json"))
+        );
+        var pattern = schema
+            .RootElement.GetProperty("properties")
+            .GetProperty("id")
+            .GetProperty("pattern")
+            .GetString();
+        if (pattern is null)
+        {
+            throw new InvalidOperationException("Pack ID schema pattern is missing.");
+        }
+
+        await Assert
+            .That(
+                Regex.IsMatch(
+                    "example-pack",
+                    pattern,
+                    RegexOptions.CultureInvariant,
+                    TimeSpan.FromSeconds(1)
+                )
+            )
+            .IsTrue();
+        await Assert
+            .That(
+                Regex.IsMatch(
+                    "example_pack",
+                    pattern,
+                    RegexOptions.CultureInvariant,
+                    TimeSpan.FromSeconds(1)
+                )
+            )
+            .IsFalse();
+    }
+
+    [Test]
     [Arguments("https://lunapack.dev/packs/example", true)]
     [Arguments("HTTPS://lunapack.dev/packs/example", true)]
     [Arguments("http://", false)]

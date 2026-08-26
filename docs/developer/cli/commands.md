@@ -68,9 +68,14 @@ project. Pack trust and pack-trust revocation require `--source` or `-s`. See
 
 ## Pack Authoring
 
+- `luna pack`: Recommends `luna pack init` when the current directory has no
+  `pack.yml`; otherwise recommends viewing, editing, and validating the local
+  manifest.
 - `luna pack init --id <id> --author <author> --license <license> [--version <version>]`:
   Creates local `pack.yml`; version defaults to `1.0.0`. Missing required
-  values prompt only in an interactive terminal.
+  values prompt only in an interactive terminal. The license prompt defaults
+  to `MIT`, so Enter accepts it. Invalid prompted pack IDs display their error
+  immediately and prompt again before collecting remaining values.
 - `luna pack add file|directory|glob <path>`: Adds managed content.
   `--target`, `--strategy <type>:<method>`, `--template`, and `--condition`
   configure the selector. Globs require a target when none can be inferred.
@@ -104,6 +109,9 @@ Every mutation validates the complete candidate and atomically replaces
 script-file input accepts either separator, rejects rooted or escaping paths,
 and persists with `/`. Every pack manifest requires a non-empty `author` and
 `license`; packs missing either value are excluded from discovery and search.
+Pack and composite-reference IDs use alphanumeric segments separated by single
+hyphens. Successful pack commands print contextual next actions, such as
+adding content, viewing the manifest, or validating it.
 
 ## Pack Lifecycle
 

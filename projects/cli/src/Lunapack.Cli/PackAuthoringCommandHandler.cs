@@ -7,6 +7,8 @@ internal sealed class PackAuthoringCommandHandler(
     IFileSystem fileSystem,
     PackManifestStore manifestStore,
     WorkspaceDirectoryResolver workspaceDirectoryResolver,
+    INextStepAdvisor nextStepAdvisor,
+    NextStepRenderer nextStepRenderer,
     CliConsole console
 )
 {
@@ -20,7 +22,7 @@ internal sealed class PackAuthoringCommandHandler(
 
     public Command CreateCommand(string projectDirectory, Option<string?> workspaceOption)
     {
-        return new Command("pack", "Author a local pack manifest.")
+        var command = new Command("pack", "Author a local pack manifest.")
         {
             CreateInitCommand(projectDirectory, workspaceOption),
             CreateAddCommand(projectDirectory, workspaceOption),
@@ -31,8 +33,25 @@ internal sealed class PackAuthoringCommandHandler(
             CreateDisplayCommand("scripts", projectDirectory, workspaceOption),
             CreateValidateCommand(projectDirectory, workspaceOption),
         };
+        command.SetAction(parseResult =>
+        {
+            var workspace = ResolveWorkspace(parseResult, projectDirectory, workspaceOption);
+            var manifestPath = fileSystem.Path.Combine(workspace, PackManifestStore.FileName);
+            RenderNextSteps(
+                fileSystem.File.Exists(manifestPath)
+                    ? NextStepContext.PackManifestPresent
+                    : NextStepContext.PackManifestMissing
+            );
+            return 0;
+        });
+        return command;
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Design",
+        "MA0051:Method is too long",
+        Justification = "Command action methods are inherently long."
+    )]
     private Command CreateInitCommand(string projectDirectory, Option<string?> workspaceOption)
     {
         var idOption = new Option<string?>("--id") { Description = "Pack ID." };
@@ -48,7 +67,7 @@ internal sealed class PackAuthoringCommandHandler(
         };
         command.SetAction(async parseResult =>
         {
-            var id = GetRequiredValue(parseResult.GetValue(idOption), "--id", "Pack ID:");
+            var id = GetPackId(parseResult.GetValue(idOption));
             if (id is null)
             {
                 return 1;
@@ -67,7 +86,8 @@ internal sealed class PackAuthoringCommandHandler(
             var license = GetRequiredValue(
                 parseResult.GetValue(licenseOption),
                 "--license",
-                "Pack license:"
+                "Pack license:",
+                "MIT"
             );
             if (license is null)
             {
@@ -91,12 +111,18 @@ internal sealed class PackAuthoringCommandHandler(
             }
 
             console.Info("Pack created.");
+            RenderNextSteps(NextStepContext.PackInitialized);
             return 0;
         });
         return command;
     }
 
-    private string? GetRequiredValue(string? value, string optionName, string prompt)
+    private string? GetRequiredValue(
+        string? value,
+        string optionName,
+        string prompt,
+        string? defaultValue = null
+    )
     {
         if (!string.IsNullOrEmpty(value))
         {
@@ -105,11 +131,46 @@ internal sealed class PackAuthoringCommandHandler(
 
         if (console.IsInteractive)
         {
-            return console.PromptText(prompt);
+            var promptedValue = console.PromptText(prompt, defaultValue);
+            return string.IsNullOrEmpty(promptedValue) ? defaultValue : promptedValue;
         }
 
         console.Fail($"Missing required option '{optionName}'.");
         return null;
+    }
+
+    private string? GetPackId(string? value)
+    {
+        if (!string.IsNullOrEmpty(value))
+        {
+            return ValidatePackId(value) ? value : null;
+        }
+
+        if (!console.IsInteractive)
+        {
+            console.Fail("Missing required option '--id'.");
+            return null;
+        }
+
+        while (true)
+        {
+            var promptedValue = console.PromptText("Pack ID:");
+            if (ValidatePackId(promptedValue))
+            {
+                return promptedValue;
+            }
+        }
+    }
+
+    private bool ValidatePackId(string value)
+    {
+        if (ManifestModelValidator.IsPackId(value))
+        {
+            return true;
+        }
+
+        console.Error($"Pack ID '{value}' must use hyphen-separated alphanumeric segments.");
+        return false;
     }
 
     private Command CreateAddCommand(string projectDirectory, Option<string?> workspaceOption)
@@ -715,6 +776,7 @@ internal sealed class PackAuthoringCommandHandler(
                 console.Render(renderable);
             }
 
+            RenderNextSteps(NextStepContext.PackDisplayed);
             return 0;
         });
         return command;
@@ -734,6 +796,7 @@ internal sealed class PackAuthoringCommandHandler(
             }
 
             console.Info("Manifest valid.");
+            RenderNextSteps(NextStepContext.PackValidated);
             return 0;
         });
         return command;
@@ -935,8 +998,12 @@ internal sealed class PackAuthoringCommandHandler(
         }
 
         console.Info(successMessage);
+        RenderNextSteps(NextStepContext.PackModified);
         return 0;
     }
+
+    private void RenderNextSteps(NextStepContext context) =>
+        nextStepRenderer.Render(nextStepAdvisor.Recommend(context));
 
     private static bool IsHook(string? hook) => _hooks.Contains(hook, StringComparer.Ordinal);
 

@@ -2,6 +2,12 @@ namespace Lunapack.Cli;
 
 internal enum NextStepContext
 {
+    PackManifestMissing,
+    PackManifestPresent,
+    PackInitialized,
+    PackModified,
+    PackDisplayed,
+    PackValidated,
     WorkspaceInitialized,
     SourceAdded,
     SourcesRemain,

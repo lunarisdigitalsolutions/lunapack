@@ -5,6 +5,35 @@ namespace Lunapack.Cli.UnitTests;
 public sealed class PackAuthoringCommandTests
 {
     [Test]
+    public async Task Pack_WhenManifestMissing_RendersInitializationNextStep()
+    {
+        var console = new SpectreTestConsole();
+        using var workspace = new TestWorkspace(ansiConsole: console);
+
+        var exitCode = await workspace.Application.RunAsync(["pack"], workspace.Path);
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(console.Output).Contains("luna pack init");
+    }
+
+    [Test]
+    public async Task Pack_WhenManifestExists_RendersAuthoringNextSteps()
+    {
+        var console = new SpectreTestConsole();
+        using var workspace = new TestWorkspace(ansiConsole: console);
+        await workspace.Application.RunAsync(
+            ["pack", "init", "--id", "example", "--author", "Example Author", "--license", "MIT"],
+            workspace.Path
+        );
+
+        var exitCode = await workspace.Application.RunAsync(["pack"], workspace.Path);
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(console.Output).Contains("luna pack show");
+        await Assert.That(console.Output).Contains("luna pack validate");
+    }
+
+    [Test]
     public async Task Init_WhenIdMissingAndConsoleNotInteractive_DoesNotCreateManifest()
     {
         using var workspace = new TestWorkspace();
@@ -26,7 +55,9 @@ public sealed class PackAuthoringCommandTests
     )
     {
         using var workspace = new TestWorkspace();
-        var providedOption = missingOption == "--author" ? "--license" : "--author";
+        var providedOption = string.Equals(missingOption, "--author", StringComparison.Ordinal)
+            ? "--license"
+            : "--author";
 
         var exitCode = await workspace.Application.RunAsync(
             ["pack", "init", "--id", "example", providedOption, value],
@@ -67,6 +98,87 @@ public sealed class PackAuthoringCommandTests
         await Assert.That(contents).Contains("license: MIT");
         await Assert.That(contents).Contains("version: 1.2.3");
         await Assert.That(ManifestModelValidator.Validate(await LoadAsync(workspace))).IsEmpty();
+    }
+
+    [Test]
+    public async Task Init_WhenLicenseIsPromptedAndLeftEmpty_UsesMit()
+    {
+        var console = new SpectreTestConsole();
+        Spectre.Console.Testing.TestConsoleExtensions.Interactive(console);
+        console.Input.PushTextWithEnter(string.Empty);
+        using var workspace = new TestWorkspace(ansiConsole: console);
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["pack", "init", "--id", "example", "--author", "Example Author"],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert
+            .That(File.ReadAllText(Path.Combine(workspace.Path, PackManifestStore.FileName)))
+            .Contains("license: MIT");
+    }
+
+    [Test]
+    public async Task Init_WhenIdIsNotKebabCase_DoesNotCreateManifest()
+    {
+        using var workspace = new TestWorkspace();
+
+        var exitCode = await workspace.Application.RunAsync(
+            [
+                "pack",
+                "init",
+                "--id",
+                "example_pack",
+                "--author",
+                "Example Author",
+                "--license",
+                "MIT",
+            ],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert
+            .That(File.Exists(Path.Combine(workspace.Path, PackManifestStore.FileName)))
+            .IsFalse();
+    }
+
+    [Test]
+    public async Task Init_WhenPromptedIdIsInvalid_RendersErrorAndPromptsAgain()
+    {
+        var console = new SpectreTestConsole();
+        Spectre.Console.Testing.TestConsoleExtensions.Interactive(console);
+        console.Input.PushTextWithEnter("example_pack");
+        console.Input.PushTextWithEnter("example-pack");
+        console.Input.PushTextWithEnter("Example Author");
+        console.Input.PushTextWithEnter(string.Empty);
+        using var workspace = new TestWorkspace(ansiConsole: console);
+
+        var exitCode = await workspace.Application.RunAsync(["pack", "init"], workspace.Path);
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert
+            .That(console.Output)
+            .Contains("Pack ID 'example_pack' must use hyphen-separated alphanumeric segments.");
+        await Assert
+            .That(File.ReadAllText(Path.Combine(workspace.Path, PackManifestStore.FileName)))
+            .Contains("id: example-pack");
+    }
+
+    [Test]
+    public async Task Init_WhenManifestCreated_RendersAuthoringNextStep()
+    {
+        var console = new SpectreTestConsole();
+        using var workspace = new TestWorkspace(ansiConsole: console);
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["pack", "init", "--id", "example", "--author", "Example Author", "--license", "MIT"],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(console.Output).Contains("luna pack add file <path>");
     }
 
     [Test]

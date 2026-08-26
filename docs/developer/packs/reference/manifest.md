@@ -1,10 +1,10 @@
 # Pack manifest reference
 
-`pack.yml` declares a pack. It requires non-empty `id`, `author`, and `license`
-values plus a semantic `version`. Empty content collections remain valid during
-incremental authoring. `name`, `description`, `homepage`, and `tags` are
-optional metadata. Discovery and search exclude manifests missing author or
-license attribution.
+`pack.yml` declares a pack. It requires a hyphen-separated alphanumeric `id`,
+non-empty `author` and `license` values, and a semantic `version`. Empty content
+collections remain valid during incremental authoring. `name`, `description`,
+`homepage`, and `tags` are optional metadata. Discovery and search exclude
+manifests missing author or license attribution.
 
 ```yml
 id: documentation-standard
@@ -23,14 +23,14 @@ managedFiles:
 
 | Field                  | Rules                                                                                                                                  |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                   | Required non-empty stable pack identifier.                                                                                             |
+| `id`                   | Required stable identifier: alphanumeric segments joined by single hyphens.                                                           |
 | `version`              | Required Semantic Version.                                                                                                             |
 | `name`                 | Optional non-empty human-readable name.                                                                                                |
 | `author`               | Required non-empty author or maintainer attribution.                                                                                   |
 | `homepage`             | Optional absolute HTTP or HTTPS URI.                                                                                                   |
 | `license`              | Required non-empty license identifier or expression.                                                                                   |
 | `managedFiles`         | Each entry has one `source`, `directory`, or `glob` selector and a project-relative `target`.                                          |
-| `packs`                | Each composite reference has an exact ID and version.                                                                                  |
+| `packs`                | Each composite reference has a hyphen-separated alphanumeric ID and an exact version.                                                |
 | `parameters`           | Identifier-named `string`, `bool`, or `enum` declarations. Optional display metadata labels prompts; enums require unique values.      |
 | Reference `parameters` | String or Boolean bindings for a referenced pack.                                                                                      |
 | `condition`            | A Boolean name or negation, or a quoted string or enum equality comparison joined with logical AND, logical OR, and parentheses.       |
