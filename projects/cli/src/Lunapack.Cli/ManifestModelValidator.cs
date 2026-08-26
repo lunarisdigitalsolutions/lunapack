@@ -652,9 +652,13 @@ internal static partial class ManifestModelValidator
         }
 
         if (resolvedPack.GitSource is null)
+        {
             ValidateLocalResolvedPackSource(resolvedPack, issues);
+        }
         else
+        {
             ValidateGitResolvedPackSource(resolvedPack, issues);
+        }
 
         foreach (var packReference in resolvedPack.Packs)
         {

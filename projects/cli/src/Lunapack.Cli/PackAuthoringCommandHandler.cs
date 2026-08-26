@@ -20,16 +20,17 @@ internal sealed class PackAuthoringCommandHandler(
 
     public Command CreateCommand(string projectDirectory, Option<string?> workspaceOption)
     {
-        var command = new Command("pack", "Author a local pack manifest.");
-        command.Add(CreateInitCommand(projectDirectory, workspaceOption));
-        command.Add(CreateAddCommand(projectDirectory, workspaceOption));
-        command.Add(CreateSetCommand(projectDirectory, workspaceOption));
-        command.Add(CreateRemoveCommand(projectDirectory, workspaceOption));
-        command.Add(CreateDisplayCommand("list", projectDirectory, workspaceOption));
-        command.Add(CreateDisplayCommand("show", projectDirectory, workspaceOption));
-        command.Add(CreateDisplayCommand("scripts", projectDirectory, workspaceOption));
-        command.Add(CreateValidateCommand(projectDirectory, workspaceOption));
-        return command;
+        return new Command("pack", "Author a local pack manifest.")
+        {
+            CreateInitCommand(projectDirectory, workspaceOption),
+            CreateAddCommand(projectDirectory, workspaceOption),
+            CreateSetCommand(projectDirectory, workspaceOption),
+            CreateRemoveCommand(projectDirectory, workspaceOption),
+            CreateDisplayCommand("list", projectDirectory, workspaceOption),
+            CreateDisplayCommand("show", projectDirectory, workspaceOption),
+            CreateDisplayCommand("scripts", projectDirectory, workspaceOption),
+            CreateValidateCommand(projectDirectory, workspaceOption),
+        };
     }
 
     private Command CreateInitCommand(string projectDirectory, Option<string?> workspaceOption)
@@ -68,14 +69,15 @@ internal sealed class PackAuthoringCommandHandler(
 
     private Command CreateAddCommand(string projectDirectory, Option<string?> workspaceOption)
     {
-        var command = new Command("add", "Add pack content.");
-        command.Add(CreateManagedFileCommand("file", projectDirectory, workspaceOption));
-        command.Add(CreateManagedFileCommand("directory", projectDirectory, workspaceOption));
-        command.Add(CreateManagedFileCommand("glob", projectDirectory, workspaceOption));
-        command.Add(CreateScriptCommand(projectDirectory, workspaceOption));
-        command.Add(CreateReferenceCommand("reference", projectDirectory, workspaceOption, false));
-        command.Add(CreateTagCommand("tag", projectDirectory, workspaceOption, false));
-        return command;
+        return new Command("add", "Add pack content.")
+        {
+            CreateManagedFileCommand("file", projectDirectory, workspaceOption),
+            CreateManagedFileCommand("directory", projectDirectory, workspaceOption),
+            CreateManagedFileCommand("glob", projectDirectory, workspaceOption),
+            CreateScriptCommand(projectDirectory, workspaceOption),
+            CreateReferenceCommand("reference", projectDirectory, workspaceOption, false),
+            CreateTagCommand("tag", projectDirectory, workspaceOption, false),
+        };
     }
 
     private Command CreateManagedFileCommand(
@@ -212,10 +214,11 @@ internal sealed class PackAuthoringCommandHandler(
 
     private Command CreateScriptCommand(string projectDirectory, Option<string?> workspaceOption)
     {
-        var command = new Command("script", "Add a lifecycle script.");
-        command.Add(CreateCommandScriptCommand(projectDirectory, workspaceOption));
-        command.Add(CreateFileScriptCommand(projectDirectory, workspaceOption));
-        return command;
+        return new Command("script", "Add a lifecycle script.")
+        {
+            CreateCommandScriptCommand(projectDirectory, workspaceOption),
+            CreateFileScriptCommand(projectDirectory, workspaceOption),
+        };
     }
 
     private Command CreateCommandScriptCommand(

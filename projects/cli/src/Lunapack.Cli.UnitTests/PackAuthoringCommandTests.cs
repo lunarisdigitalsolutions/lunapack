@@ -5,6 +5,19 @@ namespace Lunapack.Cli.UnitTests;
 public sealed class PackAuthoringCommandTests
 {
     [Test]
+    public async Task Init_WhenIdMissingAndConsoleNotInteractive_DoesNotCreateManifest()
+    {
+        using var workspace = new TestWorkspace();
+
+        var exitCode = await workspace.Application.RunAsync(["pack", "init"], workspace.Path);
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert
+            .That(File.Exists(Path.Combine(workspace.Path, PackManifestStore.FileName)))
+            .IsFalse();
+    }
+
+    [Test]
     public async Task Init_WhenOptionsProvided_CreatesIdentityOnlyManifest()
     {
         using var workspace = new TestWorkspace();
