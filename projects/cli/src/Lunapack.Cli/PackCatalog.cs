@@ -219,7 +219,8 @@ internal sealed class PackCatalog(IFileSystem fileSystem, CliConsole console)
                 )
             )
             : ManifestOperationResult<DiscoveredPack>.Failure(
-                selected.Error ?? $"Pack '{packId}' is unavailable."
+                selected.Error ?? $"Pack '{packId}' is unavailable.",
+                ManifestOperationErrorKind.PackNotFound
             );
     }
 

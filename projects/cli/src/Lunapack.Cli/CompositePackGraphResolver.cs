@@ -41,7 +41,8 @@ internal sealed class CompositePackGraphResolver(PackCatalog packCatalog)
             if (root.Value is not { } rootPack)
             {
                 return ManifestOperationResult<ResolvedPackGraph>.Failure(
-                    root.Error ?? $"Pack '{rootRequest.Id}' is unavailable."
+                    root.Error ?? $"Pack '{rootRequest.Id}' is unavailable.",
+                    root.ErrorKind
                 );
             }
 

@@ -6,6 +6,7 @@ namespace Lunapack.Cli;
 internal sealed class AuditCommandHandler(
     ProjectStateStore projectStateStore,
     WorkspaceDirectoryResolver workspaceDirectoryResolver,
+    WorkflowPrerequisiteGuard prerequisiteGuard,
     CliConsole console
 )
 {
@@ -26,6 +27,12 @@ internal sealed class AuditCommandHandler(
 
     public async Task<int> AuditAsync(string projectDirectory)
     {
+        var prerequisiteFailure = await prerequisiteGuard.RequireWorkspaceAsync(projectDirectory);
+        if (prerequisiteFailure is not null)
+        {
+            return prerequisiteFailure.Value;
+        }
+
         var state = await projectStateStore.LoadAsync(projectDirectory);
         if (state.Value is not { } projectState)
         {

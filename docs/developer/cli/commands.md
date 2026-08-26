@@ -4,6 +4,8 @@
 `--workspace`, the workspace is the process working directory. Use
 `--workspace <directory>` or `-w <directory>` with any command to select a
 different directory; relative paths resolve from the process working directory.
+Running `luna` without a subcommand summarizes configured sources and installed
+root packs, then recommends the next commands for the current workspace stage.
 
 ## Global Options
 
@@ -36,6 +38,9 @@ different directory; relative paths resolve from the process working directory.
   repository as a Git pack source. LunaPack stores its HTTPS Git URL; `--ref`
   (`-r`) and `--path` (`-p`) match `git`.
 - `luna sources list`: Lists configured local and Git sources.
+- `luna sources remove <name>`: Removes one configured source and project trust
+  bound to its name. Installed pack records, lock provenance, and managed files
+  remain.
 - `luna trust source <name>...`: Grants lifecycle-script trust to configured
   sources.
 - `luna trust pack <id>... --source <name>`: Grants trust only to selected pack
@@ -106,6 +111,12 @@ is plain, while
 verbose, debug, warning, and error output has colored level prefixes. The default
 level is `info`; longer catalog and lifecycle operations show a spinner. Discover,
 search, audit, outdated, and variable-list results render as tables.
+
+Successful initialization, source changes, catalog exploration, installation,
+updates, and uninstallation append a bounded recommendation block when a useful
+next action exists. Dry runs do not claim that workspace state advanced. Missing
+workspace or source prerequisites and unresolved pack references include
+recovery commands while retaining a nonzero exit code.
 
 Successful commands return exit code `0`. Invalid input, validation failures,
 resolution conflicts, denied trust, Git failures, and filesystem or state-write

@@ -3,6 +3,10 @@
 After adding a source, list available packs and preview the change before
 writing files.
 
+Discovery recommends an install command when packs are available. After a
+successful install, Luna recommends checking for updates, updating installed
+packs, or uninstalling the pack. A dry run shows only its plan.
+
 ```powershell
 luna discover
 luna install dotnet-project --dry-run

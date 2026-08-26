@@ -6,6 +6,9 @@ namespace Lunapack.Cli;
 internal sealed class SearchPacksCommandHandler(
     CatalogService catalogService,
     WorkspaceDirectoryResolver workspaceDirectoryResolver,
+    INextStepAdvisor nextStepAdvisor,
+    NextStepRenderer nextStepRenderer,
+    WorkflowPrerequisiteGuard prerequisiteGuard,
     CliConsole console
 )
 {
@@ -56,6 +59,12 @@ internal sealed class SearchPacksCommandHandler(
             );
         }
 
+        var prerequisiteFailure = await prerequisiteGuard.RequireSourcesAsync(projectDirectory);
+        if (prerequisiteFailure is not null)
+        {
+            return prerequisiteFailure.Value;
+        }
+
         var catalog = await console.RunWithStatusAsync(
             "Searching available packs...",
             () => catalogService.LoadAsync(projectDirectory)
@@ -76,7 +85,8 @@ internal sealed class SearchPacksCommandHandler(
         table.AddColumn("[bold]Pack[/]");
         table.AddColumn("[bold]Version[/]");
         table.AddColumn("[bold]Description[/]");
-        foreach (var pack in PackCatalog.GetRecentReleases(packs, versionCount))
+        var releases = PackCatalog.GetRecentReleases(packs, versionCount);
+        foreach (var pack in releases)
         {
             table.AddRow(
                 Markup.Escape(pack.Manifest.Id),
@@ -86,6 +96,8 @@ internal sealed class SearchPacksCommandHandler(
         }
 
         console.Render(table);
+        console.Info($"Found {releases.Count} matching packs.");
+        nextStepRenderer.Render(nextStepAdvisor.Recommend(NextStepContext.PacksSearched));
         return 0;
     }
 }

@@ -9,6 +9,8 @@ what LunaPack protects, what it restores, and what operators must still accept.
   repository path. A source name alone is never authority.
 - Local-user, global-user, and project-declared trust remain separate. Project
   declarations require matching local-user acknowledgement before they apply.
+- Removing a configured source also removes project source and pack trust bound
+  to its name. Installed lock evidence remains but grants no authority.
 - Hooks are planned for every resolved graph node before managed files mutate.
   Transient root trust does not authorize dependencies.
 - Packed hook files are resolved beneath the copied operation snapshot, hashed,

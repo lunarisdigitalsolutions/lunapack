@@ -5,8 +5,10 @@ namespace Lunapack.Cli;
 
 internal sealed class LocalSourceCommandHandler(
     IFileSystem fileSystem,
-    ProjectStateStore projectStateStore,
+    IProjectStateStore projectStateStore,
     WorkspaceDirectoryResolver workspaceDirectoryResolver,
+    INextStepAdvisor nextStepAdvisor,
+    NextStepRenderer nextStepRenderer,
     CliConsole console
 )
 {
@@ -136,11 +138,33 @@ internal sealed class LocalSourceCommandHandler(
                 )
             )
         );
+        var removeSourceNameArgument = new Argument<string>("name")
+        {
+            Description = "Name of the configured source to remove.",
+        };
+        var removeSourceCommand = new Command("remove", "Remove a configured pack source.")
+        {
+            removeSourceNameArgument,
+        };
+        removeSourceCommand.SetAction(async parseResult =>
+        {
+            var sourceName = parseResult.GetValue(removeSourceNameArgument);
+            return sourceName is null
+                ? console.Fail("A source name is required.")
+                : await RemoveAsync(
+                    workspaceDirectoryResolver.Resolve(
+                        projectDirectory,
+                        parseResult.GetValue(workspaceOption)
+                    ),
+                    sourceName
+                );
+        });
 
         return new Command("sources", "Manage pack sources.")
         {
             addSourceCommand,
             listSourcesCommand,
+            removeSourceCommand,
         };
     }
 
@@ -204,9 +228,12 @@ internal sealed class LocalSourceCommandHandler(
         state.Configuration.Sources.Add(
             new ProjectConfiguration.LocalSource { Name = name, Path = normalizedPath }
         );
-        var savedState = await projectStateStore.SaveAsync(projectDirectory, state);
+        var savedState = await projectStateStore.SaveAllowingUnavailableSourcesAsync(
+            projectDirectory,
+            state
+        );
 
-        return savedState.IsSuccess ? 0 : console.Fail(savedState.Error);
+        return CompleteSourceAddition(savedState, name);
     }
 
     public async Task<int> AddGitSourceAsync(
@@ -266,9 +293,73 @@ internal sealed class LocalSourceCommandHandler(
                 Path = normalizedRepositoryPath,
             }
         );
-        var savedState = await projectStateStore.SaveAsync(projectDirectory, state);
+        var savedState = await projectStateStore.SaveAllowingUnavailableSourcesAsync(
+            projectDirectory,
+            state
+        );
 
-        return savedState.IsSuccess ? 0 : console.Fail(savedState.Error);
+        return CompleteSourceAddition(savedState, name);
+    }
+
+    public async Task<int> RemoveAsync(string projectDirectory, string name)
+    {
+        var loadedState = await projectStateStore.LoadAsync(projectDirectory);
+        if (loadedState.Value is not { } state)
+        {
+            return console.Fail(loadedState.Error);
+        }
+
+        var removed = state.Configuration.Sources.RemoveAll(source =>
+            string.Equals(source.Name, name, StringComparison.Ordinal)
+        );
+        if (removed == 0)
+        {
+            return console.Fail($"Source '{name}' is not configured.");
+        }
+
+        state.Configuration.Trust.Sources.RemoveAll(source =>
+            string.Equals(source, name, StringComparison.Ordinal)
+        );
+        state.Configuration.Trust.Packs.RemoveAll(pack =>
+            string.Equals(pack.Source, name, StringComparison.Ordinal)
+        );
+        var savedState = await projectStateStore.SaveAllowingUnavailableSourcesAsync(
+            projectDirectory,
+            state
+        );
+        if (!savedState.IsSuccess)
+        {
+            return console.Fail(savedState.Error);
+        }
+
+        console.Info($"✓ Source '{name}' removed");
+        if (state.Configuration.Sources.Count == 0)
+        {
+            console.Info(string.Empty);
+            console.Info("No sources remain.");
+            nextStepRenderer.Render(nextStepAdvisor.Recommend(NextStepContext.NoSourcesRemain));
+        }
+        else
+        {
+            nextStepRenderer.Render(
+                nextStepAdvisor.Recommend(NextStepContext.SourcesRemain),
+                "Suggested commands:"
+            );
+        }
+
+        return 0;
+    }
+
+    private int CompleteSourceAddition(ManifestOperationResult<bool> savedState, string name)
+    {
+        if (!savedState.IsSuccess)
+        {
+            return console.Fail(savedState.Error);
+        }
+
+        console.Info($"✓ Source '{name}' added");
+        nextStepRenderer.Render(nextStepAdvisor.Recommend(NextStepContext.SourceAdded));
+        return 0;
     }
 
     private bool IsSafeRepositoryPath(string? path) =>

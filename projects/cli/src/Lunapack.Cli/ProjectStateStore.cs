@@ -63,7 +63,8 @@ internal sealed class ProjectStateStore : IProjectStateStore
         );
         var validationError = ValidateState(
             normalizedState.Configuration,
-            normalizedState.LockFile
+            normalizedState.LockFile,
+            allowUnconfiguredLockSources: true
         );
         if (validationError is not null)
         {
@@ -76,6 +77,17 @@ internal sealed class ProjectStateStore : IProjectStateStore
     public async Task<ManifestOperationResult<bool>> SaveAsync(
         string projectDirectory,
         ProjectState state
+    ) => await SaveAsync(projectDirectory, state, allowUnconfiguredLockSources: false);
+
+    public async Task<ManifestOperationResult<bool>> SaveAllowingUnavailableSourcesAsync(
+        string projectDirectory,
+        ProjectState state
+    ) => await SaveAsync(projectDirectory, state, allowUnconfiguredLockSources: true);
+
+    private async Task<ManifestOperationResult<bool>> SaveAsync(
+        string projectDirectory,
+        ProjectState state,
+        bool allowUnconfiguredLockSources
     )
     {
         var normalizedState = NormalizeState(state);
@@ -91,7 +103,8 @@ internal sealed class ProjectStateStore : IProjectStateStore
 
         var validationError = ValidateState(
             normalizedState.Configuration,
-            normalizedState.LockFile
+            normalizedState.LockFile,
+            allowUnconfiguredLockSources
         );
         if (validationError is not null)
         {
@@ -206,13 +219,19 @@ internal sealed class ProjectStateStore : IProjectStateStore
 
     private static string? ValidateState(
         ProjectConfiguration configuration,
-        ProjectLockFile lockFile
+        ProjectLockFile lockFile,
+        bool allowUnconfiguredLockSources = false
     )
     {
         var resolvedPacksById = new Dictionary<string, ProjectLockFile.ResolvedPack>(
             StringComparer.Ordinal
         );
-        var validationError = ValidateResolvedPacks(configuration, lockFile, resolvedPacksById);
+        var validationError = ValidateResolvedPacks(
+            configuration,
+            lockFile,
+            resolvedPacksById,
+            allowUnconfiguredLockSources
+        );
         if (validationError is not null)
         {
             return validationError;
@@ -321,7 +340,8 @@ internal sealed class ProjectStateStore : IProjectStateStore
     private static string? ValidateResolvedPacks(
         ProjectConfiguration configuration,
         ProjectLockFile lockFile,
-        IDictionary<string, ProjectLockFile.ResolvedPack> resolvedPacksById
+        IDictionary<string, ProjectLockFile.ResolvedPack> resolvedPacksById,
+        bool allowUnconfiguredLockSources
     )
     {
         foreach (var resolvedPack in lockFile.Packs)
@@ -331,7 +351,10 @@ internal sealed class ProjectStateStore : IProjectStateStore
                 return $"Lock file contains multiple resolved packs with ID '{resolvedPack.Id}'.";
             }
 
-            if (!MatchesConfiguredSourceIdentity(configuration.Sources, resolvedPack))
+            if (
+                !allowUnconfiguredLockSources
+                && !MatchesConfiguredSourceIdentity(configuration.Sources, resolvedPack)
+            )
             {
                 return "Lock file contains a source that is not configured.";
             }

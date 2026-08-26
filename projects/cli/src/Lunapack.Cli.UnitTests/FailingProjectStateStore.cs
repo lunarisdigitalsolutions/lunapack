@@ -9,4 +9,9 @@ internal sealed class FailingProjectStateStore(IProjectStateStore inner) : IProj
         string projectDirectory,
         ProjectState state
     ) => Task.FromResult(ManifestOperationResult<bool>.Failure("Simulated state write failure."));
+
+    public Task<ManifestOperationResult<bool>> SaveAllowingUnavailableSourcesAsync(
+        string projectDirectory,
+        ProjectState state
+    ) => Task.FromResult(ManifestOperationResult<bool>.Failure("Simulated state write failure."));
 }

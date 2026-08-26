@@ -4,6 +4,10 @@
 supports local and Git sources, catalog discovery, installation, update,
 ownership audit, and conservative removal.
 
+Run `luna` without a subcommand to see the selected workspace's maturity and
+next recommended commands. Luna also follows successful core workflow commands
+and recoverable prerequisite errors with up to three contextual actions.
+
 Published Luna binaries are self-contained Native AOT executables for Linux
 and Windows x64.
 
