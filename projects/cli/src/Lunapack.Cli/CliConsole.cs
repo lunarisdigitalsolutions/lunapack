@@ -43,6 +43,17 @@ internal sealed class CliConsole(IAnsiConsole ansiConsole, CliLogLevel minimumLe
         };
     }
 
+    public string PromptText(string prompt, string? defaultValue = null)
+    {
+        var textPrompt = new TextPrompt<string>(Markup.Escape(prompt));
+        if (defaultValue is not null)
+        {
+            textPrompt.DefaultValue(defaultValue);
+        }
+
+        return ansiConsole.Prompt(textPrompt);
+    }
+
     public Task<T> RunWithStatusAsync<T>(string description, Func<Task<T>> action) =>
         IsEnabled(CliLogLevel.Info)
             ? ansiConsole

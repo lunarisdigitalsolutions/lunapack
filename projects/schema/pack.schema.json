@@ -4,25 +4,7 @@
   "title": "LunaPack pack manifest",
   "type": "object",
   "additionalProperties": false,
-  "required": ["id", "version", "license", "author"],
-  "anyOf": [
-    {
-      "required": ["managedFiles"],
-      "properties": {
-        "managedFiles": {
-          "minItems": 1
-        }
-      }
-    },
-    {
-      "required": ["packs"],
-      "properties": {
-        "packs": {
-          "minItems": 1
-        }
-      }
-    }
-  ],
+  "required": ["id", "version"],
   "properties": {
     "author": {
       "type": "string",
@@ -34,6 +16,11 @@
     "id": {
       "type": "string",
       "minLength": 1
+    },
+    "homepage": {
+      "type": "string",
+      "minLength": 1,
+      "format": "uri"
     },
     "license": {
       "type": "string",
@@ -66,6 +53,10 @@
       "items": {
         "$ref": "#/definitions/managedFile"
       }
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
     },
     "packs": {
       "type": "array",

@@ -60,10 +60,12 @@ internal static class PackManifestInspectionFormatter
         table.AddColumn("[bold]Field[/]");
         table.AddColumn("[bold]Value[/]");
         table.AddRow("ID", Markup.Escape(manifest.Id));
+        table.AddRow("Name", Markup.Escape(manifest.Name ?? "-"));
         table.AddRow("Version", Markup.Escape(manifest.Version));
         table.AddRow("Description", Markup.Escape(manifest.Description ?? "-"));
         table.AddRow("License", Markup.Escape(manifest.License ?? "-"));
         table.AddRow("Author", Markup.Escape(manifest.Author ?? "-"));
+        table.AddRow("Homepage", Markup.Escape(manifest.Homepage ?? "-"));
         table.AddRow("Lifecycle scripts", manifest.Scripts is null ? "none" : "declared");
         table.AddRow(
             "Tags",

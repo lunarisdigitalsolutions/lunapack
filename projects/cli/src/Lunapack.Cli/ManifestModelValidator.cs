@@ -21,17 +21,14 @@ internal static partial class ManifestModelValidator
         var issues = new List<string>();
         ValidateRequiredValue(manifest.Id, "id", issues);
         ValidateRequiredValue(manifest.Version, "version", issues);
-        ValidateRequiredValue(manifest.License, "license", issues);
-        ValidateRequiredValue(manifest.Author, "author", issues);
+        ValidateOptionalValue(manifest.Name, "name", issues);
+        ValidateOptionalValue(manifest.Author, "author", issues);
+        ValidateOptionalValue(manifest.License, "license", issues);
+        ValidateHomepage(manifest.Homepage, issues);
 
         if (!IsSemanticVersion(manifest.Version))
         {
             issues.Add($"Version '{manifest.Version}' is not a valid semantic version.");
-        }
-
-        if (manifest.ManagedFiles.Count == 0 && manifest.Packs.Count == 0)
-        {
-            issues.Add("Pack must define at least one managed file or child pack.");
         }
 
         ValidateTags(manifest.Tags, issues);
@@ -41,6 +38,32 @@ internal static partial class ManifestModelValidator
         ValidateScripts(manifest.Scripts, issues);
 
         return issues;
+    }
+
+    private static void ValidateOptionalValue(
+        string? value,
+        string propertyName,
+        List<string> issues
+    )
+    {
+        if (value is not null && value.Length == 0)
+        {
+            issues.Add($"Pack {propertyName} cannot be empty.");
+        }
+    }
+
+    private static void ValidateHomepage(string? homepage, List<string> issues)
+    {
+        if (
+            homepage is not null
+            && (
+                !Uri.TryCreate(homepage, UriKind.Absolute, out var uri)
+                || uri.Scheme is not ("http" or "https")
+            )
+        )
+        {
+            issues.Add("Pack homepage must be an absolute HTTP or HTTPS URI.");
+        }
     }
 
     private static void ValidateRequiredValue(

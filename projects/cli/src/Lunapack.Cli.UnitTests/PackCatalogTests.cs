@@ -126,7 +126,7 @@ public sealed class PackCatalogTests
     public async Task Browse_WhenCandidateManifestInvalid_ExcludesCandidate()
     {
         var fileSystem = CreateFileSystem([
-            (PacksPath("invalid", "pack.yml"), "id: invalid\nversion: 1.0.0\n"),
+            (PacksPath("invalid", "pack.yml"), "id: invalid\nversion: invalid\n"),
             (PacksPath("valid", "pack.yml"), CreatePack("valid", "1.0.0")),
         ]);
         var catalog = new PackCatalog(fileSystem, TestConsole.Create());

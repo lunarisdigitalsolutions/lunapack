@@ -75,6 +75,14 @@ internal sealed class CliApplication(
             services.PrerequisiteGuard,
             console
         );
+        rootCommand.Add(
+            new PackAuthoringCommandHandler(
+                fileSystem,
+                new PackManifestStore(fileSystem),
+                services.WorkspaceDirectoryResolver,
+                console
+            ).CreateCommand(projectDirectory, workspaceOption)
+        );
         AddLifecycleCommands(
             rootCommand,
             fileSystem,

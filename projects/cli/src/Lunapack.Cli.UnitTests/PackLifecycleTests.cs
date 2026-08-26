@@ -445,7 +445,10 @@ public sealed class PackLifecycleTests
     public async Task Install_WhenPackManifestInvalid_LeavesProjectUnchanged()
     {
         using var workspace = new TestWorkspace();
-        var sourcePath = CreatePackSource(workspace.Path, "id: dotnet-gitignore\nversion: 1.0.0\n");
+        var sourcePath = CreatePackSource(
+            workspace.Path,
+            "id: dotnet-gitignore\nversion: invalid\n"
+        );
         await ConfigureSourceAsync(workspace, sourcePath);
         var manifestPath = GetManifestPath(workspace.Path);
         var initialManifest = File.ReadAllText(manifestPath);

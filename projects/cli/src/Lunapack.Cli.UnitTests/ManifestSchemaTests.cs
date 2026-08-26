@@ -3,6 +3,52 @@ namespace Lunapack.Cli.UnitTests;
 public sealed class ManifestSchemaTests
 {
     [Test]
+    public async Task PackManifest_WhenIdentityOnly_IsAccepted()
+    {
+        var manifest = new PackManifest { Id = "example", Version = "1.0.0" };
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert.That(issues).IsEmpty();
+    }
+
+    [Test]
+    public async Task PackManifest_WhenOptionalMetadataEmpty_IsRejected()
+    {
+        var manifest = new PackManifest
+        {
+            Id = "example",
+            Version = "1.0.0",
+            Author = string.Empty,
+        };
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert.That(issues).Contains("Pack author cannot be empty.");
+    }
+
+    [Test]
+    [Arguments("https://lunapack.dev/packs/example", true)]
+    [Arguments("relative/home", false)]
+    [Arguments("ftp://lunapack.dev/example", false)]
+    public async Task PackManifest_WhenHomepageProvided_ValidatesAbsoluteWebUri(
+        string homepage,
+        bool expectedValid
+    )
+    {
+        var manifest = new PackManifest
+        {
+            Id = "example",
+            Version = "1.0.0",
+            Homepage = homepage,
+        };
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert.That(issues.Count == 0).IsEqualTo(expectedValid);
+    }
+
+    [Test]
     public async Task PackManifest_WhenManagedFileStrategyInvalid_IsRejected()
     {
         var manifest = CreateValidPackManifest();
