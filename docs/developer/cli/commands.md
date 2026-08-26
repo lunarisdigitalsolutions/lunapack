@@ -65,6 +65,44 @@ project. Pack trust and pack-trust revocation require `--source` or `-s`. See
 - `luna inspect <pack-reference>`: Shows the selected pack's identity,
   description, license, author, parameters, and referenced packs.
 
+## Pack Authoring
+
+- `luna pack init --id <id> [--version <version>]`: Creates local `pack.yml`;
+  version defaults to `1.0.0`. Missing ID prompts only in an interactive
+  terminal.
+- `luna pack add file|directory|glob <path>`: Adds managed content.
+  `--target`, `--strategy <type>:<method>`, `--template`, and `--condition`
+  configure the selector. Globs require a target when none can be inferred.
+- `luna pack add script command <hook> <command> [arguments...]`: Adds a direct
+  executable hook.
+- `luna pack add script file <hook> <file> <runner> [arguments...]`: Adds a
+  packed-file hook. Both forms accept `--description` and require `--replace`
+  for an existing hook.
+- `luna pack add reference <id> <version>`: Adds an exact composite reference.
+  Repeat `--parameter <name>=<value>` and `--disable-hook <hook>` as needed;
+  `--replace` updates an existing ID.
+- `luna pack add tag <value>`: Adds one unique tag.
+- `luna pack set <property> <value>`: Sets `id`, `name`, `version`,
+  `description`, `author`, `homepage`, or `license`.
+- `luna pack set parameter <name> <string|bool|enum>`: Creates or replaces a
+  parameter. Use `--required`, repeatable enum `--value`, `--display-name`, and
+  `--description`.
+- `luna pack set reference <id> <version>`: Creates or replaces a composite
+  reference.
+- `luna pack rm <selector>`: Removes one exact managed selector.
+- `luna pack rm script|reference|parameter|metadata <name>` and
+  `luna pack rm tag <value>`: Remove named declarations. ID and version cannot
+  be removed.
+- `luna pack list`, `luna pack scripts`, and `luna pack show`: Display local
+  manifest contents.
+- `luna pack validate`: Validates local `pack.yml` without resolving sources,
+  executing scripts, or changing trust.
+
+Every mutation validates the complete candidate and atomically replaces
+`pack.yml`. Failure preserves the previous file. File, directory, target, and
+script-file input accepts either separator, rejects rooted or escaping paths,
+and persists with `/`.
+
 ## Pack Lifecycle
 
 - `luna install <pack-reference> [<pack-reference>...]`: Resolves and installs

@@ -75,27 +75,11 @@ internal sealed class CliApplication(
             services.PrerequisiteGuard,
             console
         );
-        rootCommand.Add(
-            new PackAuthoringCommandHandler(
-                fileSystem,
-                new PackManifestStore(fileSystem),
-                services.WorkspaceDirectoryResolver,
-                console
-            ).CreateCommand(projectDirectory, workspaceOption)
-        );
-        AddLifecycleCommands(
+        AddPackAuthoringAndLifecycleCommands(
             rootCommand,
-            fileSystem,
-            services.LifecycleServices.PackLifecycleService,
-            services.LifecycleServices.PackUpdateService,
-            services.LifecycleServices.PackUpdateSelectionService,
-            services.PackUpdatePrompter,
-            services.WorkspaceDirectoryResolver,
+            services,
             projectDirectory,
             workspaceOption,
-            services.NextStepAdvisor,
-            services.NextStepRenderer,
-            services.PrerequisiteGuard,
             console
         );
         AddAuditCommand(
@@ -221,6 +205,56 @@ internal sealed class CliApplication(
                 prerequisiteGuard,
                 console
             ).CreateCommand(projectDirectory, workspaceOption)
+        );
+    }
+
+    private static void AddPackAuthoringCommand(
+        RootCommand rootCommand,
+        IFileSystem fileSystem,
+        WorkspaceDirectoryResolver workspaceDirectoryResolver,
+        string projectDirectory,
+        Option<string?> workspaceOption,
+        CliConsole console
+    ) =>
+        rootCommand.Add(
+            new PackAuthoringCommandHandler(
+                fileSystem,
+                new PackManifestStore(fileSystem),
+                workspaceDirectoryResolver,
+                console
+            ).CreateCommand(projectDirectory, workspaceOption)
+        );
+
+    private void AddPackAuthoringAndLifecycleCommands(
+        RootCommand rootCommand,
+        CommandServices services,
+        string projectDirectory,
+        Option<string?> workspaceOption,
+        CliConsole console
+    )
+    {
+        AddPackAuthoringCommand(
+            rootCommand,
+            fileSystem,
+            services.WorkspaceDirectoryResolver,
+            projectDirectory,
+            workspaceOption,
+            console
+        );
+        AddLifecycleCommands(
+            rootCommand,
+            fileSystem,
+            services.LifecycleServices.PackLifecycleService,
+            services.LifecycleServices.PackUpdateService,
+            services.LifecycleServices.PackUpdateSelectionService,
+            services.PackUpdatePrompter,
+            services.WorkspaceDirectoryResolver,
+            projectDirectory,
+            workspaceOption,
+            services.NextStepAdvisor,
+            services.NextStepRenderer,
+            services.PrerequisiteGuard,
+            console
         );
     }
 

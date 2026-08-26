@@ -5,6 +5,17 @@ internal maintenance work, such as CI, build, or release-process changes.
 
 ## Unreleased
 
+### Pack Authoring
+
+- New `luna pack` commands initialize, inspect, validate, and incrementally
+  maintain managed content, composite references, lifecycle scripts, parameters,
+  tags, and metadata in local `pack.yml`.
+- Pack manifests now require only ID and semantic version, allowing schema-valid
+  identity-only authoring states and empty content collections.
+- Pack manifests now support optional non-empty `name` and absolute HTTP or
+  HTTPS `homepage` metadata. Author and license are optional but remain
+  non-empty when present.
+
 ### CLI Workflow
 
 - Running `luna` without a subcommand now summarizes workspace maturity and

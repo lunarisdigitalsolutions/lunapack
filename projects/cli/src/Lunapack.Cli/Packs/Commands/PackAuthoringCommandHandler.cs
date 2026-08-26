@@ -110,80 +110,104 @@ internal sealed class PackAuthoringCommandHandler(
             conditionOption,
         };
         command.SetAction(async parseResult =>
-        {
-            var rawPath = parseResult.GetValue(pathArgument);
-            if (rawPath is null)
-            {
-                return console.Fail($"A {selectorKind} path is required.");
-            }
-
-            var workspace = ResolveWorkspace(parseResult, projectDirectory, workspaceOption);
-            var selector = NormalizeSelector(workspace, selectorKind, rawPath);
-            if (selector.Value is not { } normalizedSelector)
-            {
-                return console.Fail(selector.Error);
-            }
-
-            var targetValue =
-                parseResult.GetValue(targetOption)
-                ?? (
-                    selectorKind == "glob"
-                        ? DeriveGlobTarget(normalizedSelector)
-                        : normalizedSelector
-                );
-            if (targetValue is null)
-            {
-                return console.Fail("Glob target cannot be inferred; provide '--target'.");
-            }
-
-            var target = ProjectPath.NormalizeProjectRelativePath(
-                fileSystem,
-                workspace,
-                targetValue
-            );
-            if (target.Value is not { } normalizedTarget)
-            {
-                return console.Fail(target.Error);
-            }
-
-            var strategy = ParseStrategy(parseResult.GetValue(strategyOption));
-            if (strategy.Value is not { } parsedStrategy)
-            {
-                return console.Fail(strategy.Error);
-            }
-
-            var result = await manifestStore.UpdateAsync(
-                workspace,
-                manifest =>
-                {
-                    if (
-                        manifest.ManagedFiles.Any(file =>
-                            string.Equals(
-                                GetSelector(file),
-                                normalizedSelector,
-                                StringComparison.Ordinal
-                            )
-                        )
-                    )
-                    {
-                        return $"Managed selector '{normalizedSelector}' already exists.";
-                    }
-
-                    var managedFile = new PackManifest.PackManagedFile
-                    {
-                        Target = normalizedTarget,
-                        Strategy = parsedStrategy,
-                        Template = parseResult.GetValue(templateOption),
-                        Condition = parseResult.GetValue(conditionOption),
-                    };
-                    SetSelector(managedFile, selectorKind, normalizedSelector);
-                    manifest.ManagedFiles.Add(managedFile);
-                    return null;
-                }
-            );
-            return ReportMutation(result, $"Added {selectorKind} '{normalizedSelector}'.");
-        });
+            await AddManagedFileAsync(
+                ResolveWorkspace(parseResult, projectDirectory, workspaceOption),
+                selectorKind,
+                parseResult.GetValue(pathArgument),
+                parseResult.GetValue(targetOption),
+                parseResult.GetValue(strategyOption),
+                parseResult.GetValue(templateOption),
+                parseResult.GetValue(conditionOption)
+            )
+        );
         return command;
+    }
+
+    private async Task<int> AddManagedFileAsync(
+        string workspace,
+        string selectorKind,
+        string? rawPath,
+        string? rawTarget,
+        string? rawStrategy,
+        bool template,
+        string? condition
+    )
+    {
+        if (rawPath is null)
+        {
+            return console.Fail($"A {selectorKind} path is required.");
+        }
+
+        var selector = NormalizeSelector(workspace, selectorKind, rawPath);
+        if (selector.Value is not { } normalizedSelector)
+        {
+            return console.Fail(selector.Error);
+        }
+
+        var targetValue =
+            rawTarget
+            ?? (
+                string.Equals(selectorKind, "glob", StringComparison.Ordinal)
+                    ? DeriveGlobTarget(normalizedSelector)
+                    : normalizedSelector
+            );
+        if (targetValue is null)
+        {
+            return console.Fail("Glob target cannot be inferred; provide '--target'.");
+        }
+
+        var target = ProjectPath.NormalizeProjectRelativePath(fileSystem, workspace, targetValue);
+        var strategy = ParseStrategy(rawStrategy);
+        if (target.Value is not { } normalizedTarget || strategy.Value is not { } parsedStrategy)
+        {
+            return console.Fail(target.Error ?? strategy.Error);
+        }
+
+        var result = await manifestStore.UpdateAsync(
+            workspace,
+            manifest =>
+                AddManagedSelector(
+                    manifest,
+                    selectorKind,
+                    normalizedSelector,
+                    normalizedTarget,
+                    parsedStrategy,
+                    template,
+                    condition
+                )
+        );
+        return ReportMutation(result, $"Added {selectorKind} '{normalizedSelector}'.");
+    }
+
+    private static string? AddManagedSelector(
+        PackManifest manifest,
+        string selectorKind,
+        string selector,
+        string target,
+        PackManifest.PackManagedFileStrategy strategy,
+        bool template,
+        string? condition
+    )
+    {
+        if (
+            manifest.ManagedFiles.Any(file =>
+                string.Equals(GetSelector(file), selector, StringComparison.Ordinal)
+            )
+        )
+        {
+            return $"Managed selector '{selector}' already exists.";
+        }
+
+        var managedFile = new PackManifest.PackManagedFile
+        {
+            Target = target,
+            Strategy = strategy,
+            Template = template,
+            Condition = condition,
+        };
+        SetSelector(managedFile, selectorKind, selector);
+        manifest.ManagedFiles.Add(managedFile);
+        return null;
     }
 
     private Command CreateScriptCommand(string projectDirectory, Option<string?> workspaceOption)
@@ -219,7 +243,7 @@ internal sealed class PackAuthoringCommandHandler(
         {
             var hook = parseResult.GetValue(hookArgument);
             var executable = parseResult.GetValue(executableArgument);
-            if (!IsHook(hook) || string.IsNullOrEmpty(executable))
+            if (hook is null || !IsHook(hook) || string.IsNullOrEmpty(executable))
             {
                 return console.Fail("A supported hook and non-empty command are required.");
             }
@@ -273,7 +297,8 @@ internal sealed class PackAuthoringCommandHandler(
                 parseResult.GetValue(fileArgument) ?? string.Empty
             );
             if (
-                !IsHook(hook)
+                hook is null
+                || !IsHook(hook)
                 || string.IsNullOrEmpty(runner)
                 || file.Value is not { } normalizedFile
             )
@@ -367,57 +392,72 @@ internal sealed class PackAuthoringCommandHandler(
             replaceOption,
         };
         command.SetAction(async parseResult =>
-        {
-            var id = parseResult.GetValue(idArgument);
-            var version = parseResult.GetValue(versionArgument);
-            var bindings = ParseBindings(parseResult.GetValue(parameterOption) ?? []);
-            var hooks = parseResult.GetValue(disabledHookOption) ?? [];
-            if (
-                string.IsNullOrEmpty(id)
-                || !ManifestModelValidator.IsSemanticVersion(version)
-                || bindings.Value is not { } parameters
-                || hooks.Any(hook => !IsHook(hook))
-            )
-            {
-                return console.Fail(
-                    bindings.Error ?? "Reference requires an ID, exact version, and valid hooks."
-                );
-            }
-
-            var result = await manifestStore.UpdateAsync(
+            await SetReferenceAsync(
                 ResolveWorkspace(parseResult, projectDirectory, workspaceOption),
-                manifest =>
-                {
-                    var existing = manifest.Packs.FindIndex(reference =>
-                        string.Equals(reference.Id, id, StringComparison.Ordinal)
-                    );
-                    if (existing >= 0 && !replaceByDefault && !parseResult.GetValue(replaceOption))
-                    {
-                        return $"Pack reference '{id}' already exists; use '--replace'.";
-                    }
-
-                    var reference = new PackManifest.PackReference
-                    {
-                        Id = id,
-                        Version = version!,
-                        Parameters = parameters,
-                        DisabledHooks = [.. hooks],
-                    };
-                    if (existing >= 0)
-                    {
-                        manifest.Packs[existing] = reference;
-                    }
-                    else
-                    {
-                        manifest.Packs.Add(reference);
-                    }
-
-                    return null;
-                }
-            );
-            return ReportMutation(result, $"Set pack reference '{id}'.");
-        });
+                parseResult.GetValue(idArgument),
+                parseResult.GetValue(versionArgument),
+                parseResult.GetValue(parameterOption) ?? [],
+                parseResult.GetValue(disabledHookOption) ?? [],
+                replaceByDefault || parseResult.GetValue(replaceOption)
+            )
+        );
         return command;
+    }
+
+    private async Task<int> SetReferenceAsync(
+        string workspace,
+        string? id,
+        string? version,
+        string[] rawBindings,
+        string[] hooks,
+        bool replace
+    )
+    {
+        var bindings = ParseBindings(rawBindings);
+        if (
+            string.IsNullOrEmpty(id)
+            || !ManifestModelValidator.IsSemanticVersion(version)
+            || bindings.Value is not { } parameters
+            || hooks.Any(hook => !IsHook(hook))
+        )
+        {
+            return console.Fail(
+                bindings.Error ?? "Reference requires an ID, exact version, and valid hooks."
+            );
+        }
+
+        var result = await manifestStore.UpdateAsync(
+            workspace,
+            manifest =>
+            {
+                var existing = manifest.Packs.FindIndex(reference =>
+                    string.Equals(reference.Id, id, StringComparison.Ordinal)
+                );
+                if (existing >= 0 && !replace)
+                {
+                    return $"Pack reference '{id}' already exists; use '--replace'.";
+                }
+
+                var reference = new PackManifest.PackReference
+                {
+                    Id = id,
+                    Version = version!,
+                    Parameters = parameters,
+                    DisabledHooks = [.. hooks],
+                };
+                if (existing >= 0)
+                {
+                    manifest.Packs[existing] = reference;
+                }
+                else
+                {
+                    manifest.Packs.Add(reference);
+                }
+
+                return null;
+            }
+        );
+        return ReportMutation(result, $"Set pack reference '{id}'.");
     }
 
     private Command CreateParameterCommand(string projectDirectory, Option<string?> workspaceOption)
@@ -455,7 +495,9 @@ internal sealed class PackAuthoringCommandHandler(
                     {
                         Type = type,
                         Required = parseResult.GetValue(requiredOption),
-                        Values = type == "enum" ? [.. values] : null,
+                        Values = string.Equals(type, "enum", StringComparison.Ordinal)
+                            ? [.. values]
+                            : null,
                         DisplayName = parseResult.GetValue(displayNameOption),
                         Description = parseResult.GetValue(descriptionOption),
                     };
@@ -644,7 +686,7 @@ internal sealed class PackAuthoringCommandHandler(
         string value
     )
     {
-        if (kind != "glob")
+        if (!string.Equals(kind, "glob", StringComparison.Ordinal))
         {
             return ProjectPath.NormalizeProjectRelativePath(fileSystem, workspace, value);
         }
@@ -652,7 +694,7 @@ internal sealed class PackAuthoringCommandHandler(
         var normalized = ProjectPath.Normalize(value);
         if (
             normalized.Length == 0
-            || normalized.StartsWith("/", StringComparison.Ordinal)
+            || normalized.StartsWith('/')
             || (normalized.Length >= 2 && char.IsAsciiLetter(normalized[0]) && normalized[1] == ':')
             || normalized.Split('/').Contains("..", StringComparer.Ordinal)
         )
