@@ -104,6 +104,24 @@ public sealed class PackAuthoringCommandTests
     }
 
     [Test]
+    public async Task Remove_WhenSelectorEscapes_PreservesManifest()
+    {
+        using var workspace = await CreateInitializedWorkspaceAsync();
+        var path = Path.Combine(workspace.Path, PackManifestStore.FileName);
+        const string manifest =
+            "id: example\nversion: 1.0.0\nmanagedFiles:\n- source: ../unsafe\n  target: unsafe\n";
+        File.WriteAllText(path, manifest);
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["pack", "rm", "../unsafe"],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(File.ReadAllText(path)).IsEqualTo(manifest);
+    }
+
+    [Test]
     public async Task ScriptCommands_WhenCommandAndFileFormsAdded_PreserveLiteralArguments()
     {
         using var workspace = await CreateInitializedWorkspaceAsync();
@@ -202,7 +220,6 @@ public sealed class PackAuthoringCommandTests
             ["pack", "add", "script", "command", "postInstall", "npm", "install"],
             workspace.Path
         );
-
         var fileExit = await workspace.Application.RunAsync(
             ["pack", "rm", "README.md"],
             workspace.Path
@@ -225,16 +242,40 @@ public sealed class PackAuthoringCommandTests
         var console = new SpectreTestConsole();
         using var workspace = new TestWorkspace(ansiConsole: console);
         await workspace.Application.RunAsync(["pack", "init", "--id", "example"], workspace.Path);
+        await workspace.Application.RunAsync(
+            ["pack", "add", "file", "README.md", "--target", "docs/README.md"],
+            workspace.Path
+        );
+        await workspace.Application.RunAsync(
+            ["pack", "add", "script", "command", "postInstall", "npm", "install"],
+            workspace.Path
+        );
+        await workspace.Application.RunAsync(
+            ["pack", "set", "description", "Example description"],
+            workspace.Path
+        );
 
+        var listExit = await workspace.Application.RunAsync(["pack", "list"], workspace.Path);
         var showExit = await workspace.Application.RunAsync(["pack", "show"], workspace.Path);
+        var scriptsExit = await workspace.Application.RunAsync(["pack", "scripts"], workspace.Path);
         var validateExit = await workspace.Application.RunAsync(
             ["pack", "validate"],
             workspace.Path
         );
 
+        await Assert.That(listExit).IsEqualTo(0);
         await Assert.That(showExit).IsEqualTo(0);
+        await Assert.That(scriptsExit).IsEqualTo(0);
         await Assert.That(validateExit).IsEqualTo(0);
         await Assert.That(console.Output).Contains("example");
+        await Assert.That(console.Output).Contains("Example description");
+        await Assert.That(console.Output).Contains("README.md");
+        await Assert.That(console.Output).Contains("docs/README.md");
+        await Assert.That(console.Output).Contains("Managed files");
+        await Assert.That(console.Output).Contains("References");
+        await Assert.That(console.Output).Contains("Parameters");
+        await Assert.That(console.Output).Contains("postInstall");
+        await Assert.That(console.Output).Contains("npm install");
         await Assert.That(console.Output).Contains("Manifest valid.");
     }
 

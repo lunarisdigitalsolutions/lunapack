@@ -571,7 +571,16 @@ internal sealed class PackAuthoringCommandHandler(
                 return console.Fail("A managed selector is required.");
             }
 
-            var normalized = ProjectPath.Normalize(selector);
+            var normalizedResult = NormalizeSelector(
+                ResolveWorkspace(parseResult, projectDirectory, workspaceOption),
+                "glob",
+                selector
+            );
+            if (normalizedResult.Value is not { } normalized)
+            {
+                return console.Fail(normalizedResult.Error);
+            }
+
             var result = await manifestStore.UpdateAsync(
                 ResolveWorkspace(parseResult, projectDirectory, workspaceOption),
                 manifest =>
@@ -647,7 +656,16 @@ internal sealed class PackAuthoringCommandHandler(
                 return console.Fail(result.Error);
             }
 
-            foreach (var renderable in PackManifestInspectionFormatter.Format(manifest))
+            var renderables = name switch
+            {
+                "list" => PackAuthoringFormatter.FormatList(manifest),
+                "scripts" => PackAuthoringFormatter.FormatScripts(manifest),
+                "show" => PackAuthoringFormatter.FormatSummary(manifest),
+                _ => throw new InvalidOperationException(
+                    $"Unsupported pack display command '{name}'."
+                ),
+            };
+            foreach (var renderable in renderables)
             {
                 console.Render(renderable);
             }

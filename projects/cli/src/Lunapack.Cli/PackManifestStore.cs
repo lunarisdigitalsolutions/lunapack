@@ -24,6 +24,11 @@ internal sealed class PackManifestStore(IFileSystem fileSystem)
     public Task<ManifestOperationResult<PackManifest>> CreateAsync(
         string projectDirectory,
         PackManifest manifest
+    ) => WithWriteLockAsync(projectDirectory, () => CreateCoreAsync(projectDirectory, manifest));
+
+    private Task<ManifestOperationResult<PackManifest>> CreateCoreAsync(
+        string projectDirectory,
+        PackManifest manifest
     )
     {
         var manifestPath = GetManifestPath(projectDirectory);
@@ -89,6 +94,15 @@ internal sealed class PackManifestStore(IFileSystem fileSystem)
     }
 
     public async Task<ManifestOperationResult<PackManifest>> UpdateAsync(
+        string projectDirectory,
+        Func<PackManifest, string?> mutation
+    ) =>
+        await WithWriteLockAsync(
+            projectDirectory,
+            () => UpdateCoreAsync(projectDirectory, mutation)
+        );
+
+    private async Task<ManifestOperationResult<PackManifest>> UpdateCoreAsync(
         string projectDirectory,
         Func<PackManifest, string?> mutation
     )
@@ -201,6 +215,94 @@ internal sealed class PackManifestStore(IFileSystem fileSystem)
     private string GetManifestPath(string projectDirectory) =>
         fileSystem.Path.Combine(projectDirectory, FileName);
 
+    private async Task<ManifestOperationResult<PackManifest>> WithWriteLockAsync(
+        string projectDirectory,
+        Func<Task<ManifestOperationResult<PackManifest>>> action
+    )
+    {
+        fileSystem.Directory.CreateDirectory(projectDirectory);
+        var lockPath = fileSystem.Path.Combine(projectDirectory, $".{FileName}.lock");
+        try
+        {
+            using var lockStream = fileSystem.File.Open(
+                lockPath,
+                FileMode.OpenOrCreate,
+                FileAccess.ReadWrite,
+                FileShare.None
+            );
+            return await action();
+        }
+        catch (IOException exception)
+        {
+            return ManifestOperationResult<PackManifest>.Failure(
+                $"Unable to lock {FileName} for writing: {exception.Message}"
+            );
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            return ManifestOperationResult<PackManifest>.Failure(
+                $"Unable to lock {FileName} for writing: {exception.Message}"
+            );
+        }
+    }
+
     private static string FormatIssues(IReadOnlyList<string> issues) =>
-        $"Invalid {FileName}:{Environment.NewLine}{string.Join(Environment.NewLine, issues.Select(issue => $"  {issue}"))}";
+        $"Invalid {FileName}:{Environment.NewLine}{string.Join(Environment.NewLine, issues.Select(issue => $"  {GetIssuePath(issue)}: {issue}"))}";
+
+    private static string GetIssuePath(string issue)
+    {
+        if (GetMetadataIssuePath(issue) is { } metadataPath)
+        {
+            return metadataPath;
+        }
+
+        if (
+            issue.StartsWith("Parameter ", StringComparison.Ordinal)
+            || issue.StartsWith("Enum parameter ", StringComparison.Ordinal)
+        )
+        {
+            return "$.parameters";
+        }
+
+        if (issue.StartsWith("Managed file ", StringComparison.Ordinal))
+        {
+            return "$.managedFiles";
+        }
+
+        if (issue.StartsWith("Lifecycle script ", StringComparison.Ordinal))
+        {
+            return "$.scripts";
+        }
+
+        if (issue.StartsWith("Pack reference ", StringComparison.Ordinal))
+        {
+            return "$.packs";
+        }
+
+        if (
+            issue.StartsWith("Pack tag", StringComparison.Ordinal)
+            || issue.StartsWith("Pack cannot define more than", StringComparison.Ordinal)
+        )
+        {
+            return "$.tags";
+        }
+
+        return "$";
+    }
+
+    private static string? GetMetadataIssuePath(string issue)
+    {
+        var prefixes = new (string Prefix, string Path)[]
+        {
+            ("Pack id ", "$.id"),
+            ("Version ", "$.version"),
+            ("Pack name ", "$.name"),
+            ("Pack author ", "$.author"),
+            ("Pack homepage ", "$.homepage"),
+            ("Pack license ", "$.license"),
+        };
+        return prefixes
+            .FirstOrDefault(value => issue.StartsWith(value.Prefix, StringComparison.Ordinal))
+            .Path;
+    }
 }

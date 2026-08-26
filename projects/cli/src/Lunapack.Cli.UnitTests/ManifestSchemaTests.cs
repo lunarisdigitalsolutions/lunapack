@@ -1,3 +1,6 @@
+using System.Text.Json;
+using System.Text.RegularExpressions;
+
 namespace Lunapack.Cli.UnitTests;
 
 public sealed class ManifestSchemaTests
@@ -29,6 +32,9 @@ public sealed class ManifestSchemaTests
 
     [Test]
     [Arguments("https://lunapack.dev/packs/example", true)]
+    [Arguments("HTTPS://lunapack.dev/packs/example", true)]
+    [Arguments("http://", false)]
+    [Arguments("https://exa mple.test", false)]
     [Arguments("relative/home", false)]
     [Arguments("ftp://lunapack.dev/example", false)]
     public async Task PackManifest_WhenHomepageProvided_ValidatesAbsoluteWebUri(
@@ -46,6 +52,42 @@ public sealed class ManifestSchemaTests
         var issues = ManifestModelValidator.Validate(manifest);
 
         await Assert.That(issues.Count == 0).IsEqualTo(expectedValid);
+    }
+
+    [Test]
+    [Arguments("https://lunapack.dev/packs/example", true)]
+    [Arguments("HTTPS://lunapack.dev/packs/example", true)]
+    [Arguments("http://", false)]
+    [Arguments("https://exa mple.test", false)]
+    [Arguments("ftp://lunapack.dev/example", false)]
+    public async Task PackSchema_WhenHomepageProvided_MatchesRuntimeUriBoundary(
+        string homepage,
+        bool expectedValid
+    )
+    {
+        using var schema = JsonDocument.Parse(
+            File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "pack.schema.json"))
+        );
+        var pattern = schema
+            .RootElement.GetProperty("properties")
+            .GetProperty("homepage")
+            .GetProperty("pattern")
+            .GetString();
+        if (pattern is null)
+        {
+            throw new InvalidOperationException("Pack homepage schema pattern is missing.");
+        }
+
+        await Assert
+            .That(
+                Regex.IsMatch(
+                    homepage,
+                    pattern,
+                    RegexOptions.CultureInvariant,
+                    TimeSpan.FromSeconds(1)
+                )
+            )
+            .IsEqualTo(expectedValid);
     }
 
     [Test]
