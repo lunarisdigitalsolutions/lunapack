@@ -103,7 +103,7 @@ Rejected because numbering, escaping, and the action limit need one contract.
 
 ### Remove sources atomically and revoke source-bound trust
 
-`luna sources remove <name>` removes exactly one configured source by its
+`luna sources rm <name>` removes exactly one configured source by its
 ordinal name and removes project trust entries bound to that source name in the
 same state save. It retains requested roots and immutable resolved lock records
 so audit and safe uninstallation remain possible. Later catalog or update

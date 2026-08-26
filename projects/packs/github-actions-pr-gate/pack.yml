@@ -1,0 +1,16 @@
+id: github-actions-pr-gate
+version: 1.0.0
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Gate pull requests until external checks report success.
+tags:
+  - github-actions
+  - pull-request
+  - checks
+managedFiles:
+  - source: templates/.github/workflows/pull-request-check-gate.yml
+    target: .github/workflows/pull-request-check-gate.yml
+  - source: templates/.github/scripts/validate-external-checks.js
+    target: .github/scripts/validate-external-checks.js
+  - source: templates/docs/developer/github-actions/pull-request-check-gate.md
+    target: docs/developer/github-actions/pull-request-check-gate.md

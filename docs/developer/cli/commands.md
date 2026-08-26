@@ -13,6 +13,7 @@ root packs, then recommends the next commands for the current workspace stage.
 | ------------------------------- | ----------------- | ---------------------------------------------------------- |
 | `--workspace <directory>`, `-w` | Current directory | Selects the project directory.                             |
 | `--log-level <level>`, `-ll`    | `info`            | Accepts `verbose`, `debug`, `info`, `warning`, or `error`. |
+| `--suppress-next-steps`         | `false`           | Suppresses contextual next-step recommendations.            |
 | `--help`, `-h`, `-?`            | Not applicable    | Shows command help and returns success.                    |
 | `--version`                     | Not applicable    | Shows the Luna version and returns success.                |
 
@@ -38,7 +39,7 @@ root packs, then recommends the next commands for the current workspace stage.
   repository as a Git pack source. LunaPack stores its HTTPS Git URL; `--ref`
   (`-r`) and `--path` (`-p`) match `git`.
 - `luna sources list`: Lists configured local and Git sources.
-- `luna sources remove <name>`: Removes one configured source and project trust
+- `luna sources rm <name>`: Removes one configured source and project trust
   bound to its name. Installed pack records, lock provenance, and managed files
   remain.
 - `luna trust source <name>...`: Grants lifecycle-script trust to configured
@@ -116,7 +117,9 @@ Successful initialization, source changes, catalog exploration, installation,
 updates, and uninstallation append a bounded recommendation block when a useful
 next action exists. Dry runs do not claim that workspace state advanced. Missing
 workspace or source prerequisites and unresolved pack references include
-recovery commands while retaining a nonzero exit code.
+recovery commands while retaining a nonzero exit code. Use
+`--suppress-next-steps` with any command to omit recommendation and recovery
+guidance.
 
 Successful commands return exit code `0`. Invalid input, validation failures,
 resolution conflicts, denied trust, Git failures, and filesystem or state-write

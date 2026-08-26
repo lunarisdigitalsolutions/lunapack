@@ -4,12 +4,14 @@ namespace Lunapack.Cli;
 
 internal sealed class NextStepRenderer(CliConsole console)
 {
+    public bool Suppress { get; set; }
+
     public void Render(
         IReadOnlyList<NextStepRecommendation> recommendations,
         string? heading = null
     )
     {
-        if (recommendations.Count == 0)
+        if (Suppress || recommendations.Count == 0)
         {
             return;
         }

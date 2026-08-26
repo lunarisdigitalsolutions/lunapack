@@ -5,14 +5,26 @@ internal maintenance work, such as CI, build, or release-process changes.
 
 ## Unreleased
 
+### New Packs
+
+- Added `commitlint`, `github-actions-commitlint`, and
+  `github-actions-pr-gate` packs for conventional pull request titles, Azure
+  Boards references, and external-check gating workflows.
+- `github-actions-pr-gate` supports configurable case-insensitive check-name
+  fragments for checks excluded from gate evaluation.
+
 ### CLI Workflow
 
+- `luna sources rm <name>` replaces `luna sources remove <name>` for consistency
+  with other concise configuration-removal commands.
 - Running `luna` without a subcommand now summarizes workspace maturity and
   recommends the next setup, catalog, or lifecycle commands.
 - Successful core commands and recoverable missing-prerequisite or pack lookup
   failures now include up to three contextual command recommendations.
-- `luna sources remove <name>` removes source configuration and bound project
+- `luna sources rm <name>` removes source configuration and bound project
   trust while retaining installed pack state, provenance, and managed files.
+- `luna --suppress-next-steps` suppresses contextual next-step recommendations for any
+  command.
 
 ## Version 1.0.0 - 2026-08-25
 

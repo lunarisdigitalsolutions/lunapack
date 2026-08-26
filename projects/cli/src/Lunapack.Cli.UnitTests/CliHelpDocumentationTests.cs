@@ -22,7 +22,7 @@ public sealed class CliHelpDocumentationTests
             ["--ref", "-r", "--path", "-p"]
         ),
         new("sources list"),
-        new("sources remove", "<name>"),
+        new("sources rm", "<name>"),
         new("trust source", "<name>...", ["--project", "--global"]),
         new("trust pack", "<id>... --source <name>", ["--source", "-s", "--project", "--global"]),
         new("trust list", null, ["--global"]),
@@ -105,7 +105,17 @@ public sealed class CliHelpDocumentationTests
         var exitCode = await workspace.Application.RunAsync(["--help"], workspace.Path, output);
 
         await Assert.That(exitCode).IsEqualTo(0);
-        foreach (var option in new[] { "--workspace", "-w", "--log-level", "-ll", "--help" })
+        foreach (
+            var option in new[]
+            {
+                "--workspace",
+                "-w",
+                "--log-level",
+                "-ll",
+                "--suppress-next-steps",
+                "--help",
+            }
+        )
         {
             await Assert.That(output.ToString()).Contains(option);
             await Assert.That(documentation).Contains(option);

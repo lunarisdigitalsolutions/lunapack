@@ -1,0 +1,58 @@
+name: 'PR: External Check Gate'
+
+on:
+  workflow_dispatch:
+    inputs:
+      pull_request_number:
+        description: Pull request number to validate. Leave empty to resolve by commit.
+        required: false
+        type: number
+  pull_request:
+    types:
+      - labeled
+    branches:
+      - main
+  check_suite:
+    types:
+      - completed
+
+permissions:
+  checks: read
+  contents: read
+  pull-requests: read
+  statuses: read
+
+env:
+  TARGET_BASE_BRANCH: main
+  VALIDATION_JOB_NAME: Validate External Checks
+
+concurrency:
+  group: pr-external-check-gate-${{ github.event.pull_request.head.sha || github.event.check_suite.head_sha || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  validate-checks:
+    name: Validate External Checks
+    if: |
+      github.event_name != 'pull_request' || (
+        github.event.pull_request.draft == false &&
+        github.event.label.name == 'ready-to-merge'
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out gate script
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Validate external checks for pull request head
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const { validateExternalChecks } = require('./.github/scripts/validate-external-checks.js');
+            await validateExternalChecks({
+              github,
+              context,
+              core,
+              skippedCheckNameParts: []
+            });
