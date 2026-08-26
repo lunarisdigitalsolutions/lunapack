@@ -22,6 +22,7 @@ public sealed class CliHelpDocumentationTests
             ["--ref", "-r", "--path", "-p"]
         ),
         new("sources list"),
+        new("sources remove", "<name>"),
         new("trust source", "<name>...", ["--project", "--global"]),
         new("trust pack", "<id>... --source <name>", ["--source", "-s", "--project", "--global"]),
         new("trust list", null, ["--global"]),

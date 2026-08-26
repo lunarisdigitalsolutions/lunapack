@@ -6,6 +6,7 @@ namespace Lunapack.Cli;
 internal sealed class OutdatedPackCommandHandler(
     PackUpdateSelectionService updateSelectionService,
     WorkspaceDirectoryResolver workspaceDirectoryResolver,
+    WorkflowPrerequisiteGuard prerequisiteGuard,
     CliConsole console
 )
 {
@@ -29,6 +30,12 @@ internal sealed class OutdatedPackCommandHandler(
 
     public async Task<int> OutdatedAsync(string projectDirectory)
     {
+        var prerequisiteFailure = await prerequisiteGuard.RequireSourcesAsync(projectDirectory);
+        if (prerequisiteFailure is not null)
+        {
+            return prerequisiteFailure.Value;
+        }
+
         var availableUpdates = await updateSelectionService.GetAvailableAsync(projectDirectory);
         if (availableUpdates.Value is not { } updates)
         {

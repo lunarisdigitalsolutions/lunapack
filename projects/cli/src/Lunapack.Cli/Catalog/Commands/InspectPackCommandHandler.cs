@@ -5,6 +5,9 @@ namespace Lunapack.Cli;
 internal sealed class InspectPackCommandHandler(
     CatalogService catalogService,
     WorkspaceDirectoryResolver workspaceDirectoryResolver,
+    INextStepAdvisor nextStepAdvisor,
+    NextStepRenderer nextStepRenderer,
+    WorkflowPrerequisiteGuard prerequisiteGuard,
     CliConsole console
 )
 {
@@ -43,6 +46,12 @@ internal sealed class InspectPackCommandHandler(
 
     private async Task<int> InspectAsync(string projectDirectory, PackReference packReference)
     {
+        var prerequisiteFailure = await prerequisiteGuard.RequireSourcesAsync(projectDirectory);
+        if (prerequisiteFailure is not null)
+        {
+            return prerequisiteFailure.Value;
+        }
+
         var catalog = await console.RunWithStatusAsync(
             $"Inspecting {packReference.Id}...",
             () => catalogService.LoadAsync(projectDirectory)
@@ -59,7 +68,12 @@ internal sealed class InspectPackCommandHandler(
         );
         if (resolvedPack.Value is not { } pack)
         {
-            return console.Fail(resolvedPack.Error);
+            var exitCode = console.Fail(resolvedPack.Error);
+            nextStepRenderer.Render(
+                nextStepAdvisor.Recommend(NextStepContext.PackNotFound, packReference.Id),
+                "Try:"
+            );
+            return exitCode;
         }
 
         var configuration = await catalogService.LoadConfigurationAsync(projectDirectory);
@@ -78,6 +92,10 @@ internal sealed class InspectPackCommandHandler(
             console.Render(renderable);
         }
 
+        nextStepRenderer.Render(
+            nextStepAdvisor.Recommend(NextStepContext.PackInspected, pack.Manifest.Id),
+            "Suggested commands:"
+        );
         return 0;
     }
 }

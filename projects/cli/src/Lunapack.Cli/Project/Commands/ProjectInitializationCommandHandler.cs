@@ -7,6 +7,8 @@ internal sealed class ProjectInitializationCommandHandler(
     IFileSystem fileSystem,
     ProjectStateStore projectStateStore,
     WorkspaceDirectoryResolver workspaceDirectoryResolver,
+    INextStepAdvisor nextStepAdvisor,
+    NextStepRenderer nextStepRenderer,
     CliConsole console
 )
 {
@@ -49,6 +51,13 @@ internal sealed class ProjectInitializationCommandHandler(
             }
         );
 
-        return result.IsSuccess ? 0 : console.Fail(result.Error);
+        if (!result.IsSuccess)
+        {
+            return console.Fail(result.Error);
+        }
+
+        console.Info("✓ Workspace initialized");
+        nextStepRenderer.Render(nextStepAdvisor.Recommend(NextStepContext.WorkspaceInitialized));
+        return 0;
     }
 }

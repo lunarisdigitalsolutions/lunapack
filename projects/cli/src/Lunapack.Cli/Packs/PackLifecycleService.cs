@@ -341,7 +341,8 @@ internal sealed class PackLifecycleService(
                 installationRequest
             )
             : ManifestOperationResult<IReadOnlyList<PackParameterPrompt>>.Failure(
-                graph.Error ?? "Unable to resolve pack graph."
+                graph.Error ?? "Unable to resolve pack graph.",
+                graph.ErrorKind
             );
     }
 
@@ -361,7 +362,8 @@ internal sealed class PackLifecycleService(
         if (graph.Value is not { } resolvedGraph)
         {
             return ManifestOperationResult<ResolvedPackGraph>.Failure(
-                graph.Error ?? "Unable to resolve pack graph."
+                graph.Error ?? "Unable to resolve pack graph.",
+                graph.ErrorKind
             );
         }
 
@@ -748,23 +750,13 @@ internal sealed class PackLifecycleService(
         }
 
         state.Configuration.Packs.Remove(requestedRoot);
-        var graph = await graphResolver.ResolveAsync(
-            projectDirectory,
-            state.Configuration,
-            state.Configuration.Packs
-        );
-        if (graph.Value is not { } remainingGraph)
-        {
-            return _console.Fail(graph.Error ?? "Unable to resolve pack graph.");
-        }
-
-        var nextLockFile = CreateRemainingLockFile(remainingGraph, state.LockFile);
+        var nextLockFile = CreateRemainingLockFile(state.Configuration.Packs, state.LockFile);
         if (nextLockFile.Value is not { } lockFile)
         {
             return _console.Fail(nextLockFile.Error);
         }
 
-        var removedPacks = GetRemovedPacks(state.LockFile, remainingGraph);
+        var removedPacks = GetRemovedPacks(state.LockFile, lockFile);
         var managedFilesToRemove = GetManagedFilesToRemove(removedPacks, lockFile);
         var changedFile = managedFilesToRemove.FirstOrDefault(managedFile =>
             ManagedTargetExists(managedFile.ManagedFile, projectDirectory)
@@ -1096,7 +1088,10 @@ internal sealed class PackLifecycleService(
                 }
             }
 
-            var savedState = await projectStateStore.SaveAsync(projectDirectory, state);
+            var savedState = await projectStateStore.SaveAllowingUnavailableSourcesAsync(
+                projectDirectory,
+                state
+            );
             if (savedState.IsSuccess)
             {
                 isPersisted = true;
@@ -1276,26 +1271,58 @@ internal sealed class PackLifecycleService(
     }
 
     private static ManifestOperationResult<ProjectLockFile> CreateRemainingLockFile(
-        ResolvedPackGraph graph,
+        IReadOnlyList<ProjectConfiguration.RequestedPack> requestedRoots,
         ProjectLockFile previousLockFile
     )
     {
-        var remainingPacks = new List<ProjectLockFile.ResolvedPack>(graph.Packs.Count);
-        foreach (var pack in graph.Packs)
+        var packsById = previousLockFile.Packs.ToDictionary(
+            pack => pack.Id,
+            StringComparer.Ordinal
+        );
+        var remainingIds = new HashSet<string>(StringComparer.Ordinal);
+        var pendingIds = new Stack<string>(requestedRoots.Select(pack => pack.Id));
+        while (pendingIds.TryPop(out var packId))
         {
-            var previousPack = previousLockFile.Packs.Find(lockPack => IsSamePack(lockPack, pack));
-            if (previousPack is null)
+            if (!remainingIds.Add(packId))
+            {
+                continue;
+            }
+
+            if (!packsById.TryGetValue(packId, out var resolvedPack))
             {
                 return ManifestOperationResult<ProjectLockFile>.Failure(
-                    $"Lock file does not contain resolved pack '{pack.Manifest.Id}@{pack.Manifest.Version}'."
+                    $"Lock file does not contain resolved pack '{packId}'."
                 );
             }
 
-            remainingPacks.Add(previousPack);
+            foreach (var dependency in resolvedPack.Packs)
+            {
+                if (
+                    !packsById.TryGetValue(dependency.Id, out var resolvedDependency)
+                    || !string.Equals(
+                        dependency.Version,
+                        resolvedDependency.Version,
+                        StringComparison.Ordinal
+                    )
+                )
+                {
+                    return ManifestOperationResult<ProjectLockFile>.Failure(
+                        $"Lock file does not contain resolved pack '{dependency.Id}@{dependency.Version}'."
+                    );
+                }
+
+                pendingIds.Push(dependency.Id);
+            }
         }
 
         return ManifestOperationResult<ProjectLockFile>.Success(
-            new ProjectLockFile { SchemaVersion = 1, Packs = remainingPacks }
+            new ProjectLockFile
+            {
+                SchemaVersion = 1,
+                Packs = previousLockFile
+                    .Packs.Where(pack => remainingIds.Contains(pack.Id))
+                    .ToList(),
+            }
         );
     }
 
@@ -1312,10 +1339,14 @@ internal sealed class PackLifecycleService(
 
     private static List<ProjectLockFile.ResolvedPack> GetRemovedPacks(
         ProjectLockFile previousLockFile,
-        ResolvedPackGraph remainingGraph
+        ProjectLockFile remainingLockFile
     ) =>
         previousLockFile
-            .Packs.Where(lockPack => !remainingGraph.Packs.Any(pack => IsSamePack(lockPack, pack)))
+            .Packs.Where(lockPack =>
+                !remainingLockFile.Packs.Exists(pack =>
+                    string.Equals(pack.Id, lockPack.Id, StringComparison.Ordinal)
+                )
+            )
             .ToList();
 
     private static List<ManagedFileRemoval> GetManagedFilesToRemove(

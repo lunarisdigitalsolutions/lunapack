@@ -7,6 +7,9 @@ internal sealed class InstallPackCommandHandler(
     IFileSystem fileSystem,
     PackLifecycleService packLifecycleService,
     WorkspaceDirectoryResolver workspaceDirectoryResolver,
+    INextStepAdvisor nextStepAdvisor,
+    NextStepRenderer nextStepRenderer,
+    WorkflowPrerequisiteGuard prerequisiteGuard,
     CliConsole console
 )
 {
@@ -139,6 +142,12 @@ internal sealed class InstallPackCommandHandler(
         bool skipInstalledRoots
     )
     {
+        var prerequisiteFailure = await prerequisiteGuard.RequireSourcesAsync(workspaceDirectory);
+        if (prerequisiteFailure is not null)
+        {
+            return prerequisiteFailure.Value;
+        }
+
         var installationRequest = CreateInstallationRequest(
             workspaceDirectory,
             packReference,
@@ -172,16 +181,40 @@ internal sealed class InstallPackCommandHandler(
         );
         if (unresolvedParameters.Value is not { } prompts)
         {
-            return console.Fail(unresolvedParameters.Error);
+            var exitCode = console.Fail(unresolvedParameters.Error);
+            if (unresolvedParameters.ErrorKind == ManifestOperationErrorKind.PackNotFound)
+            {
+                nextStepRenderer.Render(
+                    nextStepAdvisor.Recommend(
+                        NextStepContext.PackNotFound,
+                        request.PackReference.Id
+                    ),
+                    "Try:"
+                );
+            }
+
+            return exitCode;
         }
 
         request = PromptForRequiredParameters(request, prompts);
         if (!dryRun)
         {
-            return await console.RunWithStatusAsync(
+            var exitCode = await console.RunWithStatusAsync(
                 $"Installing {request.PackReference.Id}...",
                 () => packLifecycleService.InstallAsync(workspaceDirectory, request)
             );
+            if (exitCode == 0)
+            {
+                console.Info($"✓ Installed {request.PackReference.Id}");
+                nextStepRenderer.Render(
+                    nextStepAdvisor.Recommend(
+                        NextStepContext.PackInstalled,
+                        request.PackReference.Id
+                    )
+                );
+            }
+
+            return exitCode;
         }
 
         var plannedInstall = await packLifecycleService.DryRunInstallAsync(

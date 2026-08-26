@@ -49,3 +49,5 @@ Create a new architecture decision record from the [MADR-based template](templat
 | [ADR-0043](0043-verify-existing-release-assets-on-rerun.md)               | Verify immutable GitHub Release assets and notes before resuming a rerun.            |
 | [ADR-0044](0044-render-lifecycle-script-arguments.md)                     | Render lifecycle script arguments before trust authorization and execution.          |
 | [ADR-0045](0045-separate-open-source-access-from-services.md)             | Keep open-source access separate from optional Lunaris commercial services.          |
+| [ADR-0046](0046-centralize-contextual-cli-guidance.md)                    | Centralize workspace-aware recommendation selection and rendering.                   |
+| [ADR-0047](0047-retain-lock-evidence-after-source-removal.md)             | Retain installed lock evidence while revoking trust after source removal.            |

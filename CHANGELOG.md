@@ -5,7 +5,14 @@ internal maintenance work, such as CI, build, or release-process changes.
 
 ## Unreleased
 
-No consumer changes yet.
+### CLI Workflow
+
+- Running `luna` without a subcommand now summarizes workspace maturity and
+  recommends the next setup, catalog, or lifecycle commands.
+- Successful core commands and recoverable missing-prerequisite or pack lookup
+  failures now include up to three contextual command recommendations.
+- `luna sources remove <name>` removes source configuration and bound project
+  trust while retaining installed pack state, provenance, and managed files.
 
 ## Version 1.0.0 - 2026-08-25
 
