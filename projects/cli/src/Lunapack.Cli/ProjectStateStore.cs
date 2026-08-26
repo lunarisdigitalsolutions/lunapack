@@ -300,6 +300,11 @@ internal sealed class ProjectStateStore : IProjectStateStore
         pack with
         {
             Destination = ProjectPath.NormalizeOptional(pack.Destination),
+            ExternalSources = pack.ExternalSources.ToDictionary(
+                source => source.Key,
+                source => source.Value,
+                StringComparer.Ordinal
+            ),
             GitSource = NormalizeGitSource(pack.GitSource),
             ManagedFiles = [.. pack.ManagedFiles.Select(NormalizeManagedFile)],
             PackPath = ProjectPath.Normalize(pack.PackPath),
@@ -325,6 +330,7 @@ internal sealed class ProjectStateStore : IProjectStateStore
         managedFile with
         {
             DeclaredTargetPath = ProjectPath.NormalizeOptional(managedFile.DeclaredTargetPath),
+            SourcePath = ProjectPath.NormalizeOptional(managedFile.SourcePath),
             TargetPath = ProjectPath.Normalize(managedFile.TargetPath),
         };
 

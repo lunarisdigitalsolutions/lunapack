@@ -36,7 +36,8 @@ internal static partial class ManifestModelValidator
 
         ValidateTags(manifest.Tags, issues);
         ValidateParameters(manifest.Parameters, issues);
-        ValidateManagedFiles(manifest.ManagedFiles, issues);
+        ValidatePackSources(manifest.Sources, issues);
+        ValidateManagedFiles(manifest.ManagedFiles, manifest.Sources, issues);
         ValidatePackReferences(manifest.Packs, issues);
         ValidateScripts(manifest.Scripts, issues);
 
@@ -167,8 +168,78 @@ internal static partial class ManifestModelValidator
         }
     }
 
+    private static void ValidatePackSources(
+        IReadOnlyDictionary<string, PackManifest.PackSource> sources,
+        List<string> issues
+    )
+    {
+        foreach (var (alias, source) in sources)
+        {
+            if (!IsSourceAlias(alias))
+            {
+                issues.Add(
+                    $"Pack source alias '{alias}' must use alphanumeric segments separated by '.', '_', or '-'."
+                );
+            }
+
+            if (source is null)
+            {
+                issues.Add($"Pack source '{alias}' is required.");
+                continue;
+            }
+
+            ValidatePackSource(alias, source, issues);
+        }
+    }
+
+    private static void ValidatePackSource(
+        string alias,
+        PackManifest.PackSource source,
+        List<string> issues
+    )
+    {
+        if (!string.Equals(source.Type, "git", StringComparison.Ordinal))
+        {
+            issues.Add($"Pack source '{alias}' must declare type 'git'.");
+        }
+
+        if (string.IsNullOrEmpty(source.Ref))
+        {
+            issues.Add($"Pack source '{alias}' must pin a ref.");
+        }
+
+        var repository = SourceIdentityNormalizer.NormalizeRepository(source.Url);
+        if (!repository.IsSuccess)
+        {
+            issues.Add($"Pack source '{alias}' URL is invalid: {repository.Error}");
+        }
+
+        if (ContainsCredentialPlaceholder(source.Url))
+        {
+            issues.Add($"Pack source '{alias}' URL must not embed credentials.");
+        }
+
+        if (source.Path is not null && !IsSafeProjectRelativePath(source.Path))
+        {
+            issues.Add($"Pack source '{alias}' path must stay inside the repository.");
+        }
+
+        if (source.Description is "")
+        {
+            issues.Add($"Pack source '{alias}' description cannot be empty.");
+        }
+    }
+
+    private static bool ContainsCredentialPlaceholder(string? url) =>
+        url is not null
+        && (
+            url.Contains("${", StringComparison.Ordinal)
+            || url.Contains("$(", StringComparison.Ordinal)
+        );
+
     private static void ValidateManagedFiles(
         IReadOnlyList<PackManifest.PackManagedFile> managedFiles,
+        IReadOnlyDictionary<string, PackManifest.PackSource> sources,
         List<string> issues
     )
     {
@@ -190,31 +261,92 @@ internal static partial class ManifestModelValidator
                 issues.Add("Managed file condition cannot be empty.");
             }
 
-            ValidateSelector(managedFile, issues);
+            ValidateSelector(managedFile, sources, issues);
             ValidateManagedFileStrategy(managedFile.Strategy, issues);
         }
     }
 
     private static void ValidateSelector(
         PackManifest.PackManagedFile managedFile,
+        IReadOnlyDictionary<string, PackManifest.PackSource> sources,
         List<string> issues
     )
     {
-        var selectorCount = new[]
+        if (
+            managedFile.Source is ""
+            || managedFile.Glob is ""
+            || managedFile.Directory is ""
+            || managedFile.Path is ""
+        )
         {
-            managedFile.Source,
-            managedFile.Glob,
-            managedFile.Directory,
-        }.Count(static selector => selector is not null);
-        if (selectorCount != 1)
-        {
-            issues.Add("Managed file must define exactly one source, glob, or directory.");
+            issues.Add("Managed file selector cannot be empty.");
             return;
         }
 
-        if (managedFile.Source is "" || managedFile.Glob is "" || managedFile.Directory is "")
+        var createdSelector = PackManagedFileSelector.Create(managedFile);
+        if (createdSelector.Value is not { } selector)
         {
-            issues.Add("Managed file selector cannot be empty.");
+            issues.Add(createdSelector.Error ?? "Managed file selector is invalid.");
+            return;
+        }
+
+        ValidateSelectorSourceAlias(managedFile, selector, sources, issues);
+        ValidateSelectorPaths(selector, issues);
+    }
+
+    private static void ValidateSelectorSourceAlias(
+        PackManifest.PackManagedFile managedFile,
+        PackManagedFileSelector selector,
+        IReadOnlyDictionary<string, PackManifest.PackSource> sources,
+        List<string> issues
+    )
+    {
+        if (selector.SourceAlias is { } alias)
+        {
+            if (!sources.ContainsKey(alias))
+            {
+                issues.Add($"Managed file references undeclared pack source '{alias}'.");
+            }
+
+            return;
+        }
+
+        if (
+            managedFile.Source is { } legacySource
+            && managedFile.Path is null
+            && sources.ContainsKey(legacySource)
+        )
+        {
+            issues.Add(
+                $"Managed file referencing pack source '{legacySource}' must declare 'path'."
+            );
+        }
+    }
+
+    private static void ValidateSelectorPaths(PackManagedFileSelector selector, List<string> issues)
+    {
+        if (
+            selector.Kind != PackManagedFileSelectorKind.Glob
+            && !IsSafeProjectRelativePath(selector.Value)
+        )
+        {
+            issues.Add($"Managed file selector '{selector.Value}' must stay inside its source.");
+        }
+
+        foreach (var exclusion in selector.Exclusions)
+        {
+            if (string.IsNullOrEmpty(exclusion) || !IsSafeProjectRelativePath(exclusion))
+            {
+                issues.Add("Managed file exclusions must be non-empty source-relative patterns.");
+            }
+        }
+
+        if (
+            selector.Exclusions.Distinct(StringComparer.Ordinal).Count()
+            != selector.Exclusions.Count
+        )
+        {
+            issues.Add("Managed file exclusions must be unique.");
         }
     }
 
@@ -393,11 +525,38 @@ internal static partial class ManifestModelValidator
             }
         }
 
+        ValidateSourceFingerprintUniqueness(configuration.Sources, issues);
         ValidateRequestedPacks(configuration.Packs, issues);
         ValidateProjectTrust(configuration.Trust, sourceNames, issues);
         ValidateVariables(configuration.Variables, issues);
 
         return issues;
+    }
+
+    private static void ValidateSourceFingerprintUniqueness(
+        IReadOnlyList<ProjectConfiguration.Source> sources,
+        List<string> issues
+    )
+    {
+        var fingerprints = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var source in sources)
+        {
+            var created = SourceIdentityNormalizer.Create(source);
+            if (created.Value is not { } fingerprint)
+            {
+                continue;
+            }
+
+            if (fingerprints.TryGetValue(fingerprint.Value, out var existingName))
+            {
+                issues.Add(
+                    $"Source '{source.Name}' duplicates source '{existingName}' after canonicalization."
+                );
+                continue;
+            }
+
+            fingerprints.Add(fingerprint.Value, source.Name);
+        }
     }
 
     private static void ValidateProjectTrust(
@@ -698,6 +857,16 @@ internal static partial class ManifestModelValidator
             }
         }
 
+        ValidateResolvedPackExternalSources(resolvedPack, issues);
+
+        ValidateResolvedManagedFiles(resolvedPack, issues);
+    }
+
+    private static void ValidateResolvedManagedFiles(
+        ProjectLockFile.ResolvedPack resolvedPack,
+        List<string> issues
+    )
+    {
         foreach (var managedFile in resolvedPack.ManagedFiles)
         {
             if (
@@ -717,8 +886,113 @@ internal static partial class ManifestModelValidator
                     "Resolved managed files must define safe declared and effective target paths and a SHA-256 hash."
                 );
             }
+
+            ValidateResolvedManagedFileProvenance(resolvedPack, managedFile, issues);
         }
     }
+
+    private static void ValidateResolvedPackExternalSources(
+        ProjectLockFile.ResolvedPack resolvedPack,
+        List<string> issues
+    )
+    {
+        foreach (var (alias, externalSource) in resolvedPack.ExternalSources)
+        {
+            if (!IsSourceAlias(alias))
+            {
+                issues.Add(
+                    $"Resolved pack '{resolvedPack.Id}' external source alias '{alias}' is invalid."
+                );
+            }
+
+            if (externalSource is null)
+            {
+                issues.Add(
+                    $"Resolved pack '{resolvedPack.Id}' external source '{alias}' is required."
+                );
+                continue;
+            }
+
+            if (
+                string.IsNullOrEmpty(externalSource.SourceName)
+                || string.IsNullOrEmpty(externalSource.Ref)
+                || !IsSourceFingerprint(externalSource.Fingerprint)
+                || !IsGitCommit(externalSource.ResolvedCommit)
+            )
+            {
+                issues.Add(
+                    $"Resolved pack '{resolvedPack.Id}' external source '{alias}' must record source name, fingerprint, ref, and resolved commit."
+                );
+            }
+        }
+    }
+
+    private static void ValidateResolvedManagedFileProvenance(
+        ProjectLockFile.ResolvedPack resolvedPack,
+        ProjectLockFile.ManagedFile managedFile,
+        List<string> issues
+    )
+    {
+        var provided = new[]
+        {
+            managedFile.SourceAlias,
+            managedFile.SourceName,
+            managedFile.SourceFingerprint,
+            managedFile.SourcePath,
+        }.Count(static value => value is not null);
+        if (provided == 0)
+        {
+            return;
+        }
+
+        if (provided != 4)
+        {
+            issues.Add(
+                "Resolved managed files with external provenance must record source alias, source name, fingerprint, and source path."
+            );
+            return;
+        }
+
+        if (
+            !IsSourceAlias(managedFile.SourceAlias)
+            || string.IsNullOrEmpty(managedFile.SourceName)
+            || !IsSourceFingerprint(managedFile.SourceFingerprint)
+            || !IsSafeProjectRelativePath(managedFile.SourcePath)
+        )
+        {
+            issues.Add("Resolved managed file external provenance is invalid.");
+            return;
+        }
+
+        if (!resolvedPack.ExternalSources.TryGetValue(managedFile.SourceAlias!, out var declared))
+        {
+            issues.Add(
+                $"Resolved managed file references external source '{managedFile.SourceAlias}' that pack '{resolvedPack.Id}' does not record."
+            );
+            return;
+        }
+
+        if (
+            !string.Equals(
+                declared.Fingerprint,
+                managedFile.SourceFingerprint,
+                StringComparison.Ordinal
+            )
+            || !string.Equals(declared.SourceName, managedFile.SourceName, StringComparison.Ordinal)
+        )
+        {
+            issues.Add(
+                $"Resolved managed file provenance for '{managedFile.SourceAlias}' does not match the recorded external source."
+            );
+        }
+    }
+
+    private static bool IsSourceFingerprint(string? value) =>
+        !string.IsNullOrEmpty(value)
+        && (
+            value.StartsWith("git:", StringComparison.Ordinal)
+            || value.StartsWith("local:", StringComparison.Ordinal)
+        );
 
     private static void ValidateLocalResolvedPackSource(
         ProjectLockFile.ResolvedPack resolvedPack,
@@ -822,6 +1096,9 @@ internal static partial class ManifestModelValidator
     private static bool IsSha256(string? value) =>
         value is not null && Sha256Regex().IsMatch(value);
 
+    public static bool IsSourceAlias(string? value) =>
+        !string.IsNullOrEmpty(value) && SourceAliasRegex().IsMatch(value);
+
     [GeneratedRegex(
         "^[A-Za-z_][A-Za-z0-9_]*$",
         RegexOptions.CultureInvariant | RegexOptions.NonBacktracking
@@ -851,4 +1128,10 @@ internal static partial class ManifestModelValidator
         RegexOptions.CultureInvariant | RegexOptions.NonBacktracking
     )]
     private static partial Regex Sha256Regex();
+
+    [GeneratedRegex(
+        "^[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*$",
+        RegexOptions.CultureInvariant | RegexOptions.NonBacktracking
+    )]
+    private static partial Regex SourceAliasRegex();
 }

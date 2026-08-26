@@ -7,7 +7,8 @@ internal sealed class TestWorkspace : IDisposable
 {
     public TestWorkspace(
         IPackUpdatePrompter? packUpdatePrompter = null,
-        IAnsiConsole? ansiConsole = null
+        IAnsiConsole? ansiConsole = null,
+        IGitProcessRunner? gitProcessRunner = null
     )
     {
         Path = System.IO.Path.Combine(
@@ -20,7 +21,8 @@ internal sealed class TestWorkspace : IDisposable
         Application = new CliApplication(
             FileSystem,
             ansiConsole ?? TestConsole.CreateAnsiConsole(),
-            packUpdatePrompter
+            packUpdatePrompter,
+            gitProcessRunner: gitProcessRunner ?? new StubGitProcessRunner()
         );
         ManifestStore = new ProjectManifestStore(FileSystem);
         StateStore = new ProjectStateStore(FileSystem);

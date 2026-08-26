@@ -607,7 +607,7 @@ public sealed class CliApplicationTests
         var gitSource = (ProjectConfiguration.GitSource)source;
         await Assert.That(gitSource.Name).IsEqualTo("git");
         await Assert.That(gitSource.Url).IsEqualTo("https://example.test/packs.git");
-        await Assert.That(gitSource.Ref).IsEqualTo("main");
+        await Assert.That(gitSource.Ref).IsEqualTo("refs/heads/main");
         await Assert.That(gitSource.Path).IsEqualTo("packs/platform");
     }
 
@@ -639,7 +639,7 @@ public sealed class CliApplicationTests
         var gitSource = (ProjectConfiguration.GitSource)source;
         await Assert.That(gitSource.Name).IsEqualTo("github");
         await Assert.That(gitSource.Url).IsEqualTo("https://github.com/acme/engineering-packs.git");
-        await Assert.That(gitSource.Ref).IsEqualTo("main");
+        await Assert.That(gitSource.Ref).IsEqualTo("refs/heads/main");
         await Assert.That(gitSource.Path).IsEqualTo("packs/platform");
     }
 

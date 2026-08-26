@@ -11,14 +11,38 @@ internal static class PackManifestPathNormalizer
                     managedFile with
                     {
                         Directory = ProjectPath.NormalizeOptional(managedFile.Directory),
+                        Exclude = [.. managedFile.Exclude.Select(ProjectPath.Normalize)],
                         Glob = ProjectPath.NormalizeOptional(managedFile.Glob),
-                        Source = ProjectPath.NormalizeOptional(managedFile.Source),
+                        Path = ProjectPath.NormalizeOptional(managedFile.Path),
+                        Source = NormalizeSource(managedFile),
                         Target = ProjectPath.Normalize(managedFile.Target),
                     }
                 ),
             ],
             Scripts = NormalizeScripts(manifest.Scripts),
+            Sources = manifest.Sources.ToDictionary(
+                source => source.Key,
+                source =>
+                    source.Value with
+                    {
+                        Path = ProjectPath.NormalizeOptional(source.Value.Path),
+                    },
+                StringComparer.Ordinal
+            ),
         };
+
+    private static string? NormalizeSource(PackManifest.PackManagedFile managedFile) =>
+        IsExternalAlias(managedFile)
+            ? managedFile.Source
+            : ProjectPath.NormalizeOptional(managedFile.Source);
+
+    private static bool IsExternalAlias(PackManifest.PackManagedFile managedFile) =>
+        !string.IsNullOrEmpty(managedFile.Source)
+        && (
+            !string.IsNullOrEmpty(managedFile.Path)
+            || !string.IsNullOrEmpty(managedFile.Directory)
+            || !string.IsNullOrEmpty(managedFile.Glob)
+        );
 
     private static PackManifest.PackScripts? NormalizeScripts(PackManifest.PackScripts? scripts) =>
         scripts is null

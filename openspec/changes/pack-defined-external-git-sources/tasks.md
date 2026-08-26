@@ -2,26 +2,26 @@
 
 ## 1. Schema and Model Foundations
 
-- [ ] 1.1 Add failing schema tests for pack-defined Git sources, mandatory refs, rejected local sources and credentials, source-aware file, directory, and glob selectors, exclusions, flattening, and external-script rejection.
-- [ ] 1.2 Extend `pack.schema.json`, `PackManifest`, YAML source conversion, model validation, and path normalization for alias-keyed Git sources and normalized selectors while retaining legacy `source`-only file entries.
-- [ ] 1.3 Add failing schema and model tests for complete external-source mappings and per-file provenance, partial-record rejection, and existing lock-file compatibility.
-- [ ] 1.4 Extend `lunapack-lock.schema.json`, `ProjectLockFile`, serialization contexts, normalization, and state validation with conditional external-source and file provenance fields.
+- [x] 1.1 Add failing schema tests for pack-defined Git sources, mandatory refs, rejected local sources and credentials, source-aware file, directory, and glob selectors, exclusions, flattening, and external-script rejection.
+- [x] 1.2 Extend `pack.schema.json`, `PackManifest`, YAML source conversion, model validation, and path normalization for alias-keyed Git sources and normalized selectors while retaining legacy `source`-only file entries.
+- [x] 1.3 Add failing schema and model tests for complete external-source mappings and per-file provenance, partial-record rejection, and existing lock-file compatibility.
+- [x] 1.4 Extend `lunapack-lock.schema.json`, `ProjectLockFile`, serialization contexts, normalization, and state validation with conditional external-source and file provenance fields.
 
 ## 2. Canonical Source Identity
 
-- [ ] 2.1 Add unit tests for HTTPS, SSH, and scp-style repository normalization, GitHub case folding, `.git` and separator removal, credential rejection, base-path normalization, root representation, and local-versus-Git distinction.
-- [ ] 2.2 Implement the shared source normalizer and `SourceFingerprint` value object, then route configured identity formatting and equality through sanitized canonical components.
-- [ ] 2.3 Add Git ref-resolution tests for branches, tags, exact commits, missing refs, ambiguous short refs, canonical persistence, timeout, cancellation, and redacted errors.
-- [ ] 2.4 Extend `GitRefResolver` to resolve complete branch or tag refs without ambiguity while preserving remote-HEAD behavior for workspace sources whose ref is omitted.
-- [ ] 2.5 Re-key Git source cache identity and materialized content by normalized fingerprint plus resolved commit, with tests proving equivalent transports share cache entries.
+- [x] 2.1 Add unit tests for HTTPS, SSH, and scp-style repository normalization, GitHub case folding, `.git` and separator removal, credential rejection, base-path normalization, root representation, and local-versus-Git distinction.
+- [x] 2.2 Implement the shared source normalizer and `SourceFingerprint` value object, then route configured identity formatting and equality through sanitized canonical components.
+- [x] 2.3 Add Git ref-resolution tests for branches, tags, exact commits, missing refs, ambiguous short refs, canonical persistence, timeout, cancellation, and redacted errors.
+- [x] 2.4 Extend `GitRefResolver` to resolve complete branch or tag refs without ambiguity while preserving remote-HEAD behavior for workspace sources whose ref is omitted.
+- [x] 2.5 Re-key Git source cache identity and materialized content by normalized fingerprint plus resolved commit, with tests proving equivalent transports share cache entries.
 
 ## 3. Workspace Source Management
 
-- [ ] 3.1 Add source-index validation that rejects duplicate fingerprints during project-state load and every source, link, install, update, rename, and write path; cover manually duplicated configuration and distinct base paths.
-- [ ] 3.2 Extend workspace `sources add git` to canonicalize supplied refs and paths, reject unsafe or duplicate identities, and preserve optional-ref compatibility.
-- [ ] 3.3 Implement `sources add github <id> <owner/repository> --ref <ref>` as command-only shorthand with strict input validation and normal Git persistence.
-- [ ] 3.4 Implement atomic `sources rename`, including configuration, trust, lock, and link references, plus explicit repair for one unambiguous manual rename.
-- [ ] 3.5 Change source removal to reject lock-file pack or link consumers, retain `rm` as canonical, support `remove` as an alias, and cover unchanged state on refusal.
+- [x] 3.1 Add source-index validation that rejects duplicate fingerprints during project-state load and every source, link, install, update, rename, and write path; cover manually duplicated configuration and distinct base paths.
+- [x] 3.2 Extend workspace `sources add git` to canonicalize supplied refs and paths, reject unsafe or duplicate identities, and preserve optional-ref compatibility.
+- [x] 3.3 Implement `sources add github <id> <owner/repository> --ref <ref>` as command-only shorthand with strict input validation and normal Git persistence.
+- [x] 3.4 Implement atomic `sources rename`, including configuration, trust, lock, and link references, plus explicit repair for one unambiguous manual rename.
+- [x] 3.5 Change source removal to reject lock-file pack or link consumers, retain `rm` as canonical, support `remove` as an alias, and cover unchanged state on refusal.
 
 ## 4. Pack Authoring
 

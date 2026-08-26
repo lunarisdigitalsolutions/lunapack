@@ -49,6 +49,84 @@ internal sealed partial class GitRefResolver(IGitProcessRunner processRunner)
         return await ResolveRemoteHeadAsync(source.Url, timeout, cancellationToken);
     }
 
+    public async Task<ManifestOperationResult<GitCanonicalRef>> ResolveCanonicalRefAsync(
+        string repositoryUrl,
+        string reference,
+        TimeSpan? timeout,
+        CancellationToken cancellationToken
+    )
+    {
+        var trimmedReference = reference?.Trim() ?? string.Empty;
+        if (trimmedReference.Length == 0)
+        {
+            return ManifestOperationResult<GitCanonicalRef>.Failure(
+                "A Git ref is required to canonicalize an external source."
+            );
+        }
+
+        if (CommitPattern().IsMatch(trimmedReference))
+        {
+            var commit = trimmedReference.ToLowerInvariant();
+            return ManifestOperationResult<GitCanonicalRef>.Success(
+                new GitCanonicalRef(commit, commit)
+            );
+        }
+
+        var command = await processRunner.RunAsync(
+            ["ls-remote", "--exit-code", repositoryUrl, trimmedReference],
+            timeout ?? TimeSpan.FromSeconds(DefaultTimeoutSeconds),
+            cancellationToken
+        );
+        if (command.Value is not { } output)
+        {
+            return ManifestOperationResult<GitCanonicalRef>.Failure(
+                command.Error ?? $"Unable to resolve Git ref '{reference}'."
+            );
+        }
+
+        var candidates = ParseCanonicalRefs(output.StandardOutput);
+        if (candidates.Count == 0)
+        {
+            return ManifestOperationResult<GitCanonicalRef>.Failure(
+                $"Git ref '{reference}' did not resolve to an immutable commit."
+            );
+        }
+
+        if (candidates.Count > 1)
+        {
+            return ManifestOperationResult<GitCanonicalRef>.Failure(
+                $"Git ref '{reference}' is ambiguous and matches {string.Join(", ", candidates.Keys.Order(StringComparer.Ordinal))}."
+            );
+        }
+
+        var (canonicalRef, resolvedCommit) = candidates.First();
+        return ManifestOperationResult<GitCanonicalRef>.Success(
+            new GitCanonicalRef(canonicalRef, resolvedCommit)
+        );
+    }
+
+    internal static Dictionary<string, string> ParseCanonicalRefs(string output)
+    {
+        var candidates = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var fields = line.Trim().Split('\t', StringSplitOptions.RemoveEmptyEntries);
+            if (fields.Length != 2 || !CommitPattern().IsMatch(fields[0]))
+            {
+                continue;
+            }
+
+            var isPeeled = fields[1].EndsWith("^{}", StringComparison.Ordinal);
+            var refName = isPeeled ? fields[1][..^3] : fields[1];
+            if (isPeeled || !candidates.ContainsKey(refName))
+            {
+                candidates[refName] = fields[0].ToLowerInvariant();
+            }
+        }
+
+        return candidates;
+    }
+
     private async Task<ManifestOperationResult<GitSourceResolution>> ResolveExplicitRefAsync(
         string repositoryUrl,
         string reference,

@@ -33,15 +33,22 @@ root packs, then recommends the next commands for the current workspace stage.
 - `luna sources add local <name> <path>`: Registers an existing project-relative
   directory of packs.
 - `luna sources add git <name> <repository-url>`: Registers a Git pack source. `--ref`
-  or `-r` selects a branch or commit; `--path` or `-p` limits discovery to a
-  repository-relative directory.
+  or `-r` selects a branch or commit and resolves a short branch or tag name to
+  its complete ref through `git ls-remote`; `--path` or `-p` limits discovery to
+  a repository-relative directory. Rejects a repository URL that canonicalizes
+  to an already-configured source.
 - `luna sources add github <name> <organization/repository>`: Registers a GitHub
   repository as a Git pack source. LunaPack stores its HTTPS Git URL; `--ref`
-  (`-r`) and `--path` (`-p`) match `git`.
+  (`-r`) is required and resolved the same way as `git`; `--path` (`-p`)
+  matches `git`.
 - `luna sources list`: Lists configured local and Git sources.
-- `luna sources rm <name>`: Removes one configured source and project trust
-  bound to its name. Installed pack records, lock provenance, and managed files
-  remain.
+- `luna sources rename <current-id> <new-id>`: Renames a configured source,
+  atomically updating trust and lock-file references bound to its previous
+  name.
+- `luna sources rm <name>` (alias `remove`): Removes one configured source and
+  project trust bound to its name. Refuses to remove a source while an
+  installed pack, or its external content, still depends on that source name.
+  Installed pack records, lock provenance, and managed files remain.
 - `luna trust source <name>...`: Grants lifecycle-script trust to configured
   sources.
 - `luna trust pack <id>... --source <name>`: Grants trust only to selected pack

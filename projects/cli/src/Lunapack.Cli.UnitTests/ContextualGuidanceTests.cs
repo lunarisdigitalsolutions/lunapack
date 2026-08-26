@@ -182,7 +182,7 @@ public sealed class ContextualGuidanceTests
         );
         var githubOutput = await InvokeWithFreshConsoleAsync(
             workspace,
-            ["sources", "add", "github", "github", "acme/packs"]
+            ["sources", "add", "github", "github", "acme/packs", "--ref", "main"]
         );
 
         await Assert.That(gitOutput).Contains("✓ Source 'git' added");
@@ -277,7 +277,7 @@ public sealed class ContextualGuidanceTests
     }
 
     [Test]
-    public async Task SourcesRm_WhenSourceTrustedAndUsed_RetainsPackAndRevokesTrust()
+    public async Task SourcesRm_WhenSourceHasLockConsumers_RefusesRemoval()
     {
         using var workspace = new TestWorkspace();
         await workspace.Application.RunAsync(["init"], workspace.Path);
@@ -287,6 +287,26 @@ public sealed class ContextualGuidanceTests
             workspace.Path
         );
         await workspace.Application.RunAsync(["install", "example"], workspace.Path);
+
+        var output = await InvokeWithFreshConsoleAsync(workspace, ["sources", "rm", "local"]);
+        var updatedState = (await workspace.StateStore.LoadAsync(workspace.Path)).RequireValue();
+
+        await Assert.That(output).Contains("still used by");
+        await Assert.That(updatedState.Configuration.Sources).Count().IsEqualTo(1);
+        await Assert.That(updatedState.LockFile.Packs).Count().IsEqualTo(1);
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, "example.txt"))).IsTrue();
+    }
+
+    [Test]
+    public async Task SourcesRm_WhenSourceTrustedAndUnconsumed_RevokesTrust()
+    {
+        using var workspace = new TestWorkspace();
+        await workspace.Application.RunAsync(["init"], workspace.Path);
+        CreatePack(workspace.Path);
+        await workspace.Application.RunAsync(
+            ["sources", "add", "local", "local", "source"],
+            workspace.Path
+        );
         var state = (await workspace.StateStore.LoadAsync(workspace.Path)).RequireValue();
         state.Configuration.Trust.Sources.Add("local");
         state.Configuration.Trust.Packs.Add(
@@ -302,22 +322,65 @@ public sealed class ContextualGuidanceTests
         await Assert.That(updatedState.Configuration.Sources).IsEmpty();
         await Assert.That(updatedState.Configuration.Trust.Sources).IsEmpty();
         await Assert.That(updatedState.Configuration.Trust.Packs).IsEmpty();
-        await Assert.That(updatedState.Configuration.Packs).Count().IsEqualTo(1);
-        await Assert.That(updatedState.LockFile.Packs).Count().IsEqualTo(1);
-        await Assert.That(File.Exists(Path.Combine(workspace.Path, "example.txt"))).IsTrue();
+    }
 
-        Directory.CreateDirectory(Path.Combine(workspace.Path, "replacement"));
-        var reboundOutput = await InvokeWithFreshConsoleAsync(
-            workspace,
-            ["sources", "add", "local", "local", "replacement"]
+    [Test]
+    public async Task SourcesRename_WhenSourceIsConsumed_UpdatesWorkspaceReferences()
+    {
+        using var workspace = new TestWorkspace();
+        await workspace.Application.RunAsync(["init"], workspace.Path);
+        CreatePack(workspace.Path);
+        await workspace.Application.RunAsync(
+            ["sources", "add", "local", "local", "source"],
+            workspace.Path
         );
-        var reboundState = (await workspace.StateStore.LoadAsync(workspace.Path)).RequireValue();
-        await Assert.That(reboundOutput).Contains("✓ Source 'local' added");
-        await Assert.That(reboundState.Configuration.Trust.Sources).IsEmpty();
-        await Assert.That(reboundState.Configuration.Trust.Packs).IsEmpty();
+        await workspace.Application.RunAsync(["install", "example"], workspace.Path);
+        var state = (await workspace.StateStore.LoadAsync(workspace.Path)).RequireValue();
+        state.Configuration.Trust.Sources.Add("local");
+        await workspace.StateStore.SaveAsync(workspace.Path, state);
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["sources", "rename", "local", "shared"],
+            workspace.Path
+        );
+        var renamedState = (await workspace.StateStore.LoadAsync(workspace.Path)).RequireValue();
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(renamedState.Configuration.Sources.Single().Name).IsEqualTo("shared");
+        await Assert.That(renamedState.Configuration.Trust.Sources).Contains("shared");
+        await Assert.That(renamedState.LockFile.Packs.Single().SourceName).IsEqualTo("shared");
+    }
+
+    [Test]
+    public async Task SourcesRename_WhenTargetNameExists_PreservesConfiguration()
+    {
+        using var workspace = new TestWorkspace();
+        await workspace.Application.RunAsync(["init"], workspace.Path);
+        Directory.CreateDirectory(Path.Combine(workspace.Path, "source"));
+        Directory.CreateDirectory(Path.Combine(workspace.Path, "other"));
+        await workspace.Application.RunAsync(
+            ["sources", "add", "local", "local", "source"],
+            workspace.Path
+        );
+        await workspace.Application.RunAsync(
+            ["sources", "add", "local", "other", "other"],
+            workspace.Path
+        );
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["sources", "rename", "local", "other"],
+            workspace.Path
+        );
+        var state = (await workspace.StateStore.LoadAsync(workspace.Path)).RequireValue();
+
+        await Assert.That(exitCode).IsEqualTo(1);
         await Assert
-            .That(reboundState.LockFile.Packs.Single().SourceIdentity!.Path)
-            .IsEqualTo("source");
+            .That(
+                state.Configuration.Sources.Exists(source =>
+                    string.Equals(source.Name, "local", StringComparison.Ordinal)
+                )
+            )
+            .IsTrue();
     }
 
     [Test]
@@ -352,7 +415,11 @@ public sealed class ContextualGuidanceTests
     )
     {
         var ansiConsole = new SpectreTestConsole();
-        var application = new CliApplication(workspace.FileSystem, ansiConsole);
+        var application = new CliApplication(
+            workspace.FileSystem,
+            ansiConsole,
+            gitProcessRunner: new StubGitProcessRunner()
+        );
         await application.RunAsync(arguments, workspace.Path);
         return ansiConsole.Output;
     }

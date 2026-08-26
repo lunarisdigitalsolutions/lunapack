@@ -9,7 +9,8 @@ internal sealed class CliApplication(
     IAnsiConsole ansiConsole,
     IPackUpdatePrompter? packUpdatePrompter = null,
     ITrustConfirmer? trustConfirmer = null,
-    UserSettingsStore? userSettingsStore = null
+    UserSettingsStore? userSettingsStore = null,
+    IGitProcessRunner? gitProcessRunner = null
 )
 {
     public async Task<int> RunAsync(
@@ -74,7 +75,8 @@ internal sealed class CliApplication(
             workspaceOption,
             services.NextStepAdvisor,
             services.NextStepRenderer,
-            console
+            console,
+            services.GitRefResolver
         );
         AddCatalogCommands(
             rootCommand,
@@ -135,7 +137,8 @@ internal sealed class CliApplication(
         var projectStateStore = new ProjectStateStore(fileSystem);
         var effectiveUserSettingsStore = userSettingsStore ?? new UserSettingsStore(fileSystem);
         var workspaceDirectoryResolver = new WorkspaceDirectoryResolver(fileSystem);
-        var packCatalog = new PackCatalog(fileSystem, console);
+        var effectiveGitProcessRunner = gitProcessRunner ?? new GitProcessRunner();
+        var packCatalog = new PackCatalog(fileSystem, console, effectiveGitProcessRunner);
         var nextStepAdvisor = new NextStepAdvisor(fileSystem, projectStateStore);
         var prerequisiteGuard = new WorkflowPrerequisiteGuard(
             nextStepAdvisor,
@@ -148,6 +151,7 @@ internal sealed class CliApplication(
             projectStateStore,
             console
         );
+        var gitRefResolver = new GitRefResolver(effectiveGitProcessRunner);
         return new CommandServices(
             projectStateStore,
             workspaceDirectoryResolver,
@@ -167,7 +171,8 @@ internal sealed class CliApplication(
                 projectStateStore,
                 effectiveUserSettingsStore,
                 trustConfirmer ?? new ConsoleTrustConfirmer(console)
-            )
+            ),
+            gitRefResolver
         );
     }
 
@@ -347,7 +352,8 @@ internal sealed class CliApplication(
         Option<string?> workspaceOption,
         INextStepAdvisor nextStepAdvisor,
         NextStepRenderer nextStepRenderer,
-        CliConsole console
+        CliConsole console,
+        GitRefResolver gitRefResolver
     )
     {
         rootCommand.Add(
@@ -367,7 +373,8 @@ internal sealed class CliApplication(
                 workspaceDirectoryResolver,
                 nextStepAdvisor,
                 nextStepRenderer,
-                console
+                console,
+                gitRefResolver
             ).CreateCommand(projectDirectory, workspaceOption)
         );
         rootCommand.Add(
@@ -494,7 +501,8 @@ internal sealed class CliApplication(
         INextStepAdvisor NextStepAdvisor,
         NextStepRenderer NextStepRenderer,
         WorkflowPrerequisiteGuard PrerequisiteGuard,
-        TrustService TrustService
+        TrustService TrustService,
+        GitRefResolver GitRefResolver
     );
 
     private static async Task<int> RenderWorkspaceGuidanceAsync(

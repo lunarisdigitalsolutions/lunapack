@@ -3,7 +3,11 @@ using NuGet.Versioning;
 
 namespace Lunapack.Cli;
 
-internal sealed class PackCatalog(IFileSystem fileSystem, CliConsole console)
+internal sealed class PackCatalog(
+    IFileSystem fileSystem,
+    CliConsole console,
+    IGitProcessRunner? processRunner = null
+)
 {
     internal const int MaximumVersionCount = 10;
 
@@ -11,8 +15,8 @@ internal sealed class PackCatalog(IFileSystem fileSystem, CliConsole console)
     private readonly CliConsole _console = console;
     private readonly GitPackDiscovery _gitPackDiscovery = new(
         fileSystem,
-        new GitProcessRunner(),
-        new GitRefResolver(new GitProcessRunner()),
+        processRunner ?? new GitProcessRunner(),
+        new GitRefResolver(processRunner ?? new GitProcessRunner()),
         new GitSourceCache(fileSystem),
         console
     );
