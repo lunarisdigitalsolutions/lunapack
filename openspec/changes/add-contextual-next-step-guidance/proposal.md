@@ -14,7 +14,7 @@ from the CLI while avoiding irrelevant command lists.
   catalog, installation, update, and uninstallation commands.
 - Add actionable recovery commands for missing workspaces, missing sources, and
   unresolved pack references.
-- Add `luna sources remove <name>` so source-removal guidance can reflect whether
+- Add `luna sources rm <name>` so source-removal guidance can reflect whether
   other sources remain.
 - Limit every guidance block to three ordered actions with command input that is
   either directly runnable or clearly marked for replacement.

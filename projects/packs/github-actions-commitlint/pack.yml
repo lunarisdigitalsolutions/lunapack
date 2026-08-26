@@ -1,0 +1,17 @@
+id: github-actions-commitlint
+version: 1.0.0
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Validate conventional pull request titles and linked Azure Boards work items.
+tags:
+  - github-actions
+  - pull-request
+  - commitlint
+packs:
+  - id: commitlint
+    version: 1.0.0
+managedFiles:
+  - source: templates/.github/workflows/pull-request-validation.yml
+    target: .github/workflows/pull-request-validation.yml
+  - source: templates/docs/developer/github-actions/pull-request-validation.md
+    target: docs/developer/github-actions/pull-request-validation.md

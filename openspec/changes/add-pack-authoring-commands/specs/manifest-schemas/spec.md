@@ -3,10 +3,10 @@
 ### Requirement: Publish local pack-manifest schema
 
 The repository SHALL publish a JSON Schema under `projects/schema/` for
-`pack.yml`. The schema SHALL require a pack identity and semantic version and
-SHALL allow identity-only manifests with empty managed-file and composite-pack
-collections for incremental authoring. It SHALL allow optional non-empty name,
-author, homepage, and license metadata, an optional human-readable package
+`pack.yml`. The schema SHALL require a pack identity, semantic version,
+non-empty author, and non-empty license. It SHALL allow empty managed-file and
+composite-pack collections for incremental authoring. It SHALL allow optional
+non-empty name and homepage metadata, an optional human-readable package
 description, and up to 15 unique, non-empty tags. A complete distributable pack
 MAY declare managed-file entries, composite pack references, or both. Each
 composite reference SHALL contain a pack ID and an exact Semantic Version and
@@ -15,11 +15,10 @@ Managed-file selectors MAY set `template` to opt into Scriban parsing; it
 defaults to false. Pack manifests SHALL not contain source configuration.
 Existing valid pack manifests SHALL remain valid.
 
-#### Scenario: Validate an identity-only manifest
+#### Scenario: Reject a manifest without required attribution
 
-- **WHEN** the schema validates a manifest containing an ID, semantic version,
-  and empty content collections
-- **THEN** validation succeeds
+- **WHEN** the schema validates a manifest without author or license metadata
+- **THEN** validation fails
 
 #### Scenario: Validate optional metadata
 
@@ -30,12 +29,12 @@ Existing valid pack manifests SHALL remain valid.
 #### Scenario: Reject a pack manifest without attribution
 
 - **WHEN** a pack manifest includes an empty author or license value
-- **THEN** validation fails because present attribution must be non-empty
+- **THEN** validation fails because attribution must be non-empty
 
 #### Scenario: Reject invalid optional metadata
 
-- **WHEN** optional name, author, homepage, or license metadata is present but
-  empty or the homepage is not a supported absolute URI
+- **WHEN** optional name or homepage metadata is empty or the homepage is not a
+  supported absolute URI
 - **THEN** validation fails
 
 #### Scenario: Preserve manifests without a description

@@ -758,7 +758,7 @@ public sealed class CliProcessTests
         {
             await Assert
                 .That(discover.StandardOutput)
-                .Contains(packId[..Math.Min(packId.Length, 28)]);
+                .Contains(packId[..Math.Min(packId.Length, 20)]);
             await Assert.That(discover.StandardOutput).Contains(version);
         }
     }

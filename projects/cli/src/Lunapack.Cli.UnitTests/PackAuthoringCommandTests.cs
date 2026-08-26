@@ -18,18 +18,53 @@ public sealed class PackAuthoringCommandTests
     }
 
     [Test]
-    public async Task Init_WhenOptionsProvided_CreatesIdentityOnlyManifest()
+    [Arguments("--author", "Example Author")]
+    [Arguments("--license", "MIT")]
+    public async Task Init_WhenRequiredMetadataMissingAndConsoleNotInteractive_DoesNotCreateManifest(
+        string missingOption,
+        string value
+    )
+    {
+        using var workspace = new TestWorkspace();
+        var providedOption = missingOption == "--author" ? "--license" : "--author";
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["pack", "init", "--id", "example", providedOption, value],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert
+            .That(File.Exists(Path.Combine(workspace.Path, PackManifestStore.FileName)))
+            .IsFalse();
+    }
+
+    [Test]
+    public async Task Init_WhenRequiredOptionsProvided_CreatesRequiredMetadataManifest()
     {
         using var workspace = new TestWorkspace();
 
         var exitCode = await workspace.Application.RunAsync(
-            ["pack", "init", "--id", "example", "--version", "1.2.3"],
+            [
+                "pack",
+                "init",
+                "--id",
+                "example",
+                "--version",
+                "1.2.3",
+                "--author",
+                "Example Author",
+                "--license",
+                "MIT",
+            ],
             workspace.Path
         );
 
         await Assert.That(exitCode).IsEqualTo(0);
         var contents = File.ReadAllText(Path.Combine(workspace.Path, PackManifestStore.FileName));
+        await Assert.That(contents).Contains("author: Example Author");
         await Assert.That(contents).Contains("id: example");
+        await Assert.That(contents).Contains("license: MIT");
         await Assert.That(contents).Contains("version: 1.2.3");
         await Assert.That(ManifestModelValidator.Validate(await LoadAsync(workspace))).IsEmpty();
     }
@@ -241,7 +276,10 @@ public sealed class PackAuthoringCommandTests
     {
         var console = new SpectreTestConsole();
         using var workspace = new TestWorkspace(ansiConsole: console);
-        await workspace.Application.RunAsync(["pack", "init", "--id", "example"], workspace.Path);
+        await workspace.Application.RunAsync(
+            ["pack", "init", "--id", "example", "--author", "Example Author", "--license", "MIT"],
+            workspace.Path
+        );
         await workspace.Application.RunAsync(
             ["pack", "add", "file", "README.md", "--target", "docs/README.md"],
             workspace.Path
@@ -283,7 +321,7 @@ public sealed class PackAuthoringCommandTests
     {
         var workspace = new TestWorkspace();
         var exitCode = await workspace.Application.RunAsync(
-            ["pack", "init", "--id", "example"],
+            ["pack", "init", "--id", "example", "--author", "Example Author", "--license", "MIT"],
             workspace.Path
         );
         if (exitCode != 0)

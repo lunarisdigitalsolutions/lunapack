@@ -4,7 +4,7 @@
   "title": "LunaPack pack manifest",
   "type": "object",
   "additionalProperties": false,
-  "required": ["id", "version"],
+  "required": ["author", "id", "license", "version"],
   "properties": {
     "author": {
       "type": "string",

@@ -51,4 +51,6 @@ Create a new architecture decision record from the [MADR-based template](templat
 | [ADR-0045](0045-separate-open-source-access-from-services.md)                   | Keep open-source access separate from optional Lunaris commercial services.          |
 | [ADR-0046](0046-centralize-contextual-cli-guidance.md)                          | Centralize workspace-aware recommendation selection and rendering.                   |
 | [ADR-0047](0047-retain-lock-evidence-after-source-removal.md)                   | Retain installed lock evidence while revoking trust after source removal.            |
-| [ADR-0048](0048-separate-pack-authoring-validity-from-publication-readiness.md) | Separate incremental manifest validity from publication readiness.                   |
+| [ADR-0048](0048-use-rm-for-configuration-removal-commands.md)                   | Use `rm` consistently for configuration-removal subcommands.                         |
+| [ADR-0049](0049-separate-pack-authoring-validity-from-publication-readiness.md) | Separate incremental manifest validity from publication readiness.                   |
+| [ADR-0050](0050-require-pack-attribution-for-catalogs.md)                       | Require author and license attribution for pack manifests and catalogs.               |

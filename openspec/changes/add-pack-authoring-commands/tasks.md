@@ -1,8 +1,8 @@
 ## 1. Schema And Manifest Model
 
-- [x] 1.1 Relax the pack schema minimum to ID and version, allow empty content
-      collections, add optional name and homepage metadata, and verify schema
-      tests cover identity-only, metadata, legacy, and invalid manifests
+- [x] 1.1 Require author and license alongside ID and version, allow empty
+      content collections, add optional name and homepage metadata, and verify
+      schema tests cover attribution, metadata, legacy, and invalid manifests
 - [x] 1.2 Extend pack manifest models and YAML serialization for new metadata and
       empty collections, and verify round-trip tests preserve every supported
       manifest value
@@ -72,21 +72,20 @@
 
 ## 7. Decisions And Documentation
 
-- [x] 7.1 Create and index an accepted ADR for identity-only incremental manifest
-      validity and publication-readiness separation, and verify ADR links and
-      status metadata
+- [x] 7.1 Create and index an accepted ADR for required pack attribution and
+      catalog eligibility, and verify ADR links and status metadata
 - [x] 7.2 Update internal CLI composition, persistence, validation, and path
       guidance, and verify implementation ownership remains separate from public
       instructions
 - [x] 7.3 Update product requirements for CLI-first incremental pack authoring,
-      and verify the supported journey and schema-valid intermediate state match
-      implemented behavior
+      and verify the supported journey and schema-valid empty-content state
+      match implemented behavior
 - [x] 7.4 Add a developer pack-authoring tutorial and update command, manifest,
       parameter, reference, and script reference pages, and verify every example
       runs against the implemented CLI
-- [x] 7.5 Add the authoring commands, metadata additions, and relaxed manifest
-      minimum to `CHANGELOG.md`, and verify internal implementation details are
-      excluded
+- [x] 7.5 Add the authoring commands, metadata additions, and required
+      attribution contract to `CHANGELOG.md`, and verify internal implementation
+      details are excluded
 
 ## 8. Verification
 

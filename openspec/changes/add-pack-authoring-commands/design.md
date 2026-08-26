@@ -3,9 +3,9 @@
 See [proposal.md](proposal.md) for motivation and the delta specifications for
 observable behavior. Pack manifests already have one schema, YAML models, and
 validation paths used by catalog and lifecycle operations, but no local
-authoring boundary. Current schema rules require attribution plus managed
-content or references, so they cannot represent the requested incremental
-identity-only starting point.
+authoring boundary. Current schema rules require attribution, while empty
+managed content and references represent the supported incremental starting
+point.
 
 The CLI already uses nested noun and verb commands, Spectre.Console output,
 System.CommandLine parsing, and `ProjectPath` as its sole project-relative path
@@ -46,20 +46,16 @@ Alternative considered: add authoring behavior to top-level `validate` and
 `inspect`. Rejected because those commands select released packs from configured
 sources, while authoring operates on one local file.
 
-### Make identity-only manifests schema-valid
+### Require attribution in initialized manifests
 
-Change the minimum valid `pack.yml` to `id` plus `version`, allow empty content
-collections, and make attribution optional but non-empty when present. Add
-optional non-empty `name` and absolute `homepage` metadata. Existing complete
-manifests remain valid, and no schema version exists to migrate.
+Require `id`, `version`, author, and license in `pack.yml`, while allowing empty
+content collections. `luna pack init` prompts for missing required metadata in
+interactive terminals and requires options otherwise. Keep optional non-empty
+`name` and absolute `homepage` metadata. Existing manifests missing attribution
+must add both values before catalog use.
 
-This deliberately separates schema validity from publication readiness.
-Publication policy can require attribution or content later without forcing
-authors to persist an invalid intermediate document.
-
-Alternative considered: create a separate draft manifest or write an invalid
-`pack.yml` until first content is added. Rejected because either creates a
-second contract or violates manifest-safe authoring.
+Alternative considered: retain identity-only manifests and filter only catalog
+output. Rejected because it splits manifest validity from catalog eligibility.
 
 ### Reuse one manifest document service
 

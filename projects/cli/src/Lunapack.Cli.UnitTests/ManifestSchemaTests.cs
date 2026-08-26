@@ -6,13 +6,14 @@ namespace Lunapack.Cli.UnitTests;
 public sealed class ManifestSchemaTests
 {
     [Test]
-    public async Task PackManifest_WhenIdentityOnly_IsAccepted()
+    public async Task PackManifest_WhenRequiredMetadataMissing_IsRejected()
     {
         var manifest = new PackManifest { Id = "example", Version = "1.0.0" };
 
         var issues = ManifestModelValidator.Validate(manifest);
 
-        await Assert.That(issues).IsEmpty();
+        await Assert.That(issues).Contains("Pack author is required.");
+        await Assert.That(issues).Contains("Pack license is required.");
     }
 
     [Test]
@@ -23,6 +24,7 @@ public sealed class ManifestSchemaTests
             Id = "example",
             Version = "1.0.0",
             Author = string.Empty,
+            License = "MIT",
         };
 
         var issues = ManifestModelValidator.Validate(manifest);
@@ -46,6 +48,8 @@ public sealed class ManifestSchemaTests
         {
             Id = "example",
             Version = "1.0.0",
+            Author = "Example Author",
+            License = "MIT",
             Homepage = homepage,
         };
 
@@ -88,6 +92,23 @@ public sealed class ManifestSchemaTests
                 )
             )
             .IsEqualTo(expectedValid);
+    }
+
+    [Test]
+    public async Task PackSchema_WhenRequiredMetadataDeclared_RequiresAuthorAndLicense()
+    {
+        using var schema = JsonDocument.Parse(
+            File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "pack.schema.json"))
+        );
+
+        var requiredProperties = schema
+            .RootElement.GetProperty("required")
+            .EnumerateArray()
+            .Select(property => property.GetString())
+            .ToArray();
+
+        await Assert.That(requiredProperties).Contains("author");
+        await Assert.That(requiredProperties).Contains("license");
     }
 
     [Test]

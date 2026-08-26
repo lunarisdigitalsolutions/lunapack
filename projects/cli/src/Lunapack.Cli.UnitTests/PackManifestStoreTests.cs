@@ -83,7 +83,10 @@ public sealed class PackManifestStoreTests
         using var workspace = new TestWorkspace();
         var path = Path.Combine(workspace.Path, PackManifestStore.FileName);
         var lockPath = Path.Combine(workspace.Path, $".{PackManifestStore.FileName}.lock");
-        File.WriteAllText(path, "id: example\nversion: 1.0.0\n");
+        File.WriteAllText(
+            path,
+            "id: example\nversion: 1.0.0\nauthor: Example Author\nlicense: MIT\n"
+        );
         File.WriteAllText(lockPath, string.Empty);
         var store = new PackManifestStore(workspace.FileSystem);
 
@@ -143,7 +146,7 @@ public sealed class PackManifestStoreTests
         var path = Path.Combine(workspace.Path, PackManifestStore.FileName);
         File.WriteAllText(
             path,
-            "id: example\nname: Example\nversion: 1.0.0\nparameters:\n  enabled:\n    type: bool\nmanagedFiles:\n- source: README.md\n  target: README.md\n"
+            "id: example\nname: Example\nversion: 1.0.0\nauthor: Example Author\nlicense: MIT\nparameters:\n  enabled:\n    type: bool\nmanagedFiles:\n- source: README.md\n  target: README.md\n"
         );
         var store = new PackManifestStore(workspace.FileSystem);
 

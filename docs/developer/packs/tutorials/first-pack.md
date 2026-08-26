@@ -7,7 +7,7 @@ Create a small pack, validate it, then install it in a throwaway project.
 Create and enter an empty pack directory. Initialize its manifest:
 
 ```bash
-luna pack init --id documentation-standard --version 1.0.0
+luna pack init --id documentation-standard --version 1.0.0 --author "Example Engineering" --license MIT
 ```
 
 Add a file:
@@ -23,8 +23,6 @@ Add optional metadata:
 ```bash
 luna pack set name "Documentation standard"
 luna pack set description "Adds the engineering documentation standard."
-luna pack set license MIT
-luna pack set author "Example Engineering"
 ```
 
 Inspect and validate the result:

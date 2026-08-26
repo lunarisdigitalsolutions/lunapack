@@ -13,6 +13,7 @@ root packs, then recommends the next commands for the current workspace stage.
 | ------------------------------- | ----------------- | ---------------------------------------------------------- |
 | `--workspace <directory>`, `-w` | Current directory | Selects the project directory.                             |
 | `--log-level <level>`, `-ll`    | `info`            | Accepts `verbose`, `debug`, `info`, `warning`, or `error`. |
+| `--suppress-next-steps`         | `false`           | Suppresses contextual next-step recommendations.            |
 | `--help`, `-h`, `-?`            | Not applicable    | Shows command help and returns success.                    |
 | `--version`                     | Not applicable    | Shows the Luna version and returns success.                |
 
@@ -38,7 +39,7 @@ root packs, then recommends the next commands for the current workspace stage.
   repository as a Git pack source. LunaPack stores its HTTPS Git URL; `--ref`
   (`-r`) and `--path` (`-p`) match `git`.
 - `luna sources list`: Lists configured local and Git sources.
-- `luna sources remove <name>`: Removes one configured source and project trust
+- `luna sources rm <name>`: Removes one configured source and project trust
   bound to its name. Installed pack records, lock provenance, and managed files
   remain.
 - `luna trust source <name>...`: Grants lifecycle-script trust to configured
@@ -67,9 +68,9 @@ project. Pack trust and pack-trust revocation require `--source` or `-s`. See
 
 ## Pack Authoring
 
-- `luna pack init --id <id> [--version <version>]`: Creates local `pack.yml`;
-  version defaults to `1.0.0`. Missing ID prompts only in an interactive
-  terminal.
+- `luna pack init --id <id> --author <author> --license <license> [--version <version>]`:
+  Creates local `pack.yml`; version defaults to `1.0.0`. Missing required
+  values prompt only in an interactive terminal.
 - `luna pack add file|directory|glob <path>`: Adds managed content.
   `--target`, `--strategy <type>:<method>`, `--template`, and `--condition`
   configure the selector. Globs require a target when none can be inferred.
@@ -101,7 +102,8 @@ project. Pack trust and pack-trust revocation require `--source` or `-s`. See
 Every mutation validates the complete candidate and atomically replaces
 `pack.yml`. Failure preserves the previous file. File, directory, target, and
 script-file input accepts either separator, rejects rooted or escaping paths,
-and persists with `/`.
+and persists with `/`. Every pack manifest requires a non-empty `author` and
+`license`; packs missing either value are excluded from discovery and search.
 
 ## Pack Lifecycle
 
@@ -154,7 +156,9 @@ Successful initialization, source changes, catalog exploration, installation,
 updates, and uninstallation append a bounded recommendation block when a useful
 next action exists. Dry runs do not claim that workspace state advanced. Missing
 workspace or source prerequisites and unresolved pack references include
-recovery commands while retaining a nonzero exit code.
+recovery commands while retaining a nonzero exit code. Use
+`--suppress-next-steps` with any command to omit recommendation and recovery
+guidance.
 
 Successful commands return exit code `0`. Invalid input, validation failures,
 resolution conflicts, denied trust, Git failures, and filesystem or state-write

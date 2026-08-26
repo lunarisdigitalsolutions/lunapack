@@ -10,20 +10,33 @@ internal maintenance work, such as CI, build, or release-process changes.
 - New `luna pack` commands initialize, inspect, validate, and incrementally
   maintain managed content, composite references, lifecycle scripts, parameters,
   tags, and metadata in local `pack.yml`.
-- Pack manifests now require only ID and semantic version, allowing schema-valid
-  identity-only authoring states and empty content collections.
-- Pack manifests now support optional non-empty `name` and absolute HTTP or
-  HTTPS `homepage` metadata. Author and license are optional but remain
-  non-empty when present.
+- Pack manifests require ID, semantic version, non-empty author, and non-empty
+  license. `luna pack init` accepts `--author` and `--license`, prompting for
+  missing values interactively. Discovery and search exclude manifests missing
+  either attribution value.
+- Pack manifests support optional non-empty `name` and absolute HTTP or HTTPS
+  `homepage` metadata.
+
+### New Packs
+
+- Added `commitlint`, `github-actions-commitlint`, and
+  `github-actions-pr-gate` packs for conventional pull request titles, Azure
+  Boards references, and external-check gating workflows.
+- `github-actions-pr-gate` supports configurable case-insensitive check-name
+  fragments for checks excluded from gate evaluation.
 
 ### CLI Workflow
 
+- `luna sources rm <name>` replaces `luna sources remove <name>` for consistency
+  with other concise configuration-removal commands.
 - Running `luna` without a subcommand now summarizes workspace maturity and
   recommends the next setup, catalog, or lifecycle commands.
 - Successful core commands and recoverable missing-prerequisite or pack lookup
   failures now include up to three contextual command recommendations.
-- `luna sources remove <name>` removes source configuration and bound project
+- `luna sources rm <name>` removes source configuration and bound project
   trust while retaining installed pack state, provenance, and managed files.
+- `luna --suppress-next-steps` suppresses contextual next-step recommendations for any
+  command.
 
 ## Version 1.0.0 - 2026-08-25
 

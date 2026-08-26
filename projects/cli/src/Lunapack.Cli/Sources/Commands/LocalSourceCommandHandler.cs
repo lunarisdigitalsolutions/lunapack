@@ -142,7 +142,7 @@ internal sealed class LocalSourceCommandHandler(
         {
             Description = "Name of the configured source to remove.",
         };
-        var removeSourceCommand = new Command("remove", "Remove a configured pack source.")
+        var removeSourceCommand = new Command("rm", "Remove a configured pack source.")
         {
             removeSourceNameArgument,
         };

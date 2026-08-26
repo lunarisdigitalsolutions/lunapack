@@ -1,9 +1,10 @@
 # Pack manifest reference
 
-`pack.yml` declares a pack. It requires a non-empty `id` and semantic `version`.
-Identity-only manifests and empty content collections are valid during
-incremental authoring. `name`, `description`, `author`, `homepage`, `license`,
-and `tags` are optional metadata.
+`pack.yml` declares a pack. It requires non-empty `id`, `author`, and `license`
+values plus a semantic `version`. Empty content collections remain valid during
+incremental authoring. `name`, `description`, `homepage`, and `tags` are
+optional metadata. Discovery and search exclude manifests missing author or
+license attribution.
 
 ```yml
 id: documentation-standard
@@ -25,9 +26,9 @@ managedFiles:
 | `id`                   | Required non-empty stable pack identifier.                                                                                             |
 | `version`              | Required Semantic Version.                                                                                                             |
 | `name`                 | Optional non-empty human-readable name.                                                                                                |
-| `author`               | Optional non-empty author or maintainer attribution.                                                                                   |
+| `author`               | Required non-empty author or maintainer attribution.                                                                                   |
 | `homepage`             | Optional absolute HTTP or HTTPS URI.                                                                                                   |
-| `license`              | Optional non-empty license identifier or expression.                                                                                   |
+| `license`              | Required non-empty license identifier or expression.                                                                                   |
 | `managedFiles`         | Each entry has one `source`, `directory`, or `glob` selector and a project-relative `target`.                                          |
 | `packs`                | Each composite reference has an exact ID and version.                                                                                  |
 | `parameters`           | Identifier-named `string`, `bool`, or `enum` declarations. Optional display metadata labels prompts; enums require unique values.      |

@@ -21,6 +21,8 @@ internal static partial class ManifestModelValidator
         var issues = new List<string>();
         ValidateRequiredValue(manifest.Id, "id", issues);
         ValidateRequiredValue(manifest.Version, "version", issues);
+        ValidateRequiredMetadata(manifest.Author, "author", issues);
+        ValidateRequiredMetadata(manifest.License, "license", issues);
         ValidateOptionalValue(manifest.Name, "name", issues);
         ValidateOptionalValue(manifest.Author, "author", issues);
         ValidateOptionalValue(manifest.License, "license", issues);
@@ -73,6 +75,18 @@ internal static partial class ManifestModelValidator
     )
     {
         if (string.IsNullOrEmpty(value))
+        {
+            issues.Add($"Pack {propertyName} is required.");
+        }
+    }
+
+    private static void ValidateRequiredMetadata(
+        string? value,
+        string propertyName,
+        List<string> issues
+    )
+    {
+        if (value is null)
         {
             issues.Add($"Pack {propertyName} is required.");
         }

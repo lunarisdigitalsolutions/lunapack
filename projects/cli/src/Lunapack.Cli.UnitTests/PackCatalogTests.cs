@@ -140,6 +140,29 @@ public sealed class PackCatalogTests
     }
 
     [Test]
+    public async Task Browse_WhenCandidateMissingRequiredMetadata_ExcludesCandidate()
+    {
+        var fileSystem = CreateFileSystem([
+            (
+                PacksPath("missing-author", "pack.yml"),
+                "id: missing-author\nversion: 1.0.0\nlicense: MIT\n"
+            ),
+            (
+                PacksPath("missing-license", "pack.yml"),
+                "id: missing-license\nversion: 1.0.0\nauthor: Example Author\n"
+            ),
+            (PacksPath("valid", "pack.yml"), CreatePack("valid", "1.0.0")),
+        ]);
+        var catalog = new PackCatalog(fileSystem, TestConsole.Create());
+
+        var result = await catalog.BrowseAsync(_projectDirectory, CreateManifest(_packsDirectory));
+
+        await Assert
+            .That(result.RequireValue().Select(pack => pack.Manifest.Id))
+            .IsEquivalentTo(["valid"]);
+    }
+
+    [Test]
     public async Task Browse_WhenCandidateSourceDirectoryMissing_ExcludesCandidate()
     {
         var fileSystem = CreateFileSystem([

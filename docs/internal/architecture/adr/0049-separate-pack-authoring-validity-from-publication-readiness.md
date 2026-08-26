@@ -1,10 +1,10 @@
 ---
-status: accepted
+status: superseded by ADR-0050
 date: 2026-08-26
 decision-makers: LunaPack maintainers
 ---
 
-# ADR-0048: Separate Pack Authoring Validity From Publication Readiness
+# ADR-0049: Separate Pack Authoring Validity From Publication Readiness
 
 ## Context and Problem Statement
 

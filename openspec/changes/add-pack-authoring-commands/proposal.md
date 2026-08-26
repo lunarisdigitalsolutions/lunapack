@@ -16,8 +16,8 @@ editable public contract.
   require them as options when interaction is unavailable.
 - Validate the complete candidate manifest before each atomic write and leave the
   existing file unchanged when validation fails.
-- Make a newly initialized identity-only manifest valid, with empty content
-  collections that authors can populate incrementally.
+- Require author and license metadata for a newly initialized manifest while
+  allowing empty content collections for incremental authoring.
 - Extend optional pack metadata with a human-readable name and homepage.
 - Keep command names consistent with existing groups: `list`, `set`, `rm`, and
   noun-specific `add` subcommands.
@@ -31,8 +31,8 @@ editable public contract.
 
 ### Modified Capabilities
 
-- `manifest-schemas`: Allow a valid identity-only pack manifest during
-  incremental authoring and define optional name and homepage metadata.
+- `manifest-schemas`: Require non-empty author and license metadata while
+  defining optional name and homepage metadata.
 
 ## Impact
 

@@ -37,24 +37,53 @@ internal sealed class PackAuthoringCommandHandler(
     {
         var idOption = new Option<string?>("--id") { Description = "Pack ID." };
         var versionOption = new Option<string?>("--version") { Description = "Semantic version." };
-        var command = new Command("init", "Create a pack manifest.") { idOption, versionOption };
+        var authorOption = new Option<string?>("--author") { Description = "Pack author." };
+        var licenseOption = new Option<string?>("--license") { Description = "Pack license." };
+        var command = new Command("init", "Create a pack manifest.")
+        {
+            idOption,
+            versionOption,
+            authorOption,
+            licenseOption,
+        };
         command.SetAction(async parseResult =>
         {
-            var id = parseResult.GetValue(idOption);
-            if (string.IsNullOrEmpty(id))
+            var id = GetRequiredValue(parseResult.GetValue(idOption), "--id", "Pack ID:");
+            if (id is null)
             {
-                if (!console.IsInteractive)
-                {
-                    return console.Fail("Missing required option '--id'.");
-                }
+                return 1;
+            }
 
-                id = console.PromptText("Pack ID:");
+            var author = GetRequiredValue(
+                parseResult.GetValue(authorOption),
+                "--author",
+                "Pack author:"
+            );
+            if (author is null)
+            {
+                return 1;
+            }
+
+            var license = GetRequiredValue(
+                parseResult.GetValue(licenseOption),
+                "--license",
+                "Pack license:"
+            );
+            if (license is null)
+            {
+                return 1;
             }
 
             var version = parseResult.GetValue(versionOption) ?? "1.0.0";
             var result = await manifestStore.CreateAsync(
                 ResolveWorkspace(parseResult, projectDirectory, workspaceOption),
-                new PackManifest { Id = id, Version = version }
+                new PackManifest
+                {
+                    Id = id,
+                    Version = version,
+                    Author = author,
+                    License = license,
+                }
             );
             if (result.Value is null)
             {
@@ -65,6 +94,22 @@ internal sealed class PackAuthoringCommandHandler(
             return 0;
         });
         return command;
+    }
+
+    private string? GetRequiredValue(string? value, string optionName, string prompt)
+    {
+        if (!string.IsNullOrEmpty(value))
+        {
+            return value;
+        }
+
+        if (console.IsInteractive)
+        {
+            return console.PromptText(prompt);
+        }
+
+        console.Fail($"Missing required option '{optionName}'.");
+        return null;
     }
 
     private Command CreateAddCommand(string projectDirectory, Option<string?> workspaceOption)

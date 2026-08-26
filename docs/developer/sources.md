@@ -34,7 +34,7 @@ only in another configured source requires confirmation before switching.
 Remove source configuration by its case-sensitive name:
 
 ```powershell
-luna sources remove engineering
+luna sources rm engineering
 ```
 
 Luna also revokes project source and pack trust bound to that name. Installed
