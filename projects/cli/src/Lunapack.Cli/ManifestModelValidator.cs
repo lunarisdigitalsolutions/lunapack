@@ -20,18 +20,18 @@ internal static partial class ManifestModelValidator
 
         var issues = new List<string>();
         ValidateRequiredValue(manifest.Id, "id", issues);
+        ValidatePackId(manifest.Id, "Pack", issues);
         ValidateRequiredValue(manifest.Version, "version", issues);
-        ValidateRequiredValue(manifest.License, "license", issues);
-        ValidateRequiredValue(manifest.Author, "author", issues);
+        ValidateRequiredMetadata(manifest.Author, "author", issues);
+        ValidateRequiredMetadata(manifest.License, "license", issues);
+        ValidateOptionalValue(manifest.Name, "name", issues);
+        ValidateOptionalValue(manifest.Author, "author", issues);
+        ValidateOptionalValue(manifest.License, "license", issues);
+        ValidateHomepage(manifest.Homepage, issues);
 
         if (!IsSemanticVersion(manifest.Version))
         {
             issues.Add($"Version '{manifest.Version}' is not a valid semantic version.");
-        }
-
-        if (manifest.ManagedFiles.Count == 0 && manifest.Packs.Count == 0)
-        {
-            issues.Add("Pack must define at least one managed file or child pack.");
         }
 
         ValidateTags(manifest.Tags, issues);
@@ -43,6 +43,32 @@ internal static partial class ManifestModelValidator
         return issues;
     }
 
+    private static void ValidateOptionalValue(
+        string? value,
+        string propertyName,
+        List<string> issues
+    )
+    {
+        if (value is not null && value.Length == 0)
+        {
+            issues.Add($"Pack {propertyName} cannot be empty.");
+        }
+    }
+
+    private static void ValidateHomepage(string? homepage, List<string> issues)
+    {
+        if (
+            homepage is not null
+            && (
+                !Uri.TryCreate(homepage, UriKind.Absolute, out var uri)
+                || uri.Scheme is not ("http" or "https")
+            )
+        )
+        {
+            issues.Add("Pack homepage must be an absolute HTTP or HTTPS URI.");
+        }
+    }
+
     private static void ValidateRequiredValue(
         string? value,
         string propertyName,
@@ -52,6 +78,26 @@ internal static partial class ManifestModelValidator
         if (string.IsNullOrEmpty(value))
         {
             issues.Add($"Pack {propertyName} is required.");
+        }
+    }
+
+    private static void ValidateRequiredMetadata(
+        string? value,
+        string propertyName,
+        List<string> issues
+    )
+    {
+        if (value is null)
+        {
+            issues.Add($"Pack {propertyName} is required.");
+        }
+    }
+
+    private static void ValidatePackId(string? id, string subject, List<string> issues)
+    {
+        if (!string.IsNullOrEmpty(id) && !PackIdRegex().IsMatch(id))
+        {
+            issues.Add($"{subject} ID '{id}' must use hyphen-separated alphanumeric segments.");
         }
     }
 
@@ -219,6 +265,10 @@ internal static partial class ManifestModelValidator
             {
                 issues.Add("Pack reference must define an ID and semantic version.");
             }
+            else
+            {
+                ValidatePackId(packReference.Id, "Pack reference", issues);
+            }
 
             foreach (var (name, value) in packReference.Parameters)
             {
@@ -295,6 +345,9 @@ internal static partial class ManifestModelValidator
 
     public static bool IsSemanticVersion(string? value) =>
         value is not null && SemanticVersionRegex().IsMatch(value);
+
+    public static bool IsPackId(string? value) =>
+        !string.IsNullOrEmpty(value) && PackIdRegex().IsMatch(value);
 
     public static IReadOnlyList<string> Validate(ProjectConfiguration configuration)
     {
@@ -629,9 +682,13 @@ internal static partial class ManifestModelValidator
         }
 
         if (resolvedPack.GitSource is null)
+        {
             ValidateLocalResolvedPackSource(resolvedPack, issues);
+        }
         else
+        {
             ValidateGitResolvedPackSource(resolvedPack, issues);
+        }
 
         foreach (var packReference in resolvedPack.Packs)
         {
@@ -770,6 +827,12 @@ internal static partial class ManifestModelValidator
         RegexOptions.CultureInvariant | RegexOptions.NonBacktracking
     )]
     private static partial Regex ParameterNameRegex();
+
+    [GeneratedRegex(
+        "^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$",
+        RegexOptions.CultureInvariant | RegexOptions.NonBacktracking
+    )]
+    private static partial Regex PackIdRegex();
 
     [GeneratedRegex(
         "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$",

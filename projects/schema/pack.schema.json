@@ -4,25 +4,7 @@
   "title": "LunaPack pack manifest",
   "type": "object",
   "additionalProperties": false,
-  "required": ["id", "version", "license", "author"],
-  "anyOf": [
-    {
-      "required": ["managedFiles"],
-      "properties": {
-        "managedFiles": {
-          "minItems": 1
-        }
-      }
-    },
-    {
-      "required": ["packs"],
-      "properties": {
-        "packs": {
-          "minItems": 1
-        }
-      }
-    }
-  ],
+  "required": ["author", "id", "license", "version"],
   "properties": {
     "author": {
       "type": "string",
@@ -33,7 +15,13 @@
     },
     "id": {
       "type": "string",
-      "minLength": 1
+      "pattern": "^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$"
+    },
+    "homepage": {
+      "type": "string",
+      "minLength": 1,
+      "format": "uri",
+      "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://[^\\s/?#]+(?:[/?#][^\\s]*)?$"
     },
     "license": {
       "type": "string",
@@ -66,6 +54,10 @@
       "items": {
         "$ref": "#/definitions/managedFile"
       }
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
     },
     "packs": {
       "type": "array",
@@ -288,7 +280,7 @@
         },
         "id": {
           "type": "string",
-          "minLength": 1
+          "pattern": "^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$"
         },
         "parameters": {
           "type": "object",

@@ -1,7 +1,197 @@
+using System.Text.Json;
+using System.Text.RegularExpressions;
+
 namespace Lunapack.Cli.UnitTests;
 
 public sealed class ManifestSchemaTests
 {
+    [Test]
+    public async Task PackManifest_WhenRequiredMetadataMissing_IsRejected()
+    {
+        var manifest = new PackManifest { Id = "example", Version = "1.0.0" };
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert.That(issues).Contains("Pack author is required.");
+        await Assert.That(issues).Contains("Pack license is required.");
+    }
+
+    [Test]
+    public async Task PackManifest_WhenOptionalMetadataEmpty_IsRejected()
+    {
+        var manifest = new PackManifest
+        {
+            Id = "example",
+            Version = "1.0.0",
+            Author = string.Empty,
+            License = "MIT",
+        };
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert.That(issues).Contains("Pack author cannot be empty.");
+    }
+
+    [Test]
+    [Arguments("example-pack", true)]
+    [Arguments("Example-Pack2", true)]
+    [Arguments("example_pack", false)]
+    [Arguments("-example", false)]
+    [Arguments("example-", false)]
+    [Arguments("example--pack", false)]
+    public async Task PackManifest_WhenIdProvided_RequiresKebabCase(string id, bool expectedValid)
+    {
+        var manifest = new PackManifest
+        {
+            Id = id,
+            Version = "1.0.0",
+            Author = "Example Author",
+            License = "MIT",
+        };
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert.That(issues.Count == 0).IsEqualTo(expectedValid);
+    }
+
+    [Test]
+    public async Task PackManifest_WhenCompositeReferenceIdIsNotKebabCase_IsRejected()
+    {
+        var manifest = new PackManifest
+        {
+            Id = "example",
+            Version = "1.0.0",
+            Author = "Example Author",
+            License = "MIT",
+            Packs = [new PackManifest.PackReference { Id = "example_pack", Version = "1.0.0" }],
+        };
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert
+            .That(issues)
+            .Contains(
+                "Pack reference ID 'example_pack' must use hyphen-separated alphanumeric segments."
+            );
+    }
+
+    [Test]
+    public async Task PackSchema_WhenIdDeclared_RequiresKebabCase()
+    {
+        using var schema = JsonDocument.Parse(
+            File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "pack.schema.json"))
+        );
+        var pattern = schema
+            .RootElement.GetProperty("properties")
+            .GetProperty("id")
+            .GetProperty("pattern")
+            .GetString();
+        if (pattern is null)
+        {
+            throw new InvalidOperationException("Pack ID schema pattern is missing.");
+        }
+
+        await Assert
+            .That(
+                Regex.IsMatch(
+                    "example-pack",
+                    pattern,
+                    RegexOptions.CultureInvariant,
+                    TimeSpan.FromSeconds(1)
+                )
+            )
+            .IsTrue();
+        await Assert
+            .That(
+                Regex.IsMatch(
+                    "example_pack",
+                    pattern,
+                    RegexOptions.CultureInvariant,
+                    TimeSpan.FromSeconds(1)
+                )
+            )
+            .IsFalse();
+    }
+
+    [Test]
+    [Arguments("https://lunapack.dev/packs/example", true)]
+    [Arguments("HTTPS://lunapack.dev/packs/example", true)]
+    [Arguments("http://", false)]
+    [Arguments("https://exa mple.test", false)]
+    [Arguments("relative/home", false)]
+    [Arguments("ftp://lunapack.dev/example", false)]
+    public async Task PackManifest_WhenHomepageProvided_ValidatesAbsoluteWebUri(
+        string homepage,
+        bool expectedValid
+    )
+    {
+        var manifest = new PackManifest
+        {
+            Id = "example",
+            Version = "1.0.0",
+            Author = "Example Author",
+            License = "MIT",
+            Homepage = homepage,
+        };
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert.That(issues.Count == 0).IsEqualTo(expectedValid);
+    }
+
+    [Test]
+    [Arguments("https://lunapack.dev/packs/example", true)]
+    [Arguments("HTTPS://lunapack.dev/packs/example", true)]
+    [Arguments("http://", false)]
+    [Arguments("https://exa mple.test", false)]
+    [Arguments("ftp://lunapack.dev/example", false)]
+    public async Task PackSchema_WhenHomepageProvided_MatchesRuntimeUriBoundary(
+        string homepage,
+        bool expectedValid
+    )
+    {
+        using var schema = JsonDocument.Parse(
+            File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "pack.schema.json"))
+        );
+        var pattern = schema
+            .RootElement.GetProperty("properties")
+            .GetProperty("homepage")
+            .GetProperty("pattern")
+            .GetString();
+        if (pattern is null)
+        {
+            throw new InvalidOperationException("Pack homepage schema pattern is missing.");
+        }
+
+        await Assert
+            .That(
+                Regex.IsMatch(
+                    homepage,
+                    pattern,
+                    RegexOptions.CultureInvariant,
+                    TimeSpan.FromSeconds(1)
+                )
+            )
+            .IsEqualTo(expectedValid);
+    }
+
+    [Test]
+    public async Task PackSchema_WhenRequiredMetadataDeclared_RequiresAuthorAndLicense()
+    {
+        using var schema = JsonDocument.Parse(
+            File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "pack.schema.json"))
+        );
+
+        var requiredProperties = schema
+            .RootElement.GetProperty("required")
+            .EnumerateArray()
+            .Select(property => property.GetString())
+            .ToArray();
+
+        await Assert.That(requiredProperties).Contains("author");
+        await Assert.That(requiredProperties).Contains("license");
+    }
+
     [Test]
     public async Task PackManifest_WhenManagedFileStrategyInvalid_IsRejected()
     {

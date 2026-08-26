@@ -126,7 +126,7 @@ public sealed class PackCatalogTests
     public async Task Browse_WhenCandidateManifestInvalid_ExcludesCandidate()
     {
         var fileSystem = CreateFileSystem([
-            (PacksPath("invalid", "pack.yml"), "id: invalid\nversion: 1.0.0\n"),
+            (PacksPath("invalid", "pack.yml"), "id: invalid\nversion: invalid\n"),
             (PacksPath("valid", "pack.yml"), CreatePack("valid", "1.0.0")),
         ]);
         var catalog = new PackCatalog(fileSystem, TestConsole.Create());
@@ -137,6 +137,29 @@ public sealed class PackCatalogTests
         var packs = result.RequireValue();
         await Assert.That(packs).Count().IsEqualTo(1);
         await Assert.That(packs[0].Manifest.Id).IsEqualTo("valid");
+    }
+
+    [Test]
+    public async Task Browse_WhenCandidateMissingRequiredMetadata_ExcludesCandidate()
+    {
+        var fileSystem = CreateFileSystem([
+            (
+                PacksPath("missing-author", "pack.yml"),
+                "id: missing-author\nversion: 1.0.0\nlicense: MIT\n"
+            ),
+            (
+                PacksPath("missing-license", "pack.yml"),
+                "id: missing-license\nversion: 1.0.0\nauthor: Example Author\n"
+            ),
+            (PacksPath("valid", "pack.yml"), CreatePack("valid", "1.0.0")),
+        ]);
+        var catalog = new PackCatalog(fileSystem, TestConsole.Create());
+
+        var result = await catalog.BrowseAsync(_projectDirectory, CreateManifest(_packsDirectory));
+
+        await Assert
+            .That(result.RequireValue().Select(pack => pack.Manifest.Id))
+            .IsEquivalentTo(["valid"]);
     }
 
     [Test]

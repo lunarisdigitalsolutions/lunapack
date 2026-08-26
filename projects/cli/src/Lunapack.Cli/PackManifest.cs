@@ -6,11 +6,15 @@ internal sealed record PackManifest
 
     public string? Description { get; set; }
 
+    public string? Homepage { get; set; }
+
     public required string Id { get; set; }
 
     public string? License { get; set; }
 
     public List<PackManagedFile> ManagedFiles { get; set; } = [];
+
+    public string? Name { get; set; }
 
     public List<PackReference> Packs { get; set; } = [];
 

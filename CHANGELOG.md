@@ -5,6 +5,18 @@ internal maintenance work, such as CI, build, or release-process changes.
 
 ## Unreleased
 
+### Pack Authoring
+
+- New `luna pack` commands initialize, inspect, validate, and incrementally
+  maintain managed content, composite references, lifecycle scripts, parameters,
+  tags, and metadata in local `pack.yml`.
+- Pack manifests require ID, semantic version, non-empty author, and non-empty
+  license. `luna pack init` accepts `--author` and `--license`, prompting for
+  missing values interactively. Discovery and search exclude manifests missing
+  either attribution value.
+- Pack manifests support optional non-empty `name` and absolute HTTP or HTTPS
+  `homepage` metadata.
+
 ### New Packs
 
 - Added `commitlint`, `github-actions-commitlint`, and

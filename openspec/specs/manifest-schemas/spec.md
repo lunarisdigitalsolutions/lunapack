@@ -66,11 +66,38 @@ The repository SHALL publish a JSON Schema under `projects/schema/` for `lunapac
 
 ### Requirement: Publish local pack-manifest schema
 
-The repository SHALL publish a JSON Schema under `projects/schema/` for `pack.yml`. The schema SHALL require a pack identity, semantic version, non-empty license, and non-empty author, and allow an optional human-readable package description and up to 15 unique, non-empty tags. A pack SHALL declare one or more managed-file entries, one or more composite pack references, or both. Each composite reference SHALL contain a pack ID and an exact Semantic Version and MAY bind identifier-named string or boolean parameters for its referenced pack. Managed-file selectors MAY set `template` to opt into Scriban parsing; it defaults to false. Pack manifests SHALL not contain source configuration.
+The repository SHALL publish a JSON Schema under `projects/schema/` for
+`pack.yml`. The schema SHALL require a pack identity, semantic version,
+non-empty author, and non-empty license. It SHALL allow empty managed-file and
+composite-pack collections for incremental authoring. It SHALL allow optional
+non-empty name and homepage metadata, an optional human-readable package
+description, and up to 15 unique, non-empty tags. A complete distributable pack
+MAY declare managed-file entries, composite pack references, or both. Each
+composite reference SHALL contain a pack ID and an exact Semantic Version and
+MAY bind identifier-named string or boolean parameters for its referenced pack.
+Managed-file selectors MAY set `template` to opt into Scriban parsing; it
+defaults to false. Pack manifests SHALL not contain source configuration.
+
+#### Scenario: Reject a manifest without required attribution
+
+- **WHEN** the schema validates a manifest without author or license metadata
+- **THEN** validation fails
+
+#### Scenario: Validate optional metadata
+
+- **WHEN** the schema validates a manifest with non-empty name, author, homepage,
+  and license values
+- **THEN** validation succeeds
 
 #### Scenario: Reject a pack manifest without attribution
 
-- **WHEN** the schema validates a pack manifest without a license or author
+- **WHEN** a pack manifest includes an empty author or license value
+- **THEN** validation fails because attribution must be non-empty
+
+#### Scenario: Reject invalid optional metadata
+
+- **WHEN** optional name or homepage metadata is empty or the homepage is not a
+  supported absolute URI
 - **THEN** validation fails
 
 #### Scenario: Preserve manifests without a description
@@ -78,9 +105,15 @@ The repository SHALL publish a JSON Schema under `projects/schema/` for `pack.ym
 - **WHEN** the schema validates an existing complete pack manifest without a description
 - **THEN** validation succeeds
 
+#### Scenario: Reject an incomplete pack identity
+
+- **WHEN** the schema validates a pack manifest without an ID or version
+- **THEN** validation fails
+
 #### Scenario: Reject an incomplete pack manifest
 
-- **WHEN** the schema validates a pack manifest without a version or managed-file declaration
+- **WHEN** the schema validates a pack manifest without a complete identity or
+  with an incomplete managed-file declaration
 - **THEN** validation fails
 
 #### Scenario: Validate the dotnet gitignore pack manifest

@@ -42,6 +42,11 @@ included in that normalization. Pack discovery normalizes manifest path fields
 before validation and planning. Command handlers normalize user-supplied
 project paths before ownership, collision, or filesystem checks.
 
+Pack authoring applies `NormalizeProjectRelativePath` to file, directory,
+target, and lifecycle-script file input. Glob input uses `Normalize` before
+separate checks reject rooted and parent-traversing patterns. Persisted
+`pack.yml` paths always use `/`.
+
 When a caller needs additional semantics such as trimming a repository-relative
 Git path, apply that operation after `ProjectPath` normalization. Do not create
 a second separator-normalization implementation.

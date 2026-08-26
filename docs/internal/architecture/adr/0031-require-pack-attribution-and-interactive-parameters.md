@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded by ADR-0049
 date: 2026-08-21
 decision-makers: LunaPack maintainers
 ---
