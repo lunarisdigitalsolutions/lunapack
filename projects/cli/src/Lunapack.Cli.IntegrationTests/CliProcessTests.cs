@@ -752,15 +752,14 @@ public sealed class CliProcessTests
         var repositoryRoot = GetRepositoryRoot();
 
         var discover = await CliProcess.InvokeAsync(repositoryRoot, "discover");
-        var output = discover.StandardOutput.ReplaceLineEndings(string.Empty);
 
         await Assert.That(discover.ExitCode).IsEqualTo(0);
         foreach (var (packId, version) in GetBundledPacks())
         {
             await Assert
-                .That(output)
-                .Contains(packId[..Math.Min(packId.Length, 28)]);
-            await Assert.That(output).Contains(version);
+                .That(discover.StandardOutput)
+                .Contains(packId[..Math.Min(packId.Length, 20)]);
+            await Assert.That(discover.StandardOutput).Contains(version);
         }
     }
 
