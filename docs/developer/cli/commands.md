@@ -38,7 +38,7 @@ root packs, then recommends the next commands for the current workspace stage.
   repository as a Git pack source. LunaPack stores its HTTPS Git URL; `--ref`
   (`-r`) and `--path` (`-p`) match `git`.
 - `luna sources list`: Lists configured local and Git sources.
-- `luna sources remove <name>`: Removes one configured source and project trust
+- `luna sources rm <name>`: Removes one configured source and project trust
   bound to its name. Installed pack records, lock provenance, and managed files
   remain.
 - `luna trust source <name>...`: Grants lifecycle-script trust to configured

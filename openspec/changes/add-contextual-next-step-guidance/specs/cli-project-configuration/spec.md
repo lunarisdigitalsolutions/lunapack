@@ -20,7 +20,7 @@ search <keyword>`, and `luna install <pack>`
 
 ### Requirement: Remove a configured source safely
 
-`luna sources remove <name>` SHALL remove the source with that exact
+`luna sources rm <name>` SHALL remove the source with that exact
 case-sensitive name. In the same atomic project-state update, Luna SHALL remove
 project-scoped source and pack trust entries bound to that source name. It SHALL
 retain requested packs, resolved lock records, managed files, and trust entries
@@ -49,7 +49,7 @@ for all other sources.
 
 #### Scenario: Reject an unknown source name
 
-- **WHEN** a user runs `luna sources remove <name>` for a name that is not
+- **WHEN** a user runs `luna sources rm <name>` for a name that is not
   configured
 - **THEN** Luna returns a non-success result without changing configuration,
   trust, lock state, or managed files

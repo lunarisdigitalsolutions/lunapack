@@ -175,7 +175,7 @@ public sealed class ContextualGuidanceTests
     }
 
     [Test]
-    public async Task SourcesRemove_WhenNameUnknown_PreservesConfiguration()
+    public async Task SourcesRm_WhenNameUnknown_PreservesConfiguration()
     {
         using var workspace = new TestWorkspace();
         await workspace.Application.RunAsync(["init"], workspace.Path);
@@ -190,14 +190,14 @@ public sealed class ContextualGuidanceTests
         );
         var originalConfiguration = File.ReadAllText(configurationPath);
 
-        var output = await InvokeWithFreshConsoleAsync(workspace, ["sources", "remove", "unknown"]);
+        var output = await InvokeWithFreshConsoleAsync(workspace, ["sources", "rm", "unknown"]);
 
         await Assert.That(output).Contains("Source 'unknown' is not configured.");
         await Assert.That(File.ReadAllText(configurationPath)).IsEqualTo(originalConfiguration);
     }
 
     [Test]
-    public async Task SourcesRemove_WhenAnotherSourceRemains_PreservesUnrelatedTrust()
+    public async Task SourcesRm_WhenAnotherSourceRemains_PreservesUnrelatedTrust()
     {
         using var workspace = new TestWorkspace();
         await workspace.Application.RunAsync(["init"], workspace.Path);
@@ -215,7 +215,7 @@ public sealed class ContextualGuidanceTests
         state.Configuration.Trust.Sources.AddRange(["local", "other"]);
         await workspace.StateStore.SaveAsync(workspace.Path, state);
 
-        var output = await InvokeWithFreshConsoleAsync(workspace, ["sources", "remove", "local"]);
+        var output = await InvokeWithFreshConsoleAsync(workspace, ["sources", "rm", "local"]);
         var updatedState = (await workspace.StateStore.LoadAsync(workspace.Path)).RequireValue();
 
         await Assert.That(output).Contains("luna sources list");
@@ -227,7 +227,7 @@ public sealed class ContextualGuidanceTests
     }
 
     [Test]
-    public async Task SourcesRemove_WhenPersistenceFails_PreservesConfiguration()
+    public async Task SourcesRm_WhenPersistenceFails_PreservesConfiguration()
     {
         using var workspace = new TestWorkspace();
         await workspace.Application.RunAsync(["init"], workspace.Path);
@@ -260,7 +260,7 @@ public sealed class ContextualGuidanceTests
     }
 
     [Test]
-    public async Task SourcesRemove_WhenSourceTrustedAndUsed_RetainsPackAndRevokesTrust()
+    public async Task SourcesRm_WhenSourceTrustedAndUsed_RetainsPackAndRevokesTrust()
     {
         using var workspace = new TestWorkspace();
         await workspace.Application.RunAsync(["init"], workspace.Path);
@@ -277,7 +277,7 @@ public sealed class ContextualGuidanceTests
         );
         await workspace.StateStore.SaveAsync(workspace.Path, state);
 
-        var output = await InvokeWithFreshConsoleAsync(workspace, ["sources", "remove", "local"]);
+        var output = await InvokeWithFreshConsoleAsync(workspace, ["sources", "rm", "local"]);
         var updatedState = (await workspace.StateStore.LoadAsync(workspace.Path)).RequireValue();
 
         await Assert.That(output).Contains("No sources remain.");
@@ -315,7 +315,7 @@ public sealed class ContextualGuidanceTests
             workspace.Path
         );
         await workspace.Application.RunAsync(["install", "one", "two"], workspace.Path);
-        await workspace.Application.RunAsync(["sources", "remove", "local"], workspace.Path);
+        await workspace.Application.RunAsync(["sources", "rm", "local"], workspace.Path);
 
         var output = await InvokeWithFreshConsoleAsync(workspace, ["uninstall", "one"]);
         var state = (await workspace.StateStore.LoadAsync(workspace.Path)).RequireValue();

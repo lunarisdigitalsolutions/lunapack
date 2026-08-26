@@ -23,7 +23,7 @@
 - [x] 3.1 Add post-success guidance to initialization and every source-add
       variant, and verify tests assert persisted-state confirmations and ordered
       recommendations
-- [x] 3.2 Implement `luna sources remove <name>` as an atomic source and
+- [x] 3.2 Implement `luna sources rm <name>` as an atomic source and
       source-bound project-trust update, and verify tests cover exact-name removal,
       unknown names, failed persistence, unrelated trust retention, installed lock
       retention, and source-name reuse safety
