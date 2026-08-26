@@ -23,6 +23,8 @@ internal maintenance work, such as CI, build, or release-process changes.
   failures now include up to three contextual command recommendations.
 - `luna sources rm <name>` removes source configuration and bound project
   trust while retaining installed pack state, provenance, and managed files.
+- `luna --suppress-next-steps` suppresses contextual next-step recommendations for any
+  command.
 
 ## Version 1.0.0 - 2026-08-25
 

@@ -25,30 +25,43 @@ internal sealed class CliApplication(
 
         var console = new CliConsole(ansiConsole, minimumLevel);
         console.Debug($"Running CLI command in {projectDirectory}");
-        var rootCommand = CreateRootCommand(projectDirectory, console);
+        var nextStepRenderer = new NextStepRenderer(console);
+        var suppressNextStepsOption = CreateSuppressNextStepsOption();
+        var rootCommand = CreateRootCommand(
+            projectDirectory,
+            console,
+            nextStepRenderer,
+            suppressNextStepsOption
+        );
+        var parseResult = rootCommand.Parse(args);
+        nextStepRenderer.Suppress = parseResult.GetValue(suppressNextStepsOption);
 
-        var exitCode = await rootCommand
-            .Parse(args)
-            .InvokeAsync(
-                new InvocationConfiguration
-                {
-                    Output = commandOutput ?? Console.Out,
-                    Error = Console.Error,
-                }
-            );
+        var exitCode = await parseResult.InvokeAsync(
+            new InvocationConfiguration
+            {
+                Output = commandOutput ?? Console.Out,
+                Error = Console.Error,
+            }
+        );
 
         console.Debug($"CLI command completed with exit code {exitCode}");
         return exitCode;
     }
 
-    private RootCommand CreateRootCommand(string projectDirectory, CliConsole console)
+    private RootCommand CreateRootCommand(
+        string projectDirectory,
+        CliConsole console,
+        NextStepRenderer nextStepRenderer,
+        Option<bool> suppressNextStepsOption
+    )
     {
         var rootCommand = new RootCommand("Manage LunaPack packs.");
         var workspaceOption = CreateWorkspaceOption();
         var logLevelOption = CreateLogLevelOption();
         rootCommand.Options.Add(workspaceOption);
         rootCommand.Options.Add(logLevelOption);
-        var services = CreateCommandServices(console);
+        rootCommand.Options.Add(suppressNextStepsOption);
+        var services = CreateCommandServices(console, nextStepRenderer);
         ConfigureRootAction(rootCommand, services, projectDirectory, workspaceOption, console);
 
         AddProjectCommands(
@@ -122,14 +135,16 @@ internal sealed class CliApplication(
             )
         );
 
-    private CommandServices CreateCommandServices(CliConsole console)
+    private CommandServices CreateCommandServices(
+        CliConsole console,
+        NextStepRenderer nextStepRenderer
+    )
     {
         var projectStateStore = new ProjectStateStore(fileSystem);
         var effectiveUserSettingsStore = userSettingsStore ?? new UserSettingsStore(fileSystem);
         var workspaceDirectoryResolver = new WorkspaceDirectoryResolver(fileSystem);
         var packCatalog = new PackCatalog(fileSystem, console);
         var nextStepAdvisor = new NextStepAdvisor(fileSystem, projectStateStore);
-        var nextStepRenderer = new NextStepRenderer(console);
         var prerequisiteGuard = new WorkflowPrerequisiteGuard(
             nextStepAdvisor,
             nextStepRenderer,
@@ -233,6 +248,13 @@ internal sealed class CliApplication(
         option.CompletionSources.Add("verbose", "debug", "info", "warning", "error");
         return option;
     }
+
+    private static Option<bool> CreateSuppressNextStepsOption() =>
+        new("--suppress-next-steps")
+        {
+            Description = "Suppress contextual next-step recommendations.",
+            Recursive = true,
+        };
 
     private static LifecycleServices CreateLifecycleServices(
         IFileSystem fileSystem,

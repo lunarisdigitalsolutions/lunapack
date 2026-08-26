@@ -13,6 +13,7 @@ root packs, then recommends the next commands for the current workspace stage.
 | ------------------------------- | ----------------- | ---------------------------------------------------------- |
 | `--workspace <directory>`, `-w` | Current directory | Selects the project directory.                             |
 | `--log-level <level>`, `-ll`    | `info`            | Accepts `verbose`, `debug`, `info`, `warning`, or `error`. |
+| `--suppress-next-steps`         | `false`           | Suppresses contextual next-step recommendations.            |
 | `--help`, `-h`, `-?`            | Not applicable    | Shows command help and returns success.                    |
 | `--version`                     | Not applicable    | Shows the Luna version and returns success.                |
 
@@ -116,7 +117,9 @@ Successful initialization, source changes, catalog exploration, installation,
 updates, and uninstallation append a bounded recommendation block when a useful
 next action exists. Dry runs do not claim that workspace state advanced. Missing
 workspace or source prerequisites and unresolved pack references include
-recovery commands while retaining a nonzero exit code.
+recovery commands while retaining a nonzero exit code. Use
+`--suppress-next-steps` with any command to omit recommendation and recovery
+guidance.
 
 Successful commands return exit code `0`. Invalid input, validation failures,
 resolution conflicts, denied trust, Git failures, and filesystem or state-write

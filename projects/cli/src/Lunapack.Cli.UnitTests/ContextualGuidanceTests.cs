@@ -96,6 +96,23 @@ public sealed class ContextualGuidanceTests
     }
 
     [Test]
+    public async Task Discover_WhenNextStepsSuppressed_OmitsRecoveryGuidance()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["discover", "--suppress-next-steps"],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(ansiConsole.Output).Contains("No LunaPack workspace found.");
+        await Assert.That(ansiConsole.Output).DoesNotContain("Next step:");
+        await Assert.That(ansiConsole.Output).DoesNotContain("luna init");
+    }
+
+    [Test]
     public async Task Install_WhenPackUnavailable_RecommendsSearchAndDiscovery()
     {
         using var workspace = new TestWorkspace();
