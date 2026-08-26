@@ -6,6 +6,22 @@
 - Create ADRs in `docs/internal/architecture/adr` from `template.md`, assign the next sequential number, and add accepted records to `index.md`.
 - Don't change existing ADRs. Rather create a new one that superseeds the old one and change the status for the old one to Superseded by <ADR-xxxx>.
 
+# Pull Requests
+
+When creating or updating a pull request, follow the [PR description template](../docs/internal/development/process/pull-request-template.md)
+exactly and keep the section order from that document.
+
+Use the [Conventional Commits guideline](../docs/internal/development/process/conventional-commits.md)
+for every new pull request title.
+
+Every pull request description must reference at least one GitHub issue by using the `#123` format
+with the real issue number.
+
+If the user prompt and the available context do not identify the correct issue number, add a clear TODO in
+the pull request description that asks the user to replace it with the correct `#123` reference.
+
+Make sure branches are named based on the [branch naming guideline](../docs/internal/development/process/branch-naming.md).
+
 # Changelog
 
 Add only externally observable consumer changes to `CHANGELOG.md`. Exclude

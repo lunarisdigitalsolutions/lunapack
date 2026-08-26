@@ -2,6 +2,13 @@ name: 'PR: CLI'
 
 on:
   pull_request:
+    branches:
+      - main
+    paths:
+      - 'projects/cli/**'
+      - '.github/actions/cli/**'
+      - '.github/workflows/cli.yml'
+      - '.github/workflows/cli-pr.yml'
 
 permissions:
   contents: read
