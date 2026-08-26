@@ -27,6 +27,11 @@ Existing valid pack manifests SHALL remain valid.
   and license values
 - **THEN** validation succeeds
 
+#### Scenario: Reject a pack manifest without attribution
+
+- **WHEN** a pack manifest includes an empty author or license value
+- **THEN** validation fails because present attribution must be non-empty
+
 #### Scenario: Reject invalid optional metadata
 
 - **WHEN** optional name, author, homepage, or license metadata is present but
@@ -42,6 +47,12 @@ Existing valid pack manifests SHALL remain valid.
 #### Scenario: Reject an incomplete pack identity
 
 - **WHEN** the schema validates a pack manifest without an ID or version
+- **THEN** validation fails
+
+#### Scenario: Reject an incomplete pack manifest
+
+- **WHEN** the schema validates a pack manifest without a complete identity or
+  with an incomplete managed-file declaration
 - **THEN** validation fails
 
 #### Scenario: Validate the dotnet gitignore pack manifest
