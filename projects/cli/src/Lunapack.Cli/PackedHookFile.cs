@@ -18,9 +18,10 @@ internal sealed record PackedHookFile(string RelativePath, string CanonicalPath,
             );
         }
 
+        var packDirectory = fileSystem.Path.GetFullPath(pack.PackDirectory);
         var normalizedPath = ProjectPath.NormalizeProjectRelativePath(
             fileSystem,
-            pack.PackDirectory,
+            packDirectory,
             packRelativePath
         );
         if (normalizedPath.Value is not { } relativePath)
@@ -31,7 +32,7 @@ internal sealed record PackedHookFile(string RelativePath, string CanonicalPath,
         }
 
         var snapshotRoot = fileSystem.Path.GetFullPath(pack.SourcePath);
-        var canonicalPath = fileSystem.Path.GetFullPath(relativePath, pack.PackDirectory);
+        var canonicalPath = fileSystem.Path.GetFullPath(relativePath, packDirectory);
         if (!IsWithinSnapshot(fileSystem, snapshotRoot, canonicalPath))
         {
             return ManifestOperationResult<PackedHookFile>.Failure(

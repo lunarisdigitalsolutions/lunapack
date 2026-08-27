@@ -44,13 +44,20 @@ internal sealed class CliConsole(IAnsiConsole ansiConsole, CliLogLevel minimumLe
     public bool WaitForContinue()
     {
         Info("Press Enter to continue...");
-        ConsoleKeyInfo? key;
-        do
+        try
         {
-            key = ansiConsole.Input.ReadKey(intercept: true);
-        } while (key is not null && key.Value.Key != ConsoleKey.Enter);
+            ConsoleKeyInfo? key;
+            do
+            {
+                key = ansiConsole.Input.ReadKey(intercept: true);
+            } while (key is not null && key.Value.Key != ConsoleKey.Enter);
 
-        return key is not null;
+            return key is not null;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
     }
 
     public string Prompt(PackParameterPrompt parameter)
