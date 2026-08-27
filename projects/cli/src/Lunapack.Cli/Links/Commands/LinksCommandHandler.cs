@@ -212,15 +212,15 @@ internal sealed class LinksCommandHandler(
         }
 
         state.Configuration.Links[name] = link;
-        var savedState = await projectStateStore.SaveAsync(projectDirectory, state);
-        if (!savedState.IsSuccess)
-        {
-            return console.Fail(savedState.Error);
-        }
-
-        console.Info($"✓ Link '{name}' added");
         if (!install)
         {
+            var savedState = await projectStateStore.SaveAsync(projectDirectory, state);
+            if (!savedState.IsSuccess)
+            {
+                return console.Fail(savedState.Error);
+            }
+
+            console.Info($"✓ Link '{name}' added");
             nextStepRenderer.Render(nextStepAdvisor.Recommend(NextStepContext.LinkAdded, name));
             return 0;
         }
@@ -228,7 +228,8 @@ internal sealed class LinksCommandHandler(
         var installed = await linkLifecycleService.InstallAsync(
             projectDirectory,
             name,
-            allowReinstall: true
+            allowReinstall: true,
+            preparedState: state
         );
         if (installed != 0)
         {

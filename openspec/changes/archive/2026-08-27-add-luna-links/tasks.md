@@ -55,17 +55,17 @@
 
 ## 7. End-To-End Verification
 
-- [ ] 7.1 Add local-link process tests covering exact files, recursive directories, glob unions, exclusions, base paths, targets, strip prefixes, flattening, and empty or colliding selections.
-- [ ] 7.2 Add local lifecycle process tests covering add/install, list/show, source changes, outdated reasons, update, audit, uninstall, force removal, and locally modified targets.
-- [ ] 7.3 Add Git-link process tests covering ref overrides, immutable commit locking, selected-file changes, content-equivalent commits, cache reuse, and repositories without LunaPack manifests.
-- [ ] 7.4 Add transaction and security process tests for traversal, symlinks, unresolved refs, source identity changes, pack/link ownership conflicts, invalid persisted state, and save rollback.
-- [ ] 7.5 Verify every project and lock state mutation persists `/` paths and retains unrelated sources, packs, links, variables, remapping, trust, and ownership.
+- [x] 7.1 Add local-link process tests covering exact files, recursive directories, glob unions, exclusions, base paths, targets, strip prefixes, flattening, and empty or colliding selections.
+- [x] 7.2 Add local lifecycle process tests covering add/install, list/show, source changes, outdated reasons, update, audit, uninstall, force removal, and locally modified targets.
+- [x] 7.3 Add Git-link process tests covering ref overrides, immutable commit locking, selected-file changes, content-equivalent commits, cache reuse, and repositories without LunaPack manifests.
+- [x] 7.4 Add transaction and security process tests for traversal, symlinks, unresolved refs, source identity changes, pack/link ownership conflicts, invalid persisted state, and save rollback.
+- [x] 7.5 Verify every project and lock state mutation persists `/` paths and retains unrelated sources, packs, links, variables, remapping, trust, and ownership.
 
 ## 8. Documentation And Release Validation
 
-- [ ] 8.1 Create ADR-0051 from the repository template for project-owned links normalized into shared managed-root lifecycle planning and add it to the ADR index.
-- [ ] 8.2 Update internal architecture and path-handling documentation with link resolution, source snapshots, cache trust, ownership, transaction, and compatibility boundaries.
-- [ ] 8.3 Update product requirements to define links as project-owned copied-file selections and preserve the stated non-goals.
-- [ ] 8.4 Add developer reference and how-to documentation for link configuration, selection/mapping semantics, Git cache locations, lifecycle commands, inspection, conflicts, and recovery; include the exact `github/awesome-copilot` examples for the `agents-csharp-expert` single-file link and `agents-ai-team` glob link, then update navigation.
-- [ ] 8.5 Add the externally observable Luna Links feature and minimum supporting CLI version to `CHANGELOG.md`.
-- [ ] 8.6 Run schema validation, CSharpier verification, focused unit and integration suites, the full CLI test suite, strict OpenSpec validation, and Release Native AOT publish validation.
+- [x] 8.1 Create ADR-0051 from the repository template for project-owned links normalized into shared managed-root lifecycle planning and add it to the ADR index.
+- [x] 8.2 Update internal architecture and path-handling documentation with link resolution, source snapshots, cache trust, ownership, transaction, and compatibility boundaries.
+- [x] 8.3 Update product requirements to define links as project-owned copied-file selections and preserve the stated non-goals.
+- [x] 8.4 Add developer reference and how-to documentation for link configuration, selection/mapping semantics, Git cache locations, lifecycle commands, inspection, conflicts, and recovery; include the exact `github/awesome-copilot` examples for the `agents-csharp-expert` single-file link and `agents-ai-team` glob link, then update navigation.
+- [x] 8.5 Add the externally observable Luna Links feature and minimum supporting CLI version to `CHANGELOG.md`.
+- [x] 8.6 Run schema validation, CSharpier verification, focused unit and integration suites, the full CLI test suite, strict OpenSpec validation, and Release Native AOT publish validation.

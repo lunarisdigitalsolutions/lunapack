@@ -17,13 +17,20 @@ internal sealed class LinkLifecycleService(
         string linkName,
         bool adoptExisting = false,
         bool allowReinstall = false,
+        ProjectState? preparedState = null,
         CancellationToken cancellationToken = default
     )
     {
-        var loadedState = await projectStateStore.LoadAsync(projectDirectory);
-        if (loadedState.Value is not { } state)
+        var state = preparedState;
+        if (state is null)
         {
-            return console.Fail(loadedState.Error ?? "Unable to load project state.");
+            var loadedState = await projectStateStore.LoadAsync(projectDirectory);
+            if (loadedState.Value is not { } loaded)
+            {
+                return console.Fail(loadedState.Error ?? "Unable to load project state.");
+            }
+
+            state = loaded;
         }
 
         if (!state.Configuration.Links.TryGetValue(linkName, out var definition))
@@ -43,6 +50,7 @@ internal sealed class LinkLifecycleService(
             definition,
             adoptExisting,
             useLockedIdentity: false,
+            state,
             cancellationToken
         );
     }
@@ -74,7 +82,7 @@ internal sealed class LinkLifecycleService(
                 state.Configuration.Links[name],
                 adoptExisting: false,
                 useLockedIdentity: true,
-                cancellationToken
+                cancellationToken: cancellationToken
             );
             if (updated != 0)
             {
@@ -220,13 +228,20 @@ internal sealed class LinkLifecycleService(
         ProjectConfiguration.Link definition,
         bool adoptExisting,
         bool useLockedIdentity,
-        CancellationToken cancellationToken
+        ProjectState? preparedState = null,
+        CancellationToken cancellationToken = default
     )
     {
-        var loadedState = await projectStateStore.LoadAsync(projectDirectory);
-        if (loadedState.Value is not { } state)
+        var state = preparedState;
+        if (state is null)
         {
-            return console.Fail(loadedState.Error ?? "Unable to load project state.");
+            var loadedState = await projectStateStore.LoadAsync(projectDirectory);
+            if (loadedState.Value is not { } loaded)
+            {
+                return console.Fail(loadedState.Error ?? "Unable to load project state.");
+            }
+
+            state = loaded;
         }
 
         state.LockFile.Links.TryGetValue(linkName, out var lockedLink);

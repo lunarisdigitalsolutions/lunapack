@@ -7,4 +7,5 @@
 | [Pack catalog](002-pack-catalog.md)         | Current catalog scope               |
 | [Pack lifecycle](003-pack-lifecycle.md)     | Current lifecycle scope             |
 | [CLI](004-cli.md)                           | Current command surface             |
+| [Luna Links](005-luna-links.md)             | Project-owned source selections     |
 | [Roadmap](future.md)                        | Planned product capabilities        |
