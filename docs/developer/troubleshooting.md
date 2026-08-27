@@ -24,6 +24,26 @@ same user credentials outside Luna. Git source `timeoutSeconds` accepts 1 throug
 300 and defaults to 300. Luna does not store Git credentials in its workspace
 cache.
 
+## Adding or removing a source fails
+
+Luna canonicalizes a source's repository, ref, and path before comparing it to
+configured sources, so registering the same repository under a different URL
+form, casing, or name fails with a "duplicates source" error; run
+`luna sources list` to find the name already bound to that identity, or
+`luna sources rename` it. `luna sources rm` refuses removal while
+`lunapack-lock.yml` records an installed pack or its external content as a
+consumer; run `luna audit` to find those packs, then uninstall or reinstall
+them from another source before removing it.
+
+## External source approval or drift fails
+
+Run the install or update with `--dry-run` to inspect pack aliases, authoritative
+workspace mappings, proposed additions, and file actions. If a proposed name is
+already used by a different fingerprint, add the required source explicitly
+under another name before retrying. Update blocks when a configured repository,
+canonical ref, or base path differs from locked provenance; inspect both
+sanitized fingerprints with `luna audit` instead of editing the lock file.
+
 ## Install reports a target conflict
 
 Use `--dry-run` to identify the owner and planned action. Adopt an identical

@@ -1,6 +1,5 @@
 namespace Lunapack.Cli;
 
-[System.Diagnostics.CodeAnalysis.SuppressMessage("Maintainability", "MA0051:Method is too long")]
 internal sealed class LifecycleHookAuthorizer(
     UserSettingsStore userSettingsStore,
     TrustPolicy trustPolicy,

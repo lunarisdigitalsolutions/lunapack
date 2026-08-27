@@ -24,4 +24,10 @@ internal static class AuditOutputFormatter
 
     private static string FormatManagedFile(ProjectLockFile.ManagedFile file) =>
         $"{file.TargetPath} ({file.Sha256})";
+
+    public static string Format(AuditReport.ExternalSource source) =>
+        $"external source: {source.PackId}@{source.PackVersion} alias={source.Alias} workspace={source.WorkspaceSourceName} fingerprint={source.Fingerprint} ref={source.Ref} commit={source.ResolvedCommit} status={source.Status}";
+
+    public static string Format(AuditReport.ExternalFile file) =>
+        $"external file: {file.PackId}@{file.PackVersion} alias={file.Alias} workspace={file.WorkspaceSourceName} fingerprint={file.Fingerprint} ref={file.Ref} commit={file.ResolvedCommit} source={file.SourcePath} target={file.TargetPath} sha256={file.Sha256} status={file.Status}";
 }

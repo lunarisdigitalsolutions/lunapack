@@ -49,6 +49,47 @@ internal static class PackAuthoringFormatter
         return [table];
     }
 
+    public static IReadOnlyList<IRenderable> FormatSources(PackManifest manifest)
+    {
+        var table = CreateTable(
+            "External sources",
+            "Alias",
+            "Repository",
+            "Ref",
+            "Path",
+            "References"
+        );
+        foreach (
+            var (alias, source) in manifest.Sources.OrderBy(
+                item => item.Key,
+                StringComparer.Ordinal
+            )
+        )
+        {
+            var fingerprint = SourceIdentityNormalizer.CreateGit(
+                source.Url,
+                source.Ref,
+                source.Path
+            );
+            var referenceCount = manifest.ManagedFiles.Count(file =>
+                string.Equals(
+                    PackManagedFileSelector.Create(file).Value?.SourceAlias,
+                    alias,
+                    StringComparison.Ordinal
+                )
+            );
+            table.AddRow(
+                Markup.Escape(alias),
+                Markup.Escape(fingerprint.Value?.Identity ?? "invalid"),
+                Markup.Escape(source.Ref),
+                Markup.Escape(fingerprint.Value?.Path ?? "/"),
+                referenceCount.ToString(CultureInfo.InvariantCulture)
+            );
+        }
+
+        return [table];
+    }
+
     public static IReadOnlyList<IRenderable> FormatSummary(PackManifest manifest)
     {
         var table = CreateTable("Pack", "Field", "Value");
@@ -62,6 +103,10 @@ internal static class PackAuthoringFormatter
         table.AddRow(
             "Managed files",
             manifest.ManagedFiles.Count.ToString(CultureInfo.InvariantCulture)
+        );
+        table.AddRow(
+            "External sources",
+            manifest.Sources.Count.ToString(CultureInfo.InvariantCulture)
         );
         table.AddRow(
             "Scripts",
@@ -93,17 +138,13 @@ internal static class PackAuthoringFormatter
         PackManifest.PackManagedFile managedFile
     )
     {
-        if (managedFile.Source is { } source)
+        var selector = PackManagedFileSelector.Create(managedFile).Value;
+        if (selector is not null)
         {
-            return ("file", source);
+            return (selector.Kind.ToString().ToLowerInvariant(), selector.Value);
         }
 
-        if (managedFile.Directory is { } directory)
-        {
-            return ("directory", directory);
-        }
-
-        return ("glob", managedFile.Glob ?? "-");
+        return ("invalid", "-");
     }
 
     private static List<(string Hook, PackManifest.LifecycleScript Script)> GetScripts(

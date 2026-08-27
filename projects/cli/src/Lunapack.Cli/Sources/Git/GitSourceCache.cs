@@ -35,7 +35,14 @@ internal sealed class GitSourceCache(IFileSystem fileSystem)
                 content,
                 LunapackJsonContext.Default.GitSourceCacheEntry
             );
-            return entry is null || entry.Version != CacheVersion || entry.Source != identity
+            return
+                entry is null
+                || entry.Version != CacheVersion
+                || !string.Equals(
+                    entry.Source.Fingerprint,
+                    identity.Fingerprint,
+                    StringComparison.Ordinal
+                )
                 ? ManifestOperationResult<GitSourceCacheEntry?>.Success(null)
                 : ManifestOperationResult<GitSourceCacheEntry?>.Success(entry);
         }
@@ -83,11 +90,8 @@ internal sealed class GitSourceCache(IFileSystem fileSystem)
             $"{GetFileName(identity)}.json"
         );
 
-    private static string GetFileName(GitSourceCacheIdentity identity)
-    {
-        var cacheKey = string.Join('\n', identity.Url, identity.Ref, identity.Path);
-        return Convert
-            .ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(cacheKey)))
+    private static string GetFileName(GitSourceCacheIdentity identity) =>
+        Convert
+            .ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(identity.Fingerprint)))
             .ToLowerInvariant();
-    }
 }

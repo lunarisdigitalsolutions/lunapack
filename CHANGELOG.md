@@ -40,14 +40,29 @@ internal maintenance work, such as CI, build, or release-process changes.
 
 ### CLI Workflow
 
-- `luna sources rm <name>` replaces `luna sources remove <name>` for consistency
-  with other concise configuration-removal commands.
+- Packs can declare external Git source aliases and select files, directories,
+  or globs from immutable commits. Install and update reuse equivalent workspace
+  sources, request graph-wide consent for missing sources, support
+  `--accept-sources`, and commit source configuration, managed files, and lock
+  provenance transactionally. Dry runs, outdated checks, audit, update, and
+  uninstall now report or preserve external-source mappings and ownership.
+- `luna sources rm <name>` is the canonical, concise configuration-removal
+  command, with `remove` retained as a compatibility alias; it now refuses to
+  remove a source still used by an installed pack or its external content,
+  and otherwise clears source configuration and bound project trust while
+  retaining installed pack state, provenance, and managed files.
+- `luna sources add git` and `luna sources add github` resolve a supplied
+  short branch or tag name to its complete ref through `git ls-remote`,
+  reject an ambiguous short name, and reject a repository that canonicalizes
+  to an already-configured source under a different name, URL form, or
+  casing.
+- `luna sources add github` now requires `--ref`.
+- `luna sources rename <current-id> <new-id>` renames a configured source and
+  atomically updates its bound trust and lock-file references.
 - Running `luna` without a subcommand now summarizes workspace maturity and
   recommends the next setup, catalog, or lifecycle commands.
 - Successful core commands and recoverable missing-prerequisite or pack lookup
   failures now include up to three contextual command recommendations.
-- `luna sources rm <name>` removes source configuration and bound project
-  trust while retaining installed pack state, provenance, and managed files.
 - `luna --suppress-next-steps` suppresses contextual next-step recommendations for any
   command.
 

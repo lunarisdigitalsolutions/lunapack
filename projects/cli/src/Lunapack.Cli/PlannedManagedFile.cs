@@ -7,5 +7,6 @@ internal sealed record PlannedManagedFile(
     byte[] Contents,
     string TargetPath,
     string TargetPathRelativeToProject,
-    PackManifest.PackManagedFileStrategy Strategy
+    PackManifest.PackManagedFileStrategy Strategy,
+    PlannedExternalSource? ExternalSource = null
 );

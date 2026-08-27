@@ -23,11 +23,6 @@ internal sealed class GitPackDiscovery(
 
     private readonly CliConsole _console = console;
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Maintainability",
-        "MA0051:Method is too long",
-        Justification = "Browse coordinates cache validation, ref resolution, discovery, and persistence."
-    )]
     public async Task<ManifestOperationResult<IReadOnlyList<CatalogPack>>> BrowseAsync(
         string projectDirectory,
         ProjectConfiguration.GitSource source,
@@ -102,7 +97,7 @@ internal sealed class GitPackDiscovery(
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "Maintainability",
         "MA0051:Method is too long",
-        Justification = "Discovery owns the temporary workspace lifecycle and sequential Git operations."
+        Justification = "Discovery coordinates one cache refresh transaction and its cleanup."
     )]
     private async Task<ManifestOperationResult<List<GitCachedPack>>> DiscoverAsync(
         ProjectConfiguration.GitSource source,

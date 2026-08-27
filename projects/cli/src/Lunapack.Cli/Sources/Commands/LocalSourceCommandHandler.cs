@@ -9,7 +9,8 @@ internal sealed class LocalSourceCommandHandler(
     WorkspaceDirectoryResolver workspaceDirectoryResolver,
     INextStepAdvisor nextStepAdvisor,
     NextStepRenderer nextStepRenderer,
-    CliConsole console
+    CliConsole console,
+    GitRefResolver? gitRefResolver = null
 )
 {
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
@@ -103,12 +104,17 @@ internal sealed class LocalSourceCommandHandler(
             if (
                 sourceName is null
                 || repository is null
-                || !TryCreateGitHubUrl(repository, out var repositoryUrl)
+                || !GitHubShorthand.TryCreateUrl(repository, out var repositoryUrl)
             )
             {
                 return console.Fail(
                     "A GitHub repository must use the organization/repository format."
                 );
+            }
+
+            if (string.IsNullOrWhiteSpace(parseResult.GetValue(gitRefOption)))
+            {
+                return console.Fail("GitHub sources require an explicit --ref.");
             }
 
             return await AddGitSourceAsync(
@@ -146,6 +152,7 @@ internal sealed class LocalSourceCommandHandler(
         {
             removeSourceNameArgument,
         };
+        removeSourceCommand.Aliases.Add("remove");
         removeSourceCommand.SetAction(async parseResult =>
         {
             var sourceName = parseResult.GetValue(removeSourceNameArgument);
@@ -160,11 +167,41 @@ internal sealed class LocalSourceCommandHandler(
                 );
         });
 
+        var currentSourceNameArgument = new Argument<string>("current-id")
+        {
+            Description = "Name of the configured source to rename.",
+        };
+        var newSourceNameArgument = new Argument<string>("new-id")
+        {
+            Description = "New unique name for the configured source.",
+        };
+        var renameSourceCommand = new Command("rename", "Rename a configured pack source.")
+        {
+            currentSourceNameArgument,
+            newSourceNameArgument,
+        };
+        renameSourceCommand.SetAction(async parseResult =>
+        {
+            var currentName = parseResult.GetValue(currentSourceNameArgument);
+            var newName = parseResult.GetValue(newSourceNameArgument);
+            return currentName is null || newName is null
+                ? console.Fail("A current and new source name are required.")
+                : await RenameAsync(
+                    workspaceDirectoryResolver.Resolve(
+                        projectDirectory,
+                        parseResult.GetValue(workspaceOption)
+                    ),
+                    currentName,
+                    newName
+                );
+        });
+
         return new Command("sources", "Manage pack sources.")
         {
             addSourceCommand,
             listSourcesCommand,
             removeSourceCommand,
+            renameSourceCommand,
         };
     }
 
@@ -216,18 +253,19 @@ internal sealed class LocalSourceCommandHandler(
             return console.Fail($"Source name '{name}' is already configured.");
         }
 
-        var sourceIsConfigured = state.Configuration.Sources.Exists(source =>
-            source is ProjectConfiguration.LocalSource localSource
-            && string.Equals(localSource.Path, normalizedPath, StringComparison.Ordinal)
-        );
-        if (sourceIsConfigured)
+        var candidateLocalSource = new ProjectConfiguration.LocalSource
         {
-            return console.Fail($"Local source '{normalizedPath}' is already configured.");
+            Name = name,
+            Path = normalizedPath,
+        };
+        if (FindFingerprintConflict(state.Configuration, candidateLocalSource) is { } conflict)
+        {
+            return console.Fail(
+                $"Local source '{normalizedPath}' is already configured as '{conflict}'."
+            );
         }
 
-        state.Configuration.Sources.Add(
-            new ProjectConfiguration.LocalSource { Name = name, Path = normalizedPath }
-        );
+        state.Configuration.Sources.Add(candidateLocalSource);
         var savedState = await projectStateStore.SaveAllowingUnavailableSourcesAsync(
             projectDirectory,
             state
@@ -244,22 +282,10 @@ internal sealed class LocalSourceCommandHandler(
         string? repositoryPath
     )
     {
-        if (string.IsNullOrEmpty(name))
+        var candidate = await CreateGitSourceAsync(name, repositoryUrl, gitRef, repositoryPath);
+        if (candidate.Value is not { } candidateGitSource)
         {
-            return console.Fail("A source name is required.");
-        }
-
-        if (string.IsNullOrWhiteSpace(repositoryUrl))
-        {
-            return console.Fail("A Git repository URL is required.");
-        }
-
-        var normalizedRepositoryPath = ProjectPath.NormalizeOptional(repositoryPath);
-        if (!IsSafeRepositoryPath(normalizedRepositoryPath))
-        {
-            return console.Fail(
-                "Git source paths must be repository-relative and must not contain '..'."
-            );
+            return console.Fail(candidate.Error);
         }
 
         var loadedState = await projectStateStore.LoadAsync(projectDirectory);
@@ -273,32 +299,135 @@ internal sealed class LocalSourceCommandHandler(
             return console.Fail($"Source name '{name}' is already configured.");
         }
 
-        var sourceIsConfigured = state.Configuration.Sources.Exists(source =>
-            source is ProjectConfiguration.GitSource gitSource
-            && string.Equals(gitSource.Url, repositoryUrl, StringComparison.Ordinal)
-            && string.Equals(gitSource.Ref, gitRef, StringComparison.Ordinal)
-            && string.Equals(gitSource.Path, normalizedRepositoryPath, StringComparison.Ordinal)
-        );
-        if (sourceIsConfigured)
+        if (FindFingerprintConflict(state.Configuration, candidateGitSource) is { } conflict)
         {
-            return console.Fail($"Git source '{repositoryUrl}' is already configured.");
+            return console.Fail(
+                $"Git source '{repositoryUrl}' is already configured as '{conflict}'."
+            );
         }
 
-        state.Configuration.Sources.Add(
-            new ProjectConfiguration.GitSource
-            {
-                Name = name,
-                Url = repositoryUrl,
-                Ref = gitRef,
-                Path = normalizedRepositoryPath,
-            }
-        );
+        state.Configuration.Sources.Add(candidateGitSource);
         var savedState = await projectStateStore.SaveAllowingUnavailableSourcesAsync(
             projectDirectory,
             state
         );
 
         return CompleteSourceAddition(savedState, name);
+    }
+
+    private async Task<
+        ManifestOperationResult<ProjectConfiguration.GitSource>
+    > CreateGitSourceAsync(
+        string name,
+        string repositoryUrl,
+        string? gitRef,
+        string? repositoryPath
+    )
+    {
+        if (string.IsNullOrEmpty(name))
+        {
+            return ManifestOperationResult<ProjectConfiguration.GitSource>.Failure(
+                "A source name is required."
+            );
+        }
+
+        if (string.IsNullOrWhiteSpace(repositoryUrl))
+        {
+            return ManifestOperationResult<ProjectConfiguration.GitSource>.Failure(
+                "A Git repository URL is required."
+            );
+        }
+
+        var normalizedRepositoryPath = ProjectPath.NormalizeOptional(repositoryPath)?.Trim('/');
+        if (!IsSafeRepositoryPath(normalizedRepositoryPath))
+        {
+            return ManifestOperationResult<ProjectConfiguration.GitSource>.Failure(
+                "Git source paths must be repository-relative and must not contain '..'."
+            );
+        }
+
+        var repository = SourceIdentityNormalizer.NormalizeRepository(repositoryUrl);
+        if (!repository.IsSuccess)
+        {
+            return ManifestOperationResult<ProjectConfiguration.GitSource>.Failure(
+                repository.Error ?? "The Git repository URL is invalid."
+            );
+        }
+
+        var canonicalRef = await CanonicalizeRefAsync(repositoryUrl, gitRef);
+        return canonicalRef.IsSuccess
+            ? ManifestOperationResult<ProjectConfiguration.GitSource>.Success(
+                new ProjectConfiguration.GitSource
+                {
+                    Name = name,
+                    Url = repositoryUrl.Trim(),
+                    Ref = canonicalRef.Value,
+                    Path = string.IsNullOrEmpty(normalizedRepositoryPath)
+                        ? null
+                        : normalizedRepositoryPath,
+                }
+            )
+            : ManifestOperationResult<ProjectConfiguration.GitSource>.Failure(
+                canonicalRef.Error ?? "The Git ref is invalid."
+            );
+    }
+
+    private async Task<ManifestOperationResult<string?>> CanonicalizeRefAsync(
+        string repositoryUrl,
+        string? gitRef
+    )
+    {
+        if (string.IsNullOrWhiteSpace(gitRef))
+        {
+            return ManifestOperationResult<string?>.Success(null);
+        }
+
+        if (gitRefResolver is null)
+        {
+            return ManifestOperationResult<string?>.Success(gitRef.Trim());
+        }
+
+        var canonicalRef = await gitRefResolver.ResolveCanonicalRefAsync(
+            repositoryUrl,
+            gitRef,
+            timeout: null,
+            CancellationToken.None
+        );
+        return canonicalRef.Value is { } resolved
+            ? ManifestOperationResult<string?>.Success(resolved.CanonicalRef)
+            : ManifestOperationResult<string?>.Failure(
+                canonicalRef.Error ?? $"Unable to canonicalize Git ref '{gitRef}'."
+            );
+    }
+
+    private static string? FindFingerprintConflict(
+        ProjectConfiguration configuration,
+        ProjectConfiguration.Source candidate
+    )
+    {
+        var created = SourceIdentityNormalizer.Create(candidate);
+        if (created.Value is not { } fingerprint)
+        {
+            return null;
+        }
+
+        foreach (var source in configuration.Sources)
+        {
+            var existing = SourceIdentityNormalizer.Create(source);
+            if (
+                existing.Value is { } existingFingerprint
+                && string.Equals(
+                    existingFingerprint.Value,
+                    fingerprint.Value,
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                return source.Name;
+            }
+        }
+
+        return null;
     }
 
     public async Task<int> RemoveAsync(string projectDirectory, string name)
@@ -309,13 +438,22 @@ internal sealed class LocalSourceCommandHandler(
             return console.Fail(loadedState.Error);
         }
 
-        var removed = state.Configuration.Sources.RemoveAll(source =>
-            string.Equals(source.Name, name, StringComparison.Ordinal)
-        );
-        if (removed == 0)
+        if (!SourceNameExists(state.Configuration, name))
         {
             return console.Fail($"Source '{name}' is not configured.");
         }
+
+        var consumers = FindLockConsumers(state.LockFile, name);
+        if (consumers.Count > 0)
+        {
+            return console.Fail(
+                $"Source '{name}' is still used by {string.Join(", ", consumers)}. Uninstall or move these packs before removing the source."
+            );
+        }
+
+        state.Configuration.Sources.RemoveAll(source =>
+            string.Equals(source.Name, name, StringComparison.Ordinal)
+        );
 
         state.Configuration.Trust.Sources.RemoveAll(source =>
             string.Equals(source, name, StringComparison.Ordinal)
@@ -350,6 +488,141 @@ internal sealed class LocalSourceCommandHandler(
         return 0;
     }
 
+    public async Task<int> RenameAsync(string projectDirectory, string currentName, string newName)
+    {
+        if (string.IsNullOrWhiteSpace(newName))
+        {
+            return console.Fail("A new source name is required.");
+        }
+
+        var loadedState = await projectStateStore.LoadAsync(projectDirectory);
+        if (loadedState.Value is not { } state)
+        {
+            return console.Fail(loadedState.Error);
+        }
+
+        var source = state.Configuration.Sources.Find(configured =>
+            string.Equals(configured.Name, currentName, StringComparison.Ordinal)
+        );
+        if (source is null)
+        {
+            return console.Fail($"Source '{currentName}' is not configured.");
+        }
+
+        if (SourceNameExists(state.Configuration, newName))
+        {
+            return console.Fail($"Source name '{newName}' is already configured.");
+        }
+
+        source.Name = newName;
+        RenameTrustReferences(state.Configuration, currentName, newName);
+        RenameLockReferences(state.LockFile, currentName, newName);
+
+        var savedState = await projectStateStore.SaveAllowingUnavailableSourcesAsync(
+            projectDirectory,
+            state
+        );
+        if (!savedState.IsSuccess)
+        {
+            return console.Fail(savedState.Error);
+        }
+
+        console.Info($"✓ Source '{currentName}' renamed to '{newName}'");
+        nextStepRenderer.Render(
+            nextStepAdvisor.Recommend(NextStepContext.SourcesRemain),
+            "Suggested commands:"
+        );
+        return 0;
+    }
+
+    private static void RenameTrustReferences(
+        ProjectConfiguration configuration,
+        string currentName,
+        string newName
+    )
+    {
+        for (var index = 0; index < configuration.Trust.Sources.Count; index++)
+        {
+            if (
+                string.Equals(
+                    configuration.Trust.Sources[index],
+                    currentName,
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                configuration.Trust.Sources[index] = newName;
+            }
+        }
+
+        for (var index = 0; index < configuration.Trust.Packs.Count; index++)
+        {
+            var trustedPack = configuration.Trust.Packs[index];
+            if (string.Equals(trustedPack.Source, currentName, StringComparison.Ordinal))
+            {
+                configuration.Trust.Packs[index] = trustedPack with { Source = newName };
+            }
+        }
+    }
+
+    private static void RenameLockReferences(
+        ProjectLockFile lockFile,
+        string currentName,
+        string newName
+    )
+    {
+        foreach (var resolvedPack in lockFile.Packs)
+        {
+            if (string.Equals(resolvedPack.SourceName, currentName, StringComparison.Ordinal))
+            {
+                resolvedPack.SourceName = newName;
+            }
+
+            foreach (var (alias, externalSource) in resolvedPack.ExternalSources)
+            {
+                if (string.Equals(externalSource.SourceName, currentName, StringComparison.Ordinal))
+                {
+                    resolvedPack.ExternalSources[alias] = externalSource with
+                    {
+                        SourceName = newName,
+                    };
+                }
+            }
+
+            foreach (var managedFile in resolvedPack.ManagedFiles)
+            {
+                if (string.Equals(managedFile.SourceName, currentName, StringComparison.Ordinal))
+                {
+                    managedFile.SourceName = newName;
+                }
+            }
+        }
+    }
+
+    private static List<string> FindLockConsumers(ProjectLockFile lockFile, string name)
+    {
+        var consumers = new List<string>();
+        foreach (var resolvedPack in lockFile.Packs)
+        {
+            if (string.Equals(resolvedPack.SourceName, name, StringComparison.Ordinal))
+            {
+                consumers.Add($"pack '{resolvedPack.Id}'");
+                continue;
+            }
+
+            if (
+                resolvedPack.ExternalSources.Values.Any(externalSource =>
+                    string.Equals(externalSource.SourceName, name, StringComparison.Ordinal)
+                )
+            )
+            {
+                consumers.Add($"pack '{resolvedPack.Id}' external content");
+            }
+        }
+
+        return consumers;
+    }
+
     private int CompleteSourceAddition(ManifestOperationResult<bool> savedState, string name)
     {
         if (!savedState.IsSuccess)
@@ -374,25 +647,4 @@ internal sealed class LocalSourceCommandHandler(
         configuration.Sources.Exists(source =>
             string.Equals(source.Name, name, StringComparison.Ordinal)
         );
-
-    private static bool TryCreateGitHubUrl(string repository, out string repositoryUrl)
-    {
-        var segments = repository.Split('/', StringSplitOptions.None);
-        if (
-            segments.Length != 2
-            || segments.Any(segment =>
-                string.IsNullOrEmpty(segment)
-                || segment.Any(character =>
-                    !char.IsLetterOrDigit(character) && character is not '-' and not '_' and not '.'
-                )
-            )
-        )
-        {
-            repositoryUrl = string.Empty;
-            return false;
-        }
-
-        repositoryUrl = $"https://github.com/{repository}.git";
-        return true;
-    }
 }

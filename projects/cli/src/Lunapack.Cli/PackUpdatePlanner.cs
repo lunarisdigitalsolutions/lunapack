@@ -52,7 +52,7 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "Maintainability",
         "MA0051:Method is too long",
-        Justification = "Update planning retains managed-file conflict decisions in one pass."
+        Justification = "Update planning must retain shared target-content state across actions."
     )]
     private ManifestOperationResult<List<PlannedPackUpdateAction>> CreateActions(
         string projectDirectory,

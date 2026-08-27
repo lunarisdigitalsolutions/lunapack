@@ -10,6 +10,24 @@ of failing a whole reachable source; explicit validation reports a selected
 pack's issues. The catalog applies Semantic Version precedence, then configured
 source order for ties.
 
+Every configured source normalizes into a source fingerprint: a Git
+fingerprint combines a sanitized repository identity, a canonical ref, and a
+normalized base path, and a local fingerprint uses a canonical project-relative
+path. `lunapack.yml` may contain at most one source per fingerprint; loading,
+validating, and writing configuration all reject a duplicate. Adding a Git or
+GitHub source resolves a supplied short ref through `git ls-remote` to its
+complete form and rejects an ambiguous match before the fingerprint or ref is
+persisted.
+
+Pack manifests may declare Git sources under pack-local aliases. After graph
+resolution, the external-source planner collects only aliases referenced by
+selected managed files, groups equivalent fingerprints, and maps them to an
+existing or proposed authoritative workspace source name. Missing groups use
+one all-or-nothing consent decision. Materialization resolves each group to an
+immutable commit in a private operation directory and shares content for equal
+fingerprint-and-commit pairs. External content never becomes a pack catalog and
+never supplies lifecycle scripts.
+
 Manifest and lock documents are deserialized into typed CLI models before the
 CLI validates required fields, semantic versions, paths, hashes, selector and
 strategy combinations, and source provenance. The JSON schemas remain the
@@ -63,6 +81,22 @@ error output has colored level prefixes. Long-running catalog and lifecycle
 commands show status spinners. Source trust is established by consumer
 configuration and preserved through provenance, not by pack manifests.
 
+Approved source additions remain candidate configuration until external Git
+resolution, selector expansion, target collision checks, managed-file actions,
+and lock cross-references all succeed. State-save failure rolls back managed
+targets and discards candidate source configuration. Lock records map each used
+pack alias to its workspace source, fingerprint, canonical ref, and commit;
+external managed files also record source-relative and effective target paths.
+
+## Cache And Operation Lifetime
+
+Catalog Git sources retain validated metadata under the project `.lunapack`
+cache. Pack-defined external content instead uses an access-restricted temporary
+workspace per lifecycle or validation operation. One operation reuses a sparse
+checkout only when fingerprint and resolved commit both match. Disposal and
+every handled failure prepare that workspace for deletion and remove it; no
+pack-declared alias or fetched working tree becomes persistent source authority.
+
 ## Workflow Guidance
 
 The application-layer next-step advisor classifies a validated workspace from
@@ -71,12 +105,17 @@ three ordered recommendations; a separate renderer escapes and writes them.
 Guidance never executes commands, changes exit codes, or treats dry runs as
 completed state transitions.
 
-Source removal atomically removes source configuration and project trust bound
-to that source name. Requested roots, immutable lock evidence, and managed files
-remain. State loading therefore accepts resolved source identities that are no
-longer configured, while ordinary state writes continue to validate configured
-source matching. Source and uninstall writes use the narrow unavailable-source
-path.
+Source removal normalizes configured and lock-referenced sources into
+fingerprints and refuses to remove a source while `lunapack-lock.yml` still
+records an installed pack or its external content as a consumer. Once no
+consumer remains, removal atomically clears source configuration and project
+trust bound to that name; requested roots, immutable lock evidence, and
+managed files remain. Source rename atomically replaces the configuration key
+together with every trust and lock-file reference in one project-state
+transaction, leaving pack-local aliases untouched. State loading therefore
+accepts resolved source identities that are no longer configured, while
+ordinary state writes continue to validate configured source matching.
+Source, rename, and uninstall writes use the narrow unavailable-source path.
 
 Link install, update, uninstall, and forced removal use the same transaction
 boundary as managed pack files. Configuration, lock evidence, and file actions

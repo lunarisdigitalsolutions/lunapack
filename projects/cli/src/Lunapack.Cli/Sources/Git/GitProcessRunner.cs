@@ -8,11 +8,6 @@ internal sealed class GitProcessRunner(string executable = "git") : IGitProcessR
 {
     private const int MaximumDiagnosticCharacters = 64 * 1024;
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Maintainability",
-        "MA0051:Method is too long",
-        Justification = "Process execution keeps timeout, cancellation, and stream handling coordinated."
-    )]
     public async Task<ManifestOperationResult<GitProcessOutput>> RunAsync(
         IReadOnlyList<string> arguments,
         TimeSpan timeout,

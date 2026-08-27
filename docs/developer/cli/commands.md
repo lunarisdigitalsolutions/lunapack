@@ -33,15 +33,22 @@ root packs, then recommends the next commands for the current workspace stage.
 - `luna sources add local <name> <path>`: Registers an existing project-relative
   directory of packs.
 - `luna sources add git <name> <repository-url>`: Registers a Git pack source. `--ref`
-  or `-r` selects a branch or commit; `--path` or `-p` limits discovery to a
-  repository-relative directory.
+  or `-r` selects a branch or commit and resolves a short branch or tag name to
+  its complete ref through `git ls-remote`; `--path` or `-p` limits discovery to
+  a repository-relative directory. Rejects a repository URL that canonicalizes
+  to an already-configured source.
 - `luna sources add github <name> <organization/repository>`: Registers a GitHub
   repository as a Git pack source. LunaPack stores its HTTPS Git URL; `--ref`
-  (`-r`) and `--path` (`-p`) match `git`.
+  (`-r`) is required and resolved the same way as `git`; `--path` (`-p`)
+  matches `git`.
 - `luna sources list`: Lists configured local and Git sources.
-- `luna sources rm <name>`: Removes one configured source and project trust
-  bound to its name. Installed pack records, lock provenance, and managed files
-  remain.
+- `luna sources rename <current-id> <new-id>`: Renames a configured source,
+  atomically updating trust and lock-file references bound to its previous
+  name.
+- `luna sources rm <name>` (alias `remove`): Removes one configured source and
+  project trust bound to its name. Refuses to remove a source while an
+  installed pack, or its external content, still depends on that source name.
+  Installed pack records, lock provenance, and managed files remain.
 - `luna trust source <name>...`: Grants lifecycle-script trust to configured
   sources.
 - `luna trust pack <id>... --source <name>`: Grants trust only to selected pack
@@ -95,8 +102,16 @@ project. Pack trust and pack-trust revocation require `--source` or `-s`. See
   to `MIT`, so Enter accepts it. Invalid prompted pack IDs display their error
   immediately and prompt again before collecting remaining values.
 - `luna pack add file|directory|glob <path>`: Adds managed content.
-  `--target`, `--strategy <type>:<method>`, `--template`, and `--condition`
-  configure the selector. Globs require a target when none can be inferred.
+  `--source`, repeatable `--exclude`, `--flatten`, `--target`,
+  `--strategy <type>:<method>`, `--template`, and `--condition` configure the
+  selector. Globs require a target when none can be inferred.
+- `luna pack add source git <name> <repository-url> --ref <ref>`: Adds a
+  pack-local external Git alias. `--path`, `--description`, and `--manifest`
+  are optional.
+- `luna pack add source github <name> <owner/repository> --ref <ref>`: Adds the
+  same declaration through GitHub shorthand.
+- `luna pack sources`: Lists sanitized source identities, canonical refs, base
+  paths, and managed-selector reference counts.
 - `luna pack add script command <hook> <command> [arguments...]`: Adds a direct
   executable hook.
 - `luna pack add script file <hook> <file> <runner> [arguments...]`: Adds a
@@ -114,13 +129,15 @@ project. Pack trust and pack-trust revocation require `--source` or `-s`. See
 - `luna pack set reference <id> <version>`: Creates or replaces a composite
   reference.
 - `luna pack rm <selector>`: Removes one exact managed selector.
+- `luna pack rm source <name>`: Removes an unreferenced source alias.
 - `luna pack rm script|reference|parameter|metadata <name>` and
   `luna pack rm tag <value>`: Remove named declarations. ID and version cannot
   be removed.
 - `luna pack list`, `luna pack scripts`, and `luna pack show`: Display local
   manifest contents.
-- `luna pack validate`: Validates local `pack.yml` without resolving sources,
-  executing scripts, or changing trust.
+- `luna pack validate`: Validates local and external selector reachability,
+  warns about unused source aliases, and never executes scripts or changes
+  trust.
 
 Every mutation validates the complete candidate and atomically replaces
 `pack.yml`. Failure preserves the previous file. File, directory, target, and
@@ -138,14 +155,16 @@ adding content, viewing the manifest, or validating it.
 - `luna uninstall <pack-reference> [<pack-reference>...]`: Removes one or more
   installed roots and unchanged files no longer owned by another pack. When
   supplied, each version must match the currently installed release.
-- `luna outdated`: Lists installed roots that have a newer available release.
+- `luna outdated`: Lists installed roots with a newer release or changed
+  external content. `--offline` avoids remote checks and reports uncertainty.
 - `luna update [<pack-reference>...]`: Updates all roots or one or more selected
   roots.
 - `luna mv <source> <target>`: Moves one uniquely owned managed file and updates
   lock ownership. If the file was moved manually, it can rebind ownership when
   only the target exists.
-- `luna audit`: Reports resolved packs, formatted source locations, dependencies,
-  and managed-file ownership.
+- `luna audit`: Reports resolved packs, dependencies, external alias mappings,
+  fingerprints, refs, commits, source and target paths, ownership, digests, and
+  drift or local-modification status.
 
 `<pack-reference>` is a pack ID or `<id>@<version>`. When version is omitted,
 commands select the latest available release. `install` accepts `--dry-run`
@@ -153,6 +172,8 @@ commands select the latest available release. `install` accepts `--dry-run`
 `--adopt-existing` (`-a`), repeatable `--parameter` (`-p`),
 `--no-variables` (`-nv`), and repeatable `--skip-variable` (`-sv`).
 `update` accepts `--dry-run` (`-D`); update-all also accepts `--prompt` (`-p`).
+Both install and update accept `--accept-sources` for conflict-free proposed
+source additions.
 Both `install` and `update` accept `--scripts <prompt|run|skip>`; `prompt` is
 the default and requires effective trust or interactive consent for each hook.
 When more than one reference is supplied, lifecycle commands process them in
