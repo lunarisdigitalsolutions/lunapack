@@ -5,6 +5,19 @@ internal maintenance work, such as CI, build, or release-process changes.
 
 ## Unreleased
 
+### Luna Links
+
+- Luna `1.1.0` adds project-owned links that select exact files, directories,
+  and globs from configured local or Git sources without requiring `pack.yml`.
+- `luna links add`, `list`, `show`, and `rm` manage link definitions. Install,
+  update, outdated, audit, uninstall, and forced removal use lock-backed
+  ownership, content digests, conflict checks, and transaction rollback.
+- Link installation now honors `--remap-directory` and `--remap-file`, recording
+  declared and effective target paths in lock ownership.
+- Git links resolve immutable commits, materialize only selected blobs, and use
+  a verified user cache. Project and lock files containing links require Luna
+  `1.1.0` or later; version-1 files without links remain compatible.
+
 ### Pack Authoring
 
 - New `luna pack` commands initialize, inspect, validate, and incrementally
@@ -37,6 +50,15 @@ internal maintenance work, such as CI, build, or release-process changes.
   trust while retaining installed pack state, provenance, and managed files.
 - `luna --suppress-next-steps` suppresses contextual next-step recommendations for any
   command.
+
+### Lifecycle Hooks
+
+- Declining an untrusted lifecycle hook now warns and skips the hook instead of
+  failing the pack operation.
+- Windows lifecycle commands such as `npm` now resolve through `PATHEXT`,
+  avoiding invalid extensionless command shims.
+- Interactive lifecycle hooks now inherit terminal input and output, allowing
+  commands such as `npm init` to display and handle their prompts.
 
 ## Version 1.0.0 - 2026-08-25
 

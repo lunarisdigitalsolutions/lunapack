@@ -38,8 +38,17 @@ public sealed class PackDryRunFormatterTests
             [new PackUpdateService.UpdateOutcome("example", "1.0.0", "2.0.0", false)],
             new PackUpdatePlan([
                 new DeleteManagedFileUpdateAction(
-                    previousPack,
-                    previousPack.ManagedFiles.Single(),
+                    new ManagedRootOwner(
+                        ManagedRootKind.Pack,
+                        previousPack.Id,
+                        previousPack.Version
+                    ),
+                    new ManagedRootFile(
+                        previousPack.PackPath,
+                        previousPack.ManagedFiles.Single().TargetPath,
+                        previousPack.ManagedFiles.Single().TargetPath,
+                        previousPack.ManagedFiles.Single().Sha256
+                    ),
                     "C:\\project\\obsolete.txt"
                 ),
             ])

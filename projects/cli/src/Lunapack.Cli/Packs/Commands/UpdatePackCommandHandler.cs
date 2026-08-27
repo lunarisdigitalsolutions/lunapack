@@ -4,6 +4,7 @@ namespace Lunapack.Cli;
 
 internal sealed class UpdatePackCommandHandler(
     PackUpdateService packUpdateService,
+    LinkCommandDispatcher linkCommandDispatcher,
     PackUpdateSelectionService updateSelectionService,
     IPackUpdatePrompter packUpdatePrompter,
     WorkspaceDirectoryResolver workspaceDirectoryResolver,
@@ -46,9 +47,8 @@ internal sealed class UpdatePackCommandHandler(
         };
         command.SetAction(async parseResult =>
         {
-            var parsedReferences = ParseReferences(
-                parseResult.GetValue(packReferenceArgument) ?? []
-            );
+            var referenceValues = parseResult.GetValue(packReferenceArgument) ?? [];
+            var parsedReferences = ParseReferences(referenceValues);
             if (parsedReferences.Value is not { } references)
             {
                 return console.Fail(parsedReferences.Error);
@@ -92,32 +92,41 @@ internal sealed class UpdatePackCommandHandler(
             if (references.Count == 0)
             {
                 return await HandleResultAsync(
-                    await console.RunWithStatusAsync(
-                        "Updating packs...",
-                        () =>
-                            packUpdateService.UpdateAsync(
-                                workspaceDirectory,
-                                null,
-                                dryRun,
-                                parsedScriptMode
-                            )
+                    await UpdateAsync(
+                        workspaceDirectory,
+                        null,
+                        dryRun,
+                        parsedScriptMode,
+                        "Updating packs..."
                     ),
                     dryRun
                 );
             }
 
-            foreach (var reference in references)
+            foreach (var referenceValue in referenceValues)
             {
+                var linkExitCode = await linkCommandDispatcher.TryUpdateAsync(
+                    workspaceDirectory,
+                    referenceValue
+                );
+                if (linkExitCode is not null)
+                {
+                    if (linkExitCode.Value != 0)
+                    {
+                        return linkExitCode.Value;
+                    }
+
+                    continue;
+                }
+
+                var reference = PackReference.Parse(referenceValue).Value!;
                 var exitCode = await HandleResultAsync(
-                    await console.RunWithStatusAsync(
-                        $"Updating {reference.Id}...",
-                        () =>
-                            packUpdateService.UpdateAsync(
-                                workspaceDirectory,
-                                reference,
-                                dryRun,
-                                parsedScriptMode
-                            )
+                    await UpdateAsync(
+                        workspaceDirectory,
+                        reference,
+                        dryRun,
+                        parsedScriptMode,
+                        $"Updating {reference.Id}..."
                     ),
                     dryRun
                 );
@@ -132,6 +141,20 @@ internal sealed class UpdatePackCommandHandler(
 
         return command;
     }
+
+    private Task<PackUpdateService.UpdateResult> UpdateAsync(
+        string projectDirectory,
+        PackReference? reference,
+        bool dryRun,
+        ScriptExecutionMode scriptMode,
+        string status
+    ) =>
+        scriptMode == ScriptExecutionMode.Prompt
+            ? packUpdateService.UpdateAsync(projectDirectory, reference, dryRun, scriptMode)
+            : console.RunWithStatusAsync(
+                status,
+                () => packUpdateService.UpdateAsync(projectDirectory, reference, dryRun, scriptMode)
+            );
 
     private async Task<PackUpdateService.UpdateResult> PromptAndUpdateAsync(
         string projectDirectory,

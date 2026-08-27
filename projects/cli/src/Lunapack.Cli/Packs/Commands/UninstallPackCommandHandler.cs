@@ -4,6 +4,7 @@ namespace Lunapack.Cli;
 
 internal sealed class UninstallPackCommandHandler(
     PackLifecycleService packLifecycleService,
+    LinkCommandDispatcher linkCommandDispatcher,
     WorkspaceDirectoryResolver workspaceDirectoryResolver,
     INextStepAdvisor nextStepAdvisor,
     NextStepRenderer nextStepRenderer,
@@ -44,22 +45,11 @@ internal sealed class UninstallPackCommandHandler(
 
             foreach (var packReferenceValue in packReferenceValues)
             {
-                var packReference = PackReference.Parse(packReferenceValue);
-                if (packReference.Value is not { } reference)
-                {
-                    return console.Fail(packReference.Error);
-                }
-
-                var exitCode = await console.RunWithStatusAsync(
-                    $"Uninstalling {reference.Id}...",
-                    () => packLifecycleService.UninstallAsync(workspaceDirectory, reference)
-                );
+                var exitCode = await UninstallAsync(workspaceDirectory, packReferenceValue);
                 if (exitCode != 0)
                 {
                     return exitCode;
                 }
-
-                console.Info($"✓ Uninstalled {reference.Id}");
             }
 
             await RenderGuidanceAsync(workspaceDirectory);
@@ -68,6 +58,36 @@ internal sealed class UninstallPackCommandHandler(
         });
 
         return command;
+    }
+
+    private async Task<int> UninstallAsync(string workspaceDirectory, string packReferenceValue)
+    {
+        var linkExitCode = await linkCommandDispatcher.TryUninstallAsync(
+            workspaceDirectory,
+            packReferenceValue
+        );
+        if (linkExitCode is not null)
+        {
+            return linkExitCode.Value;
+        }
+
+        var packReference = PackReference.Parse(packReferenceValue);
+        if (packReference.Value is not { } reference)
+        {
+            return console.Fail(packReference.Error);
+        }
+
+        var exitCode = await console.RunWithStatusAsync(
+            $"Uninstalling {reference.Id}...",
+            () => packLifecycleService.UninstallAsync(workspaceDirectory, reference)
+        );
+        if (exitCode != 0)
+        {
+            return exitCode;
+        }
+
+        console.Info($"✓ Uninstalled {reference.Id}");
+        return 0;
     }
 
     private async Task RenderGuidanceAsync(string workspaceDirectory)

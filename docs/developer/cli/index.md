@@ -6,4 +6,5 @@ This reference records the supported command surface and project documents.
 | ------------- | --------------------------------------------------------------- |
 | Orientation   | [Overview](overview.md)                                         |
 | Project state | [Configuration](configuration.md) and [manifests](manifests.md) |
+| Luna Links    | [Luna Links reference](links.md)                                |
 | Commands      | [Command reference](commands.md)                                |

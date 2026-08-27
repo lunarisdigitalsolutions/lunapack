@@ -6,6 +6,34 @@ Define installation and safe removal of versioned packs from configured local Lu
 
 ## Requirements
 
+### Requirement: Audit installed link ownership
+
+`luna audit` SHALL evaluate every installed link target against its locked effective path and SHA-256 digest and SHALL report missing, locally modified, and ownership-conflicting files. Audit SHALL not mutate project files, configuration, or lock state.
+
+#### Scenario: Report a locally modified linked file
+
+- **WHEN** an installed link target's current digest differs from its locked digest
+- **THEN** `luna audit` identifies the link and modified target without changing it
+
+#### Scenario: Report a missing linked file
+
+- **WHEN** an installed link target no longer exists
+- **THEN** `luna audit` identifies the link and missing target without recreating it
+
+### Requirement: Uninstall links with digest protection
+
+`luna uninstall <name>` SHALL remove an installed link's definition, unchanged exclusively owned targets, and resolved lock record atomically. If any owned target differs from its recorded digest, LunaPack SHALL preserve every file, definition, and lock state and SHALL return a non-success result. Uninstalling a link SHALL not affect unrelated packs or links.
+
+#### Scenario: Uninstall an unchanged link
+
+- **WHEN** every target owned by an installed link matches its locked digest
+- **THEN** LunaPack removes those targets, the link definition, and its lock record atomically
+
+#### Scenario: Preserve a modified link installation
+
+- **WHEN** any target owned by an installed link differs from its locked digest
+- **THEN** LunaPack returns a non-success result and preserves all managed files, configuration, and lock state
+
 ### Requirement: Resolve composite pack references from configured sources
 
 LunaPack SHALL recursively resolve every composite pack reference from the local and Git sources configured in the consuming project's `lunapack.yml`. Each composite reference SHALL resolve the declared ID and exact version using the same source-precedence rules as direct installation. LunaPack SHALL not read source configuration from a pack manifest.
@@ -153,6 +181,24 @@ the project unchanged.
   `1.1.0`
 - **THEN** `luna outdated` reports that root with current version `1.0.0` and
   latest version `1.1.0`
+
+### Requirement: Report outdated links
+
+`luna outdated` SHALL evaluate installed links in addition to requested root
+packs. A link SHALL be outdated when its definition digest, selected file digest,
+selection, or mapped target changes. Each result SHALL identify the link name and
+reasons. A Git source resolving to a different commit SHALL not by itself make a
+link outdated.
+
+#### Scenario: Report a newly matching file
+
+- **WHEN** a file added to a source now matches an installed link include and is not excluded
+- **THEN** `luna outdated` reports that link with an added-file reason
+
+#### Scenario: Omit a content-equivalent new commit
+
+- **WHEN** an installed Git link resolves to a different commit but its definition and complete selected-file result are unchanged
+- **THEN** `luna outdated` does not report that link
 
 ### Requirement: Preview and confirm package changes
 
@@ -705,13 +751,10 @@ LunaPack SHALL persist configuration, lock state, and resulting managed-file dig
 - **WHEN** a post-install or post-update process exits unsuccessfully
 - **THEN** LunaPack restores managed files, configuration, and lock state, reports the failed hook, and warns that external script side effects may remain
 
-### Requirement: Preserve project manifest integrity across every hook
-
 LunaPack SHALL preserve a private backup and exact-byte digest of `lunapack.yml` before the first hook. It SHALL not reload project configuration from disk during hook execution. Immediately after every hook process exits, LunaPack SHALL verify that `lunapack.yml` still exists and has the same exact bytes. If it differs or is missing, LunaPack SHALL log an error identifying the pack and hook, restore the original manifest bytes, abort before another hook runs, and roll back LunaPack-owned managed files, configuration, and lock state. A script that changes and restores the same bytes before exit is outside this detection guarantee.
 
 #### Scenario: Abort after a hook changes project configuration
 
-- **WHEN** a lifecycle hook modifies `lunapack.yml` and exits
 - **THEN** LunaPack restores the original bytes, logs an error, aborts immediately, and rolls back LunaPack-owned state
 
 #### Scenario: Abort after a hook removes project configuration
@@ -719,14 +762,11 @@ LunaPack SHALL preserve a private backup and exact-byte digest of `lunapack.yml`
 - **WHEN** a lifecycle hook removes `lunapack.yml`
 - **THEN** LunaPack restores the file and aborts before any later hook or state commit
 
-### Requirement: Pin updates to locked source identity
-
 LunaPack SHALL use each installed pack's locked configured-source identity when selecting update candidates for roots and transitive packs. An ordinary latest-version update SHALL not move a pack to another source. An explicit `luna update <pack-id>@<version>` MAY select that version from another configured source only when it is unavailable from the locked source. Before mutation or script authorization, LunaPack SHALL show the pack ID, old source identity, new source identity, and security consequence and require interactive source-switch confirmation. Declining or unavailable confirmation SHALL leave the graph unchanged. Trust for the old source or source-plus-pack pair SHALL not authorize scripts from the new source.
 
 #### Scenario: Update from the locked source
 
 - **WHEN** the locked source contains a newer eligible release
-- **THEN** LunaPack selects that release without considering equal or newer candidates from other sources
 
 #### Scenario: Refuse implicit source movement
 
@@ -743,29 +783,19 @@ LunaPack SHALL use each installed pack's locked configured-source identity when 
 - **WHEN** an explicit update would switch sources and interactive confirmation is unavailable
 - **THEN** LunaPack returns a non-success result without changing files or state
 
-#### Scenario: Reauthorize scripts after source switch
-
 - **WHEN** a confirmed source switch selects a release with lifecycle hooks
 - **THEN** LunaPack evaluates script trust against the new source identity
-
-### Requirement: Guide successful pack lifecycle transitions
 
 Completed non-dry-run lifecycle commands SHALL confirm their result and append
 recommendations selected from persisted post-operation state. Guidance SHALL
 use a concrete pack ID when the completed command supplies one.
 
-#### Scenario: Install a pack
-
 - **WHEN** `luna install <pack-reference>` successfully installs a requested
   root pack
-- **THEN** Luna confirms the installed pack ID and recommends `luna outdated`,
-  `luna update`, and uninstalling that pack ID
 
 #### Scenario: Update installed packs
 
-- **WHEN** `luna update` successfully completes one or more updates
-- **THEN** Luna reports the updated requested-root count and recommends `luna
-  audit` and `luna outdated`
+audit`and`luna outdated`
 
 #### Scenario: Uninstall a pack while others remain
 
@@ -792,5 +822,30 @@ and append commands that help locate an available pack.
 - **WHEN** a user runs `luna install unknown-pack` and no configured source
   provides that pack
 - **THEN** Luna reports that `unknown-pack` was not found, recommends `luna
-  search unknown-pack` followed by `luna discover`, and leaves project files and
+search unknown-pack` followed by `luna discover`, and leaves project files and
   state unchanged
+
+### Requirement: Install links through the managed-file lifecycle
+
+`luna install <name>` SHALL resolve a configured link when the name identifies a
+link and no requested root pack with that ID is installed. Before mutation,
+LunaPack SHALL resolve the source, effective Git ref when applicable, selectors,
+safe targets, and content digests, then preflight the complete plan. It SHALL
+copy selected files and persist link ownership and provenance atomically. Link
+files SHALL use existing conflict and explicit adoption rules. LunaPack SHALL
+reject duplicate link installation.
+
+#### Scenario: Install a configured local link
+
+- **WHEN** a user installs a valid local-source link whose targets pass preflight
+- **THEN** LunaPack copies every selected file and records the link and per-file ownership atomically
+
+#### Scenario: Install a configured Git link
+
+- **WHEN** a user installs a valid Git-source link
+- **THEN** LunaPack copies files from one resolved commit and records that commit with per-file ownership
+
+#### Scenario: Refuse a conflicting link installation
+
+- **WHEN** a selected target contains unowned content or belongs to another root and no supported explicit adoption applies
+- **THEN** LunaPack returns a non-success result without changing files, configuration, or lock state

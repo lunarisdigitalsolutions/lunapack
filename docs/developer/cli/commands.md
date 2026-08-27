@@ -13,7 +13,7 @@ root packs, then recommends the next commands for the current workspace stage.
 | ------------------------------- | ----------------- | ---------------------------------------------------------- |
 | `--workspace <directory>`, `-w` | Current directory | Selects the project directory.                             |
 | `--log-level <level>`, `-ll`    | `info`            | Accepts `verbose`, `debug`, `info`, `warning`, or `error`. |
-| `--suppress-next-steps`         | `false`           | Suppresses contextual next-step recommendations.            |
+| `--suppress-next-steps`         | `false`           | Suppresses contextual next-step recommendations.           |
 | `--help`, `-h`, `-?`            | Not applicable    | Shows command help and returns success.                    |
 | `--version`                     | Not applicable    | Shows the Luna version and returns success.                |
 
@@ -56,6 +56,24 @@ Trust commands accept mutually exclusive `--project` and `--global` scopes.
 current user across projects. Omitting both uses local-user settings for this
 project. Pack trust and pack-trust revocation require `--source` or `-s`. See
 [Scripts and trust](trust-and-scripts.md) before granting trust.
+
+## Luna Links
+
+- `luna links add <name> --source <name> --include <selector>`: Adds a
+  project-owned source selection. Repeat `--include` (`-i`) and `--exclude`
+  (`-e`); use `--path`, `--target` (`-t`), `--ref`, `--strip-prefix`,
+  `--flatten`, `--install`, or `--force` as needed.
+- `luna links list`: Lists configured links and installation status.
+- `luna links show <name>`: Shows selectors, resolved Git evidence, selected
+  file count, and local modification count.
+- `luna links rm <name>`: Removes an uninstalled definition.
+- `luna links rm <name> --force`: Removes definition and ownership, deletes
+  unchanged targets, and preserves modified targets.
+
+`luna install`, named `luna update`, `luna uninstall`, `luna outdated`, and
+`luna audit` operate on links as well as packs. See
+[Manage Luna Links](../manage-links.md) and the
+[Luna Links reference](links.md).
 
 ## Catalog
 

@@ -9,6 +9,7 @@ copying an entire repository and losing ownership history.
 - Start a project with a pack from a local folder or Git repository.
 - Preview installation before files or project state change.
 - Check available updates and apply them deliberately.
+- Manage selected files from repositories without LunaPack manifests.
 - Create a pack once and make it available to other projects.
 
 ## Start in five minutes
@@ -17,6 +18,9 @@ copying an entire repository and losing ownership history.
 2. [Add a pack source](sources.md).
 3. [Discover and install a pack](install-packs.md).
 4. [Update packs](update-packs.md) when a newer release is available.
+
+To consume selected files without a published pack, follow
+[Manage Luna Links](manage-links.md).
 
 ```text
 pack.yml -> luna -> project files

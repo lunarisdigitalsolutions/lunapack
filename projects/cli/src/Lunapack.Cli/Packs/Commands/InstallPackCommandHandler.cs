@@ -6,6 +6,7 @@ namespace Lunapack.Cli;
 internal sealed class InstallPackCommandHandler(
     IFileSystem fileSystem,
     PackLifecycleService packLifecycleService,
+    LinkCommandDispatcher linkCommandDispatcher,
     WorkspaceDirectoryResolver workspaceDirectoryResolver,
     INextStepAdvisor nextStepAdvisor,
     NextStepRenderer nextStepRenderer,
@@ -148,6 +149,28 @@ internal sealed class InstallPackCommandHandler(
             return prerequisiteFailure.Value;
         }
 
+        var remapping = ManagedFileTargetRemapping.Create(
+            fileSystem,
+            workspaceDirectory,
+            directoryRemappings,
+            fileRemappings
+        );
+        if (remapping.Value is not { } targetRemapping)
+        {
+            return console.Fail(remapping.Error);
+        }
+
+        var linkExitCode = await linkCommandDispatcher.TryInstallAsync(
+            workspaceDirectory,
+            packReference,
+            adoptExisting,
+            targetRemapping
+        );
+        if (linkExitCode is not null)
+        {
+            return linkExitCode.Value;
+        }
+
         var installationRequest = CreateInstallationRequest(
             workspaceDirectory,
             packReference,
@@ -199,10 +222,13 @@ internal sealed class InstallPackCommandHandler(
         request = PromptForRequiredParameters(request, prompts);
         if (!dryRun)
         {
-            var exitCode = await console.RunWithStatusAsync(
-                $"Installing {request.PackReference.Id}...",
-                () => packLifecycleService.InstallAsync(workspaceDirectory, request)
-            );
+            var exitCode =
+                request.ScriptMode == ScriptExecutionMode.Prompt
+                    ? await packLifecycleService.InstallAsync(workspaceDirectory, request)
+                    : await console.RunWithStatusAsync(
+                        $"Installing {request.PackReference.Id}...",
+                        () => packLifecycleService.InstallAsync(workspaceDirectory, request)
+                    );
             if (exitCode == 0)
             {
                 console.Info($"✓ Installed {request.PackReference.Id}");

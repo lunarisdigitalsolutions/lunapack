@@ -8,17 +8,35 @@ Define the initial project configuration workflow for a consumer that starts usi
 
 ### Requirement: Initialize a LunaPack project manifest
 
-The `luna init` command SHALL create `lunapack.yml` and `lunapack-lock.yml` in the current directory when neither exists. The configuration SHALL conform to the project-configuration schema with schema version `1`, empty `sources`, `packs`, and `variables` collections, and a `trust` mapping containing empty `sources` and `packs` collections. The lock file SHALL conform to its schema with an empty resolved pack graph.
+The `luna init` command SHALL create `lunapack.yml` and `lunapack-lock.yml` in the current directory when neither exists. The configuration SHALL conform to the project-configuration schema with schema version `1`, empty `sources`, `packs`, `links`, and `variables` collections, and a `trust` mapping containing empty `sources` and `packs` collections. The lock file SHALL conform to its schema with an empty resolved pack graph and empty resolved link collection.
 
 #### Scenario: Initialize an unconfigured directory
 
 - **WHEN** a user runs `luna init` in a directory without `lunapack.yml` or `lunapack-lock.yml`
-- **THEN** LunaPack creates schema-valid empty configuration and lock files, including empty source and pack trust collections
+- **THEN** LunaPack creates schema-valid empty configuration and lock files, including empty link, source, pack, and trust collections
 
 #### Scenario: Refuse to replace an existing manifest
 
 - **WHEN** a user runs `luna init` in a directory that already contains `lunapack.yml` or `lunapack-lock.yml`
 - **THEN** LunaPack leaves existing project state unchanged and returns a non-success result
+
+### Requirement: Persist portable link definitions
+
+`lunapack.yml` SHALL contain link definitions as project-owned intent separate
+from resolved source commits, selected-file inventories, ownership, and content
+digests. Commands that read and write project configuration SHALL preserve
+schema-valid links they do not modify. Existing version-1 configurations that
+omit `links` SHALL remain valid and SHALL be interpreted as having no links.
+
+#### Scenario: Preserve links during an unrelated configuration change
+
+- **WHEN** a user modifies a source, remapping, variable, trust entry, or requested pack through the CLI
+- **THEN** LunaPack preserves every schema-valid link definition in `lunapack.yml`
+
+#### Scenario: Read existing configuration without links
+
+- **WHEN** LunaPack reads a valid version-1 project configuration that omits `links`
+- **THEN** it treats the project as having no configured links without requiring migration
 
 ### Requirement: Register a local pack source
 
@@ -223,27 +241,27 @@ other sources.
 #### Scenario: Remove a source while others remain
 
 - **WHEN** a user removes a configured source and at least one configured source
- remains
+  remains
 - **THEN** Luna persists the source and associated trust removal, confirms
- success, and recommends `luna sources list` and `luna discover`
+  success, and recommends `luna sources list` and `luna discover`
 
 #### Scenario: Remove the last source
 
 - **WHEN** a user removes the only configured source
 - **THEN** Luna persists the source and associated trust removal, reports that
- no sources remain, and recommends `luna sources add git <name>
+  no sources remain, and recommends `luna sources add git <name>
  <repository-url>`
 
 #### Scenario: Remove a source used by an installed pack
 
 - **WHEN** the removed source is named by an installed pack's resolved lock
- record
+  record
 - **THEN** Luna retains the requested pack, managed files, and immutable lock
- evidence while removing the configured source and associated trust
+  evidence while removing the configured source and associated trust
 
 #### Scenario: Reject an unknown source name
 
 - **WHEN** a user runs `luna sources rm <name>` for a name that is not
- configured
+  configured
 - **THEN** Luna returns a non-success result without changing configuration,
- trust, lock state, or managed files
+  trust, lock state, or managed files

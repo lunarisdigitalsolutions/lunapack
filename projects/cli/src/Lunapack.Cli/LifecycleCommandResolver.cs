@@ -53,9 +53,9 @@ internal sealed class LifecycleCommandResolver(IFileSystem fileSystem)
 
     private IEnumerable<string> GetCandidates(string directory, string executable)
     {
-        yield return fileSystem.Path.Combine(directory, executable);
         if (!OperatingSystem.IsWindows() || fileSystem.Path.HasExtension(executable))
         {
+            yield return fileSystem.Path.Combine(directory, executable);
             yield break;
         }
 

@@ -237,7 +237,66 @@ internal sealed class ProjectStateStore : IProjectStateStore
             return validationError;
         }
 
+        var linkValidationError = ValidateLinks(
+            configuration,
+            lockFile,
+            allowUnconfiguredLockSources
+        );
+        if (linkValidationError is not null)
+        {
+            return linkValidationError;
+        }
+
         return ValidateRequestedRoots(configuration, resolvedPacksById);
+    }
+
+    private static string? ValidateLinks(
+        ProjectConfiguration configuration,
+        ProjectLockFile lockFile,
+        bool allowUnconfiguredLockSources
+    )
+    {
+        foreach (var linkName in configuration.Links.Keys)
+        {
+            if (
+                configuration.Packs.Any(pack =>
+                    string.Equals(pack.Id, linkName, StringComparison.Ordinal)
+                )
+            )
+            {
+                return $"Project configuration uses '{linkName}' as both a link name and a requested pack ID.";
+            }
+        }
+
+        foreach (var (linkName, resolvedLink) in lockFile.Links)
+        {
+            if (!configuration.Links.ContainsKey(linkName))
+            {
+                return $"Lock file contains link '{linkName}' that is not defined in the project configuration.";
+            }
+
+            if (
+                !allowUnconfiguredLockSources
+                && !configuration.Sources.Any(source =>
+                    string.Equals(source.Name, resolvedLink.SourceName, StringComparison.Ordinal)
+                    && ConfiguredSourceIdentity.Create(source) == resolvedLink.SourceIdentity
+                )
+            )
+            {
+                return "Lock file contains a source that is not configured.";
+            }
+
+            var targetPaths = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var file in resolvedLink.Files)
+            {
+                if (!targetPaths.Add(file.TargetPath))
+                {
+                    return $"Lock file link '{linkName}' contains duplicate target path '{file.TargetPath}'.";
+                }
+            }
+        }
+
+        return null;
     }
 
     private static ProjectState NormalizeState(ProjectState state) =>
@@ -252,6 +311,11 @@ internal sealed class ProjectStateStore : IProjectStateStore
     ) =>
         configuration with
         {
+            Links = configuration.Links.ToDictionary(
+                link => link.Key,
+                link => NormalizeLink(link.Value),
+                StringComparer.Ordinal
+            ),
             Packs = [.. configuration.Packs.Select(NormalizeRequestedPack)],
             Remap = NormalizeRemapping(configuration.Remap),
             Sources = [.. configuration.Sources.Select(NormalizeSource)],
@@ -260,7 +324,40 @@ internal sealed class ProjectStateStore : IProjectStateStore
     private static ProjectLockFile NormalizeLockFile(ProjectLockFile lockFile) =>
         lockFile with
         {
+            Links = lockFile.Links.ToDictionary(
+                link => link.Key,
+                link => NormalizeResolvedLink(link.Value),
+                StringComparer.Ordinal
+            ),
             Packs = [.. lockFile.Packs.Select(NormalizeResolvedPack)],
+        };
+
+    private static ProjectConfiguration.Link NormalizeLink(ProjectConfiguration.Link link) =>
+        link with
+        {
+            Excludes = [.. link.Excludes.Select(ProjectPath.Normalize)],
+            Includes = [.. link.Includes.Select(ProjectPath.Normalize)],
+            Path = ProjectPath.NormalizeOptional(link.Path),
+            StripPrefix = ProjectPath.NormalizeOptional(link.StripPrefix),
+            Target = ProjectPath.NormalizeOptional(link.Target),
+        };
+
+    private static ProjectLockFile.ResolvedLink NormalizeResolvedLink(
+        ProjectLockFile.ResolvedLink resolvedLink
+    ) =>
+        resolvedLink with
+        {
+            Files = [.. resolvedLink.Files.Select(NormalizeLinkFile)],
+            GitSource = NormalizeGitSource(resolvedLink.GitSource),
+            SourceIdentity = NormalizeSourceIdentity(resolvedLink.SourceIdentity)!,
+        };
+
+    private static ProjectLockFile.LinkFile NormalizeLinkFile(ProjectLockFile.LinkFile file) =>
+        file with
+        {
+            DeclaredTargetPath = ProjectPath.Normalize(file.DeclaredTargetPath),
+            SourcePath = ProjectPath.Normalize(file.SourcePath),
+            TargetPath = ProjectPath.Normalize(file.TargetPath),
         };
 
     private static ProjectConfiguration.RequestedPack NormalizeRequestedPack(

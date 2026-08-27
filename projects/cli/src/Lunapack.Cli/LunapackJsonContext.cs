@@ -9,4 +9,5 @@ namespace Lunapack.Cli;
 [JsonSerializable(typeof(ProjectManifest))]
 [JsonSerializable(typeof(PackManifest))]
 [JsonSerializable(typeof(GitSourceCacheEntry))]
+[JsonSerializable(typeof(GitLinkCacheMetadata))]
 internal partial class LunapackJsonContext : JsonSerializerContext { }

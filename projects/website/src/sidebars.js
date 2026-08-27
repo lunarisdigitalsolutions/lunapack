@@ -10,7 +10,13 @@ const sidebars = {
       type: 'category',
       label: 'Start here',
       collapsed: false,
-      items: ['installation', 'sources', 'install-packs', 'update-packs']
+      items: [
+        'installation',
+        'sources',
+        'install-packs',
+        'update-packs',
+        'manage-links'
+      ]
     },
     {
       type: 'category',
@@ -19,6 +25,7 @@ const sidebars = {
         'cli/overview',
         'cli/commands',
         'cli/configuration',
+        'cli/links',
         'cli/manifests',
         'cli/trust-and-scripts'
       ]

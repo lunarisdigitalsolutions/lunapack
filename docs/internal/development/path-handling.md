@@ -18,8 +18,9 @@ the conversion contract.
 
 Use `ProjectPath.Normalize(path)` for a path value that is already constrained
 by its owning format or boundary, including pack manifest paths, lock-record
-paths, configured Git repository paths, glob patterns, and serialization
-normalization. It changes only separator representation.
+paths, link base paths, link selectors, link mapping prefixes, configured Git
+repository paths, glob patterns, and serialization normalization. It changes
+only separator representation.
 
 Use `ProjectPath.NormalizeProjectRelativePath(fileSystem, projectDirectory,
 path)` for external input that names a project filesystem location, including
@@ -33,6 +34,8 @@ managed-file move paths. It:
 - returns a slash-only, project-relative path without a trailing slash.
 
 Keep URLs, opaque identifiers, and non-path values out of these operations.
+Git refs in link definitions and lock evidence are opaque values and must not be
+path-normalized.
 
 ## Persistence And Boundaries
 
@@ -41,6 +44,12 @@ serialization. New configuration or lock-file fields that contain paths must be
 included in that normalization. Pack discovery normalizes manifest path fields
 before validation and planning. Command handlers normalize user-supplied
 project paths before ownership, collision, or filesystem checks.
+
+Link resolution normalizes base paths, include and exclude selectors, strip
+prefixes, declared targets, selected source paths, and effective lock targets.
+Selection containment is checked against the source snapshot; mapped target
+containment is checked against the workspace. Local enumeration rejects
+symlinks and reparse points before reading bytes.
 
 Pack authoring applies `NormalizeProjectRelativePath` to file, directory,
 target, and lifecycle-script file input. Glob input uses `Normalize` before
