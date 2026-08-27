@@ -214,7 +214,7 @@ is required to start.
 
 ```powershell
 luna init
-luna sources add github acme/engineering-packs
+luna sources add github engineering lunarisdigitalsolutions/lunapack --ref main --path projects/packs
 luna install dotnet-project
 luna install madr-adr-template
 ```

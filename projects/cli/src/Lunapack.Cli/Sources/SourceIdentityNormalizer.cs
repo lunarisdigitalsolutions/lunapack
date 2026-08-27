@@ -135,6 +135,13 @@ internal static partial class SourceIdentityNormalizer
             return ManifestOperationResult<string>.Failure("Repository URL is required.");
         }
 
+        if (trimmed[0] == '/')
+        {
+            return ManifestOperationResult<string>.Success(
+                $"file://{ProjectPath.Normalize(trimmed).TrimEnd('/')}"
+            );
+        }
+
         var parsed = ParseLocation(trimmed);
         if (parsed.Value is not { } location)
         {

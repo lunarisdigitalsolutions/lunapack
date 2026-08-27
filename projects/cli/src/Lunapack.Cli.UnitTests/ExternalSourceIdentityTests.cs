@@ -89,6 +89,15 @@ public sealed class ExternalSourceIdentityTests
     }
 
     [Test]
+    public async Task Normalizer_WhenGitRepositoryIsPosixAbsolutePath_UsesFileIdentity()
+    {
+        var normalized = SourceIdentityNormalizer.NormalizeRepository("/tmp/engineering-packs/");
+
+        await Assert.That(normalized.IsSuccess).IsTrue();
+        await Assert.That(normalized.Value).IsEqualTo("file:///tmp/engineering-packs");
+    }
+
+    [Test]
     public async Task Normalizer_WhenBasePathsDiffer_ProducesDistinctFingerprints()
     {
         var first = SourceIdentityNormalizer.CreateGit(

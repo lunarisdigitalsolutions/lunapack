@@ -23,7 +23,7 @@ select managed content from them:
 sources:
   upstream:
     type: git
-    url: https://github.com/acme/standards.git
+    url: https://github.com/lunarisdigitalsolutions/lunapack.git
     ref: refs/heads/main
     path: guidance
 managedFiles:

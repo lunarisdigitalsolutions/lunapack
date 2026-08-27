@@ -14,13 +14,13 @@ luna sources add local engineering ./engineering-packs
 
 ## Add a Git source
 
-Git must be available on the process path. Register the repository, then
-optionally select a ref and a repository-relative pack directory:
+Git must be available on the process path. Register a repository URL or an
+absolute local filesystem repository path, then optionally select a ref and a
+repository-relative pack directory:
 
 ```powershell
-luna sources add git engineering https://github.com/acme/engineering-packs
-luna sources add git engineering https://github.com/acme/engineering-packs --ref main --path packs
-luna sources add github engineering acme/engineering-packs --ref main
+luna sources add git engineering https://github.com/lunarisdigitalsolutions/lunapack.git --ref main --path projects/packs
+luna sources add github engineering lunarisdigitalsolutions/lunapack --ref main --path projects/packs
 ```
 
 `luna sources add github` requires `--ref`. Luna resolves a short branch or
