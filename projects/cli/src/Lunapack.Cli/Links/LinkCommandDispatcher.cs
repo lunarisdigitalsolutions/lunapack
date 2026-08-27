@@ -11,7 +11,8 @@ internal sealed class LinkCommandDispatcher(
     public async Task<int?> TryInstallAsync(
         string projectDirectory,
         string name,
-        bool adoptExisting
+        bool adoptExisting,
+        ManagedFileTargetRemapping targetRemapping
     )
     {
         if (!await IsConfiguredLinkAsync(projectDirectory, name))
@@ -22,7 +23,8 @@ internal sealed class LinkCommandDispatcher(
         var exitCode = await linkLifecycleService.InstallAsync(
             projectDirectory,
             name,
-            adoptExisting
+            adoptExisting,
+            targetRemapping: targetRemapping
         );
         if (exitCode != 0)
         {

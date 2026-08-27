@@ -173,6 +173,30 @@ public sealed class LinkSelectionTests
     }
 
     [Test]
+    public async Task Map_WhenDirectoryRemappingSpecified_WritesRemappedEffectiveTarget()
+    {
+        var fileSystem = new MockFileSystem();
+        var mapper = new LinkTargetMapper(fileSystem);
+        var remapping = ManagedFileTargetRemapping
+            .Create(fileSystem, @"C:\project", ["agents/=.github/agents"], [])
+            .RequireValue();
+
+        var mapping = mapper
+            .Map(
+                @"C:\project",
+                "agents",
+                CreateLink(includes: ["**/*"]),
+                ["agents/CSharpExpert.agent.md"],
+                remapping
+            )
+            .RequireValue()
+            .Single();
+
+        await Assert.That(mapping.DeclaredTargetPath).IsEqualTo("agents/CSharpExpert.agent.md");
+        await Assert.That(mapping.TargetPath).IsEqualTo(".github/agents/CSharpExpert.agent.md");
+    }
+
+    [Test]
     public async Task Map_WhenStripPrefixIsConfigured_RemovesIt()
     {
         var mapper = new LinkTargetMapper(new MockFileSystem());

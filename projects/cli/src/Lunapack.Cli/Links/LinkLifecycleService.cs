@@ -18,6 +18,7 @@ internal sealed class LinkLifecycleService(
         bool adoptExisting = false,
         bool allowReinstall = false,
         ProjectState? preparedState = null,
+        ManagedFileTargetRemapping? targetRemapping = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -51,6 +52,7 @@ internal sealed class LinkLifecycleService(
             adoptExisting,
             useLockedIdentity: false,
             state,
+            targetRemapping,
             cancellationToken
         );
     }
@@ -122,7 +124,7 @@ internal sealed class LinkLifecycleService(
                 name,
                 definition,
                 lockedLink.SourceIdentity,
-                cancellationToken
+                cancellationToken: cancellationToken
             );
             if (resolution.Value is not { } resolved)
             {
@@ -219,6 +221,7 @@ internal sealed class LinkLifecycleService(
             );
         }
 
+        state.Configuration.Links.Remove(linkName);
         return await RemoveInstalledLinkAsync(projectDirectory, state, linkName, lockedLink);
     }
 
@@ -229,6 +232,7 @@ internal sealed class LinkLifecycleService(
         bool adoptExisting,
         bool useLockedIdentity,
         ProjectState? preparedState = null,
+        ManagedFileTargetRemapping? targetRemapping = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -252,6 +256,7 @@ internal sealed class LinkLifecycleService(
             linkName,
             definition,
             lockedIdentity,
+            targetRemapping,
             cancellationToken
         );
         if (resolution.Value is not { } resolved)
@@ -359,7 +364,6 @@ internal sealed class LinkLifecycleService(
             return console.Fail(applied.Error);
         }
 
-        state.Configuration.Links.Remove(linkName);
         state.LockFile.Links.Remove(linkName);
         var savedState = await projectStateStore.SaveAsync(projectDirectory, state);
         if (!savedState.IsSuccess)

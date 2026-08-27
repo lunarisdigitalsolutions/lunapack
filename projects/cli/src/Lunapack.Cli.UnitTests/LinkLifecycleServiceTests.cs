@@ -246,7 +246,7 @@ public sealed class LinkLifecycleServiceTests
     }
 
     [Test]
-    public async Task UninstallAsync_WhenTargetsAreUnchanged_RemovesDefinitionAndTargets()
+    public async Task UninstallAsync_WhenTargetsAreUnchanged_PreservesDefinitionAndRemovesTargets()
     {
         var fileSystem = CreateFileSystem();
         var service = CreateService(fileSystem);
@@ -260,7 +260,7 @@ public sealed class LinkLifecycleServiceTests
         var lockFile = await LoadLockFileAsync(fileSystem);
         await Assert.That(lockFile.Links).IsEmpty();
         var configuration = await LoadConfigurationAsync(fileSystem);
-        await Assert.That(configuration.Links).IsEmpty();
+        await Assert.That(configuration.Links.ContainsKey("agents")).IsTrue();
     }
 
     [Test]

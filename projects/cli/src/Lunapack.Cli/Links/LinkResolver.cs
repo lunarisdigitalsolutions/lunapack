@@ -15,6 +15,7 @@ internal sealed class LinkResolver(
         string linkName,
         ProjectConfiguration.Link link,
         ConfiguredSourceIdentity? lockedIdentity = null,
+        ManagedFileTargetRemapping? targetRemapping = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -55,6 +56,7 @@ internal sealed class LinkResolver(
             provider,
             listing,
             lockedIdentity,
+            targetRemapping,
             cancellationToken
         );
     }
@@ -67,6 +69,7 @@ internal sealed class LinkResolver(
         ILinkSourceProvider provider,
         LinkSourceListing listing,
         ConfiguredSourceIdentity? lockedIdentity,
+        ManagedFileTargetRemapping? targetRemapping,
         CancellationToken cancellationToken
     )
     {
@@ -85,7 +88,13 @@ internal sealed class LinkResolver(
             );
         }
 
-        var mapping = targetMapper.Map(projectDirectory, linkName, link, selectedPaths);
+        var mapping = targetMapper.Map(
+            projectDirectory,
+            linkName,
+            link,
+            selectedPaths,
+            targetRemapping
+        );
         if (mapping.Value is not { } mappings)
         {
             return ManifestOperationResult<LinkResolution>.Failure(

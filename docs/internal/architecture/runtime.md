@@ -80,5 +80,9 @@ path.
 
 Link install, update, uninstall, and forced removal use the same transaction
 boundary as managed pack files. Configuration, lock evidence, and file actions
-commit together; failed state persistence restores prior bytes. Existing
-version-1 project and lock files may omit `links` and load as empty collections.
+commit together; failed state persistence restores prior bytes. Link uninstall
+removes lock ownership and managed files but retains configuration, while forced
+removal also deletes configuration. Command-scoped target remapping is applied
+after link target mapping so lock evidence retains declared and effective paths.
+Existing version-1 project and lock files may omit `links` and load as empty
+collections.

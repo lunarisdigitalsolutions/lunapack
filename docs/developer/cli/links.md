@@ -50,13 +50,16 @@ by single hyphens.
   selected-file count, and locally modified-file count.
 - `luna links rm <name>` removes an uninstalled definition.
 - `luna links rm <name> --force` removes ownership and unchanged targets while
-  preserving modified targets.
+  preserving modified targets, then removes the definition.
 - `luna install|update|uninstall <name>` runs the managed-file lifecycle for a
   configured or installed link.
+- `luna install <name> --remap-directory <source>=<target>` and
+  `--remap-file <source>=<target>` override link targets for that installation.
 - `luna outdated` and `luna audit` include installed links.
 
 Normal removal refuses installed links and directs users to `luna uninstall`.
-Uninstall fails atomically when any owned target is modified.
+Uninstall retains the configured link definition and fails atomically when any
+owned target is modified.
 
 ## Resolved State and Cache
 

@@ -61,6 +61,11 @@ luna update agents-csharp-expert
 luna audit
 ```
 
+Use `--remap-directory <source>=<target>` or
+`--remap-file <source>=<target>` with `luna install` to override declared link
+targets for that installation. Luna records both declared and effective target
+paths in the lock file.
+
 Git links lock one immutable commit per operation. A new commit alone is not an
 update when selected paths, mapped targets, definition, and content are
 equivalent. Local links use content digests, not timestamps, as final evidence.
@@ -73,9 +78,9 @@ Use uninstall when a link is installed:
 luna uninstall agents-csharp-expert
 ```
 
-Uninstall removes unchanged targets, definition, and lock ownership together.
-If a target changed locally, Luna preserves all state. Review or restore that
-file, run `luna audit`, then retry.
+Uninstall removes unchanged targets and lock ownership while keeping the link
+definition available for later installation. If a target changed locally, Luna
+preserves all state. Review or restore that file, run `luna audit`, then retry.
 
 To stop managing a link while preserving modified targets:
 
@@ -84,9 +89,9 @@ luna links rm agents-csharp-expert --force
 ```
 
 Forced removal deletes unchanged targets and reports each modified target left
-as unmanaged project content. A locked source-identity failure means the
-configured source changed after installation; restore the original source
-configuration before updating or uninstalling.
+as unmanaged project content, then removes the link definition. A locked
+source-identity failure means the configured source changed after installation;
+restore the original source configuration before updating or uninstalling.
 
 See the [Luna Links reference](cli/links.md) for complete configuration and
 cache contracts.

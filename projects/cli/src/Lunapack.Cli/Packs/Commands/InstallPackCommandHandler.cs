@@ -149,10 +149,22 @@ internal sealed class InstallPackCommandHandler(
             return prerequisiteFailure.Value;
         }
 
+        var remapping = ManagedFileTargetRemapping.Create(
+            fileSystem,
+            workspaceDirectory,
+            directoryRemappings,
+            fileRemappings
+        );
+        if (remapping.Value is not { } targetRemapping)
+        {
+            return console.Fail(remapping.Error);
+        }
+
         var linkExitCode = await linkCommandDispatcher.TryInstallAsync(
             workspaceDirectory,
             packReference,
-            adoptExisting
+            adoptExisting,
+            targetRemapping
         );
         if (linkExitCode is not null)
         {
@@ -210,10 +222,13 @@ internal sealed class InstallPackCommandHandler(
         request = PromptForRequiredParameters(request, prompts);
         if (!dryRun)
         {
-            var exitCode = await console.RunWithStatusAsync(
-                $"Installing {request.PackReference.Id}...",
-                () => packLifecycleService.InstallAsync(workspaceDirectory, request)
-            );
+            var exitCode =
+                request.ScriptMode == ScriptExecutionMode.Prompt
+                    ? await packLifecycleService.InstallAsync(workspaceDirectory, request)
+                    : await console.RunWithStatusAsync(
+                        $"Installing {request.PackReference.Id}...",
+                        () => packLifecycleService.InstallAsync(workspaceDirectory, request)
+                    );
             if (exitCode == 0)
             {
                 console.Info($"✓ Installed {request.PackReference.Id}");

@@ -45,6 +45,49 @@ public sealed class LinkProcessTests
     }
 
     [Test]
+    public async Task LocalLink_WhenInstalledWithDirectoryRemapping_WritesRemappedTarget()
+    {
+        using var workspace = new TestWorkspace();
+        var sourceDirectory = Directory.CreateDirectory(Path.Combine(workspace.Path, "source"));
+        Directory.CreateDirectory(Path.Combine(sourceDirectory.FullName, "agents"));
+        File.WriteAllText(
+            Path.Combine(sourceDirectory.FullName, "agents", "expert.agent.md"),
+            "agent content"
+        );
+        await InitializeLocalSourceAsync(workspace.Path);
+        await CliProcess.InvokeAsync(
+            workspace.Path,
+            "links",
+            "add",
+            "csharp-agent",
+            "--source",
+            "local",
+            "--include",
+            "agents/expert.agent.md"
+        );
+
+        var result = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "install",
+            "csharp-agent",
+            "--remap-directory",
+            "agents/=.github/agents"
+        );
+
+        await Assert.That(result.ExitCode).IsEqualTo(0);
+        await Assert
+            .That(File.Exists(Path.Combine(workspace.Path, ".github", "agents", "expert.agent.md")))
+            .IsTrue();
+        await Assert
+            .That(File.Exists(Path.Combine(workspace.Path, "agents", "expert.agent.md")))
+            .IsFalse();
+        await Assert
+            .That(File.ReadAllText(Path.Combine(workspace.Path, "lunapack-lock.yml")))
+            .Contains("declaredTargetPath: agents/expert.agent.md")
+            .And.Contains("targetPath: .github/agents/expert.agent.md");
+    }
+
+    [Test]
     public async Task LocalLink_WhenSelectorsAndMappingsCombined_InstallsDeterministicSelection()
     {
         using var workspace = new TestWorkspace();
@@ -204,7 +247,7 @@ public sealed class LinkProcessTests
         await Assert.That(File.Exists(targetPath)).IsFalse();
         await Assert
             .That(File.ReadAllText(Path.Combine(workspace.Path, "lunapack.yml")))
-            .DoesNotContain("lifecycle-content");
+            .Contains("lifecycle-content");
     }
 
     [Test]
@@ -507,7 +550,7 @@ public sealed class LinkProcessTests
         await Assert.That(configuration).Contains("retainedMode: strict");
         await Assert.That(configuration).Contains("docs/old").And.Contains("docs/new");
         await Assert.That(configuration).Contains("docs/README.md");
-        await Assert.That(configuration).DoesNotContain("canonical-link");
+        await Assert.That(configuration).Contains("canonical-link");
         await Assert.That(configuration).DoesNotContain("\\");
         await Assert.That(lockFile).Contains("retained-pack").And.Contains("retained-link");
         await Assert.That(lockFile).DoesNotContain("canonical-link");

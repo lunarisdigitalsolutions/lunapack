@@ -92,15 +92,12 @@ internal sealed class UpdatePackCommandHandler(
             if (references.Count == 0)
             {
                 return await HandleResultAsync(
-                    await console.RunWithStatusAsync(
-                        "Updating packs...",
-                        () =>
-                            packUpdateService.UpdateAsync(
-                                workspaceDirectory,
-                                null,
-                                dryRun,
-                                parsedScriptMode
-                            )
+                    await UpdateAsync(
+                        workspaceDirectory,
+                        null,
+                        dryRun,
+                        parsedScriptMode,
+                        "Updating packs..."
                     ),
                     dryRun
                 );
@@ -124,15 +121,12 @@ internal sealed class UpdatePackCommandHandler(
 
                 var reference = PackReference.Parse(referenceValue).Value!;
                 var exitCode = await HandleResultAsync(
-                    await console.RunWithStatusAsync(
-                        $"Updating {reference.Id}...",
-                        () =>
-                            packUpdateService.UpdateAsync(
-                                workspaceDirectory,
-                                reference,
-                                dryRun,
-                                parsedScriptMode
-                            )
+                    await UpdateAsync(
+                        workspaceDirectory,
+                        reference,
+                        dryRun,
+                        parsedScriptMode,
+                        $"Updating {reference.Id}..."
                     ),
                     dryRun
                 );
@@ -147,6 +141,20 @@ internal sealed class UpdatePackCommandHandler(
 
         return command;
     }
+
+    private Task<PackUpdateService.UpdateResult> UpdateAsync(
+        string projectDirectory,
+        PackReference? reference,
+        bool dryRun,
+        ScriptExecutionMode scriptMode,
+        string status
+    ) =>
+        scriptMode == ScriptExecutionMode.Prompt
+            ? packUpdateService.UpdateAsync(projectDirectory, reference, dryRun, scriptMode)
+            : console.RunWithStatusAsync(
+                status,
+                () => packUpdateService.UpdateAsync(projectDirectory, reference, dryRun, scriptMode)
+            );
 
     private async Task<PackUpdateService.UpdateResult> PromptAndUpdateAsync(
         string projectDirectory,
