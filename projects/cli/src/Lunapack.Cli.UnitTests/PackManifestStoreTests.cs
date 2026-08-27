@@ -140,6 +140,86 @@ public sealed class PackManifestStoreTests
     }
 
     [Test]
+    public async Task Load_WhenMixedHooksDeclared_PreservesOrderAndNormalizesFiles()
+    {
+        using var workspace = new TestWorkspace();
+        File.WriteAllText(
+            Path.Combine(workspace.Path, PackManifestStore.FileName),
+            "id: example\nversion: 1.0.0\nauthor: Example Author\nlicense: MIT\nhooks:\n  preInstall:\n    - type: instruction\n      file: instructions\\setup.md\n    - type: script\n      command: dotnet\n      arguments:\n        - tool\n        - restore\n    - type: script\n      file: scripts\\setup.ps1\n      runner: pwsh\n"
+        );
+        var store = new PackManifestStore(workspace.FileSystem);
+
+        var result = await store.LoadAsync(workspace.Path);
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        var hooks = result.RequireValue().Hooks!.PreInstall!;
+        await Assert
+            .That(string.Join(",", hooks.Select(hook => hook.Type)))
+            .IsEqualTo("instruction,script,script");
+        await Assert.That(hooks[0].File).IsEqualTo("instructions/setup.md");
+        await Assert.That(hooks[2].File).IsEqualTo("scripts/setup.ps1");
+        await Assert.That(hooks[0].Templating ?? false).IsFalse();
+    }
+
+    [Test]
+    public async Task Update_WhenHooksSerialized_WritesTypedItemsInOrder()
+    {
+        using var workspace = new TestWorkspace();
+        var path = Path.Combine(workspace.Path, PackManifestStore.FileName);
+        File.WriteAllText(
+            path,
+            "id: example\nversion: 1.0.0\nauthor: Example Author\nlicense: MIT\nmanagedFiles:\n- source: README.md\n  target: README.md\n"
+        );
+        var store = new PackManifestStore(workspace.FileSystem);
+
+        var result = await store.UpdateAsync(
+            workspace.Path,
+            manifest =>
+            {
+                manifest.Hooks = new PackManifest.PackHooks
+                {
+                    PostInstall =
+                    [
+                        new PackManifest.PackHook
+                        {
+                            Type = "instruction",
+                            File = "instructions/setup.md",
+                        },
+                        new PackManifest.PackHook { Type = "script", Command = "dotnet" },
+                    ],
+                };
+                return null;
+            }
+        );
+        var contents = File.ReadAllText(path);
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert.That(contents).Contains("hooks:");
+        await Assert.That(contents).Contains("type: instruction");
+        await Assert.That(contents).Contains("type: script");
+        await Assert
+            .That(contents.IndexOf("type: instruction", StringComparison.Ordinal))
+            .IsLessThan(contents.IndexOf("type: script", StringComparison.Ordinal));
+        await Assert.That(contents).DoesNotContain("scripts:");
+    }
+
+    [Test]
+    public async Task Load_WhenLegacyScriptsDeclared_IsRejected()
+    {
+        using var workspace = new TestWorkspace();
+        File.WriteAllText(
+            Path.Combine(workspace.Path, PackManifestStore.FileName),
+            "id: example\nversion: 1.0.0\nauthor: Example Author\nlicense: MIT\nscripts:\n  postInstall:\n    command: dotnet\n"
+        );
+        var store = new PackManifestStore(workspace.FileSystem);
+
+        var result = await store.LoadAsync(workspace.Path);
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("scripts");
+    }
+
+    [Test]
     public async Task Update_WhenMutationValid_PreservesUnrelatedModeledValues()
     {
         using var workspace = new TestWorkspace();

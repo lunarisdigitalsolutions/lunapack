@@ -37,13 +37,17 @@ internal sealed class CliApplication(
         var parseResult = rootCommand.Parse(args);
         nextStepRenderer.Suppress = parseResult.GetValue(suppressNextStepsOption);
 
-        var exitCode = await parseResult.InvokeAsync(
-            new InvocationConfiguration
-            {
-                Output = commandOutput ?? Console.Out,
-                Error = Console.Error,
-            }
-        );
+        var invocationConfiguration = new InvocationConfiguration
+        {
+            Output = commandOutput ?? Console.Out,
+            Error = Console.Error,
+        };
+        if (args.Length == 0)
+        {
+            await rootCommand.Parse(["--help"]).InvokeAsync(invocationConfiguration);
+        }
+
+        var exitCode = await parseResult.InvokeAsync(invocationConfiguration);
 
         console.Debug($"CLI command completed with exit code {exitCode}");
         return exitCode;
@@ -82,6 +86,7 @@ internal sealed class CliApplication(
             rootCommand,
             services.CatalogService,
             services.PackValidationService,
+            services.LinkServices.LinkInspectionService,
             services.WorkspaceDirectoryResolver,
             projectDirectory,
             workspaceOption,
@@ -188,6 +193,7 @@ internal sealed class CliApplication(
         RootCommand rootCommand,
         CatalogService catalogService,
         PackValidationService packValidationService,
+        LinkInspectionService linkInspectionService,
         WorkspaceDirectoryResolver workspaceDirectoryResolver,
         string projectDirectory,
         Option<string?> workspaceOption,
@@ -210,6 +216,7 @@ internal sealed class CliApplication(
         rootCommand.Add(
             new SearchPacksCommandHandler(
                 catalogService,
+                linkInspectionService,
                 workspaceDirectoryResolver,
                 nextStepAdvisor,
                 nextStepRenderer,
@@ -489,6 +496,7 @@ internal sealed class CliApplication(
         );
         rootCommand.Add(
             new UninstallPackCommandHandler(
+                fileSystem,
                 packLifecycleService,
                 linkCommandDispatcher,
                 workspaceDirectoryResolver,

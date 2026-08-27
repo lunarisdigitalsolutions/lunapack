@@ -23,6 +23,9 @@ The dry run resolves the pack and preflights the target changes without
 modifying project files or LunaPack state. Remove `--dry-run` when the plan is
 ready to apply.
 
+For installation customization, see [Parameters and variables](parameters-and-variables.md),
+[Lifecycle hooks](lifecycle-hooks.md), and [Remap managed targets](remap-targets.md).
+
 When the graph selects pack-defined external Git content, the preview shows
 reused source mappings, proposed workspace source additions, whether approval is
 required, and resulting file actions. Interactive installation asks once for

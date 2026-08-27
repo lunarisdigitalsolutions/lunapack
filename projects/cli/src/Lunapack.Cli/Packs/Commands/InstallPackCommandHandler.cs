@@ -66,6 +66,10 @@ internal sealed class InstallPackCommandHandler(
         {
             Description = "Lifecycle script mode: prompt, run, or skip.",
         };
+        var skipInstructionsOption = new Option<bool>("--skip-instructions")
+        {
+            Description = "Skip lifecycle instructions.",
+        };
         var command = new Command("install", "Install a pack.")
         {
             packReferenceArgument,
@@ -79,6 +83,7 @@ internal sealed class InstallPackCommandHandler(
             noVariablesOption,
             skipVariableOption,
             scriptsOption,
+            skipInstructionsOption,
         };
         command.SetAction(async parseResult =>
         {
@@ -113,6 +118,7 @@ internal sealed class InstallPackCommandHandler(
                     parseResult.GetValue(noVariablesOption),
                     parseResult.GetValue(skipVariableOption) ?? [],
                     parsedScriptMode,
+                    parseResult.GetValue(skipInstructionsOption),
                     parseResult.GetValue(dryRunOption),
                     parseResult.GetValue(acceptSourcesOption),
                     skipInstalledRoots: packReferences.Length > 1
@@ -145,6 +151,7 @@ internal sealed class InstallPackCommandHandler(
         bool noVariables,
         string[] skippedVariables,
         ScriptExecutionMode scriptMode,
+        bool skipInstructions,
         bool dryRun,
         bool acceptSources,
         bool skipInstalledRoots
@@ -188,7 +195,8 @@ internal sealed class InstallPackCommandHandler(
             parameters,
             noVariables,
             skippedVariables,
-            scriptMode
+            scriptMode,
+            skipInstructions
         );
         if (installationRequest.Value is not { } request)
         {
@@ -231,16 +239,38 @@ internal sealed class InstallPackCommandHandler(
         request = PromptForRequiredParameters(request, prompts);
         if (!dryRun)
         {
+            TimeSpan? managedFileChangesDuration = null;
             var exitCode =
                 request.ScriptMode == ScriptExecutionMode.Prompt
-                    ? await packLifecycleService.InstallAsync(workspaceDirectory, request)
+                    ? await packLifecycleService.InstallAsync(
+                        workspaceDirectory,
+                        request,
+                        duration => managedFileChangesDuration = duration
+                    )
                     : await console.RunWithStatusAsync(
                         $"Installing {request.PackReference.Id}...",
-                        () => packLifecycleService.InstallAsync(workspaceDirectory, request)
+                        () =>
+                            packLifecycleService.InstallAsync(
+                                workspaceDirectory,
+                                request,
+                                duration => managedFileChangesDuration = duration
+                            )
                     );
             if (exitCode == 0)
             {
-                console.Info($"✓ Installed {request.PackReference.Id}");
+                var installedVersion = await packLifecycleService.GetInstalledVersionAsync(
+                    workspaceDirectory,
+                    request.PackReference.Id
+                );
+                if (installedVersion.Value is not { } version)
+                {
+                    return console.Fail(installedVersion.Error);
+                }
+
+                console.Info(string.Empty);
+                console.Success(
+                    $"✓ Installed '{request.PackReference.Id}' (version '{version}') in {CliDuration.Format(managedFileChangesDuration ?? TimeSpan.Zero)}"
+                );
                 nextStepRenderer.Render(
                     nextStepAdvisor.Recommend(
                         NextStepContext.PackInstalled,
@@ -279,7 +309,8 @@ internal sealed class InstallPackCommandHandler(
         string[] parameters,
         bool noVariables,
         string[] skippedVariables,
-        ScriptExecutionMode scriptMode
+        ScriptExecutionMode scriptMode,
+        bool skipInstructions
     ) =>
         PackInstallationRequest.Create(
             fileSystem,
@@ -292,7 +323,8 @@ internal sealed class InstallPackCommandHandler(
             skippedVariables,
             directoryRemappings,
             fileRemappings,
-            scriptMode
+            scriptMode,
+            skipInstructions
         );
 
     private async Task<int?> WarnWhenRootAlreadyInstalledAsync(

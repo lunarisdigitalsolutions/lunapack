@@ -14,3 +14,7 @@ managedFiles:
     target: .github/scripts/validate-external-checks.js
   - source: templates/docs/developer/github-actions/pull-request-check-gate.md
     target: docs/developer/github-actions/pull-request-check-gate.md
+hooks:
+  postInstall:
+    - type: instruction
+      file: instructions/configure-required-check.md

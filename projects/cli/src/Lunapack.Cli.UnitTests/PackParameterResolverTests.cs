@@ -244,6 +244,24 @@ public sealed class PackParameterResolverTests
         await Assert.That(values["includeCi"].BooleanValue).IsFalse();
     }
 
+    [Test]
+    public async Task Resolve_WhenOptionalParameterHasDefault_UsesTypedDefault()
+    {
+        var pack = CreatePack("defaults", "string");
+        pack.Manifest.Parameters["companyName"].Default = "Lunaris";
+
+        var result = PackParameterResolver.Resolve(
+            new ResolvedPackGraph([pack]),
+            new ProjectConfiguration(),
+            CreateRequest()
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert
+            .That(result.RequireValue().Values["companyName"].StringValue)
+            .IsEqualTo("Lunaris");
+    }
+
     private static DiscoveredPack CreatePack(
         string packId,
         string type,

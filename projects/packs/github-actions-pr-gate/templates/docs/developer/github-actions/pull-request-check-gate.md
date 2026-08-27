@@ -15,3 +15,10 @@ matched as a case-insensitive substring of a check-run name or commit-status
 context. Matching checks are excluded from the gate, including pending and
 failed results. Add or remove entries in the workflow when a check should not
 block the pull request.
+
+## Repository setup
+
+Create a `ready-to-merge` repository label, then add it to a non-draft pull
+request targeting `main` to run the gate once. In the ruleset or branch
+protection settings for `main`, require the resulting `Validate External Checks`
+status check before merging.

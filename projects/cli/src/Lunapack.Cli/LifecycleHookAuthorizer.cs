@@ -8,8 +8,50 @@ internal sealed class LifecycleHookAuthorizer(
 )
 {
     public async Task<
-        ManifestOperationResult<IReadOnlyList<ResolvedLifecycleHookInvocation>>
+        ManifestOperationResult<IReadOnlyList<AuthorizedLifecycleHook>>
     > AuthorizeAsync(
+        string projectDirectory,
+        ProjectConfiguration configuration,
+        ScriptExecutionMode scriptMode,
+        IReadOnlyList<LifecycleHookInvocation> invocations
+    )
+    {
+        var scripts = invocations.Where(static invocation => invocation.IsScript).ToArray();
+        var authorization = await AuthorizeScriptsAsync(
+            projectDirectory,
+            configuration,
+            scriptMode,
+            scripts
+        );
+        if (authorization.Value is not { } authorizedScripts)
+        {
+            return ManifestOperationResult<IReadOnlyList<AuthorizedLifecycleHook>>.Failure(
+                authorization.Error ?? "Unable to authorize lifecycle scripts."
+            );
+        }
+
+        var resolvedByInvocation = authorizedScripts.ToDictionary(static script =>
+            script.Invocation
+        );
+        var authorized = new List<AuthorizedLifecycleHook>(invocations.Count);
+        foreach (var invocation in invocations)
+        {
+            if (invocation.IsInstruction)
+            {
+                authorized.Add(new AuthorizedLifecycleHook(invocation, null));
+            }
+            else if (resolvedByInvocation.TryGetValue(invocation, out var script))
+            {
+                authorized.Add(new AuthorizedLifecycleHook(invocation, script));
+            }
+        }
+
+        return ManifestOperationResult<IReadOnlyList<AuthorizedLifecycleHook>>.Success(authorized);
+    }
+
+    private async Task<
+        ManifestOperationResult<IReadOnlyList<ResolvedLifecycleHookInvocation>>
+    > AuthorizeScriptsAsync(
         string projectDirectory,
         ProjectConfiguration configuration,
         ScriptExecutionMode scriptMode,

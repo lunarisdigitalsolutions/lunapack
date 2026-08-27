@@ -4,20 +4,25 @@ namespace Lunapack.Cli;
 
 internal sealed class LifecycleHookPlanner(IFileSystem fileSystem)
 {
+    private readonly InstructionPreparer _instructionPreparer = new(fileSystem);
+
     public ManifestOperationResult<IReadOnlyList<LifecycleHookInvocation>> PlanPreMutation(
         PackLifecyclePlan plan,
-        ResolvedPackParameters parameters
-    ) => Plan(plan.PreMutation, parameters, isPreMutation: true);
+        ResolvedPackParameters parameters,
+        bool skipInstructions = false
+    ) => Plan(plan.PreMutation, parameters, isPreMutation: true, skipInstructions);
 
     public ManifestOperationResult<IReadOnlyList<LifecycleHookInvocation>> PlanPostMutation(
         PackLifecyclePlan plan,
-        ResolvedPackParameters parameters
-    ) => Plan(plan.PostMutation, parameters, isPreMutation: false);
+        ResolvedPackParameters parameters,
+        bool skipInstructions = false
+    ) => Plan(plan.PostMutation, parameters, isPreMutation: false, skipInstructions);
 
     private ManifestOperationResult<IReadOnlyList<LifecycleHookInvocation>> Plan(
         IReadOnlyList<PackLifecyclePlan.Entry> changes,
         ResolvedPackParameters parameters,
-        bool isPreMutation
+        bool isPreMutation,
+        bool skipInstructions
     )
     {
         var invocations = new List<LifecycleHookInvocation>();
@@ -34,46 +39,108 @@ internal sealed class LifecycleHookPlanner(IFileSystem fileSystem)
                 continue;
             }
 
-            var script = GetScript(pack.Manifest.Scripts, hook.Value);
-            if (script is null)
+            var declarations = GetHooks(pack.Manifest.Hooks, hook.Value);
+            for (var index = 0; index < declarations.Count; index++)
             {
-                continue;
-            }
+                var declaration = declarations[index];
+                if (string.Equals(declaration.Type, "instruction", StringComparison.Ordinal))
+                {
+                    if (skipInstructions)
+                    {
+                        continue;
+                    }
+                }
 
-            var renderedScript = RenderArguments(pack, hook.Value, script, parameters);
-            if (renderedScript.Value is not { } invocationScript)
-            {
-                return ManifestOperationResult<IReadOnlyList<LifecycleHookInvocation>>.Failure(
-                    renderedScript.Error ?? "Unable to render lifecycle hook arguments."
-                );
-            }
-
-            PackedHookFile? packedFile = null;
-            if (invocationScript.File is not null)
-            {
-                var resolvedFile = PackedHookFile.Resolve(fileSystem, pack, invocationScript.File);
-                if (resolvedFile.Value is not { } file)
+                var planned = PlanDeclaration(pack, hook.Value, declaration, parameters, index + 1);
+                if (planned.Value is not { } invocation)
                 {
                     return ManifestOperationResult<IReadOnlyList<LifecycleHookInvocation>>.Failure(
-                        resolvedFile.Error ?? "Unable to bind packed lifecycle hook file."
+                        planned.Error ?? "Unable to plan lifecycle hook."
                     );
                 }
 
-                packedFile = file;
+                invocations.Add(invocation);
             }
-
-            invocations.Add(
-                new LifecycleHookInvocation(pack, hook.Value, invocationScript, packedFile)
-            );
         }
 
         return ManifestOperationResult<IReadOnlyList<LifecycleHookInvocation>>.Success(invocations);
     }
 
-    private static ManifestOperationResult<PackManifest.LifecycleScript> RenderArguments(
+    private ManifestOperationResult<LifecycleHookInvocation> PlanDeclaration(
         DiscoveredPack pack,
         LifecycleHook hook,
-        PackManifest.LifecycleScript script,
+        PackManifest.PackHook declaration,
+        ResolvedPackParameters parameters,
+        int position
+    ) =>
+        string.Equals(declaration.Type, "instruction", StringComparison.Ordinal)
+            ? PlanInstruction(pack, hook, declaration, parameters, position)
+            : PlanScript(pack, hook, declaration, parameters, position);
+
+    private ManifestOperationResult<LifecycleHookInvocation> PlanInstruction(
+        DiscoveredPack pack,
+        LifecycleHook hook,
+        PackManifest.PackHook declaration,
+        ResolvedPackParameters parameters,
+        int position
+    )
+    {
+        var prepared = _instructionPreparer.Prepare(pack, declaration, parameters);
+        return prepared.Value is { } instruction
+            ? ManifestOperationResult<LifecycleHookInvocation>.Success(
+                new LifecycleHookInvocation(
+                    pack,
+                    hook,
+                    declaration,
+                    instruction.PackedFile,
+                    position,
+                    instruction
+                )
+            )
+            : ManifestOperationResult<LifecycleHookInvocation>.Failure(
+                prepared.Error ?? "Unable to prepare lifecycle instruction."
+            );
+    }
+
+    private ManifestOperationResult<LifecycleHookInvocation> PlanScript(
+        DiscoveredPack pack,
+        LifecycleHook hook,
+        PackManifest.PackHook script,
+        ResolvedPackParameters parameters,
+        int position
+    )
+    {
+        var renderedScript = RenderArguments(pack, hook, script, parameters);
+        if (renderedScript.Value is not { } invocationScript)
+        {
+            return ManifestOperationResult<LifecycleHookInvocation>.Failure(
+                renderedScript.Error ?? "Unable to render lifecycle hook arguments."
+            );
+        }
+
+        PackedHookFile? packedFile = null;
+        if (invocationScript.File is not null)
+        {
+            var resolvedFile = PackedHookFile.Resolve(fileSystem, pack, invocationScript.File);
+            if (resolvedFile.Value is not { } file)
+            {
+                return ManifestOperationResult<LifecycleHookInvocation>.Failure(
+                    resolvedFile.Error ?? "Unable to bind packed lifecycle hook file."
+                );
+            }
+
+            packedFile = file;
+        }
+
+        return ManifestOperationResult<LifecycleHookInvocation>.Success(
+            new LifecycleHookInvocation(pack, hook, invocationScript, packedFile, position)
+        );
+    }
+
+    private static ManifestOperationResult<PackManifest.PackHook> RenderArguments(
+        DiscoveredPack pack,
+        LifecycleHook hook,
+        PackManifest.PackHook script,
         ResolvedPackParameters parameters
     )
     {
@@ -88,7 +155,7 @@ internal sealed class LifecycleHookPlanner(IFileSystem fileSystem)
             );
             if (rendered.Value is not { } argument)
             {
-                return ManifestOperationResult<PackManifest.LifecycleScript>.Failure(
+                return ManifestOperationResult<PackManifest.PackHook>.Failure(
                     rendered.Error
                         ?? $"Lifecycle script argument '{templateName}' cannot be rendered."
                 );
@@ -97,7 +164,7 @@ internal sealed class LifecycleHookPlanner(IFileSystem fileSystem)
             arguments.Add(argument);
         }
 
-        return ManifestOperationResult<PackManifest.LifecycleScript>.Success(
+        return ManifestOperationResult<PackManifest.PackHook>.Success(
             script with
             {
                 Arguments = arguments,
@@ -112,19 +179,23 @@ internal sealed class LifecycleHookPlanner(IFileSystem fileSystem)
             (PackLifecyclePlan.ChangeKind.Install, false) => LifecycleHook.PostInstall,
             (PackLifecyclePlan.ChangeKind.Update, true) => LifecycleHook.PreUpdate,
             (PackLifecyclePlan.ChangeKind.Update, false) => LifecycleHook.PostUpdate,
+            (PackLifecyclePlan.ChangeKind.Removed, true) => LifecycleHook.PreUninstall,
+            (PackLifecyclePlan.ChangeKind.Removed, false) => LifecycleHook.PostUninstall,
             _ => null,
         };
 
-    private static PackManifest.LifecycleScript? GetScript(
-        PackManifest.PackScripts? scripts,
+    private static List<PackManifest.PackHook> GetHooks(
+        PackManifest.PackHooks? hooks,
         LifecycleHook hook
     ) =>
         hook switch
         {
-            LifecycleHook.PreInstall => scripts?.PreInstall,
-            LifecycleHook.PostInstall => scripts?.PostInstall,
-            LifecycleHook.PreUpdate => scripts?.PreUpdate,
-            LifecycleHook.PostUpdate => scripts?.PostUpdate,
+            LifecycleHook.PreInstall => hooks?.PreInstall ?? [],
+            LifecycleHook.PostInstall => hooks?.PostInstall ?? [],
+            LifecycleHook.PostUninstall => hooks?.PostUninstall ?? [],
+            LifecycleHook.PreUpdate => hooks?.PreUpdate ?? [],
+            LifecycleHook.PostUpdate => hooks?.PostUpdate ?? [],
+            LifecycleHook.PreUninstall => hooks?.PreUninstall ?? [],
             _ => throw new InvalidOperationException($"Unsupported lifecycle hook '{hook}'."),
         };
 
@@ -133,8 +204,10 @@ internal sealed class LifecycleHookPlanner(IFileSystem fileSystem)
         {
             LifecycleHook.PreInstall => "preInstall",
             LifecycleHook.PostInstall => "postInstall",
+            LifecycleHook.PostUninstall => "postUninstall",
             LifecycleHook.PreUpdate => "preUpdate",
             LifecycleHook.PostUpdate => "postUpdate",
+            LifecycleHook.PreUninstall => "preUninstall",
             _ => throw new InvalidOperationException($"Unsupported lifecycle hook '{hook}'."),
         };
 }

@@ -15,6 +15,7 @@ internal sealed class PackUpdateService(
         PackReference? packReference,
         bool dryRun = false,
         ScriptExecutionMode? scriptMode = null,
+        bool skipInstructions = false,
         bool acceptSources = false
     ) =>
         await this.UpdateAsync(
@@ -23,6 +24,7 @@ internal sealed class PackUpdateService(
             selectedUpdateIds: null,
             dryRun,
             scriptMode ?? ScriptExecutionMode.Prompt,
+            skipInstructions,
             acceptSources
         );
 
@@ -31,6 +33,7 @@ internal sealed class PackUpdateService(
         IReadOnlySet<string> selectedUpdateIds,
         bool dryRun = false,
         ScriptExecutionMode? scriptMode = null,
+        bool skipInstructions = false,
         bool acceptSources = false
     ) =>
         await this.UpdateAsync(
@@ -39,6 +42,7 @@ internal sealed class PackUpdateService(
             selectedUpdateIds,
             dryRun,
             scriptMode ?? ScriptExecutionMode.Prompt,
+            skipInstructions,
             acceptSources
         );
 
@@ -48,6 +52,7 @@ internal sealed class PackUpdateService(
         IReadOnlySet<string>? selectedUpdateIds,
         bool dryRun,
         ScriptExecutionMode scriptMode,
+        bool skipInstructions,
         bool acceptSources
     )
     {
@@ -76,6 +81,7 @@ internal sealed class PackUpdateService(
                 reference,
                 dryRun,
                 scriptMode,
+                skipInstructions,
                 acceptSources
             )
             : await UpdateAllAsync(
@@ -85,6 +91,7 @@ internal sealed class PackUpdateService(
                 selectedUpdateIds,
                 dryRun,
                 scriptMode,
+                skipInstructions,
                 acceptSources
             );
     }
@@ -96,6 +103,7 @@ internal sealed class PackUpdateService(
         PackReference packReference,
         bool dryRun,
         ScriptExecutionMode scriptMode,
+        bool skipInstructions,
         bool acceptSources
     )
     {
@@ -135,6 +143,7 @@ internal sealed class PackUpdateService(
                 outcome,
                 dryRun,
                 scriptMode,
+                skipInstructions,
                 acceptSources
             );
             if (previewResult is not null)
@@ -150,6 +159,7 @@ internal sealed class PackUpdateService(
             [outcome],
             dryRun,
             scriptMode,
+            skipInstructions,
             acceptSources,
             update.SourceSwitch
         );
@@ -193,6 +203,7 @@ internal sealed class PackUpdateService(
         UpdateOutcome outcome,
         bool dryRun,
         ScriptExecutionMode scriptMode,
+        bool skipInstructions,
         bool acceptSources
     )
     {
@@ -203,6 +214,7 @@ internal sealed class PackUpdateService(
             [outcome],
             dryRun: true,
             scriptMode,
+            skipInstructions,
             acceptSources
         );
         if (preview.Error is not null || preview.IsLifecycleFailure)
@@ -307,6 +319,7 @@ internal sealed class PackUpdateService(
         IReadOnlySet<string>? selectedUpdateIds,
         bool dryRun,
         ScriptExecutionMode scriptMode,
+        bool skipInstructions,
         bool acceptSources
     )
     {
@@ -351,6 +364,7 @@ internal sealed class PackUpdateService(
                 outcomes,
                 dryRun,
                 scriptMode,
+                skipInstructions,
                 acceptSources
             );
             if (previewResult is not null)
@@ -366,6 +380,7 @@ internal sealed class PackUpdateService(
             outcomes,
             dryRun,
             scriptMode,
+            skipInstructions,
             acceptSources
         );
     }
@@ -429,6 +444,7 @@ internal sealed class PackUpdateService(
         List<UpdateOutcome> outcomes,
         bool dryRun,
         ScriptExecutionMode scriptMode,
+        bool skipInstructions,
         bool acceptSources
     )
     {
@@ -448,6 +464,7 @@ internal sealed class PackUpdateService(
             [.. outcomes, .. externalOutcomes],
             dryRun: true,
             scriptMode,
+            skipInstructions,
             acceptSources
         );
         if (preview.Error is not null || preview.IsLifecycleFailure)
@@ -477,6 +494,7 @@ internal sealed class PackUpdateService(
         IReadOnlyList<UpdateOutcome> outcomes,
         bool dryRun,
         ScriptExecutionMode scriptMode,
+        bool skipInstructions,
         bool acceptSources,
         LockedSourceUpdateSelector.SourceSwitch? proposedSourceSwitch = null
     )
@@ -488,6 +506,7 @@ internal sealed class PackUpdateService(
         )
         {
             ScriptMode = scriptMode,
+            SkipInstructions = skipInstructions,
             AcceptSources = acceptSources,
         };
         if (dryRun)

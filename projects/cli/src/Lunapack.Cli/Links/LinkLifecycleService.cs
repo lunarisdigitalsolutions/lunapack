@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO.Abstractions;
 using System.Security.Cryptography;
 
@@ -19,6 +20,7 @@ internal sealed class LinkLifecycleService(
         bool allowReinstall = false,
         ProjectState? preparedState = null,
         ManagedFileTargetRemapping? targetRemapping = null,
+        Action<TimeSpan>? onManagedFileChangesApplied = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -53,6 +55,7 @@ internal sealed class LinkLifecycleService(
             useLockedIdentity: false,
             state,
             targetRemapping,
+            onManagedFileChangesApplied,
             cancellationToken
         );
     }
@@ -233,6 +236,7 @@ internal sealed class LinkLifecycleService(
         bool useLockedIdentity,
         ProjectState? preparedState = null,
         ManagedFileTargetRemapping? targetRemapping = null,
+        Action<TimeSpan>? onManagedFileChangesApplied = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -281,7 +285,13 @@ internal sealed class LinkLifecycleService(
             return console.Fail(plan.Error);
         }
 
-        return await ApplyAndSaveAsync(projectDirectory, state, resolved.Snapshot, updatePlan);
+        return await ApplyAndSaveAsync(
+            projectDirectory,
+            state,
+            resolved.Snapshot,
+            updatePlan,
+            onManagedFileChangesApplied
+        );
     }
 
     private async Task<int> SaveEvidenceAsync(
@@ -299,14 +309,18 @@ internal sealed class LinkLifecycleService(
         string projectDirectory,
         ProjectState state,
         ResolvedLinkSnapshot snapshot,
-        PackUpdatePlan updatePlan
+        PackUpdatePlan updatePlan,
+        Action<TimeSpan>? onManagedFileChangesApplied
     )
     {
+        var mutationStartedAt = Stopwatch.GetTimestamp();
         var applied = updateTransaction.Apply(updatePlan);
         if (applied.Value is not { } rollback)
         {
             return console.Fail(applied.Error);
         }
+
+        onManagedFileChangesApplied?.Invoke(Stopwatch.GetElapsedTime(mutationStartedAt));
 
         var isPersisted = false;
         try

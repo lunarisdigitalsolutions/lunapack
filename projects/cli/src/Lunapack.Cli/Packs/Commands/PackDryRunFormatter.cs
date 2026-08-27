@@ -125,8 +125,14 @@ internal static class PackDryRunFormatter
         string phase,
         LifecycleHookInvocation hook,
         ScriptExecutionMode scriptMode
-    ) =>
-        $"{phase}: {hook.Pack.Manifest.Id}@{hook.Pack.Manifest.Version} {LifecycleHookPlanner.ToManifestValue(hook.Hook)} consent: {GetConsentStatus(scriptMode)}";
+    )
+    {
+        var prefix =
+            $"{phase}: {hook.Pack.Manifest.Id}@{hook.Pack.Manifest.Version} {LifecycleHookPlanner.ToManifestValue(hook.Hook)}";
+        return hook.Instruction is { } instruction
+            ? $"{prefix} instruction file: {instruction.PackedFile.RelativePath} templating: {(instruction.Templating ? "enabled" : "disabled")} steps: {instruction.Document.Steps.Count}"
+            : $"{prefix} script consent: {GetConsentStatus(scriptMode)}";
+    }
 
     private static string GetConsentStatus(ScriptExecutionMode scriptMode) =>
         scriptMode == ScriptExecutionMode.Skip ? "skipped"

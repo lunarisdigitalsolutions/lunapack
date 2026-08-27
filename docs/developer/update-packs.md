@@ -24,9 +24,9 @@ commits do not. Removed external requirements release lock consumers but leave
 workspace sources configured. `--offline` avoids remote ref checks and reports
 that freshness could not be confirmed from remote state.
 
-Lifecycle hooks follow the same `--scripts prompt|run|skip` modes as install.
-Updates run dependency-first `preUpdate` hooks before managed-file changes and
-`postUpdate` hooks before state persistence. New dependencies use install
-hooks. Ordinary updates are pinned to their lock-record source identity. An
-explicit version available only from another source is shown in dry-run output
-and requires confirmation before the update runs.
+Ordinary updates are pinned to their lock-record source identity. An explicit
+version available only from another source is shown in dry-run output and
+requires confirmation before the update runs.
+
+Packs may run scripts or show instructions during updates. See
+[Lifecycle hooks](lifecycle-hooks.md) before changing hook behavior or trust.

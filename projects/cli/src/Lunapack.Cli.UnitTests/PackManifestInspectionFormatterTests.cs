@@ -90,25 +90,36 @@ public sealed class PackManifestInspectionFormatterTests
     }
 
     [Test]
-    public async Task Format_WhenLifecycleScriptsAreDeclared_DisplaysDescriptionsAndLiteralArgv()
+    public async Task Format_WhenMixedLifecycleHooksAreDeclared_DisplaysOrderedTypedDetails()
     {
         var manifest = new PackManifest
         {
             Id = "example",
             Version = "1.0.0",
-            Scripts = new PackManifest.PackScripts
+            Hooks = new PackManifest.PackHooks
             {
-                PreInstall = new PackManifest.LifecycleScript
-                {
-                    File = "scripts/setup.ps1",
-                    Runner = "pwsh",
-                    Arguments = ["two words"],
-                    Description = "Configure tooling",
-                },
-                PostUpdate = new PackManifest.LifecycleScript { Command = "dotnet" },
+                PreInstall =
+                [
+                    new PackManifest.PackHook
+                    {
+                        Type = "instruction",
+                        File = "instructions/setup.md",
+                        Templating = true,
+                    },
+                    new PackManifest.PackHook
+                    {
+                        Type = "script",
+                        File = "scripts/setup.ps1",
+                        Runner = "pwsh",
+                        Arguments = ["two words"],
+                        Description = "Configure tooling",
+                    },
+                ],
+                PostUpdate = [new PackManifest.PackHook { Type = "script", Command = "dotnet" }],
             },
         };
         var console = new SpectreTestConsole();
+        console.Profile.Width = 500;
 
         foreach (var renderable in PackManifestInspectionFormatter.Format(manifest))
         {
@@ -117,7 +128,28 @@ public sealed class PackManifestInspectionFormatterTests
 
         await Assert.That(console.Output).Contains("Configure tooling");
         await Assert.That(console.Output).Contains("pwsh scripts/setup.ps1 \"two words\"");
+        await Assert.That(console.Output).Contains("instructions/setup.md; templating: enabled");
         await Assert.That(console.Output).Contains("dotnet");
         await Assert.That(console.Output).Contains("postInstall");
+        await Assert
+            .That(console.Output.IndexOf("instructions/setup.md", StringComparison.Ordinal))
+            .IsLessThan(console.Output.IndexOf("pwsh scripts/setup.ps1", StringComparison.Ordinal));
+    }
+
+    [Test]
+    public async Task Format_WhenNoLifecycleHooksAreDeclared_ReportsExplicitEmptyState()
+    {
+        var console = new SpectreTestConsole();
+
+        foreach (
+            var renderable in PackManifestInspectionFormatter.Format(
+                new PackManifest { Id = "example", Version = "1.0.0" }
+            )
+        )
+        {
+            console.Write(renderable);
+        }
+
+        await Assert.That(console.Output).Contains("No lifecycle hooks declared.");
     }
 }

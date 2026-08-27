@@ -17,6 +17,10 @@ and Windows x64.
 the resolved graph, immutable source evidence, managed target paths, and
 rendered-content digests. Lifecycle commands update both documents together.
 
+Pack lifecycle events preserve dependency-first and declaration order across
+trusted executable scripts and guided instructions. Script consent and
+instruction skipping are independent command options.
+
 Use a dry run before installation or update when a project needs a plan without
 file or state changes. Uninstall removes only unchanged targets that no longer
 have an owner.

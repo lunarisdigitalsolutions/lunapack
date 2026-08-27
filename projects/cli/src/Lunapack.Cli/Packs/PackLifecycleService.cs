@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO.Abstractions;
 using System.Security.Cryptography;
 using System.Text;
@@ -60,7 +61,8 @@ internal sealed class PackLifecycleService(
 
     public async Task<int> InstallAsync(
         string projectDirectory,
-        PackInstallationRequest installationRequest
+        PackInstallationRequest installationRequest,
+        Action<TimeSpan>? onManagedFileChangesApplied = null
     )
     {
         _console.Info($"Installing pack '{installationRequest.PackReference.Id}'.");
@@ -79,7 +81,8 @@ internal sealed class PackLifecycleService(
                 preparedInstallation.Configuration,
                 preparedInstallation.Graph,
                 preparedInstallation.Parameters,
-                installationRequest.ScriptMode
+                installationRequest.ScriptMode,
+                installationRequest.SkipInstructions
             );
             if (hooks.Value is not { } authorizedHooks)
             {
@@ -94,7 +97,8 @@ internal sealed class PackLifecycleService(
                 preparedInstallation.UpdatePlan,
                 projectDirectory,
                 preserveExistingLock: true,
-                authorizedHooks
+                authorizedHooks,
+                onManagedFileChangesApplied
             );
         }
     }
@@ -123,7 +127,8 @@ internal sealed class PackLifecycleService(
                 preparedInstallation.State,
                 preparedInstallation.Graph,
                 preparedInstallation.Parameters,
-                installationRequest.ScriptMode
+                installationRequest.ScriptMode,
+                installationRequest.SkipInstructions
             );
             if (lifecycle.Value is not { } dryRunLifecycle)
             {
@@ -163,6 +168,29 @@ internal sealed class PackLifecycleService(
                 string.Equals(pack.Id, packReference.Id, StringComparison.Ordinal)
             )
         );
+    }
+
+    public async Task<ManifestOperationResult<string>> GetInstalledVersionAsync(
+        string projectDirectory,
+        string packId
+    )
+    {
+        var loadedState = await projectStateStore.LoadAsync(projectDirectory);
+        if (loadedState.Value is not { } state)
+        {
+            return ManifestOperationResult<string>.Failure(
+                loadedState.Error ?? "Unable to load project state."
+            );
+        }
+
+        var installedPack = state.LockFile.Packs.Find(pack =>
+            string.Equals(pack.Id, packId, StringComparison.Ordinal)
+        );
+        return installedPack is null
+            ? ManifestOperationResult<string>.Failure(
+                $"Installed pack '{packId}' is missing from the lock file."
+            )
+            : ManifestOperationResult<string>.Success(installedPack.Version);
     }
 
     public async Task<int> MoveManagedFileAsync(
@@ -450,7 +478,8 @@ internal sealed class PackLifecycleService(
                 preparedUpdate.Configuration,
                 preparedUpdate.Graph,
                 preparedUpdate.Parameters,
-                updateRequest.ScriptMode
+                updateRequest.ScriptMode,
+                updateRequest.SkipInstructions
             );
             if (hooks.Value is not { } authorizedHooks)
             {
@@ -494,7 +523,8 @@ internal sealed class PackLifecycleService(
                 preparedUpdate.State,
                 preparedUpdate.Graph,
                 preparedUpdate.Parameters,
-                updateRequest.ScriptMode
+                updateRequest.ScriptMode,
+                updateRequest.SkipInstructions
             );
             return lifecycle.Value is { } dryRunLifecycle
                 ? ManifestOperationResult<PackUpdatePlan>.Success(
@@ -891,8 +921,13 @@ internal sealed class PackLifecycleService(
             );
     }
 
-    public async Task<int> UninstallAsync(string projectDirectory, PackReference packReference)
+    public async Task<int> UninstallAsync(
+        string projectDirectory,
+        PackInstallationRequest hookRequest,
+        Action<TimeSpan>? onManagedFileChangesApplied = null
+    )
     {
+        var packReference = hookRequest.PackReference;
         _console.Info($"Uninstalling pack '{packReference.Id}'.");
         var loadedState = await projectStateStore.LoadAsync(projectDirectory);
         if (loadedState.Value is not { } state)
@@ -906,11 +941,59 @@ internal sealed class PackLifecycleService(
             return _console.Fail(rootRequest.Error);
         }
 
-        state.Configuration.Packs.Remove(requestedRoot);
-        var nextLockFile = CreateRemainingLockFile(state.Configuration.Packs, state.LockFile);
+        var preparation = PrepareUninstall(state, requestedRoot, projectDirectory);
+        if (preparation.Value is not { } prepared)
+        {
+            return _console.Fail(preparation.Error);
+        }
+
+        var exitCode = await ExecutePreparedUninstallAsync(
+            projectDirectory,
+            state,
+            hookRequest,
+            prepared,
+            onManagedFileChangesApplied
+        );
+        if (exitCode == 0)
+        {
+            foreach (
+                var sourceName in GetUnusedExternalSources(
+                    state.Configuration,
+                    prepared.RemovedPacks,
+                    prepared.NextState.LockFile
+                )
+            )
+            {
+                _console.Info(
+                    $"External source '{sourceName}' has no remaining consumers. Remove it with 'luna sources rm {sourceName}'."
+                );
+            }
+        }
+
+        return exitCode;
+    }
+
+    private ManifestOperationResult<PreparedUninstall> PrepareUninstall(
+        ProjectState state,
+        ProjectConfiguration.RequestedPack requestedRoot,
+        string projectDirectory
+    )
+    {
+        var nextConfiguration = state.Configuration with
+        {
+            Packs =
+            [
+                .. state.Configuration.Packs.Where(pack =>
+                    !string.Equals(pack.Id, requestedRoot.Id, StringComparison.Ordinal)
+                ),
+            ],
+        };
+        var nextLockFile = CreateRemainingLockFile(nextConfiguration.Packs, state.LockFile);
         if (nextLockFile.Value is not { } lockFile)
         {
-            return _console.Fail(nextLockFile.Error);
+            return ManifestOperationResult<PreparedUninstall>.Failure(
+                nextLockFile.Error ?? "Unable to create the remaining lock state."
+            );
         }
 
         var removedPacks = GetRemovedPacks(state.LockFile, lockFile);
@@ -921,31 +1004,23 @@ internal sealed class PackLifecycleService(
         );
         if (changedFile is not null)
         {
-            return _console.Fail(
+            return ManifestOperationResult<PreparedUninstall>.Failure(
                 $"Managed target '{changedFile.ManagedFile.TargetPath}' has changed."
             );
         }
 
-        var unusedSources = GetUnusedExternalSources(state.Configuration, removedPacks, lockFile);
-        var exitCode = await DeleteAndSaveAsync(
-            state with
-            {
-                LockFile = lockFile,
-            },
-            managedFilesToRemove,
-            projectDirectory
+        return ManifestOperationResult<PreparedUninstall>.Success(
+            new PreparedUninstall(
+                requestedRoot,
+                state with
+                {
+                    Configuration = nextConfiguration,
+                    LockFile = lockFile,
+                },
+                removedPacks,
+                managedFilesToRemove
+            )
         );
-        if (exitCode == 0)
-        {
-            foreach (var sourceName in unusedSources)
-            {
-                _console.Info(
-                    $"External source '{sourceName}' has no remaining consumers. Remove it with 'luna sources rm {sourceName}'."
-                );
-            }
-        }
-
-        return exitCode;
     }
 
     private static IReadOnlyList<string> GetUnusedExternalSources(
@@ -976,6 +1051,186 @@ internal sealed class PackLifecycleService(
                 .Distinct(StringComparer.Ordinal)
                 .OrderBy(sourceName => sourceName, StringComparer.Ordinal),
         ];
+    }
+
+    private async Task<int> ExecutePreparedUninstallAsync(
+        string projectDirectory,
+        ProjectState state,
+        PackInstallationRequest hookRequest,
+        PreparedUninstall prepared,
+        Action<TimeSpan>? onManagedFileChangesApplied
+    )
+    {
+        var materialization = await TryMaterializeUninstallGraphAsync(
+            projectDirectory,
+            state,
+            prepared.RequestedRoot
+        );
+        if (materialization is null)
+        {
+            return await DeleteAndSaveAsync(
+                state,
+                prepared.NextState,
+                prepared.ManagedFilesToRemove,
+                projectDirectory,
+                null,
+                onManagedFileChangesApplied
+            );
+        }
+
+        await using (materialization)
+        {
+            return await ExecuteMaterializedUninstallAsync(
+                projectDirectory,
+                state,
+                hookRequest,
+                prepared,
+                materialization,
+                onManagedFileChangesApplied
+            );
+        }
+    }
+
+    private async Task<int> ExecuteMaterializedUninstallAsync(
+        string projectDirectory,
+        ProjectState state,
+        PackInstallationRequest hookRequest,
+        PreparedUninstall prepared,
+        GitPackMaterialization materialization,
+        Action<TimeSpan>? onManagedFileChangesApplied
+    )
+    {
+        var removedPackIds = prepared
+            .RemovedPacks.Select(pack => pack.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        var lifecyclePlan = PackLifecyclePlanner.PlanRemoval(
+            materialization.Graph,
+            state.LockFile,
+            removedPackIds
+        );
+        if (!HasUninstallHooks(lifecyclePlan))
+        {
+            return await DeleteAndSaveAsync(
+                state,
+                prepared.NextState,
+                prepared.ManagedFilesToRemove,
+                projectDirectory,
+                null,
+                onManagedFileChangesApplied
+            );
+        }
+
+        var parameters = ResolveUninstallHookParameters(
+            materialization.Graph,
+            state.Configuration,
+            hookRequest,
+            lifecyclePlan
+        );
+        if (parameters.Value is not { } resolvedParameters)
+        {
+            return _console.Fail(
+                parameters.Error ?? "Unable to resolve uninstall hook parameters."
+            );
+        }
+
+        var hooks = await AuthorizeLifecyclePlanAsync(
+            projectDirectory,
+            state.Configuration,
+            lifecyclePlan,
+            resolvedParameters,
+            hookRequest.ScriptMode,
+            hookRequest.SkipInstructions
+        );
+        if (hooks.Value is not { } authorizedHooks)
+        {
+            return _console.Fail(hooks.Error);
+        }
+
+        return await DeleteAndSaveAsync(
+            state,
+            prepared.NextState,
+            prepared.ManagedFilesToRemove,
+            projectDirectory,
+            authorizedHooks,
+            onManagedFileChangesApplied
+        );
+    }
+
+    private static bool HasUninstallHooks(PackLifecyclePlan plan) =>
+        plan.Changes.Any(change =>
+            change.IncomingPack?.Manifest.Hooks is { } hooks
+            && (hooks.PreUninstall is { Count: > 0 } || hooks.PostUninstall is { Count: > 0 })
+        );
+
+    private static ManifestOperationResult<ResolvedPackParameters> ResolveUninstallHookParameters(
+        ResolvedPackGraph graph,
+        ProjectConfiguration configuration,
+        PackInstallationRequest hookRequest,
+        PackLifecyclePlan plan
+    )
+    {
+        var requiresParameters = plan.Changes.Any(change =>
+            change.IncomingPack?.Manifest.Hooks is { } hooks
+            && new[] { hooks.PreUninstall, hooks.PostUninstall }
+                .Where(declarations => declarations is not null)
+                .SelectMany(declarations => declarations!)
+                .Any(hook =>
+                    hook.Templating == true
+                    || hook.Arguments.Any(argument =>
+                        argument.Contains("{{", StringComparison.Ordinal)
+                    )
+                )
+        );
+        return requiresParameters
+            ? PackParameterResolver.Resolve(graph, configuration, hookRequest)
+            : ManifestOperationResult<ResolvedPackParameters>.Success(
+                new ResolvedPackParameters(
+                    new Dictionary<string, PackParameterDefinition>(StringComparer.Ordinal),
+                    new Dictionary<string, ResolvedPackParameterValue>(StringComparer.Ordinal)
+                )
+            );
+    }
+
+    private async Task<GitPackMaterialization?> TryMaterializeUninstallGraphAsync(
+        string projectDirectory,
+        ProjectState state,
+        ProjectConfiguration.RequestedPack requestedRoot
+    )
+    {
+        var installedRoot = state.LockFile.Packs.Find(pack =>
+            string.Equals(pack.Id, requestedRoot.Id, StringComparison.Ordinal)
+        );
+        var graph = await graphResolver.ResolveAsync(
+            projectDirectory,
+            state.Configuration,
+            requestedRoot.Id,
+            installedRoot?.Version ?? requestedRoot.Version
+        );
+        if (graph.Value is not { } resolvedGraph)
+        {
+            WarnUninstallHooksUnavailable(requestedRoot.Id, graph.Error);
+            return null;
+        }
+
+        var materialization = await _gitPackMaterializer.MaterializeAsync(
+            resolvedGraph,
+            state.Configuration
+        );
+        if (materialization.Value is not { } snapshot)
+        {
+            WarnUninstallHooksUnavailable(requestedRoot.Id, materialization.Error);
+            return null;
+        }
+
+        return snapshot;
+    }
+
+    private void WarnUninstallHooksUnavailable(string packId, string? reason)
+    {
+        _console.Warning(
+            $"Uninstall hooks for pack '{packId}' are unavailable; continuing without them. {reason ?? "The configured source could not be loaded."}"
+        );
+        _console.Info(string.Empty);
     }
 
     private static ManifestOperationResult<ProjectConfiguration.RequestedPack> ValidateUninstallRequest(
@@ -1017,7 +1272,8 @@ internal sealed class PackLifecycleService(
         PackUpdatePlan updatePlan,
         string projectDirectory,
         bool preserveExistingLock = false,
-        AuthorizedLifecycleHooks? authorizedHooks = null
+        AuthorizedLifecycleHooks? authorizedHooks = null,
+        Action<TimeSpan>? onManagedFileChangesApplied = null
     )
     {
         var manifestSnapshot = CreateManifestSnapshot(projectDirectory);
@@ -1031,59 +1287,32 @@ internal sealed class PackLifecycleService(
             return _console.Fail(preExecution.Error);
         }
 
+        var mutationStartedAt = Stopwatch.GetTimestamp();
         var appliedUpdate = updateTransaction.Apply(updatePlan);
         if (appliedUpdate.Value is not { } rollback)
         {
             return _console.Fail(appliedUpdate.Error);
         }
 
+        onManagedFileChangesApplied?.Invoke(Stopwatch.GetElapsedTime(mutationStartedAt));
+
+        var isCheckpointPersisted = false;
         var isPersisted = false;
         try
         {
-            var postExecution = await ExecuteHooksAsync(
-                projectDirectory,
-                authorizedHooks?.PostMutation ?? [],
-                manifestSnapshot
-            );
-            if (!postExecution.IsSuccess)
-            {
-                return _console.Fail(postExecution.Error);
-            }
-
-            var resultingContents = CreateResultingContents(updatePlan);
-            var updatedLockFile = CreateLockFile(
-                projectDirectory,
+            var completion = await CompleteUpdateAsync(
+                state,
                 nextConfiguration,
                 graph,
                 installationPlan,
-                state.LockFile,
-                resultingContents
+                updatePlan,
+                projectDirectory,
+                preserveExistingLock,
+                authorizedHooks
             );
-            var mergedLockFile = preserveExistingLock
-                ? MergeLockFiles(state.LockFile, updatedLockFile)
-                : ManifestOperationResult<ProjectLockFile>.Success(updatedLockFile);
-            if (mergedLockFile.Value is not { } nextLockFile)
-            {
-                return _console.Fail(mergedLockFile.Error);
-            }
-            foreach (var (targetPath, contents) in resultingContents)
-            {
-                UpdateManagedFileHash(nextLockFile, targetPath, contents);
-            }
-
-            var nextState = state with
-            {
-                Configuration = nextConfiguration,
-                LockFile = nextLockFile,
-            };
-            var savedState = await projectStateStore.SaveAsync(projectDirectory, nextState);
-            if (savedState.IsSuccess)
-            {
-                isPersisted = true;
-                return 0;
-            }
-
-            return _console.Fail(savedState.Error);
+            isCheckpointPersisted = completion.IsCheckpointPersisted;
+            isPersisted = completion.IsPersisted;
+            return completion.ExitCode;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
@@ -1093,9 +1322,81 @@ internal sealed class PackLifecycleService(
         {
             if (!isPersisted)
             {
+                if (isCheckpointPersisted)
+                {
+                    var restoredState = await projectStateStore.SaveAsync(projectDirectory, state);
+                    if (!restoredState.IsSuccess)
+                    {
+                        _console.Error(
+                            restoredState.Error
+                                ?? "Unable to restore project state after lifecycle failure."
+                        );
+                    }
+                }
+
                 rollback.Restore();
             }
         }
+    }
+
+    private async Task<(
+        int ExitCode,
+        bool IsCheckpointPersisted,
+        bool IsPersisted
+    )> CompleteUpdateAsync(
+        ProjectState state,
+        ProjectConfiguration nextConfiguration,
+        ResolvedPackGraph graph,
+        PackInstallationPlan installationPlan,
+        PackUpdatePlan updatePlan,
+        string projectDirectory,
+        bool preserveExistingLock,
+        AuthorizedLifecycleHooks? authorizedHooks
+    )
+    {
+        var resultingContents = CreateResultingContents(updatePlan);
+        var updatedLockFile = CreateLockFile(
+            projectDirectory,
+            nextConfiguration,
+            graph,
+            installationPlan,
+            state.LockFile,
+            resultingContents
+        );
+        var mergedLockFile = preserveExistingLock
+            ? MergeLockFiles(state.LockFile, updatedLockFile)
+            : ManifestOperationResult<ProjectLockFile>.Success(updatedLockFile);
+        if (mergedLockFile.Value is not { } nextLockFile)
+        {
+            return (_console.Fail(mergedLockFile.Error), false, false);
+        }
+
+        foreach (var (targetPath, contents) in resultingContents)
+        {
+            UpdateManagedFileHash(nextLockFile, targetPath, contents);
+        }
+
+        var nextState = state with { Configuration = nextConfiguration, LockFile = nextLockFile };
+        var checkpoint = await projectStateStore.SaveAsync(projectDirectory, nextState);
+        if (!checkpoint.IsSuccess)
+        {
+            return (_console.Fail(checkpoint.Error), false, false);
+        }
+
+        var postExecution = await ExecuteHooksAsync(
+            projectDirectory,
+            authorizedHooks?.PostMutation ?? [],
+            CreateManifestSnapshot(projectDirectory)
+        );
+        if (!postExecution.IsSuccess)
+        {
+            return (_console.Fail(postExecution.Error), true, false);
+        }
+
+        var savedState = await projectStateStore.SaveAsync(projectDirectory, nextState);
+        return savedState.IsSuccess
+            ? (0, true, true)
+            : (_console.Fail(savedState.Error), true, false);
     }
 
     private async Task<ManifestOperationResult<AuthorizedLifecycleHooks>> AuthorizeHooksAsync(
@@ -1104,12 +1405,34 @@ internal sealed class PackLifecycleService(
         ProjectConfiguration configuration,
         ResolvedPackGraph graph,
         ResolvedPackParameters parameters,
-        ScriptExecutionMode scriptMode
+        ScriptExecutionMode scriptMode,
+        bool skipInstructions
     )
     {
         var lifecyclePlan = PackLifecyclePlanner.Plan(graph, state.LockFile);
-        var preHooks = _hookPlanner.PlanPreMutation(lifecyclePlan, parameters);
-        var postHooks = _hookPlanner.PlanPostMutation(lifecyclePlan, parameters);
+        return await AuthorizeLifecyclePlanAsync(
+            projectDirectory,
+            configuration,
+            lifecyclePlan,
+            parameters,
+            scriptMode,
+            skipInstructions
+        );
+    }
+
+    private async Task<
+        ManifestOperationResult<AuthorizedLifecycleHooks>
+    > AuthorizeLifecyclePlanAsync(
+        string projectDirectory,
+        ProjectConfiguration configuration,
+        PackLifecyclePlan lifecyclePlan,
+        ResolvedPackParameters parameters,
+        ScriptExecutionMode scriptMode,
+        bool skipInstructions
+    )
+    {
+        var preHooks = _hookPlanner.PlanPreMutation(lifecyclePlan, parameters, skipInstructions);
+        var postHooks = _hookPlanner.PlanPostMutation(lifecyclePlan, parameters, skipInstructions);
         if (
             preHooks.Value is not { } plannedPreHooks
             || postHooks.Value is not { } plannedPostHooks
@@ -1137,7 +1460,10 @@ internal sealed class PackLifecycleService(
             new AuthorizedLifecycleHooks(
                 [
                     .. hooks.Where(hook =>
-                        hook.Invocation.Hook is LifecycleHook.PreInstall or LifecycleHook.PreUpdate
+                        hook.Invocation.Hook
+                            is LifecycleHook.PreInstall
+                                or LifecycleHook.PreUpdate
+                                or LifecycleHook.PreUninstall
                     ),
                 ],
                 [
@@ -1145,6 +1471,7 @@ internal sealed class PackLifecycleService(
                         hook.Invocation.Hook
                             is LifecycleHook.PostInstall
                                 or LifecycleHook.PostUpdate
+                                or LifecycleHook.PostUninstall
                     ),
                 ]
             )
@@ -1155,12 +1482,13 @@ internal sealed class PackLifecycleService(
         ProjectState state,
         ResolvedPackGraph graph,
         ResolvedPackParameters parameters,
-        ScriptExecutionMode scriptMode
+        ScriptExecutionMode scriptMode,
+        bool skipInstructions
     )
     {
         var lifecyclePlan = PackLifecyclePlanner.Plan(graph, state.LockFile);
-        var preHooks = _hookPlanner.PlanPreMutation(lifecyclePlan, parameters);
-        var postHooks = _hookPlanner.PlanPostMutation(lifecyclePlan, parameters);
+        var preHooks = _hookPlanner.PlanPreMutation(lifecyclePlan, parameters, skipInstructions);
+        var postHooks = _hookPlanner.PlanPostMutation(lifecyclePlan, parameters, skipInstructions);
         return preHooks.Value is { } plannedPreHooks && postHooks.Value is { } plannedPostHooks
             ? ManifestOperationResult<LifecycleDryRunPlan>.Success(
                 new LifecycleDryRunPlan(
@@ -1177,13 +1505,13 @@ internal sealed class PackLifecycleService(
 
     private async Task<ManifestOperationResult<bool>> ExecuteHooksAsync(
         string projectDirectory,
-        IReadOnlyList<ResolvedLifecycleHookInvocation> hooks,
+        IReadOnlyList<AuthorizedLifecycleHook> hooks,
         ManifestSnapshot manifestSnapshot
     )
     {
         foreach (var hook in hooks)
         {
-            var execution = await _hookExecutor.ExecuteAsync(projectDirectory, hook);
+            var execution = await DispatchHookAsync(projectDirectory, hook);
             var integrity = VerifyManifestSnapshot(manifestSnapshot);
             if (!integrity.IsSuccess)
             {
@@ -1197,6 +1525,35 @@ internal sealed class PackLifecycleService(
         }
 
         return ManifestOperationResult<bool>.Success(true);
+    }
+
+    private async Task<ManifestOperationResult<bool>> DispatchHookAsync(
+        string projectDirectory,
+        AuthorizedLifecycleHook hook
+    )
+    {
+        if (hook.Script is { } script)
+        {
+            return await _hookExecutor.ExecuteAsync(projectDirectory, script);
+        }
+
+        if (hook.Invocation.Instruction is not { } instruction)
+        {
+            return ManifestOperationResult<bool>.Failure("Lifecycle instruction was not prepared.");
+        }
+
+        var verified = instruction.PackedFile.Verify(fileSystem);
+        if (!verified.IsSuccess)
+        {
+            return ManifestOperationResult<bool>.Failure(
+                verified.Error ?? "Packed lifecycle instruction integrity verification failed."
+            );
+        }
+
+        return new InstructionPresenter(_console).Present(
+            hook.Invocation.Pack.Manifest.Id,
+            instruction
+        );
     }
 
     private ManifestSnapshot CreateManifestSnapshot(string projectDirectory)
@@ -1261,40 +1618,37 @@ internal sealed class PackLifecycleService(
     }
 
     private async Task<int> DeleteAndSaveAsync(
-        ProjectState state,
+        ProjectState previousState,
+        ProjectState nextState,
         IReadOnlyList<ManagedFileRemoval> managedFilesToRemove,
-        string projectDirectory
+        string projectDirectory,
+        AuthorizedLifecycleHooks? authorizedHooks,
+        Action<TimeSpan>? onManagedFileChangesApplied
     )
     {
-        var isPersisted = false;
+        var preExecution = await ExecuteHooksAsync(
+            projectDirectory,
+            authorizedHooks?.PreMutation ?? [],
+            CreateManifestSnapshot(projectDirectory)
+        );
+        if (!preExecution.IsSuccess)
+        {
+            return _console.Fail(preExecution.Error);
+        }
+
+        var transaction = new UninstallTransactionState();
         var snapshots = new List<ManagedFileSnapshot>();
         try
         {
-            foreach (var removal in managedFilesToRemove)
-            {
-                var appliedRemoval = ApplyRemoval(
-                    removal,
-                    projectDirectory,
-                    state.LockFile,
-                    snapshots
-                );
-                if (!appliedRemoval.IsSuccess)
-                {
-                    return _console.Fail(appliedRemoval.Error ?? "Unable to remove managed file.");
-                }
-            }
-
-            var savedState = await projectStateStore.SaveAllowingUnavailableSourcesAsync(
+            return await ExecuteUninstallTransactionAsync(
                 projectDirectory,
-                state
+                nextState,
+                managedFilesToRemove,
+                authorizedHooks,
+                snapshots,
+                transaction,
+                onManagedFileChangesApplied
             );
-            if (savedState.IsSuccess)
-            {
-                isPersisted = true;
-                return 0;
-            }
-
-            return _console.Fail(savedState.Error);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
@@ -1302,11 +1656,118 @@ internal sealed class PackLifecycleService(
         }
         finally
         {
-            if (!isPersisted)
+            await RestoreFailedUninstallAsync(
+                projectDirectory,
+                previousState,
+                snapshots,
+                transaction
+            );
+        }
+    }
+
+    private async Task<int> ExecuteUninstallTransactionAsync(
+        string projectDirectory,
+        ProjectState nextState,
+        IReadOnlyList<ManagedFileRemoval> managedFilesToRemove,
+        AuthorizedLifecycleHooks? authorizedHooks,
+        ICollection<ManagedFileSnapshot> snapshots,
+        UninstallTransactionState transaction,
+        Action<TimeSpan>? onManagedFileChangesApplied
+    )
+    {
+        var mutationStartedAt = Stopwatch.GetTimestamp();
+        var removal = ApplyRemovals(
+            managedFilesToRemove,
+            projectDirectory,
+            nextState.LockFile,
+            snapshots
+        );
+        if (!removal.IsSuccess)
+        {
+            return _console.Fail(removal.Error ?? "Unable to remove managed files.");
+        }
+
+        onManagedFileChangesApplied?.Invoke(Stopwatch.GetElapsedTime(mutationStartedAt));
+        var checkpoint = await projectStateStore.SaveAllowingUnavailableSourcesAsync(
+            projectDirectory,
+            nextState
+        );
+        if (!checkpoint.IsSuccess)
+        {
+            return _console.Fail(checkpoint.Error);
+        }
+
+        transaction.IsCheckpointPersisted = true;
+        var postExecution = await ExecuteHooksAsync(
+            projectDirectory,
+            authorizedHooks?.PostMutation ?? [],
+            CreateManifestSnapshot(projectDirectory)
+        );
+        if (!postExecution.IsSuccess)
+        {
+            return _console.Fail(postExecution.Error);
+        }
+
+        var savedState = await projectStateStore.SaveAllowingUnavailableSourcesAsync(
+            projectDirectory,
+            nextState
+        );
+        if (!savedState.IsSuccess)
+        {
+            return _console.Fail(savedState.Error);
+        }
+
+        transaction.IsPersisted = true;
+        return 0;
+    }
+
+    private ManifestOperationResult<bool> ApplyRemovals(
+        IReadOnlyList<ManagedFileRemoval> removals,
+        string projectDirectory,
+        ProjectLockFile lockFile,
+        ICollection<ManagedFileSnapshot> snapshots
+    )
+    {
+        foreach (var removal in removals)
+        {
+            var appliedRemoval = ApplyRemoval(removal, projectDirectory, lockFile, snapshots);
+            if (!appliedRemoval.IsSuccess)
             {
-                RestoreManagedFiles(snapshots);
+                return appliedRemoval;
             }
         }
+
+        return ManifestOperationResult<bool>.Success(true);
+    }
+
+    private async Task RestoreFailedUninstallAsync(
+        string projectDirectory,
+        ProjectState previousState,
+        IReadOnlyList<ManagedFileSnapshot> snapshots,
+        UninstallTransactionState transaction
+    )
+    {
+        if (transaction.IsPersisted)
+        {
+            return;
+        }
+
+        if (transaction.IsCheckpointPersisted)
+        {
+            var restoredState = await projectStateStore.SaveAllowingUnavailableSourcesAsync(
+                projectDirectory,
+                previousState
+            );
+            if (!restoredState.IsSuccess)
+            {
+                _console.Error(
+                    restoredState.Error
+                        ?? "Unable to restore project state after uninstall hook failure."
+                );
+            }
+        }
+
+        RestoreManagedFiles(snapshots);
     }
 
     private ManifestOperationResult<bool> ApplyRemoval(
@@ -1858,6 +2319,20 @@ internal sealed class PackLifecycleService(
     private sealed record ManagedFileSnapshot(string Path, byte[] Contents);
 
     private sealed record ManifestSnapshot(string Path, byte[] Contents);
+
+    private sealed record PreparedUninstall(
+        ProjectConfiguration.RequestedPack RequestedRoot,
+        ProjectState NextState,
+        IReadOnlyList<ProjectLockFile.ResolvedPack> RemovedPacks,
+        IReadOnlyList<ManagedFileRemoval> ManagedFilesToRemove
+    );
+
+    private sealed class UninstallTransactionState
+    {
+        public bool IsCheckpointPersisted { get; set; }
+
+        public bool IsPersisted { get; set; }
+    }
 
     private sealed record ManagedFileRemoval(
         ProjectLockFile.ManagedFile ManagedFile,

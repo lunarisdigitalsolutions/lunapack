@@ -67,8 +67,9 @@ public sealed class LifecycleHookExecutorTests
             new LifecycleHookInvocation(
                 pack,
                 LifecycleHook.PreInstall,
-                new PackManifest.LifecycleScript
+                new PackManifest.PackHook
                 {
+                    Type = "script",
                     Command = executable,
                     Arguments = [.. arguments],
                 },

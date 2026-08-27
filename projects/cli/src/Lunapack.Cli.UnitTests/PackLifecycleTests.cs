@@ -29,7 +29,7 @@ public sealed class PackLifecycleTests
         using var workspace = new TestWorkspace();
         var sourcePath = CreatePackSource(
             workspace.Path,
-            $"id: dotnet-gitignore\nversion: 1.0.0\nscripts:\n  preInstall:\n    command: {ShellExecutable}\n    arguments:\n      - {ShellArgument}\n      - 'echo pre > lifecycle.txt'\n  postInstall:\n    command: {ShellExecutable}\n    arguments:\n      - {ShellArgument}\n      - 'echo post >> lifecycle.txt'\nmanagedFiles:\n  - source: templates/dotnet.gitignore\n    target: .gitignore\n"
+            $"id: dotnet-gitignore\nversion: 1.0.0\nhooks:\n  preInstall:\n    - type: script\n      command: {ShellExecutable}\n      arguments:\n        - {ShellArgument}\n        - 'echo pre > lifecycle.txt'\n  postInstall:\n    - type: script\n      command: {ShellExecutable}\n      arguments:\n        - {ShellArgument}\n        - 'echo post >> lifecycle.txt'\nmanagedFiles:\n  - source: templates/dotnet.gitignore\n    target: .gitignore\n"
         );
         await ConfigureSourceAsync(workspace, sourcePath);
 
@@ -54,7 +54,7 @@ public sealed class PackLifecycleTests
         using var workspace = new TestWorkspace();
         var sourcePath = CreatePackSource(
             workspace.Path,
-            $"id: dotnet-gitignore\nversion: 1.0.0\nscripts:\n  preInstall:\n    command: {ShellExecutable}\n    arguments:\n      - {ShellArgument}\n      - 'echo hook > lifecycle.txt'\nmanagedFiles:\n  - source: templates/dotnet.gitignore\n    target: .gitignore\n"
+            $"id: dotnet-gitignore\nversion: 1.0.0\nhooks:\n  preInstall:\n    - type: script\n      command: {ShellExecutable}\n      arguments:\n        - {ShellArgument}\n        - 'echo hook > lifecycle.txt'\nmanagedFiles:\n  - source: templates/dotnet.gitignore\n    target: .gitignore\n"
         );
         await ConfigureSourceAsync(workspace, sourcePath);
 
@@ -69,12 +69,97 @@ public sealed class PackLifecycleTests
     }
 
     [Test]
+    public async Task Install_WhenInstructionsSkipped_DoesNotValidateThemAndStillRunsScripts()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreatePackSource(
+            workspace.Path,
+            $"id: dotnet-gitignore\nversion: 1.0.0\nhooks:\n  preInstall:\n    - type: instruction\n      file: instructions/missing.md\n    - type: script\n      command: {ShellExecutable}\n      arguments:\n        - {ShellArgument}\n        - 'echo ran > lifecycle.txt'\nmanagedFiles:\n  - source: templates/dotnet.gitignore\n    target: .gitignore\n"
+        );
+        await ConfigureSourceAsync(workspace, sourcePath);
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["install", "dotnet-gitignore", "--scripts", "run", "--skip-instructions"],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, "lifecycle.txt"))).IsTrue();
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, ".gitignore"))).IsTrue();
+    }
+
+    [Test]
+    public async Task Install_WhenPreHooksMixed_DispatchesThemInDeclarationOrder()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        ansiConsole.Profile.Capabilities.Interactive = false;
+        ansiConsole.Profile.Width = 500;
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var sourcePath = CreatePackSource(
+            workspace.Path,
+            $"id: dotnet-gitignore\nversion: 1.0.0\nhooks:\n  preInstall:\n    - type: instruction\n      file: instructions/first.md\n    - type: script\n      command: {ShellExecutable}\n      arguments:\n        - {ShellArgument}\n        - 'echo script-between'\n    - type: instruction\n      file: instructions/last.md\nmanagedFiles:\n  - source: templates/dotnet.gitignore\n    target: .gitignore\n"
+        );
+        var instructionsDirectory = Path.Combine(
+            workspace.Path,
+            sourcePath,
+            "dotnet-gitignore",
+            "instructions"
+        );
+        Directory.CreateDirectory(instructionsDirectory);
+        File.WriteAllText(Path.Combine(instructionsDirectory, "first.md"), "## First\nfirst-body");
+        File.WriteAllText(Path.Combine(instructionsDirectory, "last.md"), "## Last\nlast-body");
+        await ConfigureSourceAsync(workspace, sourcePath);
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["install", "dotnet-gitignore", "--scripts", "run"],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        var first = ansiConsole.Output.IndexOf("first-body", StringComparison.Ordinal);
+        var script = ansiConsole.Output.IndexOf("script-between", StringComparison.Ordinal);
+        var last = ansiConsole.Output.IndexOf("last-body", StringComparison.Ordinal);
+        await Assert.That(first >= 0 && first < script && script < last).IsTrue();
+    }
+
+    [Test]
+    public async Task Install_WhenPostInstructionCancelled_RollsBackManagedFilesAndState()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        ansiConsole.Profile.Capabilities.Interactive = true;
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var sourcePath = CreatePackSource(
+            workspace.Path,
+            "id: dotnet-gitignore\nversion: 1.0.0\nhooks:\n  postInstall:\n    - type: instruction\n      file: instructions/setup.md\nmanagedFiles:\n  - source: templates/dotnet.gitignore\n    target: .gitignore\n"
+        );
+        var instructionsDirectory = Path.Combine(
+            workspace.Path,
+            sourcePath,
+            "dotnet-gitignore",
+            "instructions"
+        );
+        Directory.CreateDirectory(instructionsDirectory);
+        File.WriteAllText(Path.Combine(instructionsDirectory, "setup.md"), "## Setup\nContinue");
+        await ConfigureSourceAsync(workspace, sourcePath);
+        var initialState = await ReadStateAsync(workspace.Path);
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["install", "dotnet-gitignore"],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, ".gitignore"))).IsFalse();
+        await Assert.That(await ReadStateAsync(workspace.Path)).IsEqualTo(initialState);
+    }
+
+    [Test]
     public async Task Install_WhenPreHookFails_DoesNotApplyManagedFilesOrPersistState()
     {
         using var workspace = new TestWorkspace();
         var sourcePath = CreatePackSource(
             workspace.Path,
-            $"id: dotnet-gitignore\nversion: 1.0.0\nscripts:\n  preInstall:\n    command: {ShellExecutable}\n    arguments:\n      - {ShellArgument}\n      - {FailureCommand}\nmanagedFiles:\n  - source: templates/dotnet.gitignore\n    target: .gitignore\n"
+            $"id: dotnet-gitignore\nversion: 1.0.0\nhooks:\n  preInstall:\n    - type: script\n      command: {ShellExecutable}\n      arguments:\n        - {ShellArgument}\n        - {FailureCommand}\nmanagedFiles:\n  - source: templates/dotnet.gitignore\n    target: .gitignore\n"
         );
         await ConfigureSourceAsync(workspace, sourcePath);
         var initialState = await ReadStateAsync(workspace.Path);
@@ -95,7 +180,7 @@ public sealed class PackLifecycleTests
         using var workspace = new TestWorkspace();
         var sourcePath = CreatePackSource(
             workspace.Path,
-            $"id: dotnet-gitignore\nversion: 1.0.0\nscripts:\n  postInstall:\n    command: {ShellExecutable}\n    arguments:\n      - {ShellArgument}\n      - {FailureCommand}\nmanagedFiles:\n  - source: templates/dotnet.gitignore\n    target: .gitignore\n"
+            $"id: dotnet-gitignore\nversion: 1.0.0\nhooks:\n  postInstall:\n    - type: script\n      command: {ShellExecutable}\n      arguments:\n        - {ShellArgument}\n        - {FailureCommand}\nmanagedFiles:\n  - source: templates/dotnet.gitignore\n    target: .gitignore\n"
         );
         await ConfigureSourceAsync(workspace, sourcePath);
         var initialState = await ReadStateAsync(workspace.Path);
@@ -116,7 +201,7 @@ public sealed class PackLifecycleTests
         using var workspace = new TestWorkspace();
         var sourcePath = CreatePackSource(
             workspace.Path,
-            $"id: dotnet-gitignore\nversion: 1.0.0\nscripts:\n  postInstall:\n    command: {ShellExecutable}\n    arguments:\n      - {ShellArgument}\n      - {DeleteManifestCommand}\nmanagedFiles:\n  - source: templates/dotnet.gitignore\n    target: .gitignore\n"
+            $"id: dotnet-gitignore\nversion: 1.0.0\nhooks:\n  postInstall:\n    - type: script\n      command: {ShellExecutable}\n      arguments:\n        - {ShellArgument}\n        - {DeleteManifestCommand}\nmanagedFiles:\n  - source: templates/dotnet.gitignore\n    target: .gitignore\n"
         );
         await ConfigureSourceAsync(workspace, sourcePath);
         var manifestPath = GetManifestPath(workspace.Path);

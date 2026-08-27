@@ -23,6 +23,7 @@ internal sealed class LifecycleHookExecutor(IFileSystem fileSystem, CliConsole c
 
         try
         {
+            var startedAt = Stopwatch.GetTimestamp();
             using var process = new Process
             {
                 StartInfo = CreateStartInfo(projectDirectory, invocation, console.IsInteractive),
@@ -54,11 +55,18 @@ internal sealed class LifecycleHookExecutor(IFileSystem fileSystem, CliConsole c
 
             WriteOutput(await standardOutput, isError: false);
             WriteOutput(await standardError, isError: true);
-            return process.ExitCode == 0
-                ? ManifestOperationResult<bool>.Success(true)
-                : ManifestOperationResult<bool>.Failure(
+            if (process.ExitCode != 0)
+            {
+                return ManifestOperationResult<bool>.Failure(
                     $"Lifecycle hook '{LifecycleHookPlanner.ToManifestValue(invocation.Invocation.Hook)}' for pack '{invocation.Invocation.Pack.Manifest.Id}' exited with code {process.ExitCode}."
                 );
+            }
+
+            console.Success(
+                $"✓ Lifecycle command completed in {CliDuration.Format(Stopwatch.GetElapsedTime(startedAt))}"
+            );
+            console.Info(string.Empty);
+            return ManifestOperationResult<bool>.Success(true);
         }
         catch (Win32Exception exception)
         {

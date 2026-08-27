@@ -1,6 +1,6 @@
 namespace Lunapack.Cli;
 
 internal sealed record AuthorizedLifecycleHooks(
-    IReadOnlyList<ResolvedLifecycleHookInvocation> PreMutation,
-    IReadOnlyList<ResolvedLifecycleHookInvocation> PostMutation
+    IReadOnlyList<AuthorizedLifecycleHook> PreMutation,
+    IReadOnlyList<AuthorizedLifecycleHook> PostMutation
 );

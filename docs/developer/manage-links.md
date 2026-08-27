@@ -1,11 +1,13 @@
 # Manage Luna Links
 
 Use Luna Links to copy and maintain selected files from a configured source
-that does not publish LunaPack manifests. Luna `1.1.0` or later is required.
+that does not publish LunaPack manifests.
 
-## Install files from Awesome Copilot
+## Install selected repository files
 
-Register the public repository as a GitHub source:
+The public `github/awesome-copilot` repository is one example of a source that
+can provide individual files without publishing a LunaPack manifest. Register
+it as a GitHub source:
 
 ```powershell
 luna sources add github awesome-copilot github/awesome-copilot

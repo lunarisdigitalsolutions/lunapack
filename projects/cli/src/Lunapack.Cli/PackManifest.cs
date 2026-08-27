@@ -8,6 +8,8 @@ internal sealed record PackManifest
 
     public string? Homepage { get; set; }
 
+    public PackHooks? Hooks { get; set; }
+
     public required string Id { get; set; }
 
     public string? License { get; set; }
@@ -19,8 +21,6 @@ internal sealed record PackManifest
     public List<PackReference> Packs { get; set; } = [];
 
     public Dictionary<string, PackParameter> Parameters { get; set; } = [];
-
-    public PackScripts? Scripts { get; set; }
 
     public Dictionary<string, PackSource> Sources { get; set; } = [];
 
@@ -76,6 +76,8 @@ internal sealed record PackManifest
 
     internal sealed record PackParameter
     {
+        public object? Default { get; set; }
+
         public string? Description { get; set; }
 
         public string? DisplayName { get; set; }
@@ -87,18 +89,22 @@ internal sealed record PackManifest
         public List<string>? Values { get; set; }
     }
 
-    internal sealed record PackScripts
+    internal sealed record PackHooks
     {
-        public LifecycleScript? PostInstall { get; set; }
+        public List<PackHook>? PostInstall { get; set; }
 
-        public LifecycleScript? PostUpdate { get; set; }
+        public List<PackHook>? PostUninstall { get; set; }
 
-        public LifecycleScript? PreInstall { get; set; }
+        public List<PackHook>? PostUpdate { get; set; }
 
-        public LifecycleScript? PreUpdate { get; set; }
+        public List<PackHook>? PreInstall { get; set; }
+
+        public List<PackHook>? PreUninstall { get; set; }
+
+        public List<PackHook>? PreUpdate { get; set; }
     }
 
-    internal sealed record LifecycleScript
+    internal sealed record PackHook
     {
         public List<string> Arguments { get; set; } = [];
 
@@ -109,6 +115,10 @@ internal sealed record PackManifest
         public string? File { get; set; }
 
         public string? Runner { get; set; }
+
+        public bool? Templating { get; set; }
+
+        public required string Type { get; set; }
     }
 
     internal sealed record PackReference

@@ -9,6 +9,8 @@ internal maintenance work, such as CI, build, or release-process changes.
 
 - Luna `1.1.0` adds project-owned links that select exact files, directories,
   and globs from configured local or Git sources without requiring `pack.yml`.
+- `luna search <query>` now includes matching configured links with their
+  source, target, and installation status.
 - `luna links add`, `list`, `show`, and `rm` manage link definitions. Install,
   update, outdated, audit, uninstall, and forced removal use lock-backed
   ownership, content digests, conflict checks, and transaction rollback.
@@ -21,8 +23,11 @@ internal maintenance work, such as CI, build, or release-process changes.
 ### Pack Authoring
 
 - New `luna pack` commands initialize, inspect, validate, and incrementally
-  maintain managed content, composite references, lifecycle scripts, parameters,
-  tags, and metadata in local `pack.yml`.
+  maintain managed content, composite references, ordered lifecycle hooks,
+  parameters, tags, and metadata in local `pack.yml`.
+- `luna pack add hook`, `luna pack hooks`, and positioned `luna pack rm hook`
+  replace the former script-specific authoring commands. Hook lists and resolved
+  pack inspection now show ordered script and instruction details.
 - Pack manifests require ID, semantic version, non-empty author, and non-empty
   license. `luna pack init` accepts `--author` and `--license`, prompting for
   missing values interactively. Discovery and search exclude manifests missing
@@ -59,21 +64,46 @@ internal maintenance work, such as CI, build, or release-process changes.
 - `luna sources add github` now requires `--ref`.
 - `luna sources rename <current-id> <new-id>` renames a configured source and
   atomically updates its bound trust and lock-file references.
-- Running `luna` without a subcommand now summarizes workspace maturity and
-  recommends the next setup, catalog, or lifecycle commands.
+- Running `luna` without a subcommand displays command help, summarizes
+  workspace maturity, and recommends the next setup, catalog, or lifecycle
+  commands.
 - Successful core commands and recoverable missing-prerequisite or pack lookup
   failures now include up to three contextual command recommendations.
 - `luna --suppress-next-steps` suppresses contextual next-step recommendations for any
   command.
+- Successful actions, guidance, and lifecycle instructions now use semantic
+  terminal styling. Catalog and pack lifecycle summaries include duration, and
+  install and update success output includes selected versions.
+- Pack parameters support typed defaults. Required prompts offer the default for
+  Enter acceptance; optional parameters bind it when no higher-precedence value exists.
 
 ### Lifecycle Hooks
 
+- **Breaking:** Pack manifests replace the top-level `scripts` map with ordered
+  event arrays under `hooks`. Every declaration requires `type: script` or
+  `type: instruction`; legacy `scripts` manifests are rejected.
+- Lifecycle events can interleave multiple scripts and Markdown instructions in
+  declaration order. Script trust remains executable-only, while instructions
+  display one H2/H3 step at a time interactively or print completely in
+  noninteractive sessions.
+- `luna install` and every `luna update` form accept `--skip-instructions`
+  independently of `--scripts`. Dry runs validate instructions and report their
+  file, templating state, and step count without guided display.
 - Declining an untrusted lifecycle hook now warns and skips the hook instead of
   failing the pack operation.
 - Windows lifecycle commands such as `npm` now resolve through `PATHEXT`,
   avoiding invalid extensionless command shims.
 - Interactive lifecycle hooks now inherit terminal input and output, allowing
   commands such as `npm init` to display and handle their prompts.
+- Untrusted script consent now shows a concise command summary and defaults to no.
+- Packs can declare ordered `preUninstall` and `postUninstall` hooks. Uninstall
+  retrieves them from exact installed releases and warns but continues when the
+  source is unavailable.
+- Install, update, and uninstall checkpoint managed ownership before post hooks,
+  preventing hard interruption from leaving applied files under stale lock state.
+  Handled post-hook failures still restore prior files and state.
+  Instructions display automatically with a preface, omit H1 titles, and format
+  headings, emphasis, code, and links.
 
 ## Version 1.0.0 - 2026-08-25
 

@@ -20,6 +20,8 @@ internal sealed class PackAuthoringCommandHandler(
         "postInstall",
         "preUpdate",
         "postUpdate",
+        "preUninstall",
+        "postUninstall",
     ];
 
     public Command CreateCommand(string projectDirectory, Option<string?> workspaceOption)
@@ -32,7 +34,7 @@ internal sealed class PackAuthoringCommandHandler(
             CreateRemoveCommand(projectDirectory, workspaceOption),
             CreateDisplayCommand("list", projectDirectory, workspaceOption),
             CreateDisplayCommand("show", projectDirectory, workspaceOption),
-            CreateDisplayCommand("scripts", projectDirectory, workspaceOption),
+            CreateDisplayCommand("hooks", projectDirectory, workspaceOption),
             CreateDisplayCommand("sources", projectDirectory, workspaceOption),
             CreateValidateCommand(projectDirectory, workspaceOption),
         };
@@ -178,8 +180,8 @@ internal sealed class PackAuthoringCommandHandler(
             CreateManagedFileCommand("file", projectDirectory, workspaceOption),
             CreateManagedFileCommand("directory", projectDirectory, workspaceOption),
             CreateManagedFileCommand("glob", projectDirectory, workspaceOption),
+            CreateHookCommand(projectDirectory, workspaceOption),
             CreatePackSourceCommand(projectDirectory, workspaceOption),
-            CreateScriptCommand(projectDirectory, workspaceOption),
             CreateReferenceCommand("reference", projectDirectory, workspaceOption, false),
             CreateTagCommand("tag", projectDirectory, workspaceOption, false),
         };
@@ -463,6 +465,13 @@ internal sealed class PackAuthoringCommandHandler(
         return null;
     }
 
+    private Command CreateHookCommand(string projectDirectory, Option<string?> workspaceOption) =>
+        new Command("hook", "Add a lifecycle hook.")
+        {
+            CreateScriptCommand(projectDirectory, workspaceOption),
+            CreateInstructionCommand(projectDirectory, workspaceOption),
+        };
+
     private Command CreateScriptCommand(string projectDirectory, Option<string?> workspaceOption)
     {
         return new Command("script", "Add a lifecycle script.")
@@ -477,14 +486,17 @@ internal sealed class PackAuthoringCommandHandler(
         Option<string?> workspaceOption
     )
     {
-        var hookArgument = new Argument<string>("hook");
+        var hookArgument = new Argument<string>("event");
         var executableArgument = new Argument<string>("command");
         var argumentsArgument = new Argument<string[]>("arguments")
         {
             Arity = ArgumentArity.ZeroOrMore,
         };
         var descriptionOption = new Option<string?>("--description", "-d");
-        var replaceOption = new Option<bool>("--replace");
+        var replaceOption = new Option<int?>("--replace")
+        {
+            Description = "One-based event position to replace.",
+        };
         var command = new Command("command", "Add a command-form lifecycle script.")
         {
             hookArgument,
@@ -502,11 +514,12 @@ internal sealed class PackAuthoringCommandHandler(
                 return console.Fail("A supported hook and non-empty command are required.");
             }
 
-            return await SetScriptAsync(
+            return await SetHookAsync(
                 ResolveWorkspace(parseResult, projectDirectory, workspaceOption),
                 hook,
-                new PackManifest.LifecycleScript
+                new PackManifest.PackHook
                 {
+                    Type = "script",
                     Command = executable,
                     Arguments = [.. parseResult.GetValue(argumentsArgument) ?? []],
                     Description = parseResult.GetValue(descriptionOption),
@@ -522,7 +535,7 @@ internal sealed class PackAuthoringCommandHandler(
         Option<string?> workspaceOption
     )
     {
-        var hookArgument = new Argument<string>("hook");
+        var hookArgument = new Argument<string>("event");
         var fileArgument = new Argument<string>("file");
         var runnerArgument = new Argument<string>("runner");
         var argumentsArgument = new Argument<string[]>("arguments")
@@ -530,7 +543,10 @@ internal sealed class PackAuthoringCommandHandler(
             Arity = ArgumentArity.ZeroOrMore,
         };
         var descriptionOption = new Option<string?>("--description", "-d");
-        var replaceOption = new Option<bool>("--replace");
+        var replaceOption = new Option<int?>("--replace")
+        {
+            Description = "One-based event position to replace.",
+        };
         var command = new Command("file", "Add a file-form lifecycle script.")
         {
             hookArgument,
@@ -560,11 +576,12 @@ internal sealed class PackAuthoringCommandHandler(
                 return console.Fail(file.Error ?? "A supported hook and runner are required.");
             }
 
-            return await SetScriptAsync(
+            return await SetHookAsync(
                 workspace,
                 hook,
-                new PackManifest.LifecycleScript
+                new PackManifest.PackHook
                 {
+                    Type = "script",
                     File = normalizedFile,
                     Runner = runner,
                     Arguments = [.. parseResult.GetValue(argumentsArgument) ?? []],
@@ -576,28 +593,94 @@ internal sealed class PackAuthoringCommandHandler(
         return command;
     }
 
-    private async Task<int> SetScriptAsync(
+    private Command CreateInstructionCommand(
+        string projectDirectory,
+        Option<string?> workspaceOption
+    )
+    {
+        var hookArgument = new Argument<string>("event");
+        var fileArgument = new Argument<string>("file");
+        var templatingOption = new Option<bool>("--templating")
+        {
+            Description = "Render instruction content with Scriban.",
+        };
+        var replaceOption = new Option<int?>("--replace")
+        {
+            Description = "One-based event position to replace.",
+        };
+        var command = new Command("instruction", "Add an instruction lifecycle hook.")
+        {
+            hookArgument,
+            fileArgument,
+            templatingOption,
+            replaceOption,
+        };
+        command.SetAction(async parseResult =>
+        {
+            var hook = parseResult.GetValue(hookArgument);
+            var workspace = ResolveWorkspace(parseResult, projectDirectory, workspaceOption);
+            var file = ProjectPath.NormalizeProjectRelativePath(
+                fileSystem,
+                workspace,
+                parseResult.GetValue(fileArgument) ?? string.Empty
+            );
+            if (hook is null || !IsHook(hook) || file.Value is not { } normalizedFile)
+            {
+                return console.Fail(
+                    file.Error ?? "A supported hook and instruction file are required."
+                );
+            }
+
+            return await SetHookAsync(
+                workspace,
+                hook,
+                new PackManifest.PackHook
+                {
+                    Type = "instruction",
+                    File = normalizedFile,
+                    Templating = parseResult.GetValue(templatingOption),
+                },
+                parseResult.GetValue(replaceOption)
+            );
+        });
+        return command;
+    }
+
+    private async Task<int> SetHookAsync(
         string workspace,
         string hook,
-        PackManifest.LifecycleScript script,
-        bool replace
+        PackManifest.PackHook declaration,
+        int? replacePosition
     )
     {
         var result = await manifestStore.UpdateAsync(
             workspace,
             manifest =>
             {
-                manifest.Scripts ??= new PackManifest.PackScripts();
-                if (GetScript(manifest.Scripts, hook) is not null && !replace)
+                manifest.Hooks ??= new PackManifest.PackHooks();
+                var declarations = GetHooks(manifest.Hooks, hook);
+                if (declarations is null)
                 {
-                    return $"Lifecycle script '{hook}' already exists; use '--replace'.";
+                    declarations = [];
+                    SetHooks(manifest.Hooks, hook, declarations);
                 }
 
-                SetScript(manifest.Scripts, hook, script);
+                if (replacePosition is not { } position)
+                {
+                    declarations.Add(declaration);
+                    return null;
+                }
+
+                if (position <= 0 || position > declarations.Count)
+                {
+                    return $"Lifecycle hook position '{position}' does not exist in '{hook}'.";
+                }
+
+                declarations[position - 1] = declaration;
                 return null;
             }
         );
-        return ReportMutation(result, $"Set lifecycle script '{hook}'.");
+        return ReportMutation(result, $"Set lifecycle hook '{hook}'.");
     }
 
     private Command CreateSetCommand(string projectDirectory, Option<string?> workspaceOption)
@@ -720,6 +803,7 @@ internal sealed class PackAuthoringCommandHandler(
         var typeArgument = new Argument<string>("type");
         var valueOption = new Option<string[]>("--value", "-v");
         var requiredOption = new Option<bool>("--required");
+        var defaultOption = new Option<string?>("--default");
         var displayNameOption = new Option<string?>("--display-name");
         var descriptionOption = new Option<string?>("--description", "-d");
         var command = new Command("parameter", "Set a pack parameter.")
@@ -728,6 +812,7 @@ internal sealed class PackAuthoringCommandHandler(
             typeArgument,
             valueOption,
             requiredOption,
+            defaultOption,
             displayNameOption,
             descriptionOption,
         };
@@ -741,6 +826,11 @@ internal sealed class PackAuthoringCommandHandler(
             }
 
             var values = parseResult.GetValue(valueOption) ?? [];
+            var defaultValue = ParseParameterDefault(type, parseResult.GetValue(defaultOption));
+            if (!defaultValue.IsSuccess)
+            {
+                return console.Fail(defaultValue.Error);
+            }
             var result = await manifestStore.UpdateAsync(
                 ResolveWorkspace(parseResult, projectDirectory, workspaceOption),
                 manifest =>
@@ -749,6 +839,7 @@ internal sealed class PackAuthoringCommandHandler(
                     {
                         Type = type,
                         Required = parseResult.GetValue(requiredOption),
+                        Default = defaultValue.Value,
                         Values = string.Equals(type, "enum", StringComparison.Ordinal)
                             ? [.. values]
                             : null,
@@ -762,6 +853,19 @@ internal sealed class PackAuthoringCommandHandler(
         });
         return command;
     }
+
+    private static ManifestOperationResult<object?> ParseParameterDefault(
+        string type,
+        string? value
+    ) =>
+        value is null ? ManifestOperationResult<object?>.Success(null)
+        : string.Equals(type, "bool", StringComparison.Ordinal)
+            ? bool.TryParse(value, out var booleanValue)
+                    ? ManifestOperationResult<object?>.Success(booleanValue)
+                : ManifestOperationResult<object?>.Failure(
+                    "Boolean parameter default must be 'true' or 'false'."
+                )
+        : ManifestOperationResult<object?>.Success(value);
 
     private Command CreateTagCommand(
         string name,
@@ -859,11 +963,41 @@ internal sealed class PackAuthoringCommandHandler(
             return ReportMutation(result, $"Removed managed selector '{normalized}'.");
         });
         command.Add(CreateRemovePackSourceCommand(projectDirectory, workspaceOption));
-        command.Add(CreateRemoveNamedCommand("script", projectDirectory, workspaceOption));
+        command.Add(CreateRemoveHookCommand(projectDirectory, workspaceOption));
         command.Add(CreateRemoveNamedCommand("reference", projectDirectory, workspaceOption));
         command.Add(CreateRemoveNamedCommand("parameter", projectDirectory, workspaceOption));
         command.Add(CreateRemoveNamedCommand("metadata", projectDirectory, workspaceOption));
         command.Add(CreateTagCommand("tag", projectDirectory, workspaceOption, true));
+        return command;
+    }
+
+    private Command CreateRemoveHookCommand(
+        string projectDirectory,
+        Option<string?> workspaceOption
+    )
+    {
+        var hookArgument = new Argument<string>("event");
+        var positionArgument = new Argument<int>("position");
+        var command = new Command("hook", "Remove a positioned lifecycle hook.")
+        {
+            hookArgument,
+            positionArgument,
+        };
+        command.SetAction(async parseResult =>
+        {
+            var hook = parseResult.GetValue(hookArgument);
+            var position = parseResult.GetValue(positionArgument);
+            if (hook is null || !IsHook(hook))
+            {
+                return console.Fail("A supported lifecycle hook event is required.");
+            }
+
+            var result = await manifestStore.UpdateAsync(
+                ResolveWorkspace(parseResult, projectDirectory, workspaceOption),
+                manifest => RemoveHook(manifest, hook, position)
+            );
+            return ReportMutation(result, $"Removed lifecycle hook '{hook}' position {position}.");
+        });
         return command;
     }
 
@@ -912,7 +1046,7 @@ internal sealed class PackAuthoringCommandHandler(
             var renderables = name switch
             {
                 "list" => PackAuthoringFormatter.FormatList(manifest),
-                "scripts" => PackAuthoringFormatter.FormatScripts(manifest),
+                "hooks" => PackAuthoringFormatter.FormatHooks(manifest),
                 "show" => PackAuthoringFormatter.FormatSummary(manifest),
                 "sources" => PackAuthoringFormatter.FormatSources(manifest),
                 _ => throw new InvalidOperationException(
@@ -1111,18 +1245,6 @@ internal sealed class PackAuthoringCommandHandler(
     {
         switch (kind)
         {
-            case "script":
-                if (
-                    !IsHook(name)
-                    || manifest.Scripts is null
-                    || GetScript(manifest.Scripts, name) is null
-                )
-                {
-                    return $"Lifecycle script '{name}' was not found.";
-                }
-
-                SetScript(manifest.Scripts, name, null);
-                return null;
             case "reference":
                 return
                     manifest.Packs.RemoveAll(reference =>
@@ -1194,38 +1316,63 @@ internal sealed class PackAuthoringCommandHandler(
 
     private static bool IsHook(string? hook) => _hooks.Contains(hook, StringComparer.Ordinal);
 
-    private static PackManifest.LifecycleScript? GetScript(
-        PackManifest.PackScripts scripts,
+    private static string? RemoveHook(PackManifest manifest, string hook, int position)
+    {
+        var declarations = manifest.Hooks is null ? null : GetHooks(manifest.Hooks, hook);
+        if (position <= 0 || declarations is null || position > declarations.Count)
+        {
+            return $"Lifecycle hook position '{position}' does not exist in '{hook}'.";
+        }
+
+        declarations.RemoveAt(position - 1);
+        if (declarations.Count == 0)
+        {
+            SetHooks(manifest.Hooks!, hook, null);
+        }
+
+        return null;
+    }
+
+    private static List<PackManifest.PackHook>? GetHooks(
+        PackManifest.PackHooks hooks,
         string hook
     ) =>
         hook switch
         {
-            "preInstall" => scripts.PreInstall,
-            "postInstall" => scripts.PostInstall,
-            "preUpdate" => scripts.PreUpdate,
-            "postUpdate" => scripts.PostUpdate,
+            "preInstall" => hooks.PreInstall,
+            "postInstall" => hooks.PostInstall,
+            "postUninstall" => hooks.PostUninstall,
+            "preUpdate" => hooks.PreUpdate,
+            "postUpdate" => hooks.PostUpdate,
+            "preUninstall" => hooks.PreUninstall,
             _ => null,
         };
 
-    private static void SetScript(
-        PackManifest.PackScripts scripts,
+    private static void SetHooks(
+        PackManifest.PackHooks hooks,
         string hook,
-        PackManifest.LifecycleScript? script
+        List<PackManifest.PackHook>? declarations
     )
     {
         switch (hook)
         {
             case "preInstall":
-                scripts.PreInstall = script;
+                hooks.PreInstall = declarations;
                 break;
             case "postInstall":
-                scripts.PostInstall = script;
+                hooks.PostInstall = declarations;
+                break;
+            case "postUninstall":
+                hooks.PostUninstall = declarations;
                 break;
             case "preUpdate":
-                scripts.PreUpdate = script;
+                hooks.PreUpdate = declarations;
                 break;
             case "postUpdate":
-                scripts.PostUpdate = script;
+                hooks.PostUpdate = declarations;
+                break;
+            case "preUninstall":
+                hooks.PreUninstall = declarations;
                 break;
         }
     }

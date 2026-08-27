@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.Diagnostics;
 using Spectre.Console;
 
 namespace Lunapack.Cli;
@@ -49,6 +50,7 @@ internal sealed class DiscoverPacksCommandHandler(
             return prerequisiteFailure.Value;
         }
 
+        var startedAt = Stopwatch.GetTimestamp();
         var catalog = await console.RunWithStatusAsync(
             "Discovering available packs...",
             () => catalogService.LoadAsync(projectDirectory)
@@ -86,7 +88,9 @@ internal sealed class DiscoverPacksCommandHandler(
         }
 
         console.Render(table);
-        console.Info($"Found {packs.Count} packs.");
+        console.Info(
+            $"Found {packs.Count} packs ({CliDuration.Format(Stopwatch.GetElapsedTime(startedAt))})."
+        );
         nextStepRenderer.Render(nextStepAdvisor.Recommend(NextStepContext.PacksDiscovered));
         return 0;
     }

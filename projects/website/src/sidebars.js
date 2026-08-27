@@ -15,6 +15,16 @@ const sidebars = {
         'sources',
         'install-packs',
         'update-packs',
+        'copy-files-from-git'
+      ]
+    },
+    {
+      type: 'category',
+      label: 'Advanced topics',
+      items: [
+        'lifecycle-hooks',
+        'parameters-and-variables',
+        'remap-targets',
         'manage-links'
       ]
     },

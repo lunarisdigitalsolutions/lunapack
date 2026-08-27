@@ -1,10 +1,12 @@
 using System.CommandLine;
+using System.Diagnostics;
 using Spectre.Console;
 
 namespace Lunapack.Cli;
 
 internal sealed class SearchPacksCommandHandler(
     CatalogService catalogService,
+    LinkInspectionService linkInspectionService,
     WorkspaceDirectoryResolver workspaceDirectoryResolver,
     INextStepAdvisor nextStepAdvisor,
     NextStepRenderer nextStepRenderer,
@@ -65,6 +67,7 @@ internal sealed class SearchPacksCommandHandler(
             return prerequisiteFailure.Value;
         }
 
+        var startedAt = Stopwatch.GetTimestamp();
         var catalog = await console.RunWithStatusAsync(
             "Searching available packs...",
             () => catalogService.LoadAsync(projectDirectory)
@@ -76,17 +79,43 @@ internal sealed class SearchPacksCommandHandler(
 
         var normalizedSearchTerm = searchTerm.Trim();
         var packs = PackCatalog.Search(catalogPacks, normalizedSearchTerm);
-        if (packs.Count == 0)
+        var linkSummaries = await linkInspectionService.ListAsync(projectDirectory);
+        if (linkSummaries.Value is not { } links)
         {
-            return console.Fail($"No packs were found for '{normalizedSearchTerm}'.");
+            return console.Fail(linkSummaries.Error);
         }
 
+        var matchingLinks = SearchLinks(links, normalizedSearchTerm);
+        if (packs.Count == 0 && matchingLinks.Count == 0)
+        {
+            return console.Fail($"No packs or links were found for '{normalizedSearchTerm}'.");
+        }
+
+        var releases = PackCatalog.GetRecentReleases(packs, versionCount);
+        if (releases.Count > 0)
+        {
+            console.Render(CreatePackTable(releases));
+        }
+
+        if (matchingLinks.Count > 0)
+        {
+            console.Render(LinkOutputFormatter.CreateListTable(matchingLinks));
+        }
+
+        console.Info(
+            $"Found {releases.Count} matching packs and {matchingLinks.Count} matching links ({CliDuration.Format(Stopwatch.GetElapsedTime(startedAt))})."
+        );
+        nextStepRenderer.Render(nextStepAdvisor.Recommend(NextStepContext.PacksSearched));
+        return 0;
+    }
+
+    private static Table CreatePackTable(IReadOnlyList<CatalogPack> packs)
+    {
         var table = new Table().Title("[bold]Search results[/]").Border(TableBorder.Rounded);
         table.AddColumn("[bold]Pack[/]");
         table.AddColumn("[bold]Version[/]");
         table.AddColumn("[bold]Description[/]");
-        var releases = PackCatalog.GetRecentReleases(packs, versionCount);
-        foreach (var pack in releases)
+        foreach (var pack in packs)
         {
             table.AddRow(
                 Markup.Escape(pack.Manifest.Id),
@@ -95,9 +124,18 @@ internal sealed class SearchPacksCommandHandler(
             );
         }
 
-        console.Render(table);
-        console.Info($"Found {releases.Count} matching packs.");
-        nextStepRenderer.Render(nextStepAdvisor.Recommend(NextStepContext.PacksSearched));
-        return 0;
+        return table;
     }
+
+    private static IReadOnlyList<LinkSummary> SearchLinks(
+        IReadOnlyList<LinkSummary> links,
+        string searchTerm
+    ) =>
+        [
+            .. links.Where(link =>
+                link.Name.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)
+                || link.Source.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)
+                || link.Target.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)
+            ),
+        ];
 }

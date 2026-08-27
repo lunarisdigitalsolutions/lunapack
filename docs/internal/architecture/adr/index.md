@@ -56,4 +56,7 @@ Create a new architecture decision record from the [MADR-based template](templat
 | [ADR-0050](0050-require-pack-attribution-for-catalogs.md)                       | Require author and license attribution for pack manifests and catalogs.                 |
 | [ADR-0051](0051-normalize-links-into-managed-root-lifecycle.md)                 | Normalize project-owned links into the shared managed-root lifecycle.                   |
 | [ADR-0052](0052-inherit-terminal-for-interactive-lifecycle-hooks.md)            | Inherit terminal streams for lifecycle hooks in interactive sessions.                   |
-| [ADR-0053](0053-normalized-source-fingerprint-authority.md)                     | Normalize source identity into one fingerprint authority for alias mapping and removal. |
+| [ADR-0053](0053-unify-ordered-lifecycle-hooks.md)                               | Superseded by ADR-0055.                                                                 |
+| [ADR-0054](0054-use-semantic-cli-presentation-and-explicit-defaults.md)         | Use semantic CLI presentation and explicit safe defaults.                               |
+| [ADR-0055](0055-extend-recoverable-lifecycle-hooks-through-uninstall.md)        | Extend recoverable lifecycle hooks through uninstall.                                   |
+| [ADR-0056](0056-normalized-source-fingerprint-authority.md)                     | Normalize source identity into one fingerprint authority for alias mapping and removal. |

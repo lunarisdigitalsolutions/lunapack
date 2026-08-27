@@ -33,6 +33,53 @@ public sealed class ManifestSchemaTests
     }
 
     [Test]
+    public async Task PackManifest_WhenParameterDefaultMatchesType_IsAccepted()
+    {
+        var manifest = new PackManifest
+        {
+            Id = "example",
+            Version = "1.0.0",
+            Author = "Example Author",
+            License = "MIT",
+            Parameters = new Dictionary<string, PackManifest.PackParameter>(StringComparer.Ordinal)
+            {
+                ["includeCi"] = new() { Type = "bool", Default = true },
+            },
+        };
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert.That(issues).IsEmpty();
+    }
+
+    [Test]
+    public async Task PackManifest_WhenEnumDefaultIsNotAllowed_IsRejected()
+    {
+        var manifest = new PackManifest
+        {
+            Id = "example",
+            Version = "1.0.0",
+            Author = "Example Author",
+            License = "MIT",
+            Parameters = new Dictionary<string, PackManifest.PackParameter>(StringComparer.Ordinal)
+            {
+                ["license"] = new()
+                {
+                    Type = "enum",
+                    Values = ["mit"],
+                    Default = "apache-2.0",
+                },
+            },
+        };
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert
+            .That(issues)
+            .Contains("Enum parameter 'license' default must be one of its values.");
+    }
+
+    [Test]
     [Arguments("example-pack", true)]
     [Arguments("Example-Pack2", true)]
     [Arguments("example_pack", false)]
@@ -193,6 +240,32 @@ public sealed class ManifestSchemaTests
     }
 
     [Test]
+    public async Task PackSchema_WhenHooksDeclared_DefinesOrderedTypedUnionAndRejectsLegacyProperty()
+    {
+        using var schema = JsonDocument.Parse(
+            File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "pack.schema.json"))
+        );
+        var root = schema.RootElement;
+        var properties = root.GetProperty("properties");
+        var definitions = root.GetProperty("definitions");
+        var hookVariants = definitions
+            .GetProperty("lifecycleHook")
+            .GetProperty("oneOf")
+            .EnumerateArray()
+            .Select(variant => variant.GetProperty("$ref").GetString())
+            .ToArray();
+
+        await Assert.That(properties.TryGetProperty("hooks", out _)).IsTrue();
+        await Assert.That(properties.TryGetProperty("scripts", out _)).IsFalse();
+        await Assert
+            .That(definitions.GetProperty("lifecycleHookList").GetProperty("minItems").GetInt32())
+            .IsEqualTo(1);
+        await Assert
+            .That(string.Join(",", hookVariants))
+            .IsEqualTo("#/definitions/scriptHook,#/definitions/instructionHook");
+    }
+
+    [Test]
     public async Task PackManifest_WhenManagedFileStrategyInvalid_IsRejected()
     {
         var manifest = CreateValidPackManifest();
@@ -223,7 +296,7 @@ public sealed class ManifestSchemaTests
     }
 
     [Test]
-    public async Task PackManifest_WhenScriptsOmitted_IsAccepted()
+    public async Task PackManifest_WhenHooksOmitted_IsAccepted()
     {
         var manifest = CreateValidPackManifest();
 
@@ -233,23 +306,53 @@ public sealed class ManifestSchemaTests
     }
 
     [Test]
-    public async Task PackManifest_WhenPackedAndCommandScriptsValid_IsAccepted()
+    public async Task PackManifest_WhenMixedHooksValid_PreservesDeclarationOrder()
     {
         var manifest = CreateValidPackManifest();
-        manifest.Scripts = new PackManifest.PackScripts
+        manifest.Hooks = new PackManifest.PackHooks
         {
-            PreInstall = new PackManifest.LifecycleScript
-            {
-                File = "scripts/setup.ps1",
-                Runner = "pwsh",
-                Arguments = ["-ProjectType", "library"],
-                Description = "Configure project tooling.",
-            },
-            PostInstall = new PackManifest.LifecycleScript
-            {
-                Command = "dotnet",
-                Arguments = ["tool", "restore"],
-            },
+            PreInstall =
+            [
+                new PackManifest.PackHook { Type = "instruction", File = "instructions/setup.md" },
+                new PackManifest.PackHook
+                {
+                    Type = "script",
+                    Command = "dotnet",
+                    Arguments = ["tool", "restore"],
+                },
+                new PackManifest.PackHook
+                {
+                    Type = "script",
+                    File = "scripts/setup.ps1",
+                    Runner = "pwsh",
+                },
+            ],
+        };
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert.That(issues).IsEmpty();
+        await Assert
+            .That(string.Join(",", manifest.Hooks.PreInstall.Select(hook => hook.Type)))
+            .IsEqualTo("instruction,script,script");
+    }
+
+    [Test]
+    public async Task PackManifest_WhenInstructionOnly_IsAccepted()
+    {
+        var manifest = CreateValidPackManifest();
+        manifest.ManagedFiles = [];
+        manifest.Hooks = new PackManifest.PackHooks
+        {
+            PostInstall =
+            [
+                new PackManifest.PackHook
+                {
+                    Type = "instruction",
+                    File = "instructions/setup.md",
+                    Templating = true,
+                },
+            ],
         };
 
         var issues = ManifestModelValidator.Validate(manifest);
@@ -258,17 +361,42 @@ public sealed class ManifestSchemaTests
     }
 
     [Test]
-    public async Task PackManifest_WhenScriptFormsMixed_IsRejected()
+    public async Task PackManifest_WhenHookEventEmpty_IsRejected()
     {
         var manifest = CreateValidPackManifest();
-        manifest.Scripts = new PackManifest.PackScripts
+        manifest.Hooks = new PackManifest.PackHooks { PreInstall = [] };
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert.That(issues).IsNotEmpty();
+    }
+
+    [Test]
+    [Arguments("script", "scripts/setup.ps1", "pwsh", "dotnet")]
+    [Arguments("script", "scripts/setup.ps1", null, null)]
+    [Arguments("instruction", "instructions/setup.txt", null, null)]
+    [Arguments("instruction", "../instructions/setup.md", null, null)]
+    [Arguments("unknown", "instructions/setup.md", null, null)]
+    public async Task PackManifest_WhenHookMalformed_IsRejected(
+        string type,
+        string file,
+        string? runner,
+        string? command
+    )
+    {
+        var manifest = CreateValidPackManifest();
+        manifest.Hooks = new PackManifest.PackHooks
         {
-            PreInstall = new PackManifest.LifecycleScript
-            {
-                File = "scripts/setup.ps1",
-                Runner = "pwsh",
-                Command = "dotnet",
-            },
+            PreInstall =
+            [
+                new PackManifest.PackHook
+                {
+                    Type = type,
+                    File = file,
+                    Runner = runner,
+                    Command = command,
+                },
+            ],
         };
 
         var issues = ManifestModelValidator.Validate(manifest);
@@ -277,53 +405,60 @@ public sealed class ManifestSchemaTests
     }
 
     [Test]
-    public async Task PackManifest_WhenPackedScriptRunnerMissing_IsRejected()
+    public async Task PackManifest_WhenTypeSpecificPropertiesMixed_IsRejected()
     {
         var manifest = CreateValidPackManifest();
-        manifest.Scripts = new PackManifest.PackScripts
+        manifest.Hooks = new PackManifest.PackHooks
         {
-            PreInstall = new PackManifest.LifecycleScript { File = "scripts/setup.ps1" },
+            PreInstall =
+            [
+                new PackManifest.PackHook
+                {
+                    Type = "instruction",
+                    File = "instructions/setup.md",
+                    Command = "dotnet",
+                },
+                new PackManifest.PackHook
+                {
+                    Type = "script",
+                    Command = "dotnet",
+                    Templating = false,
+                },
+            ],
         };
 
         var issues = ManifestModelValidator.Validate(manifest);
 
-        await Assert.That(issues).IsNotEmpty();
+        await Assert.That(issues).Count().IsEqualTo(2);
     }
 
     [Test]
-    public async Task PackManifest_WhenPackedScriptPathUnsafe_IsRejected()
+    public async Task PackManifest_WhenHookFilesUseWindowsSeparators_NormalizesBothTypes()
     {
         var manifest = CreateValidPackManifest();
-        manifest.Scripts = new PackManifest.PackScripts
+        manifest.Hooks = new PackManifest.PackHooks
         {
-            PreInstall = new PackManifest.LifecycleScript
-            {
-                File = @"scripts\..\outside.ps1",
-                Runner = "pwsh",
-            },
-        };
-
-        var issues = ManifestModelValidator.Validate(manifest);
-
-        await Assert.That(issues).IsNotEmpty();
-    }
-
-    [Test]
-    public async Task PackManifest_WhenPackedScriptUsesWindowsSeparators_NormalizesPath()
-    {
-        var manifest = CreateValidPackManifest();
-        manifest.Scripts = new PackManifest.PackScripts
-        {
-            PreInstall = new PackManifest.LifecycleScript
-            {
-                File = @"scripts\setup.ps1",
-                Runner = "pwsh",
-            },
+            PreInstall =
+            [
+                new PackManifest.PackHook
+                {
+                    Type = "script",
+                    File = @"scripts\setup.ps1",
+                    Runner = "pwsh",
+                },
+                new PackManifest.PackHook { Type = "instruction", File = @"instructions\setup.md" },
+            ],
         };
 
         var normalized = PackManifestPathNormalizer.Normalize(manifest);
 
-        await Assert.That(normalized.Scripts!.PreInstall!.File).IsEqualTo("scripts/setup.ps1");
+        await Assert
+            .That(
+                normalized.Hooks!.PreInstall!.Select(hook =>
+                    hook.File ?? throw new InvalidOperationException()
+                )
+            )
+            .IsEquivalentTo(["scripts/setup.ps1", "instructions/setup.md"]);
     }
 
     [Test]

@@ -19,7 +19,7 @@ internal static class PackManifestPathNormalizer
                     }
                 ),
             ],
-            Scripts = NormalizeScripts(manifest.Scripts),
+            Hooks = NormalizeHooks(manifest.Hooks),
             Sources = manifest.Sources.ToDictionary(
                 source => source.Key,
                 source =>
@@ -44,18 +44,31 @@ internal static class PackManifestPathNormalizer
             || !string.IsNullOrEmpty(managedFile.Glob)
         );
 
-    private static PackManifest.PackScripts? NormalizeScripts(PackManifest.PackScripts? scripts) =>
-        scripts is null
+    private static PackManifest.PackHooks? NormalizeHooks(PackManifest.PackHooks? hooks) =>
+        hooks is null
             ? null
-            : scripts with
+            : hooks with
             {
-                PostInstall = NormalizeScript(scripts.PostInstall),
-                PostUpdate = NormalizeScript(scripts.PostUpdate),
-                PreInstall = NormalizeScript(scripts.PreInstall),
-                PreUpdate = NormalizeScript(scripts.PreUpdate),
+                PostInstall = NormalizeHooks(hooks.PostInstall),
+                PostUninstall = NormalizeHooks(hooks.PostUninstall),
+                PostUpdate = NormalizeHooks(hooks.PostUpdate),
+                PreInstall = NormalizeHooks(hooks.PreInstall),
+                PreUninstall = NormalizeHooks(hooks.PreUninstall),
+                PreUpdate = NormalizeHooks(hooks.PreUpdate),
             };
 
-    private static PackManifest.LifecycleScript? NormalizeScript(
-        PackManifest.LifecycleScript? script
-    ) => script is null ? null : script with { File = ProjectPath.NormalizeOptional(script.File) };
+    private static List<PackManifest.PackHook>? NormalizeHooks(
+        IReadOnlyList<PackManifest.PackHook>? hooks
+    ) =>
+        hooks is null
+            ? null
+            :
+            [
+                .. hooks.Select(hook =>
+                    hook with
+                    {
+                        File = ProjectPath.NormalizeOptional(hook.File),
+                    }
+                ),
+            ];
 }

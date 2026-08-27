@@ -59,12 +59,13 @@ public sealed class NextStepAdvisorTests
     }
 
     [Test]
-    public async Task Recommend_WhenExternalSourceContextsProvided_ReturnsBoundedActionableCommands()
+    public async Task Recommend_WhenAuthoringPack_UsesHookAndExternalSourceActions()
     {
         using var workspace = new TestWorkspace();
         var advisor = new NextStepAdvisor(workspace.FileSystem, workspace.StateStore);
 
         var initialized = advisor.Recommend(NextStepContext.PackInitialized);
+        var validated = advisor.Recommend(NextStepContext.PackValidated);
         var added = advisor.Recommend(NextStepContext.PackSourceAdded, "upstream");
         var unknown = advisor.Recommend(NextStepContext.UnknownPackSourceAlias, "upstream");
         var rejected = advisor.Recommend(NextStepContext.SourceApprovalRejected, "example");
@@ -76,12 +77,16 @@ public sealed class NextStepAdvisorTests
             .That(initialized.Select(item => item.Command))
             .Contains("luna pack add source github <name> <owner/repository> --ref <ref>");
         await Assert
+            .That(initialized.Select(item => item.Command))
+            .Contains("luna pack add hook instruction <event> <file>");
+        await Assert
             .That(added.Select(item => item.Command))
             .Contains("luna pack add file <path> --source upstream");
         await Assert
             .That(unknown.Select(item => item.Command))
             .Contains("luna pack add source git upstream <repository-url> --ref <ref>");
         await Assert.That(rejected.Select(item => item.Command)).Contains("luna inspect example");
+        await Assert.That(validated.Select(item => item.Command)).Contains("luna pack hooks");
     }
 
     [Test]

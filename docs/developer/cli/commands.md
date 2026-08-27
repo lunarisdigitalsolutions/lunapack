@@ -4,8 +4,9 @@
 `--workspace`, the workspace is the process working directory. Use
 `--workspace <directory>` or `-w <directory>` with any command to select a
 different directory; relative paths resolve from the process working directory.
-Running `luna` without a subcommand summarizes configured sources and installed
-root packs, then recommends the next commands for the current workspace stage.
+Running `luna` without a subcommand first displays root command help, then
+summarizes configured sources and installed root packs and recommends the next
+commands for the current workspace stage.
 
 ## Global Options
 
@@ -85,7 +86,9 @@ project. Pack trust and pack-trust revocation require `--source` or `-s`. See
 ## Catalog
 
 - `luna discover`: Lists the latest available release of each pack.
-- `luna search <query>`: Lists matching packages and their latest releases.
+- `luna search <query>`: Lists matching packages and configured links. Package
+  results include their latest releases; link results include source, target,
+  and installation status.
 - `luna validate <pack-reference>`: Validates the selected release from configured
   local sources, or the latest local release when version is omitted.
 - `luna inspect <pack-reference>`: Shows the selected pack's identity,
@@ -105,6 +108,15 @@ project. Pack trust and pack-trust revocation require `--source` or `-s`. See
   `--source`, repeatable `--exclude`, `--flatten`, `--target`,
   `--strategy <type>:<method>`, `--template`, and `--condition` configure the
   selector. Globs require a target when none can be inferred.
+- `luna pack add hook script command <event> <command> [<arguments>...]`: Appends
+  a direct executable hook. Use `--description` to explain its purpose.
+- `luna pack add hook script file <event> <file> <runner> [<arguments>...]`:
+  Appends a packed-file executable hook. Both script forms accept
+  `--description` (`-d`).
+- `luna pack add hook instruction <event> <file>`: Appends a Markdown
+  instruction hook. Use `--templating` to render it with Scriban. Every hook
+  add command accepts `--replace <position>` to replace one existing hook at
+  its one-based event position.
 - `luna pack add source git <name> <repository-url> --ref <ref>`: Adds a
   pack-local external Git alias. `--path`, `--description`, and `--manifest`
   are optional.
@@ -112,11 +124,6 @@ project. Pack trust and pack-trust revocation require `--source` or `-s`. See
   same declaration through GitHub shorthand.
 - `luna pack sources`: Lists sanitized source identities, canonical refs, base
   paths, and managed-selector reference counts.
-- `luna pack add script command <hook> <command> [arguments...]`: Adds a direct
-  executable hook.
-- `luna pack add script file <hook> <file> <runner> [arguments...]`: Adds a
-  packed-file hook. Both forms accept `--description` and require `--replace`
-  for an existing hook.
 - `luna pack add reference <id> <version>`: Adds an exact composite reference.
   Repeat `--parameter <name>=<value>` and `--disable-hook <hook>` as needed;
   `--replace` updates an existing ID.
@@ -125,23 +132,24 @@ project. Pack trust and pack-trust revocation require `--source` or `-s`. See
   `description`, `author`, `homepage`, or `license`.
 - `luna pack set parameter <name> <string|bool|enum>`: Creates or replaces a
   parameter. Use `--required`, repeatable enum `--value`, `--display-name`, and
-  `--description`.
+  `--description`; `--default` supplies a typed prompt or optional binding default.
 - `luna pack set reference <id> <version>`: Creates or replaces a composite
   reference.
 - `luna pack rm <selector>`: Removes one exact managed selector.
+- `luna pack rm hook <event> <position>`: Removes one hook at its one-based
+  event position.
 - `luna pack rm source <name>`: Removes an unreferenced source alias.
-- `luna pack rm script|reference|parameter|metadata <name>` and
-  `luna pack rm tag <value>`: Remove named declarations. ID and version cannot
-  be removed.
-- `luna pack list`, `luna pack scripts`, and `luna pack show`: Display local
-  manifest contents.
+- `luna pack rm reference|parameter|metadata <name>` and `luna pack rm tag
+<value>`: Remove named declarations. ID and version cannot be removed.
+- `luna pack list`, `luna pack hooks`, and `luna pack show`: Display local
+  manifest contents. Hook output preserves event and declaration order.
 - `luna pack validate`: Validates local and external selector reachability,
-  warns about unused source aliases, and never executes scripts or changes
+  warns about unused source aliases, and never executes hooks or changes
   trust.
 
 Every mutation validates the complete candidate and atomically replaces
 `pack.yml`. Failure preserves the previous file. File, directory, target, and
-script-file input accepts either separator, rejects rooted or escaping paths,
+hook-file input accepts either separator, rejects rooted or escaping paths,
 and persists with `/`. Every pack manifest requires a non-empty `author` and
 `license`; packs missing either value are excluded from discovery and search.
 Pack and composite-reference IDs use alphanumeric segments separated by single
@@ -173,9 +181,18 @@ commands select the latest available release. `install` accepts `--dry-run`
 `--no-variables` (`-nv`), and repeatable `--skip-variable` (`-sv`).
 `update` accepts `--dry-run` (`-D`); update-all also accepts `--prompt` (`-p`).
 Both install and update accept `--accept-sources` for conflict-free proposed
-source additions.
-Both `install` and `update` accept `--scripts <prompt|run|skip>`; `prompt` is
-the default and requires effective trust or interactive consent for each hook.
+source additions. `install`, `update`, and `uninstall` accept
+`--scripts <prompt|run|skip>`; `prompt` is the default and requires effective
+trust or interactive consent for each script hook. Interactive consent defaults
+to no. Use `--skip-instructions` to suppress instruction loading and display
+without changing script consent behavior. Uninstall also accepts lifecycle
+`--parameter`, `--no-variables`, and `--skip-variable` inputs.
+Interactive sessions show one prepared instruction step at a time and wait for
+Enter. Noninteractive sessions print all instruction content without reading
+input. Dry runs report validated instruction metadata and step counts without
+entering guided display.
+Instruction display omits the document H1 and emphasizes headings, code, links,
+bold text, and italic text when ANSI styling is available.
 When more than one reference is supplied, lifecycle commands process them in
 the order given. Install reuses already locked transient packs at the same
 version and reports a conflict when a new root requires a different version.
@@ -198,6 +215,10 @@ is plain, while
 verbose, debug, warning, and error output has colored level prefixes. The default
 level is `info`; longer catalog and lifecycle operations show a spinner. Discover,
 search, audit, outdated, and variable-list results render as tables.
+Successful actions are green; guidance and instruction headings use cyan.
+Catalog summaries include elapsed duration. Managed-file phases and successful
+scripts report their own execution duration; time spent waiting for user input
+is excluded. Install and update success lines include the selected pack version.
 
 Successful initialization, source changes, catalog exploration, installation,
 updates, and uninstallation append a bounded recommendation block when a useful

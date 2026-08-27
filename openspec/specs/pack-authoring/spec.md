@@ -113,35 +113,34 @@ lifecycle hooks accepted by the published schema.
 - **WHEN** an author removes an existing composite pack ID
 - **THEN** LunaPack removes only that reference
 
-### Requirement: Author lifecycle scripts
+### Requirement: Author ordered typed lifecycle hooks
 
-The CLI SHALL let authors list, add, replace, and remove `preInstall`,
-`postInstall`, `preUpdate`, and `postUpdate` scripts. Command-form scripts SHALL
-persist an executable and ordered `arguments`; file-form scripts SHALL persist a
-safe pack-relative file, runner, and ordered `arguments`. The CLI SHALL not
-execute a script while authoring it.
+The CLI SHALL let authors list, append, replace, and remove typed hooks for `preInstall`, `postInstall`, `preUpdate`, `postUpdate`, `preUninstall`, and `postUninstall`. `luna pack add hook script command <event> <command> [arguments...]` SHALL append a command-form script, `luna pack add hook script file <event> <file> <runner> [arguments...]` SHALL append a file-form script, and `luna pack add hook instruction <event> <file>` SHALL append an instruction with optional `--templating`. Add commands SHALL accept `--replace <position>` to replace the hook at a one-based event position instead of appending. `luna pack hooks` SHALL list hooks in event and declaration order with one-based positions. `luna pack rm hook <event> <position>` SHALL remove exactly one positioned hook. The CLI SHALL preserve safe pack-relative paths and SHALL not execute or display hooks while authoring them.
 
-#### Scenario: Add a command-form script
+#### Scenario: Append a command-form script hook
 
-- **WHEN** an author runs `luna pack add script command postInstall npm install`
-- **THEN** LunaPack stores `npm` as `command` and `install` as the first
-  `arguments` value
+- **WHEN** an author runs `luna pack add hook script command postInstall npm install`
+- **THEN** LunaPack appends a `script` hook that stores `npm` as `command` and `install` as its first argument
 
-#### Scenario: Add a file-form script
+#### Scenario: Append a templated instruction hook
 
-- **WHEN** an author adds a `preInstall` file script with a runner and arguments
-- **THEN** LunaPack stores the schema-valid file execution form
+- **WHEN** an author runs `luna pack add hook instruction preInstall instructions/setup.md --templating`
+- **THEN** LunaPack appends an `instruction` hook with the normalized file and enabled templating
 
-#### Scenario: Replace a hook
+#### Scenario: Replace a positioned hook
 
-- **WHEN** an author adds a script for a hook already present
-- **THEN** LunaPack requires explicit replacement intent and retains at most one
-  declaration for that hook
+- **WHEN** an author adds a hook with `--replace 2` for an event containing at least two hooks
+- **THEN** LunaPack replaces only the second hook and preserves the order of every other declaration
 
-#### Scenario: Remove a hook
+#### Scenario: Remove a positioned hook
 
-- **WHEN** an author runs `luna pack rm script postInstall`
-- **THEN** LunaPack removes only the `postInstall` declaration
+- **WHEN** an author runs `luna pack rm hook postInstall 1`
+- **THEN** LunaPack removes only the first `postInstall` hook
+
+#### Scenario: List ordered hooks
+
+- **WHEN** an author runs `luna pack hooks`
+- **THEN** LunaPack lists each typed hook in lifecycle-event and declaration order with its one-based event position
 
 ### Requirement: Maintain pack metadata, tags, and parameters
 

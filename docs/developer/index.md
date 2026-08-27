@@ -19,9 +19,6 @@ copying an entire repository and losing ownership history.
 3. [Discover and install a pack](install-packs.md).
 4. [Update packs](update-packs.md) when a newer release is available.
 
-To consume selected files without a published pack, follow
-[Manage Luna Links](manage-links.md).
-
 ```text
 pack.yml -> luna -> project files
 ```
@@ -31,6 +28,10 @@ records its requested packs and resolved state so the next change is clear.
 
 ## Choose a guide
 
+- Advanced topics cover [lifecycle hooks](lifecycle-hooks.md),
+  [parameters and variables](parameters-and-variables.md),
+  [target remapping](remap-targets.md), and
+  [Luna Links](manage-links.md).
 - [CLI reference](cli/index.md) for the supported command surface and project
   documents.
 - [Pack guide](packs/index.md) to create, release, and understand packs.

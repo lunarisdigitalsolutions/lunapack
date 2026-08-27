@@ -42,6 +42,10 @@ internal sealed class UpdatePackCommandHandler(
         {
             Description = "Lifecycle script mode: prompt, run, or skip.",
         };
+        var skipInstructionsOption = new Option<bool>("--skip-instructions")
+        {
+            Description = "Skip lifecycle instructions.",
+        };
         var command = new Command("update", "Update installed packs.")
         {
             packReferenceArgument,
@@ -49,6 +53,7 @@ internal sealed class UpdatePackCommandHandler(
             dryRunOption,
             acceptSourcesOption,
             scriptsOption,
+            skipInstructionsOption,
         };
         command.SetAction(async parseResult =>
         {
@@ -94,6 +99,7 @@ internal sealed class UpdatePackCommandHandler(
                         workspaceDirectory,
                         dryRun,
                         parsedScriptMode,
+                        parseResult.GetValue(skipInstructionsOption),
                         acceptSources
                     ),
                     dryRun
@@ -108,6 +114,7 @@ internal sealed class UpdatePackCommandHandler(
                         null,
                         dryRun,
                         parsedScriptMode,
+                        parseResult.GetValue(skipInstructionsOption),
                         "Updating packs...",
                         acceptSources
                     ),
@@ -138,6 +145,7 @@ internal sealed class UpdatePackCommandHandler(
                         reference,
                         dryRun,
                         parsedScriptMode,
+                        parseResult.GetValue(skipInstructionsOption),
                         $"Updating {reference.Id}...",
                         acceptSources
                     ),
@@ -160,6 +168,7 @@ internal sealed class UpdatePackCommandHandler(
         PackReference? reference,
         bool dryRun,
         ScriptExecutionMode scriptMode,
+        bool skipInstructions,
         string status,
         bool acceptSources
     ) =>
@@ -169,6 +178,7 @@ internal sealed class UpdatePackCommandHandler(
                 reference,
                 dryRun,
                 scriptMode,
+                skipInstructions,
                 acceptSources
             )
             : console.RunWithStatusAsync(
@@ -179,6 +189,7 @@ internal sealed class UpdatePackCommandHandler(
                         reference,
                         dryRun,
                         scriptMode,
+                        skipInstructions,
                         acceptSources
                     )
             );
@@ -187,6 +198,7 @@ internal sealed class UpdatePackCommandHandler(
         string projectDirectory,
         bool dryRun,
         ScriptExecutionMode scriptMode,
+        bool skipInstructions,
         bool acceptSources
     )
     {
@@ -207,6 +219,7 @@ internal sealed class UpdatePackCommandHandler(
             confirmedIds,
             dryRun,
             scriptMode,
+            skipInstructions,
             acceptSources
         );
     }
@@ -259,11 +272,11 @@ internal sealed class UpdatePackCommandHandler(
         }
         else
         {
+            console.Info(string.Empty);
             WriteOutcomes(console, result.Outcomes);
             var updatedCount = result.Outcomes.Count(outcome => !outcome.IsCurrent);
             if (updatedCount > 0)
             {
-                console.Info($"✓ Updated {updatedCount} packs");
                 nextStepRenderer.Render(
                     nextStepAdvisor.Recommend(NextStepContext.PacksUpdated),
                     "Suggested commands:"
@@ -289,8 +302,15 @@ internal sealed class UpdatePackCommandHandler(
         {
             var message = outcome.IsCurrent
                 ? $"{outcome.Id} {outcome.CurrentVersion} is current."
-                : $"{outcome.Id} {outcome.CurrentVersion} -> {outcome.SelectedVersion}";
-            console.Info(message);
+                : $"✓ Updated '{outcome.Id}' (version '{outcome.SelectedVersion}')";
+            if (outcome.IsCurrent)
+            {
+                console.Info(message);
+            }
+            else
+            {
+                console.Success(message);
+            }
         }
     }
 }

@@ -40,7 +40,7 @@ Run the Linux x64 image from GitHub Container Registry with the project mounted
 at `/workspace`:
 
 ```powershell
-docker run --rm --volume "${PWD}:/workspace" ghcr.io/lunarisdigitalsolutions/lunapack:1.0.0 --help
+docker run --rm --volume "${PWD}:/workspace" ghcr.io/lunarisdigitalsolutions/lunapack:latest --help
 ```
 
 The image runs as a non-root user. On Linux, pass
