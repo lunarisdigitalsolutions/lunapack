@@ -2,6 +2,11 @@ name: 'PR: CLI'
 
 on:
   pull_request:
+    types:
+      - opened
+      - reopened
+      - ready_for_review
+      - synchronize
     branches:
       - main
     paths:
@@ -23,7 +28,8 @@ jobs:
           fetch-depth: 0
 
       - name: Build Luna CLI
+        if:
         uses: ./.github/actions/cli/build
         with:
-          runtime-identifier: linux-x64
+          runtime-identifier: 'win-x64,linux-x64,linux-arm64,osx-x64,osx-arm64'
           publish-artifacts: 'false'

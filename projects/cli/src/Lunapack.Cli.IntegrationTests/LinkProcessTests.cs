@@ -418,6 +418,11 @@ public sealed class LinkProcessTests
     [Test]
     public async Task LocalLink_WhenStateSaveFails_RollsBackManagedFilesAndLockState()
     {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
         using var workspace = new TestWorkspace();
         Directory.CreateDirectory(Path.Combine(workspace.Path, "source"));
         var sourcePath = Path.Combine(workspace.Path, "source", "content.txt");
