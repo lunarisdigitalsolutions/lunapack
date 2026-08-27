@@ -8,6 +8,7 @@ internal static class PackDryRunFormatter
         {
             $"Selected release: {dryRun.SelectedRelease.Id}@{dryRun.SelectedRelease.Version}",
         };
+        lines.AddRange(FormatExternalSources(dryRun.UpdatePlan.ExternalSources));
         lines.AddRange(dryRun.UpdatePlan.Actions.Select(FormatAction));
         lines.AddRange(FormatLifecycle(dryRun.UpdatePlan.Lifecycle));
         return lines;
@@ -29,6 +30,7 @@ internal static class PackDryRunFormatter
             lines.AddRange(outcomes.Select(FormatOutcome));
         }
 
+        lines.AddRange(FormatExternalSources(updatePlan.ExternalSources));
         lines.AddRange(updatePlan.Actions.Select(FormatAction));
         lines.AddRange(FormatLifecycle(updatePlan.Lifecycle));
         if (proposedSourceSwitch is not null)
@@ -38,6 +40,26 @@ internal static class PackDryRunFormatter
             );
         }
         return lines;
+    }
+
+    private static IEnumerable<string> FormatExternalSources(
+        ExternalSourceRequirementPlan? externalSources
+    )
+    {
+        if (externalSources is null)
+        {
+            return [];
+        }
+
+        return externalSources
+            .Mappings.Select(mapping =>
+                $"source mapping: {mapping.PackId} {mapping.Alias} -> {mapping.WorkspaceSourceName}"
+            )
+            .Concat(
+                externalSources.Proposed.Select(group =>
+                    $"source addition: {group.WorkspaceSourceName} git(identity={group.Fingerprint.Identity}, ref={group.Fingerprint.Ref}, path={group.Fingerprint.Path}) approval: required"
+                )
+            );
     }
 
     private static string FormatOutcome(PackUpdateService.UpdateOutcome outcome) =>

@@ -14,14 +14,6 @@ vulnerability response.
 Add automated validation, compatibility policy, managed-content comparison,
 synchronization, migration orchestration, and richer rollback guidance.
 
-## Pack-Defined External Sources
-
-Add pack-declared Git source aliases for managed content, resolved through the
-same normalized source-fingerprint identity as workspace sources. Add
-graph-wide, all-or-nothing consent before install or update adds a new source,
-and pack-authoring commands for declaring, reviewing, and removing a pack's
-sources.
-
 ## Distribution
 
 Add registry providers, hosted catalog metadata, marketplace publishing, and

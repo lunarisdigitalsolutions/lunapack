@@ -10,7 +10,8 @@ internal sealed class PackAuthoringCommandHandler(
     INextStepAdvisor nextStepAdvisor,
     NextStepRenderer nextStepRenderer,
     CliConsole console,
-    GitRefResolver? gitRefResolver = null
+    GitRefResolver? gitRefResolver,
+    PackAuthoringValidationService validationService
 )
 {
     private static readonly string[] _hooks =
@@ -270,40 +271,46 @@ internal sealed class PackAuthoringCommandHandler(
 
     private async Task<int> AddManagedFileAsync(string workspace, ManagedFileRequest request)
     {
-        var selectorKind = request.SelectorKind;
-        if (request.RawPath is null)
+        var prepared = PrepareManagedSelector(workspace, request);
+        if (prepared.Value is not { } values)
         {
-            return console.Fail($"A {selectorKind} path is required.");
+            return console.Fail(prepared.Error);
         }
 
-        if (request.Flatten && string.Equals(selectorKind, "file", StringComparison.Ordinal))
-        {
-            return console.Fail("'--flatten' applies to directory and glob selectors only.");
-        }
-
+        var result = await manifestStore.UpdateAsync(
+            workspace,
+            manifest => AddManagedSelector(manifest, values)
+        );
         if (
-            request.Exclusions.Count > 0
-            && string.Equals(selectorKind, "file", StringComparison.Ordinal)
+            !result.IsSuccess
+            && request.SourceAlias is { } missingAlias
+            && result.Error?.Contains("is not declared", StringComparison.Ordinal) is true
         )
         {
-            return console.Fail("'--exclude' applies to directory and glob selectors only.");
+            var exitCode = console.Fail(result.Error);
+            RenderNextSteps(NextStepContext.UnknownPackSourceAlias, missingAlias);
+            return exitCode;
         }
 
-        var selector = request.SourceAlias is null
-            ? NormalizeSelector(workspace, selectorKind, request.RawPath)
-            : NormalizeExternalSelector(selectorKind, request.RawPath);
+        return ReportMutation(result, $"Added {request.SelectorKind} '{values.Selector}'.");
+    }
+
+    private ManifestOperationResult<ManagedSelectorValues> PrepareManagedSelector(
+        string workspace,
+        ManagedFileRequest request
+    )
+    {
+        var selectorKind = request.SelectorKind;
+        var selector = NormalizeManagedSelector(workspace, request);
         if (selector.Value is not { } normalizedSelector)
         {
-            return console.Fail(selector.Error);
+            return ManifestOperationResult<ManagedSelectorValues>.Failure(
+                selector.Error ?? "Unable to normalize managed selector."
+            );
         }
 
-        var rawTarget = request.RawTarget;
-        var rawStrategy = request.RawStrategy;
-        var template = request.Template;
-        var condition = request.Condition;
-
         var targetValue =
-            rawTarget
+            request.RawTarget
             ?? (
                 string.Equals(selectorKind, "glob", StringComparison.Ordinal)
                     ? DeriveGlobTarget(normalizedSelector)
@@ -311,53 +318,107 @@ internal sealed class PackAuthoringCommandHandler(
             );
         if (targetValue is null)
         {
-            return console.Fail("Glob target cannot be inferred; provide '--target'.");
+            return ManifestOperationResult<ManagedSelectorValues>.Failure(
+                "Glob target cannot be inferred; provide '--target'."
+            );
         }
 
         var target = ProjectPath.NormalizeProjectRelativePath(fileSystem, workspace, targetValue);
-        var strategy = ParseStrategy(rawStrategy);
+        var strategy = ParseStrategy(request.RawStrategy);
         if (target.Value is not { } normalizedTarget || strategy.Value is not { } parsedStrategy)
         {
-            return console.Fail(target.Error ?? strategy.Error);
+            return ManifestOperationResult<ManagedSelectorValues>.Failure(
+                target.Error ?? strategy.Error ?? "Unable to prepare managed selector."
+            );
         }
 
-        var normalizedExclusions = new List<string>();
-        foreach (var exclusion in request.Exclusions)
+        var exclusions = NormalizeExclusions(request.Exclusions);
+        if (exclusions.Value is not { } normalizedExclusions)
         {
-            var normalizedExclusion = ProjectPath.Normalize(exclusion);
+            return ManifestOperationResult<ManagedSelectorValues>.Failure(
+                exclusions.Error ?? "Unable to normalize exclusions."
+            );
+        }
+
+        return ManifestOperationResult<ManagedSelectorValues>.Success(
+            new ManagedSelectorValues(
+                selectorKind,
+                normalizedSelector,
+                normalizedTarget,
+                parsedStrategy,
+                request.Template,
+                request.Condition,
+                request.SourceAlias,
+                normalizedExclusions,
+                request.Flatten
+            )
+        );
+    }
+
+    private ManifestOperationResult<string> NormalizeManagedSelector(
+        string workspace,
+        ManagedFileRequest request
+    )
+    {
+        var selectorKind = request.SelectorKind;
+        if (request.RawPath is null)
+        {
+            return ManifestOperationResult<string>.Failure($"A {selectorKind} path is required.");
+        }
+
+        if (request.Flatten && string.Equals(selectorKind, "file", StringComparison.Ordinal))
+        {
+            return ManifestOperationResult<string>.Failure(
+                "'--flatten' applies to directory and glob selectors only."
+            );
+        }
+
+        if (
+            request.Exclusions.Count > 0
+            && string.Equals(selectorKind, "file", StringComparison.Ordinal)
+        )
+        {
+            return ManifestOperationResult<string>.Failure(
+                "'--exclude' applies to directory and glob selectors only."
+            );
+        }
+
+        var selector = request.SourceAlias is null
+            ? NormalizeSelector(workspace, selectorKind, request.RawPath)
+            : NormalizeExternalSelector(selectorKind, request.RawPath);
+        if (selector.Value is not { } normalizedSelector)
+        {
+            return ManifestOperationResult<string>.Failure(
+                selector.Error ?? "Unable to normalize managed selector."
+            );
+        }
+
+        return ManifestOperationResult<string>.Success(normalizedSelector);
+    }
+
+    private static ManifestOperationResult<IReadOnlyList<string>> NormalizeExclusions(
+        IReadOnlyList<string> exclusions
+    )
+    {
+        var normalizedExclusions = new List<string>(exclusions.Count);
+        foreach (var exclusion in exclusions)
+        {
+            var normalized = ProjectPath.Normalize(exclusion);
             if (
-                normalizedExclusion.Length == 0
-                || normalizedExclusion.StartsWith('/')
-                || normalizedExclusion.Split('/').Contains("..", StringComparer.Ordinal)
+                normalized.Length == 0
+                || normalized.StartsWith('/')
+                || normalized.Split('/').Contains("..", StringComparer.Ordinal)
             )
             {
-                return console.Fail(
+                return ManifestOperationResult<IReadOnlyList<string>>.Failure(
                     $"Exclusion '{exclusion}' must be a non-empty relative pattern."
                 );
             }
 
-            normalizedExclusions.Add(normalizedExclusion);
+            normalizedExclusions.Add(normalized);
         }
 
-        var result = await manifestStore.UpdateAsync(
-            workspace,
-            manifest =>
-                AddManagedSelector(
-                    manifest,
-                    new ManagedSelectorValues(
-                        selectorKind,
-                        normalizedSelector,
-                        normalizedTarget,
-                        parsedStrategy,
-                        template,
-                        condition,
-                        request.SourceAlias,
-                        normalizedExclusions,
-                        request.Flatten
-                    )
-                )
-        );
-        return ReportMutation(result, $"Added {selectorKind} '{normalizedSelector}'.");
+        return ManifestOperationResult<IReadOnlyList<string>>.Success(normalizedExclusions);
     }
 
     private sealed record ManagedSelectorValues(
@@ -879,12 +940,46 @@ internal sealed class PackAuthoringCommandHandler(
         var command = new Command("validate", "Validate the local pack manifest.");
         command.SetAction(async parseResult =>
         {
-            var result = await manifestStore.LoadAsync(
-                ResolveWorkspace(parseResult, projectDirectory, workspaceOption)
-            );
-            if (result.Value is null)
+            var workspace = ResolveWorkspace(parseResult, projectDirectory, workspaceOption);
+            var result = await manifestStore.LoadAsync(workspace);
+            if (result.Value is not { } manifest)
             {
                 return console.Fail(result.Error);
+            }
+
+            var sourceFiles = fileSystem
+                .Directory.EnumerateFiles(workspace, "*", SearchOption.AllDirectories)
+                .Select(path => fileSystem.Path.GetRelativePath(workspace, path))
+                .ToArray();
+            var issues = await PackManifestValidator.ValidateAsync(manifest, sourceFiles);
+            if (issues.Count > 0)
+            {
+                foreach (var issue in issues)
+                {
+                    console.Error(issue);
+                }
+
+                return 1;
+            }
+
+            var externalValidation = await validationService.ValidateExternalSourcesAsync(
+                workspace,
+                manifest
+            );
+            if (!externalValidation.IsSuccess)
+            {
+                return console.Fail(externalValidation.Error);
+            }
+
+            var usedAliases = manifest
+                .ManagedFiles.Select(file =>
+                    PackManagedFileSelector.Create(file).Value?.SourceAlias
+                )
+                .OfType<string>()
+                .ToHashSet(StringComparer.Ordinal);
+            foreach (var alias in manifest.Sources.Keys.Except(usedAliases, StringComparer.Ordinal))
+            {
+                console.Warning($"Source alias '{alias}' is unused.");
             }
 
             console.Info("Manifest valid.");
@@ -1082,7 +1177,12 @@ internal sealed class PackAuthoringCommandHandler(
         return null;
     }
 
-    private int ReportMutation(ManifestOperationResult<PackManifest> result, string successMessage)
+    private int ReportMutation(
+        ManifestOperationResult<PackManifest> result,
+        string successMessage,
+        NextStepContext context = NextStepContext.PackModified,
+        string? value = null
+    )
     {
         if (result.Value is null)
         {
@@ -1090,12 +1190,12 @@ internal sealed class PackAuthoringCommandHandler(
         }
 
         console.Info(successMessage);
-        RenderNextSteps(NextStepContext.PackModified);
+        RenderNextSteps(context, value);
         return 0;
     }
 
-    private void RenderNextSteps(NextStepContext context) =>
-        nextStepRenderer.Render(nextStepAdvisor.Recommend(context));
+    private void RenderNextSteps(NextStepContext context, string? value = null) =>
+        nextStepRenderer.Render(nextStepAdvisor.Recommend(context, value), "Next steps:");
 
     private static bool IsHook(string? hook) => _hooks.Contains(hook, StringComparer.Ordinal);
 
@@ -1167,11 +1267,15 @@ internal sealed class PackAuthoringCommandHandler(
         }
     }
 
-    private ManifestOperationResult<string> NormalizeExternalSelector(string kind, string value)
+    private static ManifestOperationResult<string> NormalizeExternalSelector(
+        string kind,
+        string value
+    )
     {
-        var normalized = ProjectPath.Normalize(value).Trim('/');
+        var normalized = ProjectPath.Normalize(value);
         if (
             normalized.Length == 0
+            || normalized.StartsWith('/')
             || normalized.Split('/').Contains("..", StringComparer.Ordinal)
             || (normalized.Length >= 2 && char.IsAsciiLetter(normalized[0]) && normalized[1] == ':')
         )
@@ -1327,24 +1431,39 @@ internal sealed class PackAuthoringCommandHandler(
         var result = await manifestStore.UpdateAsync(
             manifestDirectory,
             manifest =>
-            {
-                if (manifest.Sources.ContainsKey(alias))
-                {
-                    return $"Pack source alias '{alias}' already exists.";
-                }
-
-                manifest.Sources[alias] = new PackManifest.PackSource
-                {
-                    Type = "git",
-                    Url = repositoryUrl.Trim(),
-                    Ref = resolvedRef,
-                    Path = string.IsNullOrEmpty(packPath) ? null : packPath,
-                    Description = description,
-                };
-                return null;
-            }
+                AddPackSource(manifest, alias, repositoryUrl, resolvedRef, packPath, description)
         );
-        return ReportMutation(result, $"Added pack source '{alias}'.");
+        return ReportMutation(
+            result,
+            $"Added pack source '{alias}'.",
+            NextStepContext.PackSourceAdded,
+            alias
+        );
+    }
+
+    private static string? AddPackSource(
+        PackManifest manifest,
+        string alias,
+        string repositoryUrl,
+        string resolvedRef,
+        string? packPath,
+        string? description
+    )
+    {
+        if (manifest.Sources.ContainsKey(alias))
+        {
+            return $"Pack source alias '{alias}' already exists.";
+        }
+
+        manifest.Sources[alias] = new PackManifest.PackSource
+        {
+            Type = "git",
+            Url = repositoryUrl.Trim(),
+            Ref = resolvedRef,
+            Path = string.IsNullOrEmpty(packPath) ? null : packPath,
+            Description = description,
+        };
+        return null;
     }
 
     private async Task<ManifestOperationResult<string>> CanonicalizePackSourceRefAsync(

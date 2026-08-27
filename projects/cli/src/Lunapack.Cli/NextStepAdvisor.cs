@@ -89,8 +89,38 @@ internal sealed class NextStepAdvisor(IFileSystem fileSystem, IProjectStateStore
             NextStepContext.PackInitialized =>
             [
                 new("Add a managed file", "luna pack add file <path>"),
-                new("Set pack metadata", "luna pack set description <value>"),
+                new(
+                    "Add an external GitHub source",
+                    "luna pack add source github <name> <owner/repository> --ref <ref>"
+                ),
                 new("Validate the manifest", "luna pack validate"),
+            ],
+            NextStepContext.PackSourceAdded =>
+            [
+                new(
+                    "Add source-backed content",
+                    $"luna pack add file <path> --source {value ?? "<name>"}"
+                ),
+                new("Validate the manifest", "luna pack validate"),
+            ],
+            NextStepContext.UnknownPackSourceAlias =>
+            [
+                new(
+                    "Add a GitHub source",
+                    $"luna pack add source github {value ?? "<name>"} <owner/repository> --ref <ref>"
+                ),
+                new(
+                    "Add a Git source",
+                    $"luna pack add source git {value ?? "<name>"} <repository-url> --ref <ref>"
+                ),
+            ],
+            NextStepContext.SourceApprovalRejected =>
+            [
+                new("Inspect the pack", $"luna inspect {value ?? "<pack>"}"),
+                new(
+                    "Configure the source manually",
+                    "luna sources add git <name> <repository-url> --ref <ref>"
+                ),
             ],
             NextStepContext.PackModified =>
             [

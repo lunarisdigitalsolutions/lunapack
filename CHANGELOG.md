@@ -27,6 +27,12 @@ internal maintenance work, such as CI, build, or release-process changes.
 
 ### CLI Workflow
 
+- Packs can declare external Git source aliases and select files, directories,
+  or globs from immutable commits. Install and update reuse equivalent workspace
+  sources, request graph-wide consent for missing sources, support
+  `--accept-sources`, and commit source configuration, managed files, and lock
+  provenance transactionally. Dry runs, outdated checks, audit, update, and
+  uninstall now report or preserve external-source mappings and ownership.
 - `luna sources rm <name>` is the canonical, concise configuration-removal
   command, with `remove` retained as a compatibility alias; it now refuses to
   remove a source still used by an installed pack or its external content,

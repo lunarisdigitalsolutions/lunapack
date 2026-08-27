@@ -30,22 +30,25 @@ internal static class PackManifestValidator
         List<string> issues
     )
     {
-        if (managedFile.Source is { } source)
+        var created = PackManagedFileSelector.Create(managedFile);
+        if (created.Value is not { } selector || selector.IsExternal)
         {
-            ValidateSourceFile(packId, source, sourceFiles, issues);
             return;
         }
 
-        if (managedFile.Directory is { } directory)
+        if (selector.Kind == PackManagedFileSelectorKind.File)
         {
-            ValidateSourceDirectory(packId, directory, sourceFiles, issues);
+            ValidateSourceFile(packId, selector.Value, sourceFiles, issues);
             return;
         }
 
-        if (managedFile.Glob is { } glob)
+        if (selector.Kind == PackManagedFileSelectorKind.Directory)
         {
-            ValidateSourceGlob(packId, glob, sourceFiles, issues);
+            ValidateSourceDirectory(packId, selector.Value, sourceFiles, issues);
+            return;
         }
+
+        ValidateSourceGlob(packId, selector.Value, sourceFiles, issues);
     }
 
     private static void ValidateSourceFile(

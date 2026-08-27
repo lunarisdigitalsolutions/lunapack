@@ -23,6 +23,12 @@ The dry run resolves the pack and preflights the target changes without
 modifying project files or LunaPack state. Remove `--dry-run` when the plan is
 ready to apply.
 
+When the graph selects pack-defined external Git content, the preview shows
+reused source mappings, proposed workspace source additions, whether approval is
+required, and resulting file actions. Interactive installation asks once for
+all missing sources. Use `--accept-sources` for conflict-free automation; an
+identifier conflict still requires explicit source configuration.
+
 ## Lifecycle scripts
 
 Packs can declare `preInstall`, `postInstall`, `preUpdate`, and `postUpdate`

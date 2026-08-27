@@ -45,6 +45,10 @@ internal sealed class InstallPackCommandHandler(
         {
             Description = "Plan the installation without modifying files or state.",
         };
+        var acceptSourcesOption = new Option<bool>("--accept-sources")
+        {
+            Description = "Approve conflict-free external source additions.",
+        };
         var parameterOption = new Option<string[]>("--parameter", "-p")
         {
             Description = "Template parameter in <name>=<value> form.",
@@ -69,6 +73,7 @@ internal sealed class InstallPackCommandHandler(
             remapFileOption,
             adoptExistingOption,
             dryRunOption,
+            acceptSourcesOption,
             parameterOption,
             noVariablesOption,
             skipVariableOption,
@@ -108,6 +113,7 @@ internal sealed class InstallPackCommandHandler(
                     parseResult.GetValue(skipVariableOption) ?? [],
                     parsedScriptMode,
                     parseResult.GetValue(dryRunOption),
+                    parseResult.GetValue(acceptSourcesOption),
                     skipInstalledRoots: packReferences.Length > 1
                 );
                 if (exitCode != 0)
@@ -139,6 +145,7 @@ internal sealed class InstallPackCommandHandler(
         string[] skippedVariables,
         ScriptExecutionMode scriptMode,
         bool dryRun,
+        bool acceptSources,
         bool skipInstalledRoots
     )
     {
@@ -164,6 +171,8 @@ internal sealed class InstallPackCommandHandler(
         {
             return console.Fail(installationRequest.Error);
         }
+
+        request = request with { AcceptSources = acceptSources };
 
         var skippedInstall = await WarnWhenRootAlreadyInstalledAsync(
             workspaceDirectory,

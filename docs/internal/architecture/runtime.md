@@ -19,6 +19,15 @@ GitHub source resolves a supplied short ref through `git ls-remote` to its
 complete form and rejects an ambiguous match before the fingerprint or ref is
 persisted.
 
+Pack manifests may declare Git sources under pack-local aliases. After graph
+resolution, the external-source planner collects only aliases referenced by
+selected managed files, groups equivalent fingerprints, and maps them to an
+existing or proposed authoritative workspace source name. Missing groups use
+one all-or-nothing consent decision. Materialization resolves each group to an
+immutable commit in a private operation directory and shares content for equal
+fingerprint-and-commit pairs. External content never becomes a pack catalog and
+never supplies lifecycle scripts.
+
 Manifest and lock documents are deserialized into typed CLI models before the
 CLI validates required fields, semantic versions, paths, hashes, selector and
 strategy combinations, and source provenance. The JSON schemas remain the
@@ -54,6 +63,22 @@ user-selected minimum level. Info output is plain; verbose, debug, warning, and
 error output has colored level prefixes. Long-running catalog and lifecycle
 commands show status spinners. Source trust is established by consumer
 configuration and preserved through provenance, not by pack manifests.
+
+Approved source additions remain candidate configuration until external Git
+resolution, selector expansion, target collision checks, managed-file actions,
+and lock cross-references all succeed. State-save failure rolls back managed
+targets and discards candidate source configuration. Lock records map each used
+pack alias to its workspace source, fingerprint, canonical ref, and commit;
+external managed files also record source-relative and effective target paths.
+
+## Cache And Operation Lifetime
+
+Catalog Git sources retain validated metadata under the project `.lunapack`
+cache. Pack-defined external content instead uses an access-restricted temporary
+workspace per lifecycle or validation operation. One operation reuses a sparse
+checkout only when fingerprint and resolved commit both match. Disposal and
+every handled failure prepare that workspace for deletion and remove it; no
+pack-declared alias or fetched working tree becomes persistent source authority.
 
 ## Workflow Guidance
 

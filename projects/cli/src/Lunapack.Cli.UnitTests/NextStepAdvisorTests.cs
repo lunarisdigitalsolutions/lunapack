@@ -58,6 +58,49 @@ public sealed class NextStepAdvisorTests
         await Assert.That(recommendations[2].Command).IsEqualTo("luna install <pack>");
     }
 
+    [Test]
+    public async Task Recommend_WhenExternalSourceContextsProvided_ReturnsBoundedActionableCommands()
+    {
+        using var workspace = new TestWorkspace();
+        var advisor = new NextStepAdvisor(workspace.FileSystem, workspace.StateStore);
+
+        var initialized = advisor.Recommend(NextStepContext.PackInitialized);
+        var added = advisor.Recommend(NextStepContext.PackSourceAdded, "upstream");
+        var unknown = advisor.Recommend(NextStepContext.UnknownPackSourceAlias, "upstream");
+        var rejected = advisor.Recommend(NextStepContext.SourceApprovalRejected, "example");
+
+        await Assert
+            .That(new[] { initialized, added, unknown, rejected }.All(items => items.Count <= 3))
+            .IsTrue();
+        await Assert
+            .That(initialized.Select(item => item.Command))
+            .Contains("luna pack add source github <name> <owner/repository> --ref <ref>");
+        await Assert
+            .That(added.Select(item => item.Command))
+            .Contains("luna pack add file <path> --source upstream");
+        await Assert
+            .That(unknown.Select(item => item.Command))
+            .Contains("luna pack add source git upstream <repository-url> --ref <ref>");
+        await Assert.That(rejected.Select(item => item.Command)).Contains("luna inspect example");
+    }
+
+    [Test]
+    public async Task Recommend_WhenUpdateCompletes_DoesNotSuggestSourceCleanup()
+    {
+        using var workspace = new TestWorkspace();
+        var advisor = new NextStepAdvisor(workspace.FileSystem, workspace.StateStore);
+
+        var recommendations = advisor.Recommend(NextStepContext.PacksUpdated);
+
+        await Assert
+            .That(
+                recommendations.Any(item =>
+                    item.Command.Contains("sources rm", StringComparison.Ordinal)
+                )
+            )
+            .IsFalse();
+    }
+
     private static void CreatePack(string workspacePath)
     {
         var packDirectory = Path.Combine(workspacePath, "source", "example");

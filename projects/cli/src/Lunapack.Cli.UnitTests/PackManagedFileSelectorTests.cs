@@ -30,6 +30,29 @@ public sealed class PackManagedFileSelectorTests
     }
 
     [Test]
+    public async Task Selector_WhenLegacyAndCanonicalDirectFiles_NormalizeIdentically()
+    {
+        var legacySelector = PackManagedFileSelector.Create(
+            new PackManifest.PackManagedFile { Source = "files/agent.md", Target = "agent.md" }
+        );
+        var canonicalSelector = PackManagedFileSelector.Create(
+            new PackManifest.PackManagedFile { Path = "files/agent.md", Target = "agent.md" }
+        );
+
+        await Assert.That(legacySelector.Value?.Kind).IsEqualTo(canonicalSelector.Value?.Kind);
+        await Assert.That(legacySelector.Value?.Value).IsEqualTo(canonicalSelector.Value?.Value);
+        await Assert
+            .That(legacySelector.Value?.SourceAlias)
+            .IsEqualTo(canonicalSelector.Value?.SourceAlias);
+        await Assert
+            .That(legacySelector.Value?.Exclusions)
+            .IsEquivalentTo(canonicalSelector.Value?.Exclusions ?? []);
+        await Assert
+            .That(legacySelector.Value?.Flatten)
+            .IsEqualTo(canonicalSelector.Value?.Flatten);
+    }
+
+    [Test]
     public async Task Selector_WhenSourceAliasAndPathDeclared_ResolvesExternalFile()
     {
         var selector = PackManagedFileSelector.Create(

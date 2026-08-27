@@ -69,17 +69,16 @@ persisted, and an ambiguous match is rejected. `lunapack.yml` may contain at
 most one source per fingerprint; every load, validate, and write path rejects
 a duplicate. This fingerprint, not a configured name or literal URL, is the
 authority the CLI already uses for duplicate detection, Git and GitHub
-source-addition canonicalization, and Git cache keys; the same authority is
-designed to map a pack's local source alias onto an existing or newly
-approved workspace source, so a pack never forces a second configured entry
-for a repository a consumer already added.
+source-addition canonicalization, Git cache keys, and pack-alias mapping. A pack
+therefore does not force a second configured entry for a repository a consumer
+already added.
 
-Before install or update mutates a project, LunaPack will collect the
+Before install or update mutates a project, LunaPack collects the
 external-source declarations a resolved graph's managed files select, group
 them by fingerprint, and match each group to a configured source or a
-proposed new identifier. Every missing source will surface together in one
+proposed new identifier. Every missing source surfaces together in one
 sanitized, all-or-nothing approval prompt that defaults to no.
-`--accept-sources` will approve only conflict-free additions, without
+`--accept-sources` approves only conflict-free additions, without
 bypassing path safety, script trust, or transactionality.
 
 `luna sources rm <name>` now inspects `lunapack-lock.yml` and refuses removal
@@ -107,12 +106,11 @@ transaction, without touching pack manifests.
 
 ### Confirmation
 
-Source-identity, Git ref-resolution, and workspace source-command unit tests
-cover HTTPS/SSH/scp equivalence, GitHub case folding, credential rejection,
-duplicate-fingerprint rejection, ambiguous-ref rejection, atomic rename, and
-removal refusal with a lock consumer. Graph-wide planning, combined approval,
-`--accept-sources`, and external-content materialization are tracked by the
-remaining tasks of the
+Source-identity, Git ref-resolution, workspace source-command, and lifecycle
+unit tests cover HTTPS/SSH/scp equivalence, GitHub case folding, credential
+rejection, duplicate-fingerprint rejection, ambiguous-ref rejection, atomic
+rename, removal refusal with a lock consumer, graph-wide approval,
+`--accept-sources`, materialization, provenance, and rollback. See the
 [pack-defined external Git sources change](../../../../openspec/changes/pack-defined-external-git-sources/design.md).
 
 ## Pros and Cons of the Options

@@ -8,6 +8,7 @@ checking again for outdated roots. A dry run shows only planned changes.
 
 ```powershell
 luna outdated
+luna outdated --offline
 luna update dotnet-project --dry-run
 luna update dotnet-project
 ```
@@ -17,6 +18,11 @@ Run `luna update --dry-run` to plan updates for every installed root. Use
 
 LunaPack recomputes the selected-root graph and updates project files and lock
 state together. Modified managed files stay in the project for review.
+Symbolic external refs are refreshed even when the pack version is unchanged.
+Only changed selected paths or hashes produce an update; unrelated upstream
+commits do not. Removed external requirements release lock consumers but leave
+workspace sources configured. `--offline` avoids remote ref checks and reports
+that freshness could not be confirmed from remote state.
 
 Lifecycle hooks follow the same `--scripts prompt|run|skip` modes as install.
 Updates run dependency-first `preUpdate` hooks before managed-file changes and

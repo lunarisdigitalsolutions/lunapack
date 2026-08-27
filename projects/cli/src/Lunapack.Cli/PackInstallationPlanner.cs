@@ -752,7 +752,9 @@ internal sealed class PackInstallationPlanner(
                 external.Alias,
                 external.SourceName,
                 external.Fingerprint,
-                NormalizePath(fileSystem.Path.GetRelativePath(contentRoot.Directory, sourcePath))
+                NormalizePath(fileSystem.Path.GetRelativePath(contentRoot.Directory, sourcePath)),
+                external.Ref,
+                external.ResolvedCommit
             );
 
     private bool RenderedContentMatchesTarget(byte[] renderedContent, string targetPath) =>

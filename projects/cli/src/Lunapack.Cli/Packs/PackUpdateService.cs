@@ -14,28 +14,32 @@ internal sealed class PackUpdateService(
         string projectDirectory,
         PackReference? packReference,
         bool dryRun = false,
-        ScriptExecutionMode? scriptMode = null
+        ScriptExecutionMode? scriptMode = null,
+        bool acceptSources = false
     ) =>
         await this.UpdateAsync(
             projectDirectory,
             packReference,
             selectedUpdateIds: null,
             dryRun,
-            scriptMode ?? ScriptExecutionMode.Prompt
+            scriptMode ?? ScriptExecutionMode.Prompt,
+            acceptSources
         );
 
     public async Task<UpdateResult> UpdateSelectedAsync(
         string projectDirectory,
         IReadOnlySet<string> selectedUpdateIds,
         bool dryRun = false,
-        ScriptExecutionMode? scriptMode = null
+        ScriptExecutionMode? scriptMode = null,
+        bool acceptSources = false
     ) =>
         await this.UpdateAsync(
             projectDirectory,
             packReference: null,
             selectedUpdateIds,
             dryRun,
-            scriptMode ?? ScriptExecutionMode.Prompt
+            scriptMode ?? ScriptExecutionMode.Prompt,
+            acceptSources
         );
 
     private async Task<UpdateResult> UpdateAsync(
@@ -43,7 +47,8 @@ internal sealed class PackUpdateService(
         PackReference? packReference,
         IReadOnlySet<string>? selectedUpdateIds,
         bool dryRun,
-        ScriptExecutionMode scriptMode
+        ScriptExecutionMode scriptMode,
+        bool acceptSources
     )
     {
         var loadedState = await projectStateStore.LoadAsync(projectDirectory);
@@ -70,7 +75,8 @@ internal sealed class PackUpdateService(
                 catalogPacks,
                 reference,
                 dryRun,
-                scriptMode
+                scriptMode,
+                acceptSources
             )
             : await UpdateAllAsync(
                 projectDirectory,
@@ -78,7 +84,8 @@ internal sealed class PackUpdateService(
                 catalogPacks,
                 selectedUpdateIds,
                 dryRun,
-                scriptMode
+                scriptMode,
+                acceptSources
             );
     }
 
@@ -88,7 +95,8 @@ internal sealed class PackUpdateService(
         IReadOnlyList<CatalogPack> catalog,
         PackReference packReference,
         bool dryRun,
-        ScriptExecutionMode scriptMode
+        ScriptExecutionMode scriptMode,
+        bool acceptSources
     )
     {
         var selectedUpdate = SelectNamedUpdate(state, catalog, packReference);
@@ -99,7 +107,57 @@ internal sealed class PackUpdateService(
             );
         }
 
+        var terminalResult = GetTerminalNamedUpdateResult(update, dryRun);
+        if (terminalResult is not null)
+        {
+            return terminalResult;
+        }
+
+        var nextRequestedRoots = state
+            .Configuration.Packs.Select(root =>
+                string.Equals(root.Id, packReference.Id, StringComparison.Ordinal)
+                    ? update.NextRequestedRoot
+                    : root
+            )
+            .ToList();
+        var outcome = new UpdateOutcome(
+            update.RequestedRoot.Id,
+            update.CurrentPack.Version,
+            update.SelectedPack.Manifest.Version,
+            IsCurrent: false
+        );
         if (update.IsCurrent)
+        {
+            var previewResult = await PreviewCurrentExternalUpdateAsync(
+                projectDirectory,
+                nextRequestedRoots,
+                update.NextRequestedRoot,
+                outcome,
+                dryRun,
+                scriptMode,
+                acceptSources
+            );
+            if (previewResult is not null)
+            {
+                return previewResult;
+            }
+        }
+
+        return await ApplyAsync(
+            projectDirectory,
+            nextRequestedRoots,
+            update.NextRequestedRoot,
+            [outcome],
+            dryRun,
+            scriptMode,
+            acceptSources,
+            update.SourceSwitch
+        );
+    }
+
+    private UpdateResult? GetTerminalNamedUpdateResult(NamedPackUpdate update, bool dryRun)
+    {
+        if (update.IsCurrent && update.CurrentPack.ExternalSources.Count == 0)
         {
             return UpdateResult.Success(
                 [
@@ -125,28 +183,42 @@ internal sealed class PackUpdateService(
             );
         }
 
-        var nextRequestedRoots = state
-            .Configuration.Packs.Select(root =>
-                string.Equals(root.Id, packReference.Id, StringComparison.Ordinal)
-                    ? update.NextRequestedRoot
-                    : root
-            )
-            .ToList();
-        var outcome = new UpdateOutcome(
-            update.RequestedRoot.Id,
-            update.CurrentPack.Version,
-            update.SelectedPack.Manifest.Version,
-            IsCurrent: false
-        );
-        return await ApplyAsync(
+        return null;
+    }
+
+    private async Task<UpdateResult?> PreviewCurrentExternalUpdateAsync(
+        string projectDirectory,
+        IReadOnlyList<ProjectConfiguration.RequestedPack> nextRequestedRoots,
+        ProjectConfiguration.RequestedPack nextRequestedRoot,
+        UpdateOutcome outcome,
+        bool dryRun,
+        ScriptExecutionMode scriptMode,
+        bool acceptSources
+    )
+    {
+        var preview = await ApplyAsync(
             projectDirectory,
             nextRequestedRoots,
-            update.NextRequestedRoot,
+            nextRequestedRoot,
             [outcome],
-            dryRun,
+            dryRun: true,
             scriptMode,
-            update.SourceSwitch
+            acceptSources
         );
+        if (preview.Error is not null || preview.IsLifecycleFailure)
+        {
+            return preview;
+        }
+
+        if (preview.DryRunPlan?.Actions.Count == 0)
+        {
+            return UpdateResult.Success(
+                [outcome with { IsCurrent = true }],
+                dryRun ? preview.DryRunPlan : null
+            );
+        }
+
+        return dryRun ? preview : null;
     }
 
     private static ManifestOperationResult<NamedPackUpdate> SelectNamedUpdate(
@@ -234,14 +306,81 @@ internal sealed class PackUpdateService(
         IReadOnlyList<CatalogPack> catalog,
         IReadOnlySet<string>? selectedUpdateIds,
         bool dryRun,
-        ScriptExecutionMode scriptMode
+        ScriptExecutionMode scriptMode,
+        bool acceptSources
     )
     {
-        var selectedUpdates = PackUpdateSelectionService.SelectAvailable(state, catalog);
-        if (selectedUpdates.Value is not { } availableUpdates)
+        var selectedUpdates = SelectVersionUpdates(state, catalog, selectedUpdateIds);
+        if (selectedUpdates.Value is not { } updates)
         {
-            return UpdateResult.Failure(
-                selectedUpdates.Error ?? "Unable to select available updates."
+            return UpdateResult.Failure(selectedUpdates.Error ?? "Unable to select updates.");
+        }
+
+        var versionUpdateIds = updates
+            .Select(update => update.RequestedRoot.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        var currentPacks = state.LockFile.Packs.ToDictionary(
+            pack => pack.Id,
+            StringComparer.Ordinal
+        );
+        var externalRefreshRoots = SelectExternalRefreshRoots(
+            state,
+            selectedUpdateIds,
+            versionUpdateIds,
+            currentPacks
+        );
+        if (updates.Count == 0 && externalRefreshRoots.Count == 0)
+        {
+            return UpdateResult.Success([], dryRun ? new PackUpdatePlan([]) : null);
+        }
+
+        var nextRequestedRoots = state
+            .Configuration.Packs.Select(root =>
+                versionUpdateIds.Contains(root.Id) ? root with { Version = null } : root
+            )
+            .ToList();
+        var outcomes = CreateUpdateOutcomes(updates);
+        if (externalRefreshRoots.Count > 0)
+        {
+            var previewResult = await PreviewExternalRefreshAsync(
+                projectDirectory,
+                nextRequestedRoots,
+                externalRefreshRoots,
+                currentPacks,
+                updates.Count,
+                outcomes,
+                dryRun,
+                scriptMode,
+                acceptSources
+            );
+            if (previewResult is not null)
+            {
+                return previewResult;
+            }
+        }
+
+        return await ApplyAsync(
+            projectDirectory,
+            nextRequestedRoots,
+            nextRequestedRoots[0],
+            outcomes,
+            dryRun,
+            scriptMode,
+            acceptSources
+        );
+    }
+
+    private static ManifestOperationResult<List<AvailablePackUpdate>> SelectVersionUpdates(
+        ProjectState state,
+        IReadOnlyList<CatalogPack> catalog,
+        IReadOnlySet<string>? selectedUpdateIds
+    )
+    {
+        var selected = PackUpdateSelectionService.SelectAvailable(state, catalog);
+        if (selected.Value is not { } availableUpdates)
+        {
+            return ManifestOperationResult<List<AvailablePackUpdate>>.Failure(
+                selected.Error ?? "Unable to select available updates."
             );
         }
 
@@ -251,20 +390,13 @@ internal sealed class PackUpdateService(
             updates.RemoveAll(update => !selectedUpdateIds.Contains(update.RequestedRoot.Id));
         }
 
-        if (updates.Count == 0)
-        {
-            return UpdateResult.Success([], dryRun ? new PackUpdatePlan([]) : null);
-        }
+        return ManifestOperationResult<List<AvailablePackUpdate>>.Success(updates);
+    }
 
-        var selectedIds = updates
-            .Select(update => update.RequestedRoot.Id)
-            .ToHashSet(StringComparer.Ordinal);
-        var nextRequestedRoots = state
-            .Configuration.Packs.Select(root =>
-                selectedIds.Contains(root.Id) ? root with { Version = null } : root
-            )
-            .ToList();
-        var outcomes = updates
+    private static List<UpdateOutcome> CreateUpdateOutcomes(
+        IEnumerable<AvailablePackUpdate> updates
+    ) =>
+        updates
             .Select(update => new UpdateOutcome(
                 update.RequestedRoot.Id,
                 update.Current.Version,
@@ -272,14 +404,70 @@ internal sealed class PackUpdateService(
                 IsCurrent: false
             ))
             .ToList();
-        return await ApplyAsync(
+
+    private static List<ProjectConfiguration.RequestedPack> SelectExternalRefreshRoots(
+        ProjectState state,
+        IReadOnlySet<string>? selectedUpdateIds,
+        HashSet<string> versionUpdateIds,
+        Dictionary<string, ProjectLockFile.ResolvedPack> currentPacks
+    ) =>
+        state
+            .Configuration.Packs.Where(root =>
+                !versionUpdateIds.Contains(root.Id)
+                && (selectedUpdateIds is null || selectedUpdateIds.Contains(root.Id))
+                && currentPacks.TryGetValue(root.Id, out var current)
+                && current.ExternalSources.Count > 0
+            )
+            .ToList();
+
+    private async Task<UpdateResult?> PreviewExternalRefreshAsync(
+        string projectDirectory,
+        IReadOnlyList<ProjectConfiguration.RequestedPack> nextRequestedRoots,
+        List<ProjectConfiguration.RequestedPack> externalRefreshRoots,
+        Dictionary<string, ProjectLockFile.ResolvedPack> currentPacks,
+        int versionUpdateCount,
+        List<UpdateOutcome> outcomes,
+        bool dryRun,
+        ScriptExecutionMode scriptMode,
+        bool acceptSources
+    )
+    {
+        var externalOutcomes = externalRefreshRoots
+            .Select(root => currentPacks[root.Id])
+            .Select(pack => new UpdateOutcome(
+                pack.Id,
+                pack.Version,
+                pack.Version,
+                IsCurrent: false
+            ))
+            .ToList();
+        var preview = await ApplyAsync(
             projectDirectory,
             nextRequestedRoots,
-            nextRequestedRoots[0],
-            outcomes,
-            dryRun,
-            scriptMode
+            externalRefreshRoots[0],
+            [.. outcomes, .. externalOutcomes],
+            dryRun: true,
+            scriptMode,
+            acceptSources
         );
+        if (preview.Error is not null || preview.IsLifecycleFailure)
+        {
+            return preview;
+        }
+
+        if (versionUpdateCount == 0 && preview.DryRunPlan?.Actions.Count == 0)
+        {
+            return UpdateResult.Success([], dryRun ? preview.DryRunPlan : null);
+        }
+
+        if (versionUpdateCount == 0)
+        {
+            outcomes.AddRange(externalOutcomes);
+        }
+
+        return dryRun
+            ? UpdateResult.Success(outcomes, preview.DryRunPlan ?? new PackUpdatePlan([]))
+            : null;
     }
 
     private async Task<UpdateResult> ApplyAsync(
@@ -289,6 +477,7 @@ internal sealed class PackUpdateService(
         IReadOnlyList<UpdateOutcome> outcomes,
         bool dryRun,
         ScriptExecutionMode scriptMode,
+        bool acceptSources,
         LockedSourceUpdateSelector.SourceSwitch? proposedSourceSwitch = null
     )
     {
@@ -299,6 +488,7 @@ internal sealed class PackUpdateService(
         )
         {
             ScriptMode = scriptMode,
+            AcceptSources = acceptSources,
         };
         if (dryRun)
         {

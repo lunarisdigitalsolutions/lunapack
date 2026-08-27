@@ -36,6 +36,14 @@ Names are unique project identifiers used by trust commands. Ordinary updates
 remain on each lock record's configured source; an explicit version that exists
 only in another configured source requires confirmation before switching.
 
+Packs may require external Git content under their own local aliases. During
+install or update, Luna reuses an equivalent configured fingerprint without a
+prompt. Missing sources appear together in one sanitized approval request that
+defaults to no. Use `--accept-sources` only for conflict-free non-interactive
+approval; it does not bypass Git authentication, path checks, script trust, or
+transaction rollback. A dry run reports mappings, proposed additions, approval
+requirements, and file actions without prompting or writing state.
+
 ## Rename a source
 
 Change a configured source's name without losing installed pack or trust

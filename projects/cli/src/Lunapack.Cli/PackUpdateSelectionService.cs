@@ -4,12 +4,13 @@ namespace Lunapack.Cli;
 
 internal sealed class PackUpdateSelectionService(
     PackCatalog packCatalog,
-    ProjectStateStore projectStateStore
+    ProjectStateStore projectStateStore,
+    PackLifecycleService packLifecycleService
 )
 {
     public async Task<
         ManifestOperationResult<IReadOnlyList<AvailablePackUpdate>>
-    > GetAvailableAsync(string projectDirectory)
+    > GetAvailableAsync(string projectDirectory, bool offline = false)
     {
         var loadedState = await projectStateStore.LoadAsync(projectDirectory);
         if (loadedState.Value is not { } state)
@@ -26,6 +27,11 @@ internal sealed class PackUpdateSelectionService(
             );
         }
 
+        if (offline)
+        {
+            return ManifestOperationResult<IReadOnlyList<AvailablePackUpdate>>.Success([]);
+        }
+
         var catalog = await packCatalog.BrowseAsync(projectDirectory, state.Configuration);
         if (catalog.Value is not { } catalogPacks)
         {
@@ -34,8 +40,93 @@ internal sealed class PackUpdateSelectionService(
             );
         }
 
-        return SelectAvailable(state, catalogPacks);
+        var selected = SelectAvailable(state, catalogPacks);
+        if (selected.Value is not { } versionUpdates)
+        {
+            return selected;
+        }
+
+        return await AddExternalContentUpdatesAsync(
+            projectDirectory,
+            state,
+            catalogPacks,
+            versionUpdates
+        );
     }
+
+    private async Task<
+        ManifestOperationResult<IReadOnlyList<AvailablePackUpdate>>
+    > AddExternalContentUpdatesAsync(
+        string projectDirectory,
+        ProjectState state,
+        IReadOnlyList<CatalogPack> catalog,
+        IReadOnlyList<AvailablePackUpdate> versionUpdates
+    )
+    {
+        var updates = versionUpdates.ToList();
+        var updatedIds = updates
+            .Select(update => update.RequestedRoot.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        foreach (var root in state.Configuration.Packs)
+        {
+            var current = state.LockFile.Packs.Find(pack =>
+                string.Equals(pack.Id, root.Id, StringComparison.Ordinal)
+            );
+            if (
+                current is null
+                || current.ExternalSources.Count == 0
+                || updatedIds.Contains(root.Id)
+            )
+            {
+                continue;
+            }
+
+            var selectedPack = LockedSourceUpdateSelector.SelectOrdinary(current, catalog);
+            if (selectedPack is null)
+            {
+                continue;
+            }
+
+            var preview = await packLifecycleService.DryRunUpdateAsync(
+                projectDirectory,
+                state.Configuration.Packs,
+                new PackInstallationRequest(
+                    new PackReference(root.Id, root.Version),
+                    root.Destination,
+                    false
+                )
+            );
+            if (preview.Value is not { } plan)
+            {
+                var reason = GetExternalSourceFailureReason(preview.Error);
+                if (reason is null)
+                {
+                    return ManifestOperationResult<IReadOnlyList<AvailablePackUpdate>>.Failure(
+                        preview.Error ?? "Unable to inspect external source content."
+                    );
+                }
+
+                updates.Add(new AvailablePackUpdate(root, current, selectedPack, reason));
+                continue;
+            }
+
+            if (plan.Actions.Count > 0)
+            {
+                updates.Add(
+                    new AvailablePackUpdate(root, current, selectedPack, "external source changed")
+                );
+            }
+        }
+
+        return ManifestOperationResult<IReadOnlyList<AvailablePackUpdate>>.Success(updates);
+    }
+
+    private static string? GetExternalSourceFailureReason(string? error) =>
+        error?.Contains("missing configured source", StringComparison.OrdinalIgnoreCase) is true
+            ? "external source missing"
+        : error?.Contains("drift", StringComparison.OrdinalIgnoreCase) is true
+            ? "external source drift"
+        : null;
 
     internal static ManifestOperationResult<IReadOnlyList<AvailablePackUpdate>> SelectAvailable(
         ProjectState state,

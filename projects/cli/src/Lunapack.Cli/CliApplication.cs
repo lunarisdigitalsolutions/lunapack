@@ -99,6 +99,7 @@ internal sealed class CliApplication(
         );
         AddAuditCommand(
             rootCommand,
+            fileSystem,
             services.ProjectStateStore,
             services.WorkspaceDirectoryResolver,
             projectDirectory,
@@ -138,6 +139,7 @@ internal sealed class CliApplication(
         var effectiveUserSettingsStore = userSettingsStore ?? new UserSettingsStore(fileSystem);
         var workspaceDirectoryResolver = new WorkspaceDirectoryResolver(fileSystem);
         var effectiveGitProcessRunner = gitProcessRunner ?? new GitProcessRunner();
+        var gitRefResolver = new GitRefResolver(effectiveGitProcessRunner);
         var packCatalog = new PackCatalog(fileSystem, console, effectiveGitProcessRunner);
         var nextStepAdvisor = new NextStepAdvisor(fileSystem, projectStateStore);
         var prerequisiteGuard = new WorkflowPrerequisiteGuard(
@@ -149,9 +151,10 @@ internal sealed class CliApplication(
             fileSystem,
             packCatalog,
             projectStateStore,
-            console
+            console,
+            effectiveGitProcessRunner,
+            gitRefResolver
         );
-        var gitRefResolver = new GitRefResolver(effectiveGitProcessRunner);
         return new CommandServices(
             projectStateStore,
             workspaceDirectoryResolver,
@@ -172,7 +175,8 @@ internal sealed class CliApplication(
                 effectiveUserSettingsStore,
                 trustConfirmer ?? new ConsoleTrustConfirmer(console)
             ),
-            gitRefResolver
+            gitRefResolver,
+            effectiveGitProcessRunner
         );
     }
 
@@ -234,6 +238,8 @@ internal sealed class CliApplication(
         WorkspaceDirectoryResolver workspaceDirectoryResolver,
         INextStepAdvisor nextStepAdvisor,
         NextStepRenderer nextStepRenderer,
+        GitRefResolver gitRefResolver,
+        IGitProcessRunner gitProcessRunner,
         string projectDirectory,
         Option<string?> workspaceOption,
         CliConsole console
@@ -245,7 +251,20 @@ internal sealed class CliApplication(
                 workspaceDirectoryResolver,
                 nextStepAdvisor,
                 nextStepRenderer,
-                console
+                console,
+                gitRefResolver,
+                new PackAuthoringValidationService(
+                    new ExternalSourceRequirementPlanner(
+                        gitRefResolver,
+                        new ManagedFileConditionParser()
+                    ),
+                    new ExternalSourceMaterializer(fileSystem, gitProcessRunner, gitRefResolver),
+                    new PackInstallationPlanner(
+                        fileSystem,
+                        new PackTemplateRenderer(fileSystem),
+                        new ManagedFileConditionParser()
+                    )
+                )
             ).CreateCommand(projectDirectory, workspaceOption)
         );
 
@@ -263,6 +282,8 @@ internal sealed class CliApplication(
             services.WorkspaceDirectoryResolver,
             services.NextStepAdvisor,
             services.NextStepRenderer,
+            services.GitRefResolver,
+            services.GitProcessRunner,
             projectDirectory,
             workspaceOption,
             console
@@ -313,7 +334,9 @@ internal sealed class CliApplication(
         IFileSystem fileSystem,
         PackCatalog packCatalog,
         ProjectStateStore projectStateStore,
-        CliConsole console
+        CliConsole console,
+        IGitProcessRunner gitProcessRunner,
+        GitRefResolver gitRefResolver
     )
     {
         var packLifecycleService = new PackLifecycleService(
@@ -327,9 +350,31 @@ internal sealed class CliApplication(
             new PackUpdatePlanner(fileSystem),
             new PackUpdateTransaction(fileSystem, console),
             projectStateStore,
-            console
+            console,
+            new GitPackMaterializer(fileSystem, gitProcessRunner),
+            configuredExternalSourceRequirementPlanner: new ExternalSourceRequirementPlanner(
+                gitRefResolver,
+                new ManagedFileConditionParser()
+            ),
+            configuredExternalSourceMaterializer: new ExternalSourceMaterializer(
+                fileSystem,
+                gitProcessRunner,
+                gitRefResolver
+            ),
+            configuredExternalSourceConsentCoordinator: new ExternalSourceConsentCoordinator(
+                console.IsInteractive
+                    ? new ConsoleExternalSourceApprover(console)
+                    : new DenyExternalSourceApprover(),
+                console.IsInteractive
+                    ? new ConsoleExternalSourceIdentifierPrompter(console)
+                    : new DenyExternalSourceIdentifierPrompter()
+            )
         );
-        var updateSelectionService = new PackUpdateSelectionService(packCatalog, projectStateStore);
+        var updateSelectionService = new PackUpdateSelectionService(
+            packCatalog,
+            projectStateStore,
+            packLifecycleService
+        );
         return new LifecycleServices(
             packLifecycleService,
             new PackUpdateService(
@@ -469,6 +514,7 @@ internal sealed class CliApplication(
 
     private static void AddAuditCommand(
         RootCommand rootCommand,
+        IFileSystem fileSystem,
         ProjectStateStore projectStateStore,
         WorkspaceDirectoryResolver workspaceDirectoryResolver,
         string projectDirectory,
@@ -478,7 +524,7 @@ internal sealed class CliApplication(
     ) =>
         rootCommand.Add(
             new AuditCommandHandler(
-                projectStateStore,
+                new AuditService(fileSystem, projectStateStore),
                 workspaceDirectoryResolver,
                 prerequisiteGuard,
                 console
@@ -502,7 +548,8 @@ internal sealed class CliApplication(
         NextStepRenderer NextStepRenderer,
         WorkflowPrerequisiteGuard PrerequisiteGuard,
         TrustService TrustService,
-        GitRefResolver GitRefResolver
+        GitRefResolver GitRefResolver,
+        IGitProcessRunner GitProcessRunner
     );
 
     private static async Task<int> RenderWorkspaceGuidanceAsync(
