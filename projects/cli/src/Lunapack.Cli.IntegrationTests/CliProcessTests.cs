@@ -166,8 +166,157 @@ public sealed class CliProcessTests
         var first = install.StandardOutput.IndexOf("static-instruction", StringComparison.Ordinal);
         var script = install.StandardOutput.IndexOf("10.0.", StringComparison.Ordinal);
         var last = install.StandardOutput.IndexOf("Hello Example Corp", StringComparison.Ordinal);
-        await Assert.That(first >= 0 && first < script && script < last).IsTrue();
+        var success = install.StandardOutput.IndexOf("Installed 'example' (version '1.0.0') in ");
+        await Assert.That(first >= 0 && first < script && script < last && last < success).IsTrue();
         await Assert.That(install.StandardOutput).DoesNotContain("Press Enter to continue...");
+        await Assert.That(install.StandardOutput).DoesNotContain("Applied managed-file changes");
+    }
+
+    [Test]
+    public async Task PackLifecycle_WhenUninstallInstructionsDeclared_RendersAroundRemoval()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreateInstructionPackSource(
+            workspace.Path,
+            "example",
+            "id: example\nversion: 1.0.0\nhooks:\n  preUninstall:\n    - type: instruction\n      file: instructions/before.md\n  postUninstall:\n    - type: instruction\n      file: instructions/after.md\nmanagedFiles:\n  - source: templates/content.txt\n    target: .pack\n",
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["before.md"] = "## Before\nbefore-removal",
+                ["after.md"] = "## After\nafter-removal",
+            }
+        );
+        await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
+        await CliProcess.InvokeAsync(workspace.Path, "install", "example");
+
+        var uninstall = await CliProcess.InvokeAsync(workspace.Path, "uninstall", "example");
+
+        await Assert.That(uninstall.ExitCode).IsEqualTo(0);
+        var before = uninstall.StandardOutput.IndexOf("before-removal", StringComparison.Ordinal);
+        var after = uninstall.StandardOutput.IndexOf("after-removal", StringComparison.Ordinal);
+        var success = uninstall.StandardOutput.IndexOf(
+            "Uninstalled 'example' in ",
+            StringComparison.Ordinal
+        );
+        await Assert.That(before >= 0 && before < after && after < success).IsTrue();
+        await Assert.That(uninstall.StandardOutput).DoesNotContain("Applied managed-file changes");
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, ".pack"))).IsFalse();
+    }
+
+    [Test]
+    public async Task PackLifecycle_WhenPostUninstallCommandFails_RestoresFilesAndState()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreateInstructionPackSource(
+            workspace.Path,
+            "example",
+            "id: example\nversion: 1.0.0\nhooks:\n  postUninstall:\n    - type: script\n      command: dotnet\n      arguments:\n        - definitely-not-a-command\nmanagedFiles:\n  - source: templates/content.txt\n    target: .pack\n",
+            new Dictionary<string, string>(StringComparer.Ordinal)
+        );
+        await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
+        await CliProcess.InvokeAsync(workspace.Path, "install", "example");
+
+        var uninstall = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "uninstall",
+            "example",
+            "--scripts",
+            "run"
+        );
+
+        await Assert.That(uninstall.ExitCode).IsEqualTo(1);
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, ".pack"))).IsTrue();
+        await Assert
+            .That(File.ReadAllText(Path.Combine(workspace.Path, "lunapack.yml")))
+            .Contains("id: example");
+        await Assert
+            .That(File.ReadAllText(Path.Combine(workspace.Path, "lunapack-lock.yml")))
+            .Contains("id: example");
+    }
+
+    [Test]
+    public async Task PackLifecycle_WhenSourceUnavailable_UninstallsWithoutHooks()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreateInstructionPackSource(
+            workspace.Path,
+            "example",
+            "id: example\nversion: 1.0.0\nhooks:\n  preUninstall:\n    - type: instruction\n      file: instructions/before.md\nmanagedFiles:\n  - source: templates/content.txt\n    target: .pack\n",
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["before.md"] = "## Before\nshould-not-render",
+            }
+        );
+        await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
+        await CliProcess.InvokeAsync(workspace.Path, "install", "example");
+        Directory.Delete(Path.Combine(workspace.Path, sourcePath), recursive: true);
+
+        var uninstall = await CliProcess.InvokeAsync(workspace.Path, "uninstall", "example");
+
+        await Assert.That(uninstall.ExitCode).IsEqualTo(0);
+        await Assert
+            .That(uninstall.StandardOutput)
+            .Contains("Uninstall hooks for pack 'example' are unavailable");
+        await Assert.That(uninstall.StandardOutput).DoesNotContain("should-not-render");
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, ".pack"))).IsFalse();
+    }
+
+    [Test]
+    public async Task PackLifecycle_WhenUninstallHasNoHooks_DoesNotResolveRequiredParameters()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreateInstructionPackSource(
+            workspace.Path,
+            "example",
+            "id: example\nversion: 1.0.0\nparameters:\n  companyName:\n    type: string\n    required: true\nmanagedFiles:\n  - source: templates/content.txt\n    target: .pack\n",
+            new Dictionary<string, string>(StringComparer.Ordinal)
+        );
+        await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
+        await CliProcess.InvokeAsync(
+            workspace.Path,
+            "install",
+            "example",
+            "--parameter",
+            "companyName=Example Corp"
+        );
+
+        var uninstall = await CliProcess.InvokeAsync(workspace.Path, "uninstall", "example");
+
+        await Assert.That(uninstall.ExitCode).IsEqualTo(0);
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, ".pack"))).IsFalse();
+    }
+
+    [Test]
+    public async Task PackLifecycle_WhenNewerReleaseExists_UninstallUsesInstalledReleaseHooks()
+    {
+        using var workspace = new TestWorkspace();
+        var sourceRoot = Path.Combine(workspace.Path, "source");
+        CreateInstructionPack(
+            sourceRoot,
+            "example-v1",
+            "id: example\nversion: 1.0.0\nhooks:\n  preUninstall:\n    - type: instruction\n      file: instructions/remove.md\nmanagedFiles:\n  - source: templates/content.txt\n    target: .pack\n",
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["remove.md"] = "## Remove\ninstalled-release-hook",
+            }
+        );
+        CreateInstructionPack(
+            sourceRoot,
+            "example-v2",
+            "id: example\nversion: 2.0.0\nhooks:\n  preUninstall:\n    - type: instruction\n      file: instructions/remove.md\nmanagedFiles:\n  - source: templates/content.txt\n    target: .pack\n",
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["remove.md"] = "## Remove\nnewer-release-hook",
+            }
+        );
+        await InitializeAndAddSourceAsync(workspace.Path, "source");
+        await CliProcess.InvokeAsync(workspace.Path, "install", "example@1.0.0");
+
+        var uninstall = await CliProcess.InvokeAsync(workspace.Path, "uninstall", "example");
+
+        await Assert.That(uninstall.ExitCode).IsEqualTo(0);
+        await Assert.That(uninstall.StandardOutput).Contains("installed-release-hook");
+        await Assert.That(uninstall.StandardOutput).DoesNotContain("newer-release-hook");
     }
 
     [Test]
@@ -179,7 +328,7 @@ public sealed class CliProcessTests
     {
         using var workspace = new TestWorkspace();
         var files = new Dictionary<string, string>(StringComparer.Ordinal);
-        if (failure == "invalid")
+        if (string.Equals(failure, "invalid", StringComparison.Ordinal))
         {
             files["setup.md"] = "{{ 1 + }}";
         }
@@ -872,6 +1021,34 @@ public sealed class CliProcessTests
     }
 
     [Test]
+    public async Task Search_WhenConfiguredLinkMatchesTerm_ListsLink()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = Directory.CreateDirectory(Path.Combine(workspace.Path, "source")).FullName;
+        await File.WriteAllTextAsync(Path.Combine(sourcePath, "CSharpExpert.agent.md"), "agent");
+        await InitializeAndAddSourceAsync(workspace.Path, "source");
+        var added = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "links",
+            "add",
+            "csharp-agent",
+            "--source",
+            "local",
+            "--include",
+            "CSharpExpert.agent.md"
+        );
+
+        var search = await CliProcess.InvokeAsync(workspace.Path, "search", "csharp");
+
+        await Assert.That(added.ExitCode).IsEqualTo(0);
+        await Assert.That(search.ExitCode).IsEqualTo(0);
+        await Assert.That(search.StandardOutput).Contains("csharp-agent");
+        await Assert
+            .That(search.StandardOutput)
+            .Contains("Found 0 matching packs and 1 matching links");
+    }
+
+    [Test]
     public async Task Scenario_RepositorySourceConfigured_DiscoversAllBundledPacks()
     {
         var repositoryRoot = GetRepositoryRoot();
@@ -951,7 +1128,7 @@ public sealed class CliProcessTests
         var update = await CliProcess.InvokeAsync(workspace.Path, "update", "example");
 
         await Assert.That(update.ExitCode).IsEqualTo(0);
-        await Assert.That(update.StandardOutput).Contains("example 1.0.0 -> 1.1.0");
+        await Assert.That(update.StandardOutput).Contains("Updated 'example' (version '1.1.0')");
         await Assert.That(File.ReadAllText(Path.Combine(workspace.Path, ".pack"))).IsEqualTo("two");
     }
 
@@ -1027,7 +1204,7 @@ public sealed class CliProcessTests
         await Assert.That(search.ExitCode).IsEqualTo(1);
         await Assert
             .That(search.StandardOutput)
-            .Contains("error: No packs were found for 'missing'.");
+            .Contains("error: No packs or links were found for 'missing'.");
     }
 
     [Test]

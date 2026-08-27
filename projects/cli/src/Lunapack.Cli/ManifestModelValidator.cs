@@ -10,6 +10,8 @@ internal static partial class ManifestModelValidator
         "postInstall",
         "preUpdate",
         "postUpdate",
+        "preUninstall",
+        "postUninstall",
     ];
 
     private const int MaximumTagCount = 15;
@@ -140,6 +142,8 @@ internal static partial class ManifestModelValidator
                 issues.Add($"Parameter '{name}' has an invalid type.");
             }
 
+            ValidateParameterDefault(name, parameter, issues);
+
             if (
                 string.Equals(parameter.Description, string.Empty, StringComparison.Ordinal)
                 || string.Equals(parameter.DisplayName, string.Empty, StringComparison.Ordinal)
@@ -164,6 +168,35 @@ internal static partial class ManifestModelValidator
             {
                 issues.Add($"Parameter '{name}' cannot define values.");
             }
+        }
+    }
+
+    private static void ValidateParameterDefault(
+        string name,
+        PackManifest.PackParameter parameter,
+        List<string> issues
+    )
+    {
+        if (
+            parameter.Default is not null
+            && (
+                string.Equals(parameter.Type, "bool", StringComparison.Ordinal)
+                    && parameter.Default is not bool
+                || parameter.Type is "string" or "enum" && parameter.Default is not string
+            )
+        )
+        {
+            issues.Add($"Parameter '{name}' has a default value incompatible with its type.");
+        }
+
+        if (
+            string.Equals(parameter.Type, "enum", StringComparison.Ordinal)
+            && parameter.Default is string defaultValue
+            && parameter.Values is { } values
+            && !values.Contains(defaultValue, StringComparer.Ordinal)
+        )
+        {
+            issues.Add($"Enum parameter '{name}' default must be one of its values.");
         }
     }
 
@@ -303,8 +336,10 @@ internal static partial class ManifestModelValidator
         }
 
         ValidateHooks("postInstall", hooks.PostInstall, issues);
+        ValidateHooks("postUninstall", hooks.PostUninstall, issues);
         ValidateHooks("postUpdate", hooks.PostUpdate, issues);
         ValidateHooks("preInstall", hooks.PreInstall, issues);
+        ValidateHooks("preUninstall", hooks.PreUninstall, issues);
         ValidateHooks("preUpdate", hooks.PreUpdate, issues);
     }
 

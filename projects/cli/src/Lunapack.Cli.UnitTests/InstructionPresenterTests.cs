@@ -20,12 +20,13 @@ public sealed class InstructionPresenterTests
             ]
         );
 
-        var result = presenter.Present(instruction);
+        var result = presenter.Present("example", instruction);
 
         await Assert.That(result.IsSuccess).IsTrue();
         await Assert.That(ansiConsole.Output).Contains("Read first.");
-        await Assert.That(ansiConsole.Output).Contains("Step 1: Configure");
+        await Assert.That(ansiConsole.Output).Contains("Read first.\n\nStep 1: Configure\n\n");
         await Assert.That(ansiConsole.Output).Contains("Step 1.1: Verify");
+        await Assert.That(ansiConsole.Output).Contains("First body.\n\nPress Enter to continue...");
         await Assert
             .That(CountOccurrences(ansiConsole.Output, "Press Enter to continue..."))
             .IsEqualTo(2);
@@ -45,7 +46,7 @@ public sealed class InstructionPresenterTests
             ]
         );
 
-        var result = presenter.Present(instruction);
+        var result = presenter.Present("example", instruction);
 
         await Assert.That(result.IsSuccess).IsTrue();
         await Assert.That(ansiConsole.Output).Contains("Step 1: First");
@@ -62,12 +63,35 @@ public sealed class InstructionPresenterTests
         var content = "[Documentation](https://example.test)\n```sh\necho setup\n```";
 
         var result = presenter.Present(
+            "example",
             CreateInstruction(string.Empty, [new InstructionStep(1, null, null, content)])
         );
 
         await Assert.That(result.IsSuccess).IsTrue();
-        await Assert.That(ansiConsole.Output).Contains(content);
+        await Assert
+            .That(ansiConsole.Output)
+            .Contains("Pack 'example' includes setup instructions.");
+        await Assert.That(ansiConsole.Output).Contains("Documentation (https://example.test)");
+        await Assert.That(ansiConsole.Output).Contains("echo setup");
         await Assert.That(ansiConsole.Output).DoesNotContain("complete");
+    }
+
+    [Test]
+    public async Task Present_WhenFencedCodeContainsMarkdown_PreservesLiteralCode()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        var presenter = new InstructionPresenter(new CliConsole(ansiConsole, CliLogLevel.Info));
+
+        var result = presenter.Present(
+            "example",
+            CreateInstruction(
+                string.Empty,
+                [new InstructionStep(1, null, null, "```md\n**literal** `[value]`\n```")]
+            )
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert.That(ansiConsole.Output).Contains("**literal** `[value]`");
     }
 
     private static PreparedInstruction CreateInstruction(

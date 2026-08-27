@@ -281,6 +281,47 @@ public sealed class LifecycleHookAuthorizationTests
     }
 
     [Test]
+    public async Task Confirm_WhenInteractiveUserPressesEnter_DeclinesByDefault()
+    {
+        using var workspace = new TestWorkspace();
+        var ansiConsole = new Spectre.Console.Testing.TestConsole();
+        ansiConsole.Profile.Capabilities.Interactive = true;
+        ansiConsole.Input.PushTextWithEnter(string.Empty);
+        var confirmer = new ConsoleLifecycleHookConfirmer(
+            new CliConsole(ansiConsole, CliLogLevel.Info)
+        );
+        var invocation = new ResolvedLifecycleHookInvocation(
+            CreateInvocation(workspace.Path, Environment.ProcessPath!),
+            Environment.ProcessPath!
+        );
+
+        var confirmed = confirmer.Confirm(invocation);
+
+        await Assert.That(confirmed).IsFalse();
+        await Assert.That(ansiConsole.Output).Contains("Run this script? [y/N] (N)");
+    }
+
+    [Test]
+    public async Task Confirm_WhenInteractiveUserEntersUppercaseYes_AuthorizesHook()
+    {
+        using var workspace = new TestWorkspace();
+        var ansiConsole = new Spectre.Console.Testing.TestConsole();
+        ansiConsole.Profile.Capabilities.Interactive = true;
+        ansiConsole.Input.PushTextWithEnter("Y");
+        var confirmer = new ConsoleLifecycleHookConfirmer(
+            new CliConsole(ansiConsole, CliLogLevel.Info)
+        );
+        var invocation = new ResolvedLifecycleHookInvocation(
+            CreateInvocation(workspace.Path, Environment.ProcessPath!),
+            Environment.ProcessPath!
+        );
+
+        var confirmed = confirmer.Confirm(invocation);
+
+        await Assert.That(confirmed).IsTrue();
+    }
+
+    [Test]
     public async Task AuthorizeAsync_WhenPromptSourceTrustMatches_DoesNotPrompt()
     {
         using var workspace = new TestWorkspace();
@@ -336,8 +377,7 @@ public sealed class LifecycleHookAuthorizationTests
 
         var formatted = LifecycleHookConfirmationFormatter.Format(resolved);
 
-        await Assert.That(formatted).Contains("Packed file: scripts/setup.ps1");
-        await Assert.That(formatted).Contains("Arguments: \"two words\" &");
+        await Assert.That(formatted).Contains("scripts/setup.ps1 \"two words\" &");
         await Assert.That(formatted).DoesNotContain(pack.PackDirectory);
     }
 

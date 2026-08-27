@@ -55,6 +55,8 @@ internal sealed record PackManifest
 
     internal sealed record PackParameter
     {
+        public object? Default { get; set; }
+
         public string? Description { get; set; }
 
         public string? DisplayName { get; set; }
@@ -70,9 +72,13 @@ internal sealed record PackManifest
     {
         public List<PackHook>? PostInstall { get; set; }
 
+        public List<PackHook>? PostUninstall { get; set; }
+
         public List<PackHook>? PostUpdate { get; set; }
 
         public List<PackHook>? PreInstall { get; set; }
+
+        public List<PackHook>? PreUninstall { get; set; }
 
         public List<PackHook>? PreUpdate { get; set; }
     }

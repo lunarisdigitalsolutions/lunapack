@@ -9,10 +9,13 @@ public sealed class ContextualGuidanceTests
     {
         var ansiConsole = new SpectreTestConsole();
         using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        using var commandOutput = new StringWriter();
 
-        var exitCode = await workspace.Application.RunAsync([], workspace.Path);
+        var exitCode = await workspace.Application.RunAsync([], workspace.Path, commandOutput);
 
         await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(commandOutput.ToString()).Contains("Manage LunaPack packs.");
+        await Assert.That(commandOutput.ToString()).Contains("Usage:");
         await Assert.That(ansiConsole.Output).Contains("No LunaPack workspace found.");
         await Assert.That(ansiConsole.Output).Contains("luna init");
         await Assert.That(ansiConsole.Output).Contains(ProjectStateStore.ConfigurationFileName);
@@ -337,7 +340,7 @@ public sealed class ContextualGuidanceTests
         var output = await InvokeWithFreshConsoleAsync(workspace, ["uninstall", "one"]);
         var state = (await workspace.StateStore.LoadAsync(workspace.Path)).RequireValue();
 
-        await Assert.That(output).Contains("✓ Uninstalled one");
+        await Assert.That(output).Contains("✓ Uninstalled 'one'");
         await Assert
             .That(state.Configuration.Packs.Select(pack => pack.Id))
             .IsEquivalentTo(["two"]);

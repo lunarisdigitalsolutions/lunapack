@@ -17,7 +17,7 @@ internal sealed class NextStepRenderer(CliConsole console)
         }
 
         console.Info(string.Empty);
-        console.Info(heading ?? (recommendations.Count == 1 ? "Next step:" : "Next steps:"));
+        console.Accent(heading ?? (recommendations.Count == 1 ? "Next step:" : "Next steps:"));
         console.Info(string.Empty);
         for (var index = 0; index < recommendations.Count; index++)
         {

@@ -26,8 +26,10 @@ internal static class PackManifestPathNormalizer
             : hooks with
             {
                 PostInstall = NormalizeHooks(hooks.PostInstall),
+                PostUninstall = NormalizeHooks(hooks.PostUninstall),
                 PostUpdate = NormalizeHooks(hooks.PostUpdate),
                 PreInstall = NormalizeHooks(hooks.PreInstall),
+                PreUninstall = NormalizeHooks(hooks.PreUninstall),
                 PreUpdate = NormalizeHooks(hooks.PreUpdate),
             };
 

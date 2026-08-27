@@ -132,6 +132,8 @@ internal static class PackAuthoringFormatter
         AddHooks(values, "postInstall", hooks.PostInstall);
         AddHooks(values, "preUpdate", hooks.PreUpdate);
         AddHooks(values, "postUpdate", hooks.PostUpdate);
+        AddHooks(values, "preUninstall", hooks.PreUninstall);
+        AddHooks(values, "postUninstall", hooks.PostUninstall);
         return values;
     }
 

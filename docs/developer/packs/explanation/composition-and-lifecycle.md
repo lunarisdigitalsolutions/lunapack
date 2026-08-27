@@ -20,8 +20,9 @@ state. Updating recomputes the complete selected-root graph as one transaction.
 Lifecycle hooks add ordered work around that transaction. Each event can mix
 executable scripts and non-executable instructions in manifest order. For an
 installed node, `preInstall` runs before managed files and `postInstall` runs
-before state persistence; updates use `preUpdate` and `postUpdate`. Events run
-dependency-first. A composite reference can list `disabledHooks`; every
+after mutation; updates use `preUpdate` and `postUpdate`, while removals use
+`preUninstall` and `postUninstall`. Events run dependency-first. A composite
+reference can list `disabledHooks`; every
 incoming transient reference contributes to the event-suppression union, while
 a pack installed directly as a root keeps its own hooks enabled.
 
@@ -33,3 +34,9 @@ cancellation, but it cannot roll back external process effects. Packed content
 is copied into an operation snapshot and hashed before launch. Snapshot
 traversal currently follows links and reparse points; see lifecycle safety
 guidance before treating a source as trusted.
+
+LunaPack checkpoints configuration and lock ownership after managed-file
+mutation and before post hooks. A handled post-hook failure restores the prior
+checkpoint and files; a hard interruption leaves ownership matching the applied
+mutation. Uninstall uses exact locked releases for hooks and continues without
+them, with a warning, when source content cannot be materialized.

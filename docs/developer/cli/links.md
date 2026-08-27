@@ -48,6 +48,8 @@ by single hyphens.
 - `luna links list` lists source, effective target, and installation status.
 - `luna links show <name>` shows selectors, effective ref, locked commit,
   selected-file count, and locally modified-file count.
+- `luna search <query>` includes matching link names, configured sources, and
+  effective targets alongside matching packs.
 - `luna links rm <name>` removes an uninstalled definition.
 - `luna links rm <name> --force` removes ownership and unchanged targets while
   preserving modified targets, then removes the definition.

@@ -257,7 +257,15 @@ internal static class PackParameterResolver
                 );
             }
 
-            resolvedValues.Add(name, CreateOptionalValue(declaration.Type));
+            var defaultValue = ParseDefaultValue(name, declaration);
+            if (defaultValue.Value is not { } resolvedDefault)
+            {
+                return ManifestOperationResult<ResolvedPackParameters>.Failure(
+                    defaultValue.Error ?? $"Invalid default value for parameter '{name}'."
+                );
+            }
+
+            resolvedValues.Add(name, resolvedDefault);
         }
 
         return ManifestOperationResult<ResolvedPackParameters>.Success(
@@ -302,7 +310,8 @@ internal static class PackParameterResolver
                     declaration.Required,
                     values,
                     declaration.DisplayName,
-                    declaration.Description
+                    declaration.Description,
+                    declaration.Default
                 )
             );
         }
@@ -314,7 +323,8 @@ internal static class PackParameterResolver
                     declaration.Required,
                     [],
                     declaration.DisplayName,
-                    declaration.Description
+                    declaration.Description,
+                    declaration.Default
                 )
             )
             : ManifestOperationResult<PackParameterDefinition>.Failure(
@@ -346,6 +356,16 @@ internal static class PackParameterResolver
 
         return CreateStringValue(name, declaration, value, "Parameter");
     }
+
+    private static ManifestOperationResult<ResolvedPackParameterValue> ParseDefaultValue(
+        string name,
+        PackParameterDefinition declaration
+    ) =>
+        declaration.Default is null
+            ? ManifestOperationResult<ResolvedPackParameterValue>.Success(
+                CreateOptionalValue(declaration.Type)
+            )
+            : ParseCompositeValue(name, declaration, declaration.Default);
 
     private static ManifestOperationResult<ResolvedPackParameterValue> ParseCompositeValue(
         string name,

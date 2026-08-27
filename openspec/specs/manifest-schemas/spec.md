@@ -274,8 +274,10 @@ non-empty parameter name. Each parameter declaration SHALL require a `type` of
 `enum` declaration SHALL contain a non-empty, unique collection of allowed
 string `values`; other parameter types SHALL reject `values`. A parameter MAY
 declare non-empty `displayName` and `description` strings for interactive
-prompts. Existing valid version-1 pack manifests without parameters SHALL
-remain valid.
+prompts. A parameter MAY define a `default` matching its declared type. The JSON
+Schema SHALL enforce the default's primitive type; runtime manifest validation
+SHALL require an enum default to be one of its declared values. Existing valid
+version-1 pack manifests without parameters SHALL remain valid.
 
 #### Scenario: Validate an enum parameter declaration
 
@@ -292,6 +294,16 @@ remain valid.
 
 - **WHEN** schema validation receives an enum parameter without values or with
   duplicated values
+- **THEN** the pack manifest is invalid
+
+#### Scenario: Validate a typed parameter default
+
+- **WHEN** a string or boolean parameter declares a default of the matching type
+- **THEN** the pack manifest is valid
+
+#### Scenario: Reject an invalid enum default
+
+- **WHEN** an enum parameter default is not one of its declared values
 - **THEN** the pack manifest is invalid
 
 ### Requirement: Define conditional managed files
@@ -326,7 +338,7 @@ project configuration without variables SHALL remain valid.
 
 ### Requirement: Define typed lifecycle hooks
 
-The `pack.yml` schema SHALL allow an optional `hooks` mapping with `preInstall`, `postInstall`, `preUpdate`, and `postUpdate` properties. Each event SHALL contain a non-empty ordered list of typed hook declarations. A `script` hook SHALL select exactly one execution form: a non-empty pack-relative `file` with a non-empty `runner`, or a non-empty external `command`; both forms MAY contain an ordered `arguments` array of strings and a non-empty `description`. An `instruction` hook SHALL contain a non-empty safe pack-relative `.md` file and MAY set `templating`, which SHALL default to false. The schema SHALL reject unknown events, hook types, and properties; unsafe file paths; mixed or incomplete hook variants; and the removed top-level `scripts` property. Existing pack manifests that omit both `scripts` and `hooks` SHALL remain valid.
+The `pack.yml` schema SHALL allow an optional `hooks` mapping with `preInstall`, `postInstall`, `preUpdate`, `postUpdate`, `preUninstall`, and `postUninstall` properties. Each event SHALL contain a non-empty ordered list of typed hook declarations. A `script` hook SHALL select exactly one execution form: a non-empty pack-relative `file` with a non-empty `runner`, or a non-empty external `command`; both forms MAY contain an ordered `arguments` array of strings and a non-empty `description`. An `instruction` hook SHALL contain a non-empty safe pack-relative `.md` file and MAY set `templating`, which SHALL default to false. The schema SHALL reject unknown events, hook types, and properties; unsafe file paths; mixed or incomplete hook variants; and the removed top-level `scripts` property. Existing pack manifests that omit both `scripts` and `hooks` SHALL remain valid.
 
 #### Scenario: Validate mixed hooks in declared order
 
@@ -355,7 +367,7 @@ The `pack.yml` schema SHALL allow an optional `hooks` mapping with `preInstall`,
 
 ### Requirement: Define lifecycle suppression on composite references
 
-Each composite pack reference in `pack.yml` SHALL allow an optional `disabledHooks` collection containing unique values from `preInstall`, `postInstall`, `preUpdate`, and `postUpdate`. An omitted or empty collection SHALL suppress no hook. Existing composite references without `disabledHooks` SHALL remain valid.
+Each composite pack reference in `pack.yml` SHALL allow an optional `disabledHooks` collection containing unique values from `preInstall`, `postInstall`, `preUpdate`, `postUpdate`, `preUninstall`, and `postUninstall`. An omitted or empty collection SHALL suppress no hook. Existing composite references without `disabledHooks` SHALL remain valid.
 
 #### Scenario: Disable selected hooks for a referenced pack
 

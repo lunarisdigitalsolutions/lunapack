@@ -179,6 +179,8 @@ internal sealed class LifecycleHookPlanner(IFileSystem fileSystem)
             (PackLifecyclePlan.ChangeKind.Install, false) => LifecycleHook.PostInstall,
             (PackLifecyclePlan.ChangeKind.Update, true) => LifecycleHook.PreUpdate,
             (PackLifecyclePlan.ChangeKind.Update, false) => LifecycleHook.PostUpdate,
+            (PackLifecyclePlan.ChangeKind.Removed, true) => LifecycleHook.PreUninstall,
+            (PackLifecyclePlan.ChangeKind.Removed, false) => LifecycleHook.PostUninstall,
             _ => null,
         };
 
@@ -190,8 +192,10 @@ internal sealed class LifecycleHookPlanner(IFileSystem fileSystem)
         {
             LifecycleHook.PreInstall => hooks?.PreInstall ?? [],
             LifecycleHook.PostInstall => hooks?.PostInstall ?? [],
+            LifecycleHook.PostUninstall => hooks?.PostUninstall ?? [],
             LifecycleHook.PreUpdate => hooks?.PreUpdate ?? [],
             LifecycleHook.PostUpdate => hooks?.PostUpdate ?? [],
+            LifecycleHook.PreUninstall => hooks?.PreUninstall ?? [],
             _ => throw new InvalidOperationException($"Unsupported lifecycle hook '{hook}'."),
         };
 
@@ -200,8 +204,10 @@ internal sealed class LifecycleHookPlanner(IFileSystem fileSystem)
         {
             LifecycleHook.PreInstall => "preInstall",
             LifecycleHook.PostInstall => "postInstall",
+            LifecycleHook.PostUninstall => "postUninstall",
             LifecycleHook.PreUpdate => "preUpdate",
             LifecycleHook.PostUpdate => "postUpdate",
+            LifecycleHook.PreUninstall => "preUninstall",
             _ => throw new InvalidOperationException($"Unsupported lifecycle hook '{hook}'."),
         };
 }

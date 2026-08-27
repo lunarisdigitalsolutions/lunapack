@@ -14,7 +14,16 @@ const sidebars = {
         'installation',
         'sources',
         'install-packs',
-        'update-packs',
+        'update-packs'
+      ]
+    },
+    {
+      type: 'category',
+      label: 'Advanced topics',
+      items: [
+        'lifecycle-hooks',
+        'parameters-and-variables',
+        'remap-targets',
         'manage-links'
       ]
     },

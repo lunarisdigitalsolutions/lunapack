@@ -258,11 +258,11 @@ internal sealed class UpdatePackCommandHandler(
         }
         else
         {
+            console.Info(string.Empty);
             WriteOutcomes(console, result.Outcomes);
             var updatedCount = result.Outcomes.Count(outcome => !outcome.IsCurrent);
             if (updatedCount > 0)
             {
-                console.Info($"✓ Updated {updatedCount} packs");
                 nextStepRenderer.Render(
                     nextStepAdvisor.Recommend(NextStepContext.PacksUpdated),
                     "Suggested commands:"
@@ -288,8 +288,15 @@ internal sealed class UpdatePackCommandHandler(
         {
             var message = outcome.IsCurrent
                 ? $"{outcome.Id} {outcome.CurrentVersion} is current."
-                : $"{outcome.Id} {outcome.CurrentVersion} -> {outcome.SelectedVersion}";
-            console.Info(message);
+                : $"✓ Updated '{outcome.Id}' (version '{outcome.SelectedVersion}')";
+            if (outcome.IsCurrent)
+            {
+                console.Info(message);
+            }
+            else
+            {
+                console.Success(message);
+            }
         }
     }
 }

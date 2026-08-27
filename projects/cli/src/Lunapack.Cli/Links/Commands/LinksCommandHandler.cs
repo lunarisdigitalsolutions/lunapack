@@ -220,23 +220,27 @@ internal sealed class LinksCommandHandler(
                 return console.Fail(savedState.Error);
             }
 
-            console.Info($"✓ Link '{name}' added");
+            console.Success($"✓ Link '{name}' added");
             nextStepRenderer.Render(nextStepAdvisor.Recommend(NextStepContext.LinkAdded, name));
             return 0;
         }
 
+        TimeSpan? managedFileChangesDuration = null;
         var installed = await linkLifecycleService.InstallAsync(
             projectDirectory,
             name,
             allowReinstall: true,
-            preparedState: state
+            preparedState: state,
+            onManagedFileChangesApplied: duration => managedFileChangesDuration = duration
         );
         if (installed != 0)
         {
             return installed;
         }
 
-        console.Info($"✓ Link '{name}' installed");
+        console.Success(
+            $"✓ Link '{name}' installed in {CliDuration.Format(managedFileChangesDuration ?? TimeSpan.Zero)}"
+        );
         nextStepRenderer.Render(nextStepAdvisor.Recommend(NextStepContext.LinkInstalled, name));
         return 0;
     }

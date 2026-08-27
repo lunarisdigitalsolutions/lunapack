@@ -87,6 +87,8 @@ internal static class PackManifestInspectionFormatter
             ("postInstall", hooks?.PostInstall),
             ("preUpdate", hooks?.PreUpdate),
             ("postUpdate", hooks?.PostUpdate),
+            ("preUninstall", hooks?.PreUninstall),
+            ("postUninstall", hooks?.PostUninstall),
         };
         var hasHooks = HasHooks(hooks);
         foreach (var (name, declarations) in events)
@@ -128,9 +130,15 @@ internal static class PackManifestInspectionFormatter
 
     private static bool HasHooks(PackManifest.PackHooks? hooks) =>
         hooks is not null
-        && new[] { hooks.PreInstall, hooks.PostInstall, hooks.PreUpdate, hooks.PostUpdate }.Any(
-            static declarations => declarations?.Count > 0
-        );
+        && new[]
+        {
+            hooks.PreInstall,
+            hooks.PostInstall,
+            hooks.PreUpdate,
+            hooks.PostUpdate,
+            hooks.PreUninstall,
+            hooks.PostUninstall,
+        }.Any(static declarations => declarations?.Count > 0);
 
     private static string FormatInvocation(PackManifest.PackHook script)
     {

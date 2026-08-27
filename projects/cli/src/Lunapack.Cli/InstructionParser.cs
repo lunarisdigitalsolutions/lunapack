@@ -6,6 +6,8 @@ internal static class InstructionParser
     {
         ArgumentNullException.ThrowIfNull(content);
 
+        content = RemoveTitle(content);
+
         var headings = FindHeadings(content);
         if (headings.Count == 0)
         {
@@ -58,6 +60,16 @@ internal static class InstructionParser
         }
 
         return new InstructionDocument(content[..headings[0].Start], steps);
+    }
+
+    private static string RemoveTitle(string content)
+    {
+        var lineEnd = content.IndexOf('\n');
+        var firstLineEnd = lineEnd < 0 ? content.Length : lineEnd;
+        var firstLine = content.AsSpan(0, firstLineEnd).TrimEnd('\r');
+        return firstLine.StartsWith("# ", StringComparison.Ordinal)
+            ? content[(lineEnd < 0 ? content.Length : lineEnd + 1)..].TrimStart('\r', '\n')
+            : content;
     }
 
     private static List<InstructionHeading> FindHeadings(string content)

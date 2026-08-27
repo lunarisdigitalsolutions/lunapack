@@ -18,6 +18,8 @@ internal sealed class PackAuthoringCommandHandler(
         "postInstall",
         "preUpdate",
         "postUpdate",
+        "preUninstall",
+        "postUninstall",
     ];
 
     public Command CreateCommand(string projectDirectory, Option<string?> workspaceOption)
@@ -656,6 +658,7 @@ internal sealed class PackAuthoringCommandHandler(
         var typeArgument = new Argument<string>("type");
         var valueOption = new Option<string[]>("--value", "-v");
         var requiredOption = new Option<bool>("--required");
+        var defaultOption = new Option<string?>("--default");
         var displayNameOption = new Option<string?>("--display-name");
         var descriptionOption = new Option<string?>("--description", "-d");
         var command = new Command("parameter", "Set a pack parameter.")
@@ -664,6 +667,7 @@ internal sealed class PackAuthoringCommandHandler(
             typeArgument,
             valueOption,
             requiredOption,
+            defaultOption,
             displayNameOption,
             descriptionOption,
         };
@@ -677,6 +681,11 @@ internal sealed class PackAuthoringCommandHandler(
             }
 
             var values = parseResult.GetValue(valueOption) ?? [];
+            var defaultValue = ParseParameterDefault(type, parseResult.GetValue(defaultOption));
+            if (!defaultValue.IsSuccess)
+            {
+                return console.Fail(defaultValue.Error);
+            }
             var result = await manifestStore.UpdateAsync(
                 ResolveWorkspace(parseResult, projectDirectory, workspaceOption),
                 manifest =>
@@ -685,6 +694,7 @@ internal sealed class PackAuthoringCommandHandler(
                     {
                         Type = type,
                         Required = parseResult.GetValue(requiredOption),
+                        Default = defaultValue.Value,
                         Values = string.Equals(type, "enum", StringComparison.Ordinal)
                             ? [.. values]
                             : null,
@@ -698,6 +708,19 @@ internal sealed class PackAuthoringCommandHandler(
         });
         return command;
     }
+
+    private static ManifestOperationResult<object?> ParseParameterDefault(
+        string type,
+        string? value
+    ) =>
+        value is null ? ManifestOperationResult<object?>.Success(null)
+        : string.Equals(type, "bool", StringComparison.Ordinal)
+            ? bool.TryParse(value, out var booleanValue)
+                    ? ManifestOperationResult<object?>.Success(booleanValue)
+                : ManifestOperationResult<object?>.Failure(
+                    "Boolean parameter default must be 'true' or 'false'."
+                )
+        : ManifestOperationResult<object?>.Success(value);
 
     private Command CreateTagCommand(
         string name,
@@ -1131,8 +1154,10 @@ internal sealed class PackAuthoringCommandHandler(
         {
             "preInstall" => hooks.PreInstall,
             "postInstall" => hooks.PostInstall,
+            "postUninstall" => hooks.PostUninstall,
             "preUpdate" => hooks.PreUpdate,
             "postUpdate" => hooks.PostUpdate,
+            "preUninstall" => hooks.PreUninstall,
             _ => null,
         };
 
@@ -1150,11 +1175,17 @@ internal sealed class PackAuthoringCommandHandler(
             case "postInstall":
                 hooks.PostInstall = declarations;
                 break;
+            case "postUninstall":
+                hooks.PostUninstall = declarations;
+                break;
             case "preUpdate":
                 hooks.PreUpdate = declarations;
                 break;
             case "postUpdate":
                 hooks.PostUpdate = declarations;
+                break;
+            case "preUninstall":
+                hooks.PreUninstall = declarations;
                 break;
         }
     }

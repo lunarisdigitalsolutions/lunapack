@@ -9,6 +9,8 @@ internal maintenance work, such as CI, build, or release-process changes.
 
 - Luna `1.1.0` adds project-owned links that select exact files, directories,
   and globs from configured local or Git sources without requiring `pack.yml`.
+- `luna search <query>` now includes matching configured links with their
+  source, target, and installation status.
 - `luna links add`, `list`, `show`, and `rm` manage link definitions. Install,
   update, outdated, audit, uninstall, and forced removal use lock-backed
   ownership, content digests, conflict checks, and transaction rollback.
@@ -40,21 +42,25 @@ internal maintenance work, such as CI, build, or release-process changes.
   Boards references, and external-check gating workflows.
 - `github-actions-pr-gate` supports configurable case-insensitive check-name
   fragments for checks excluded from gate evaluation.
-- Lifecycle hooks install or update Commitlint dependencies, restore the local
-  CSharpier tool, and guide initial `github-actions-pr-gate` repository setup.
 
 ### CLI Workflow
 
 - `luna sources rm <name>` replaces `luna sources remove <name>` for consistency
   with other concise configuration-removal commands.
-- Running `luna` without a subcommand now summarizes workspace maturity and
-  recommends the next setup, catalog, or lifecycle commands.
+- Running `luna` without a subcommand now displays command help before
+  summarizing workspace maturity and recommending the next setup, catalog, or
+  lifecycle commands.
 - Successful core commands and recoverable missing-prerequisite or pack lookup
   failures now include up to three contextual command recommendations.
 - `luna sources rm <name>` removes source configuration and bound project
   trust while retaining installed pack state, provenance, and managed files.
 - `luna --suppress-next-steps` suppresses contextual next-step recommendations for any
   command.
+- Successful actions, guidance, and lifecycle instructions now use semantic
+  terminal styling. Catalog and pack lifecycle summaries include duration, and
+  install and update success output includes selected versions.
+- Pack parameters support typed defaults. Required prompts offer the default for
+  Enter acceptance; optional parameters bind it when no higher-precedence value exists.
 
 ### Lifecycle Hooks
 
@@ -74,6 +80,15 @@ internal maintenance work, such as CI, build, or release-process changes.
   avoiding invalid extensionless command shims.
 - Interactive lifecycle hooks now inherit terminal input and output, allowing
   commands such as `npm init` to display and handle their prompts.
+- Untrusted script consent now shows a concise command summary and defaults to no.
+- Packs can declare ordered `preUninstall` and `postUninstall` hooks. Uninstall
+  retrieves them from exact installed releases and warns but continues when the
+  source is unavailable.
+- Install, update, and uninstall checkpoint managed ownership before post hooks,
+  preventing hard interruption from leaving applied files under stale lock state.
+  Handled post-hook failures still restore prior files and state.
+  Instructions display automatically with a preface, omit H1 titles, and format
+  headings, emphasis, code, and links.
 
 ## Version 1.0.0 - 2026-08-25
 

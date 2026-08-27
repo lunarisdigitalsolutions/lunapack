@@ -20,18 +20,22 @@ internal sealed class LinkCommandDispatcher(
             return null;
         }
 
+        TimeSpan? managedFileChangesDuration = null;
         var exitCode = await linkLifecycleService.InstallAsync(
             projectDirectory,
             name,
             adoptExisting,
-            targetRemapping: targetRemapping
+            targetRemapping: targetRemapping,
+            onManagedFileChangesApplied: duration => managedFileChangesDuration = duration
         );
         if (exitCode != 0)
         {
             return exitCode;
         }
 
-        console.Info($"✓ Installed link {name}");
+        console.Success(
+            $"✓ Installed link {name} in {CliDuration.Format(managedFileChangesDuration ?? TimeSpan.Zero)}"
+        );
         nextStepRenderer.Render(nextStepAdvisor.Recommend(NextStepContext.LinkInstalled, name));
         return 0;
     }
@@ -46,7 +50,7 @@ internal sealed class LinkCommandDispatcher(
         var exitCode = await linkLifecycleService.UpdateAsync(projectDirectory, name);
         if (exitCode == 0)
         {
-            console.Info($"✓ Updated link {name}");
+            console.Success($"✓ Updated link {name}");
         }
 
         return exitCode;
@@ -63,7 +67,7 @@ internal sealed class LinkCommandDispatcher(
         var exitCode = await linkLifecycleService.UninstallAsync(projectDirectory, name);
         if (exitCode == 0)
         {
-            console.Info($"✓ Uninstalled link {name}");
+            console.Success($"✓ Uninstalled link {name}");
         }
 
         return exitCode;

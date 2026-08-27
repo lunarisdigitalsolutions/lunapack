@@ -230,16 +230,38 @@ internal sealed class InstallPackCommandHandler(
         request = PromptForRequiredParameters(request, prompts);
         if (!dryRun)
         {
+            TimeSpan? managedFileChangesDuration = null;
             var exitCode =
                 request.ScriptMode == ScriptExecutionMode.Prompt
-                    ? await packLifecycleService.InstallAsync(workspaceDirectory, request)
+                    ? await packLifecycleService.InstallAsync(
+                        workspaceDirectory,
+                        request,
+                        duration => managedFileChangesDuration = duration
+                    )
                     : await console.RunWithStatusAsync(
                         $"Installing {request.PackReference.Id}...",
-                        () => packLifecycleService.InstallAsync(workspaceDirectory, request)
+                        () =>
+                            packLifecycleService.InstallAsync(
+                                workspaceDirectory,
+                                request,
+                                duration => managedFileChangesDuration = duration
+                            )
                     );
             if (exitCode == 0)
             {
-                console.Info($"✓ Installed {request.PackReference.Id}");
+                var installedVersion = await packLifecycleService.GetInstalledVersionAsync(
+                    workspaceDirectory,
+                    request.PackReference.Id
+                );
+                if (installedVersion.Value is not { } version)
+                {
+                    return console.Fail(installedVersion.Error);
+                }
+
+                console.Info(string.Empty);
+                console.Success(
+                    $"✓ Installed '{request.PackReference.Id}' (version '{version}') in {CliDuration.Format(managedFileChangesDuration ?? TimeSpan.Zero)}"
+                );
                 nextStepRenderer.Render(
                     nextStepAdvisor.Recommend(
                         NextStepContext.PackInstalled,

@@ -70,7 +70,9 @@ public sealed class InstructionParserTests
 
         await Assert.That(document.Introduction).IsEmpty();
         await Assert.That(document.Steps).Count().IsEqualTo(1);
-        await Assert.That(document.Steps[0]).IsEqualTo(new InstructionStep(1, null, null, content));
+        await Assert
+            .That(document.Steps[0])
+            .IsEqualTo(new InstructionStep(1, null, null, "Use this guide."));
     }
 
     [Test]

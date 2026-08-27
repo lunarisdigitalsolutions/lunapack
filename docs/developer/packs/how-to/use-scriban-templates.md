@@ -18,6 +18,7 @@ parameters:
     type: bool
   projectType:
     type: enum
+    default: service
     values:
       - library
       - service
@@ -33,6 +34,9 @@ luna install company-foundation \
 
 Matching values in the project-level `variables` mapping are used when no
 explicit value is supplied. Explicit command arguments take precedence.
+Use `default` with a string, boolean, or allowed enum value. Optional parameters
+use their default automatically. Required parameters still prompt and offer the
+default so consumers can press Enter to accept it.
 
 ## Render managed files
 

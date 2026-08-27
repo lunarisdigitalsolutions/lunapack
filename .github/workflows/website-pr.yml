@@ -21,6 +21,7 @@ permissions:
 
 jobs:
   build:
+    if: ${{ !github.event.pull_request.draft }}
     name: Build Docusaurus site
     runs-on: ubuntu-latest
     steps:

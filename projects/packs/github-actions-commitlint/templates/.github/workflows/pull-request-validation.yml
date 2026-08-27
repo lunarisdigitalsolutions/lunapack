@@ -17,8 +17,8 @@ permissions:
 
 jobs:
   validate-pull-request:
+    if: ${{ !github.event.pull_request.draft }}
     name: Validate title and description
-    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
 
     steps:

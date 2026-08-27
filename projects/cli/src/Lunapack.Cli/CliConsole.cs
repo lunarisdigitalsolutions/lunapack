@@ -19,13 +19,27 @@ internal sealed class CliConsole(IAnsiConsole ansiConsole, CliLogLevel minimumLe
 
     public void Info(string message) => Write(CliLogLevel.Info, message);
 
+    public void Success(string message) => WriteStyledInfo("green", message);
+
+    public void Accent(string message) => WriteStyledInfo("cyan", message);
+
     public void Warning(string message) => Write(CliLogLevel.Warning, message);
 
     public void Error(string message) => Write(CliLogLevel.Error, message);
 
     public void Render(IRenderable renderable) => ansiConsole.Write(renderable);
 
-    public bool Confirm(string prompt) => ansiConsole.Confirm(prompt);
+    public bool Confirm(string prompt, bool defaultValue = true)
+    {
+        var defaultChoice = defaultValue ? "Y" : "N";
+        ansiConsole.Markup(
+            $"{Markup.Escape(prompt)} [[{(defaultValue ? "Y/n" : "y/N")}]] ({defaultChoice}) "
+        );
+        var response = ansiConsole.Input.ReadKey(intercept: false);
+        return response is null || response.Value.Key == ConsoleKey.Enter
+            ? defaultValue
+            : response.Value.KeyChar is 'y' or 'Y';
+    }
 
     public bool WaitForContinue()
     {
@@ -44,10 +58,16 @@ internal sealed class CliConsole(IAnsiConsole ansiConsole, CliLogLevel minimumLe
         var prompt = FormatParameterPrompt(parameter);
         return parameter.Definition.Type switch
         {
-            PackParameterType.String => ansiConsole.Prompt(new TextPrompt<string>(prompt)),
-            PackParameterType.Bool => ansiConsole.Confirm(prompt).ToString().ToLowerInvariant(),
+            PackParameterType.String => ansiConsole.Prompt(
+                CreateTextPrompt(prompt, parameter.Definition.Default as string)
+            ),
+            PackParameterType.Bool => Confirm(prompt, parameter.Definition.Default as bool? ?? true)
+                .ToString()
+                .ToLowerInvariant(),
             PackParameterType.Enum => ansiConsole.Prompt(
-                new SelectionPrompt<string>().Title(prompt).AddChoices(parameter.Definition.Values)
+                new SelectionPrompt<string>()
+                    .Title(prompt)
+                    .AddChoices(OrderChoices(parameter.Definition))
             ),
             _ => throw new InvalidOperationException(
                 $"Unsupported parameter type '{parameter.Definition.Type}'."
@@ -75,6 +95,31 @@ internal sealed class CliConsole(IAnsiConsole ansiConsole, CliLogLevel minimumLe
             : action();
 
     private bool IsEnabled(CliLogLevel level) => level >= minimumLevel;
+
+    private static TextPrompt<string> CreateTextPrompt(string prompt, string? defaultValue)
+    {
+        var textPrompt = new TextPrompt<string>(prompt);
+        return defaultValue is null ? textPrompt : textPrompt.DefaultValue(defaultValue);
+    }
+
+    private static IEnumerable<string> OrderChoices(PackParameterDefinition definition) =>
+        definition.Default is not string defaultValue
+            ? definition.Values
+            :
+            [
+                defaultValue,
+                .. definition.Values.Where(value =>
+                    !string.Equals(value, defaultValue, StringComparison.Ordinal)
+                ),
+            ];
+
+    private void WriteStyledInfo(string style, string message)
+    {
+        if (IsEnabled(CliLogLevel.Info))
+        {
+            ansiConsole.MarkupLine($"[{style}]{Markup.Escape(message)}[/]");
+        }
+    }
 
     private static string FormatParameterPrompt(PackParameterPrompt parameter)
     {

@@ -165,6 +165,38 @@ public sealed class LifecycleHookPlannerTests
     }
 
     [Test]
+    public async Task Plan_WhenRemovedPackIsMaterialized_SelectsUninstallEvents()
+    {
+        using var workspace = new TestWorkspace();
+        var pack = CreatePack(
+            workspace.Path,
+            "example",
+            new PackManifest.PackHooks
+            {
+                PreUninstall = [new PackManifest.PackHook { Type = "script", Command = "before" }],
+                PostUninstall = [new PackManifest.PackHook { Type = "script", Command = "after" }],
+            }
+        );
+        var entry = CreateEntry(PackLifecyclePlan.ChangeKind.Removed, pack);
+        var plan = new PackLifecyclePlan([entry], [entry], [entry]);
+        var parameters = new ResolvedPackParameters(
+            new Dictionary<string, PackParameterDefinition>(StringComparer.Ordinal),
+            new Dictionary<string, ResolvedPackParameterValue>(StringComparer.Ordinal)
+        );
+        var planner = new LifecycleHookPlanner(new FileSystem());
+
+        var pre = planner.PlanPreMutation(plan, parameters);
+        var post = planner.PlanPostMutation(plan, parameters);
+
+        await Assert
+            .That(LifecycleHookPlanner.ToManifestValue(pre.RequireValue().Single().Hook))
+            .IsEqualTo("preUninstall");
+        await Assert
+            .That(LifecycleHookPlanner.ToManifestValue(post.RequireValue().Single().Hook))
+            .IsEqualTo("postUninstall");
+    }
+
+    [Test]
     public async Task Plan_WhenInstructionsSkipped_DoesNotLoadMissingFileAndRetainsScript()
     {
         using var workspace = new TestWorkspace();

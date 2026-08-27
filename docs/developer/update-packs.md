@@ -18,12 +18,9 @@ Run `luna update --dry-run` to plan updates for every installed root. Use
 LunaPack recomputes the selected-root graph and updates project files and lock
 state together. Modified managed files stay in the project for review.
 
-Lifecycle hooks follow the same `--scripts prompt|run|skip` modes and
-`--skip-instructions` option as install. Updates process dependency-first
-`preUpdate` hooks before managed-file changes and `postUpdate` hooks before
-state persistence, preserving each event's declared script and instruction
-order. New dependencies use install hooks. Dry runs validate and summarize
-instructions without guided display. Ordinary updates are pinned to their
-lock-record source identity. An explicit version available only from another
-source is shown in dry-run output and requires confirmation before the update
-runs.
+Ordinary updates are pinned to their lock-record source identity. An explicit
+version available only from another source is shown in dry-run output and
+requires confirmation before the update runs.
+
+Packs may run scripts or show instructions during updates. See
+[Lifecycle hooks](lifecycle-hooks.md) before changing hook behavior or trust.

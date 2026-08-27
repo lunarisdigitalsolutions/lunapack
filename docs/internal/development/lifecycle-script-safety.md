@@ -31,6 +31,11 @@ must still accept.
 - Exact original `lunapack.yml` bytes are retained. LunaPack verifies and
   restores them after every process, and restores managed files when a
   post-hook, instruction cancellation, or persistence step fails.
+- Managed state is checkpointed after file mutation and before post hooks. A
+  handled failure restores prior files and state; a hard interruption leaves
+  lock ownership aligned with the applied mutation.
+- Uninstall hooks resolve from exact installed releases. Source-resolution
+  failure emits a warning and skips hooks so removal can continue.
 - Dry runs prepare and report hooks without launching scripts, prompting for
   trust, or entering guided instruction display. `--scripts skip` and
   `--skip-instructions` suppress only their respective hook types.

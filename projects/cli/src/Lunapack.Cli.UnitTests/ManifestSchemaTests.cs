@@ -33,6 +33,53 @@ public sealed class ManifestSchemaTests
     }
 
     [Test]
+    public async Task PackManifest_WhenParameterDefaultMatchesType_IsAccepted()
+    {
+        var manifest = new PackManifest
+        {
+            Id = "example",
+            Version = "1.0.0",
+            Author = "Example Author",
+            License = "MIT",
+            Parameters = new Dictionary<string, PackManifest.PackParameter>(StringComparer.Ordinal)
+            {
+                ["includeCi"] = new() { Type = "bool", Default = true },
+            },
+        };
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert.That(issues).IsEmpty();
+    }
+
+    [Test]
+    public async Task PackManifest_WhenEnumDefaultIsNotAllowed_IsRejected()
+    {
+        var manifest = new PackManifest
+        {
+            Id = "example",
+            Version = "1.0.0",
+            Author = "Example Author",
+            License = "MIT",
+            Parameters = new Dictionary<string, PackManifest.PackParameter>(StringComparer.Ordinal)
+            {
+                ["license"] = new()
+                {
+                    Type = "enum",
+                    Values = ["mit"],
+                    Default = "apache-2.0",
+                },
+            },
+        };
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert
+            .That(issues)
+            .Contains("Enum parameter 'license' default must be one of its values.");
+    }
+
+    [Test]
     [Arguments("example-pack", true)]
     [Arguments("Example-Pack2", true)]
     [Arguments("example_pack", false)]

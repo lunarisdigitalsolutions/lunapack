@@ -6,4 +6,6 @@ internal enum LifecycleHook
     PostInstall,
     PreUpdate,
     PostUpdate,
+    PreUninstall,
+    PostUninstall,
 }

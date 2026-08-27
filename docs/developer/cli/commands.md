@@ -4,8 +4,9 @@
 `--workspace`, the workspace is the process working directory. Use
 `--workspace <directory>` or `-w <directory>` with any command to select a
 different directory; relative paths resolve from the process working directory.
-Running `luna` without a subcommand summarizes configured sources and installed
-root packs, then recommends the next commands for the current workspace stage.
+Running `luna` without a subcommand first displays root command help, then
+summarizes configured sources and installed root packs and recommends the next
+commands for the current workspace stage.
 
 ## Global Options
 
@@ -78,7 +79,9 @@ project. Pack trust and pack-trust revocation require `--source` or `-s`. See
 ## Catalog
 
 - `luna discover`: Lists the latest available release of each pack.
-- `luna search <query>`: Lists matching packages and their latest releases.
+- `luna search <query>`: Lists matching packages and configured links. Package
+  results include their latest releases; link results include source, target,
+  and installation status.
 - `luna validate <pack-reference>`: Validates the selected release from configured
   local sources, or the latest local release when version is omitted.
 - `luna inspect <pack-reference>`: Shows the selected pack's identity,
@@ -114,7 +117,7 @@ project. Pack trust and pack-trust revocation require `--source` or `-s`. See
   `description`, `author`, `homepage`, or `license`.
 - `luna pack set parameter <name> <string|bool|enum>`: Creates or replaces a
   parameter. Use `--required`, repeatable enum `--value`, `--display-name`, and
-  `--description`.
+  `--description`; `--default` supplies a typed prompt or optional binding default.
 - `luna pack set reference <id> <version>`: Creates or replaces a composite
   reference.
 - `luna pack rm <selector>`: Removes one exact managed selector.
@@ -158,14 +161,18 @@ commands select the latest available release. `install` accepts `--dry-run`
 `--adopt-existing` (`-a`), repeatable `--parameter` (`-p`),
 `--no-variables` (`-nv`), and repeatable `--skip-variable` (`-sv`).
 `update` accepts `--dry-run` (`-D`); update-all also accepts `--prompt` (`-p`).
-Both `install` and `update` accept `--scripts <prompt|run|skip>`; `prompt` is
-the default and requires effective trust or interactive consent for each script
-hook. Use `--skip-instructions` to suppress instruction loading and display
-without changing script consent behavior.
+`install`, `update`, and `uninstall` accept
+`--scripts <prompt|run|skip>`; `prompt` is the default and requires effective
+trust or interactive consent for each script hook. Interactive consent defaults
+to no. Use `--skip-instructions` to suppress instruction loading and display
+without changing script consent behavior. Uninstall also accepts lifecycle
+`--parameter`, `--no-variables`, and `--skip-variable` inputs.
 Interactive sessions show one prepared instruction step at a time and wait for
 Enter. Noninteractive sessions print all instruction content without reading
 input. Dry runs report validated instruction metadata and step counts without
 entering guided display.
+Instruction display omits the document H1 and emphasizes headings, code, links,
+bold text, and italic text when ANSI styling is available.
 When more than one reference is supplied, lifecycle commands process them in
 the order given. Install reuses already locked transient packs at the same
 version and reports a conflict when a new root requires a different version.
@@ -188,6 +195,10 @@ is plain, while
 verbose, debug, warning, and error output has colored level prefixes. The default
 level is `info`; longer catalog and lifecycle operations show a spinner. Discover,
 search, audit, outdated, and variable-list results render as tables.
+Successful actions are green; guidance and instruction headings use cyan.
+Catalog summaries include elapsed duration. Managed-file phases and successful
+scripts report their own execution duration; time spent waiting for user input
+is excluded. Install and update success lines include the selected pack version.
 
 Successful initialization, source changes, catalog exploration, installation,
 updates, and uninstallation append a bounded recommendation block when a useful

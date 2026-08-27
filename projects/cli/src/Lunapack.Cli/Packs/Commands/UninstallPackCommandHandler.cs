@@ -1,8 +1,10 @@
 using System.CommandLine;
+using System.IO.Abstractions;
 
 namespace Lunapack.Cli;
 
 internal sealed class UninstallPackCommandHandler(
+    IFileSystem fileSystem,
     PackLifecycleService packLifecycleService,
     LinkCommandDispatcher linkCommandDispatcher,
     WorkspaceDirectoryResolver workspaceDirectoryResolver,
@@ -19,49 +21,126 @@ internal sealed class UninstallPackCommandHandler(
             Arity = ArgumentArity.OneOrMore,
             Description = "Pack IDs, optionally followed by @version.",
         };
+        var parameterOption = new Option<string[]>("--parameter", "-p")
+        {
+            Description = "Lifecycle template parameter in <name>=<value> form.",
+        };
+        var noVariablesOption = new Option<bool>("--no-variables", "-nv")
+        {
+            Description = "Do not bind matching project variables for lifecycle hooks.",
+        };
+        var skipVariableOption = new Option<string[]>("--skip-variable", "-sv")
+        {
+            Description = "Project variable name to skip during lifecycle hook binding.",
+        };
+        var scriptsOption = new Option<string?>("--scripts")
+        {
+            Description = "Lifecycle script mode: prompt, run, or skip.",
+        };
+        var skipInstructionsOption = new Option<bool>("--skip-instructions")
+        {
+            Description = "Skip lifecycle instructions.",
+        };
         var command = new Command("uninstall", "Remove an installed pack.")
         {
             packReferenceArgument,
+            parameterOption,
+            noVariablesOption,
+            skipVariableOption,
+            scriptsOption,
+            skipInstructionsOption,
         };
-        command.SetAction(async parseResult =>
-        {
-            var packReferenceValues = parseResult.GetValue(packReferenceArgument) ?? [];
-            if (packReferenceValues.Length == 0)
-            {
-                return console.Fail("A pack ID is required.");
-            }
-
-            var workspaceDirectory = workspaceDirectoryResolver.Resolve(
-                projectDirectory,
-                parseResult.GetValue(workspaceOption)
-            );
-            var prerequisiteFailure = await prerequisiteGuard.RequireWorkspaceAsync(
-                workspaceDirectory
-            );
-            if (prerequisiteFailure is not null)
-            {
-                return prerequisiteFailure.Value;
-            }
-
-            foreach (var packReferenceValue in packReferenceValues)
-            {
-                var exitCode = await UninstallAsync(workspaceDirectory, packReferenceValue);
-                if (exitCode != 0)
-                {
-                    return exitCode;
-                }
-            }
-
-            await RenderGuidanceAsync(workspaceDirectory);
-
-            return 0;
-        });
+        var options = (
+            PackReferences: packReferenceArgument,
+            Parameters: parameterOption,
+            NoVariables: noVariablesOption,
+            SkippedVariables: skipVariableOption,
+            Scripts: scriptsOption,
+            SkipInstructions: skipInstructionsOption
+        );
+        command.SetAction(parseResult =>
+            ExecuteAsync(projectDirectory, workspaceOption, parseResult, options)
+        );
 
         return command;
     }
 
-    private async Task<int> UninstallAsync(string workspaceDirectory, string packReferenceValue)
+    private async Task<int> ExecuteAsync(
+        string projectDirectory,
+        Option<string?> workspaceOption,
+        ParseResult parseResult,
+        (
+            Argument<string[]> PackReferences,
+            Option<string[]> Parameters,
+            Option<bool> NoVariables,
+            Option<string[]> SkippedVariables,
+            Option<string?> Scripts,
+            Option<bool> SkipInstructions
+        ) options
+    )
     {
+        var packReferenceValues = parseResult.GetValue(options.PackReferences) ?? [];
+        if (packReferenceValues.Length == 0)
+        {
+            return console.Fail("A pack ID is required.");
+        }
+
+        var workspaceDirectory = workspaceDirectoryResolver.Resolve(
+            projectDirectory,
+            parseResult.GetValue(workspaceOption)
+        );
+        var prerequisiteFailure = await prerequisiteGuard.RequireWorkspaceAsync(workspaceDirectory);
+        if (prerequisiteFailure is not null)
+        {
+            return prerequisiteFailure.Value;
+        }
+
+        var scriptMode = ScriptExecutionMode.Parse(
+            parseResult.GetValue(options.Scripts) ?? ScriptExecutionMode.Prompt.Value
+        );
+        if (scriptMode.Value is not { } parsedScriptMode)
+        {
+            return console.Fail(scriptMode.Error);
+        }
+
+        foreach (var packReferenceValue in packReferenceValues)
+        {
+            var hookRequest = PackInstallationRequest.Create(
+                fileSystem,
+                workspaceDirectory,
+                packReferenceValue,
+                null,
+                false,
+                parseResult.GetValue(options.Parameters) ?? [],
+                parseResult.GetValue(options.NoVariables),
+                parseResult.GetValue(options.SkippedVariables) ?? [],
+                scriptMode: parsedScriptMode,
+                skipInstructions: parseResult.GetValue(options.SkipInstructions)
+            );
+            if (hookRequest.Value is not { } request)
+            {
+                return console.Fail(hookRequest.Error);
+            }
+
+            var exitCode = await UninstallAsync(workspaceDirectory, request);
+            if (exitCode != 0)
+            {
+                return exitCode;
+            }
+        }
+
+        await RenderGuidanceAsync(workspaceDirectory);
+        return 0;
+    }
+
+    private async Task<int> UninstallAsync(
+        string workspaceDirectory,
+        PackInstallationRequest hookRequest
+    )
+    {
+        var packReferenceValue = hookRequest.PackReference.Version is { } version
+            ? $"{hookRequest.PackReference.Id}@{version}"
+            : hookRequest.PackReference.Id;
         var linkExitCode = await linkCommandDispatcher.TryUninstallAsync(
             workspaceDirectory,
             packReferenceValue
@@ -77,16 +156,25 @@ internal sealed class UninstallPackCommandHandler(
             return console.Fail(packReference.Error);
         }
 
+        TimeSpan? managedFileChangesDuration = null;
         var exitCode = await console.RunWithStatusAsync(
             $"Uninstalling {reference.Id}...",
-            () => packLifecycleService.UninstallAsync(workspaceDirectory, reference)
+            () =>
+                packLifecycleService.UninstallAsync(
+                    workspaceDirectory,
+                    hookRequest,
+                    duration => managedFileChangesDuration = duration
+                )
         );
         if (exitCode != 0)
         {
             return exitCode;
         }
 
-        console.Info($"✓ Uninstalled {reference.Id}");
+        console.Info(string.Empty);
+        console.Success(
+            $"✓ Uninstalled '{reference.Id}' in {CliDuration.Format(managedFileChangesDuration ?? TimeSpan.Zero)}"
+        );
         return 0;
     }
 

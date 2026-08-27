@@ -23,13 +23,3 @@ hooks:
         - '@commitlint/config-conventional@20.4.2'
         - '@commitlint/cli@20.4.2'
       description: Install Commitlint and its conventional-commit rules.
-  postUpdate:
-    - type: script
-      command: npm
-      arguments:
-        - install
-        - --save-dev
-        - --ignore-scripts
-        - '@commitlint/config-conventional@20.4.2'
-        - '@commitlint/cli@20.4.2'
-      description: Update Commitlint and its conventional-commit rules.

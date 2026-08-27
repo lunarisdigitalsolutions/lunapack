@@ -51,6 +51,29 @@ internal sealed class PackLifecyclePlanner
         return new PackLifecyclePlan(changes, executableChanges, executableChanges);
     }
 
+    public static PackLifecyclePlan PlanRemoval(
+        ResolvedPackGraph graph,
+        ProjectLockFile previousLockFile,
+        IReadOnlySet<string> removedPackIds
+    )
+    {
+        var previousPacks = previousLockFile.Packs.ToDictionary(
+            pack => pack.Id,
+            StringComparer.Ordinal
+        );
+        var removals = graph
+            .Packs.Where(pack => removedPackIds.Contains(pack.Manifest.Id))
+            .Select(pack => new PackLifecyclePlan.Entry(
+                PackLifecyclePlan.ChangeKind.Removed,
+                pack,
+                previousPacks.GetValueOrDefault(pack.Manifest.Id),
+                graph.IsRoot(pack),
+                GetDisabledHooks(graph, pack)
+            ))
+            .ToList();
+        return new PackLifecyclePlan(removals, removals, removals);
+    }
+
     private static PackLifecyclePlan.ChangeKind GetChangeKind(
         DiscoveredPack incomingPack,
         ProjectLockFile.ResolvedPack? previousPack

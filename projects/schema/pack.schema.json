@@ -106,10 +106,16 @@
         "postInstall": {
           "$ref": "#/definitions/lifecycleHookList"
         },
+        "postUninstall": {
+          "$ref": "#/definitions/lifecycleHookList"
+        },
         "postUpdate": {
           "$ref": "#/definitions/lifecycleHookList"
         },
         "preInstall": {
+          "$ref": "#/definitions/lifecycleHookList"
+        },
+        "preUninstall": {
           "$ref": "#/definitions/lifecycleHookList"
         },
         "preUpdate": {
@@ -214,6 +220,9 @@
       "additionalProperties": false,
       "required": ["type"],
       "properties": {
+        "default": {
+          "type": ["string", "boolean"]
+        },
         "description": {
           "type": "string",
           "minLength": 1
@@ -241,6 +250,9 @@
       "oneOf": [
         {
           "properties": {
+            "default": {
+              "type": "string"
+            },
             "type": {
               "enum": ["enum"]
             }
@@ -249,8 +261,24 @@
         },
         {
           "properties": {
+            "default": {
+              "type": "string"
+            },
             "type": {
-              "enum": ["string", "bool"]
+              "enum": ["string"]
+            }
+          },
+          "not": {
+            "required": ["values"]
+          }
+        },
+        {
+          "properties": {
+            "default": {
+              "type": "boolean"
+            },
+            "type": {
+              "enum": ["bool"]
             }
           },
           "not": {
@@ -268,7 +296,14 @@
           "type": "array",
           "uniqueItems": true,
           "items": {
-            "enum": ["preInstall", "postInstall", "preUpdate", "postUpdate"]
+            "enum": [
+              "preInstall",
+              "postInstall",
+              "preUpdate",
+              "postUpdate",
+              "preUninstall",
+              "postUninstall"
+            ]
           }
         },
         "id": {

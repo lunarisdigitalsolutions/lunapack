@@ -120,7 +120,7 @@ tie-breakers.
 
 ### Requirement: Inspect ordered lifecycle hooks
 
-`luna inspect <pack-id>[@<version>]` SHALL include a lifecycle hooks section when the resolved pack declares hooks. The section SHALL list events in `preInstall`, `postInstall`, `preUpdate`, and `postUpdate` order and list each event's hooks in declaration order. For a script hook, inspection SHALL show its optional description and exact executable and ordered arguments. For an instruction hook, inspection SHALL show its pack-relative file and effective templating state. Inspection SHALL also list each composite reference's disabled lifecycle events. When a pack declares no hooks or a reference suppresses no events, inspection SHALL state that explicitly.
+`luna inspect <pack-id>[@<version>]` SHALL include a lifecycle hooks section when the resolved pack declares hooks. The section SHALL list events in `preInstall`, `postInstall`, `preUpdate`, `postUpdate`, `preUninstall`, and `postUninstall` order and list each event's hooks in declaration order. For a script hook, inspection SHALL show its optional description and exact executable and ordered arguments. For an instruction hook, inspection SHALL show its pack-relative file and effective templating state. Inspection SHALL also list each composite reference's disabled lifecycle events. When a pack declares no hooks or a reference suppresses no events, inspection SHALL state that explicitly.
 
 #### Scenario: Inspect mixed ordered hooks
 

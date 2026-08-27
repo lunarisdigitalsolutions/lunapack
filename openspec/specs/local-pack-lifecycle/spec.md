@@ -514,6 +514,10 @@ allowed values only for `enum` parameters. It SHALL reject malformed entries,
 unknown names, duplicate command-line names, and incompatible values before
 changing project files or state.
 
+Optional parameters with declared defaults SHALL bind those defaults when no
+higher-precedence value exists. Required parameters with defaults SHALL remain
+interactive inputs and offer the default when prompting so Enter accepts it.
+
 #### Scenario: Supply a required string parameter
 
 - **WHEN** a user runs `luna install license-mit -p companyName=Lunaris`
@@ -525,6 +529,12 @@ changing project files or state.
 - **WHEN** a user supplies a value not declared by an enum parameter
 - **THEN** LunaPack returns a non-success result without copying files or changing
   installation state
+
+#### Scenario: Accept a prompted parameter default
+
+- **WHEN** a required parameter declares a valid default and the consumer
+  submits an empty prompt response
+- **THEN** LunaPack resolves the declared default for that installation
 
 ### Requirement: Resolve project variables for pack parameters
 
@@ -722,9 +732,11 @@ Every resolved transient pack SHALL participate in lifecycle planning and execut
 
 ### Requirement: Run lifecycle hooks in deterministic phases
 
-For a resolved graph, LunaPack SHALL run applicable hooks in stable dependency-first order. A newly installed pack SHALL use `preInstall` before managed-file mutation and `postInstall` after managed-file mutation. An already installed pack moving to a different resolved release SHALL use the incoming release's `preUpdate` and `postUpdate` hooks around its managed-file mutation. A newly introduced dependency during update SHALL use install hooks. Unchanged and removed packs SHALL run none of these hooks.
+For a resolved graph, LunaPack SHALL run applicable hooks in stable dependency-first order. A newly installed pack SHALL use `preInstall` before managed-file mutation and `postInstall` after managed-file mutation. An already installed pack moving to a different resolved release SHALL use the incoming release's `preUpdate` and `postUpdate` hooks around its managed-file mutation. A newly introduced dependency during update SHALL use install hooks. Removed packs SHALL use the exact installed releases' `preUninstall` and `postUninstall` hooks around managed-file removal. Unchanged packs SHALL run no hooks.
 
-LunaPack SHALL persist configuration, lock state, and resulting managed-file digests only after all applicable post hooks for the operation succeed. A pre-hook failure SHALL prevent managed-file and state mutation. A post-hook failure SHALL return a non-success result and restore LunaPack-managed files, configuration, and lock state to their pre-operation state. LunaPack SHALL report that external side effects created by a script cannot be rolled back.
+LunaPack SHALL checkpoint configuration, lock state, and resulting managed-file digests after managed-file mutation and before applicable post hooks. A pre-hook failure SHALL prevent managed-file and state mutation. A handled post-hook failure SHALL return a non-success result and restore LunaPack-managed files, configuration, and lock state to their pre-operation state. A hard interruption after checkpoint persistence SHALL leave state aligned with the applied managed-file mutation. LunaPack SHALL report that external side effects created by a script cannot be rolled back.
+
+LunaPack SHALL retrieve uninstall hooks from the exact releases in the installed graph. When those releases cannot be materialized from their source, LunaPack SHALL warn, skip uninstall hooks, and continue managed-file and state removal. LunaPack SHALL NOT substitute another release's hooks.
 
 #### Scenario: Install a composite graph in dependency order
 
@@ -750,6 +762,16 @@ LunaPack SHALL persist configuration, lock state, and resulting managed-file dig
 
 - **WHEN** a post-install or post-update process exits unsuccessfully
 - **THEN** LunaPack restores managed files, configuration, and lock state, reports the failed hook, and warns that external script side effects may remain
+
+#### Scenario: Run uninstall hooks around removal
+
+- **WHEN** an installed pack declares uninstall hooks and its exact release remains available
+- **THEN** LunaPack runs `preUninstall`, removes managed files and checkpoints state, then runs `postUninstall`
+
+#### Scenario: Continue uninstall when source is unavailable
+
+- **WHEN** the exact installed release cannot be retrieved from its source
+- **THEN** LunaPack warns, runs no uninstall hooks, and still removes the pack's managed files and state
 
 LunaPack SHALL preserve a private backup and exact-byte digest of `lunapack.yml` before the first hook. It SHALL not reload project configuration from disk during hook execution. Immediately after every hook process exits, LunaPack SHALL verify that `lunapack.yml` still exists and has the same exact bytes. If it differs or is missing, LunaPack SHALL log an error identifying the pack and hook, restore the original manifest bytes, abort before another hook runs, and roll back LunaPack-owned managed files, configuration, and lock state. A script that changes and restores the same bytes before exit is outside this detection guarantee.
 
