@@ -14,6 +14,15 @@
       "items": {
         "$ref": "#/definitions/resolvedPack"
       }
+    },
+    "links": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/definitions/linkName"
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/resolvedLink"
+      }
     }
   },
   "definitions": {
@@ -300,6 +309,60 @@
         },
         "type": {
           "enum": ["local"]
+        }
+      }
+    },
+    "linkName": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$"
+    },
+    "linkFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourcePath", "declaredTargetPath", "targetPath", "sha256"],
+      "properties": {
+        "sourcePath": {
+          "$ref": "#/definitions/repositoryRelativePath"
+        },
+        "declaredTargetPath": {
+          "$ref": "#/definitions/repositoryRelativePath"
+        },
+        "targetPath": {
+          "$ref": "#/definitions/relativePath"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[A-Fa-f0-9]{64}$"
+        }
+      }
+    },
+    "resolvedLink": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceName", "sourceIdentity", "definitionSha256", "files"],
+      "properties": {
+        "sourceName": {
+          "$ref": "#/definitions/sourceName"
+        },
+        "sourceIdentity": {
+          "oneOf": [
+            { "$ref": "#/definitions/localSourceIdentity" },
+            { "$ref": "#/definitions/gitSourceIdentity" }
+          ]
+        },
+        "definitionSha256": {
+          "type": "string",
+          "pattern": "^[A-Fa-f0-9]{64}$"
+        },
+        "gitSource": {
+          "$ref": "#/definitions/gitSource"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/linkFile"
+          }
         }
       }
     },

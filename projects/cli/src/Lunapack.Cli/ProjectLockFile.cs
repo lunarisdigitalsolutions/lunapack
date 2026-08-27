@@ -2,9 +2,35 @@ namespace Lunapack.Cli;
 
 internal sealed record ProjectLockFile
 {
+    public Dictionary<string, ResolvedLink> Links { get; set; } = [];
+
     public List<ResolvedPack> Packs { get; set; } = [];
 
     public int SchemaVersion { get; set; }
+
+    internal sealed record LinkFile
+    {
+        public required string DeclaredTargetPath { get; set; }
+
+        public required string Sha256 { get; set; }
+
+        public required string SourcePath { get; set; }
+
+        public required string TargetPath { get; set; }
+    }
+
+    internal sealed record ResolvedLink
+    {
+        public required string DefinitionSha256 { get; set; }
+
+        public List<LinkFile> Files { get; set; } = [];
+
+        public GitSourceProvenance? GitSource { get; set; }
+
+        public required ConfiguredSourceIdentity SourceIdentity { get; set; }
+
+        public required string SourceName { get; set; }
+    }
 
     internal sealed record ManagedFile
     {

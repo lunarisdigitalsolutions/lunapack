@@ -64,6 +64,24 @@ current user across projects. Omitting both uses local-user settings for this
 project. Pack trust and pack-trust revocation require `--source` or `-s`. See
 [Scripts and trust](trust-and-scripts.md) before granting trust.
 
+## Luna Links
+
+- `luna links add <name> --source <name> --include <selector>`: Adds a
+  project-owned source selection. Repeat `--include` (`-i`) and `--exclude`
+  (`-e`); use `--path`, `--target` (`-t`), `--ref`, `--strip-prefix`,
+  `--flatten`, `--install`, or `--force` as needed.
+- `luna links list`: Lists configured links and installation status.
+- `luna links show <name>`: Shows selectors, resolved Git evidence, selected
+  file count, and local modification count.
+- `luna links rm <name>`: Removes an uninstalled definition.
+- `luna links rm <name> --force`: Removes definition and ownership, deletes
+  unchanged targets, and preserves modified targets.
+
+`luna install`, named `luna update`, `luna uninstall`, `luna outdated`, and
+`luna audit` operate on links as well as packs. See
+[Manage Luna Links](../manage-links.md) and the
+[Luna Links reference](links.md).
+
 ## Catalog
 
 - `luna discover`: Lists the latest available release of each pack.

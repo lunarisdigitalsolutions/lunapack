@@ -189,6 +189,20 @@ internal sealed class NextStepAdvisor(IFileSystem fileSystem, IProjectStateStore
                 new("Discover available packs", "luna discover"),
                 new("Search packs", "luna search <keyword>"),
             ],
+            NextStepContext.LinkAdded =>
+            [
+                new("Install the link", $"luna install {value ?? "<link>"}"),
+                new("Show the link", $"luna links show {value ?? "<link>"}"),
+            ],
+            NextStepContext.LinkInstalled =>
+            [
+                new("Audit managed files", "luna audit"),
+                new("Check for updates", "luna outdated"),
+                new(
+                    "Remove the link",
+                    value is null ? "luna links list" : $"luna uninstall {value}"
+                ),
+            ],
             NextStepContext.MissingWorkspace => [new("Initialize a workspace", "luna init")],
             NextStepContext.PackNotFound =>
             [

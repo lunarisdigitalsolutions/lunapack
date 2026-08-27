@@ -137,8 +137,18 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
 
             actions.Add(
                 new DeleteManagedFileUpdateAction(
-                    previousTarget.Pack,
-                    previousTarget.ManagedFile,
+                    new ManagedRootOwner(
+                        ManagedRootKind.Pack,
+                        previousTarget.Pack.Id,
+                        previousTarget.Pack.Version
+                    ),
+                    new ManagedRootFile(
+                        previousTarget.Pack.PackPath,
+                        previousTarget.ManagedFile.DeclaredTargetPath
+                            ?? previousTarget.ManagedFile.TargetPath,
+                        previousTarget.ManagedFile.TargetPath,
+                        previousTarget.ManagedFile.Sha256
+                    ),
                     fileSystem.Path.GetFullPath(
                         previousTarget.ManagedFile.TargetPath,
                         projectDirectory

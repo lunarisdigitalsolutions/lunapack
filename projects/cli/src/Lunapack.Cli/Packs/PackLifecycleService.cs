@@ -640,6 +640,17 @@ internal sealed class PackLifecycleService(
                     );
                 }
 
+                if (
+                    ManagedRootInventory.FindCrossRootCollision(
+                        ManagedRootInventory.FromInstallationPlan(materialization.Graph, plan),
+                        state.LockFile
+                    ) is
+                    { } collision
+                )
+                {
+                    return ManifestOperationResult<PreparedPackInstallation>.Failure(collision);
+                }
+
                 var updatePlan = updatePlanner.Plan(
                     projectDirectory,
                     state.LockFile,
@@ -1243,6 +1254,7 @@ internal sealed class PackLifecycleService(
             new ProjectLockFile
             {
                 SchemaVersion = 1,
+                Links = CloneLinks(updatedLockFile),
                 Packs =
                 [
                     .. previousLockFile.Packs.Where(pack => !updatedIds.Contains(pack.Id)),
@@ -1407,7 +1419,12 @@ internal sealed class PackLifecycleService(
             );
         }
 
-        return new ProjectLockFile { SchemaVersion = 1, Packs = resolvedPacks };
+        return new ProjectLockFile
+        {
+            SchemaVersion = 1,
+            Links = CloneLinks(previousLockFile),
+            Packs = resolvedPacks,
+        };
     }
 
     private static Dictionary<string, ProjectLockFile.ExternalSourceLock> CreateLockExternalSources(
@@ -1434,6 +1451,10 @@ internal sealed class PackLifecycleService(
                 },
                 StringComparer.Ordinal
             );
+
+    private static Dictionary<string, ProjectLockFile.ResolvedLink> CloneLinks(
+        ProjectLockFile lockFile
+    ) => new(lockFile.Links, StringComparer.Ordinal);
 
     private static List<ProjectLockFile.ManagedFile> CreateLockManagedFiles(
         DiscoveredPack pack,
@@ -1538,6 +1559,7 @@ internal sealed class PackLifecycleService(
             new ProjectLockFile
             {
                 SchemaVersion = 1,
+                Links = CloneLinks(previousLockFile),
                 Packs = previousLockFile
                     .Packs.Where(pack => remainingIds.Contains(pack.Id))
                     .ToList(),

@@ -4,7 +4,7 @@ date: 2026-08-26
 decision-makers: LunaPack maintainers
 ---
 
-# ADR-0051: Normalize Source Identity Into a Single Fingerprint Authority
+# ADR-0053: Normalize Source Identity Into a Single Fingerprint Authority
 
 ## Context and Problem Statement
 

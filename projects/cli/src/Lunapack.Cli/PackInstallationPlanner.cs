@@ -51,31 +51,11 @@ internal sealed class PackInstallationPlanner(
     }
 
     private static ManifestOperationResult<
-        Dictionary<string, List<ProjectLockFile.ResolvedPack>>
-    > CreateExistingManagedTargetMap(ProjectLockFile lockFile)
-    {
-        var existingManagedTargets = new Dictionary<string, List<ProjectLockFile.ResolvedPack>>(
-            StringComparer.Ordinal
+        Dictionary<string, List<ManagedRootOwner>>
+    > CreateExistingManagedTargetMap(ProjectLockFile lockFile) =>
+        ManifestOperationResult<Dictionary<string, List<ManagedRootOwner>>>.Success(
+            ManagedRootInventory.CreateOwnershipMap(lockFile)
         );
-        foreach (var lockPack in lockFile.Packs)
-        {
-            foreach (var managedFile in lockPack.ManagedFiles)
-            {
-                var targetPath = NormalizePath(managedFile.TargetPath);
-                if (!existingManagedTargets.TryGetValue(targetPath, out var managedPacks))
-                {
-                    managedPacks = [];
-                    existingManagedTargets.Add(targetPath, managedPacks);
-                }
-
-                managedPacks.Add(lockPack);
-            }
-        }
-
-        return ManifestOperationResult<
-            Dictionary<string, List<ProjectLockFile.ResolvedPack>>
-        >.Success(existingManagedTargets);
-    }
 
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "Maintainability",
@@ -85,7 +65,7 @@ internal sealed class PackInstallationPlanner(
     private ManifestOperationResult<List<PlannedManagedFile>> PlanManagedFiles(
         string projectDirectory,
         ResolvedPackGraph graph,
-        Dictionary<string, List<ProjectLockFile.ResolvedPack>> existingManagedTargets,
+        Dictionary<string, List<ManagedRootOwner>> existingManagedTargets,
         ProjectConfiguration configuration,
         IReadOnlyList<ProjectConfiguration.RequestedPack> requestedPacks,
         PackInstallationRequest installationRequest,
@@ -242,7 +222,7 @@ internal sealed class PackInstallationPlanner(
         DiscoveredPack pack,
         PackManifest.PackManagedFile managedFile,
         string declaredTarget,
-        Dictionary<string, List<ProjectLockFile.ResolvedPack>> existingManagedTargets,
+        Dictionary<string, List<ManagedRootOwner>> existingManagedTargets,
         PackInstallationRequest installationRequest,
         ResolvedPackParameters parameters,
         ExternalContentRoots externalContentRoots
@@ -336,7 +316,7 @@ internal sealed class PackInstallationPlanner(
         PackManagedFileSelector selector,
         PackManifest.PackManagedFile managedFile,
         string declaredTarget,
-        Dictionary<string, List<ProjectLockFile.ResolvedPack>> existingManagedTargets,
+        Dictionary<string, List<ManagedRootOwner>> existingManagedTargets,
         PackInstallationRequest installationRequest,
         ResolvedPackParameters parameters
     )
@@ -388,7 +368,7 @@ internal sealed class PackInstallationPlanner(
         string declaredTargetDirectory,
         PackManifest.PackManagedFileStrategy strategy,
         bool isTemplate,
-        Dictionary<string, List<ProjectLockFile.ResolvedPack>> existingManagedTargets,
+        Dictionary<string, List<ManagedRootOwner>> existingManagedTargets,
         PackInstallationRequest installationRequest,
         ResolvedPackParameters parameters
     )
@@ -449,7 +429,7 @@ internal sealed class PackInstallationPlanner(
         string declaredTargetDirectory,
         PackManifest.PackManagedFileStrategy strategy,
         bool isTemplate,
-        Dictionary<string, List<ProjectLockFile.ResolvedPack>> existingManagedTargets,
+        Dictionary<string, List<ManagedRootOwner>> existingManagedTargets,
         PackInstallationRequest installationRequest,
         ResolvedPackParameters parameters
     )
@@ -579,7 +559,7 @@ internal sealed class PackInstallationPlanner(
         bool flatten,
         PackManifest.PackManagedFileStrategy strategy,
         bool isTemplate,
-        Dictionary<string, List<ProjectLockFile.ResolvedPack>> existingManagedTargets,
+        Dictionary<string, List<ManagedRootOwner>> existingManagedTargets,
         PackInstallationRequest installationRequest,
         ResolvedPackParameters parameters
     )
@@ -657,7 +637,7 @@ internal sealed class PackInstallationPlanner(
         string declaredTarget,
         PackManifest.PackManagedFileStrategy strategy,
         bool isTemplate,
-        Dictionary<string, List<ProjectLockFile.ResolvedPack>> existingManagedTargets,
+        Dictionary<string, List<ManagedRootOwner>> existingManagedTargets,
         PackInstallationRequest installationRequest,
         ResolvedPackParameters parameters
     )
@@ -683,32 +663,26 @@ internal sealed class PackInstallationPlanner(
                 )
             )
             {
-                var ownerMatchesPack = existingManagedPacks.Any(existingManagedPack =>
-                    string.Equals(
-                        existingManagedPack.Id,
-                        pack.Manifest.Id,
-                        StringComparison.Ordinal
-                    )
+                var ownerMatchesPack = existingManagedPacks.Any(owner =>
+                    owner.Kind == ManagedRootKind.Pack
+                    && string.Equals(owner.Name, pack.Manifest.Id, StringComparison.Ordinal)
                     && (
                         installationRequest.PlanningMode == PackManagedFilePlanningMode.Update
                         || string.Equals(
-                            existingManagedPack.Version,
+                            owner.Version,
                             pack.Manifest.Version,
                             StringComparison.Ordinal
                         )
                     )
                 );
-                var claimedByDifferentPack = existingManagedPacks.Any(existingManagedPack =>
-                    !string.Equals(
-                        existingManagedPack.Id,
-                        pack.Manifest.Id,
-                        StringComparison.Ordinal
-                    )
+                var claimedByDifferentRoot = existingManagedPacks.Any(owner =>
+                    owner.Kind != ManagedRootKind.Pack
+                    || !string.Equals(owner.Name, pack.Manifest.Id, StringComparison.Ordinal)
                 );
-                if ((!ownerMatchesPack || claimedByDifferentPack) && !IsMergeStrategy(strategy))
+                if ((!ownerMatchesPack || claimedByDifferentRoot) && !IsMergeStrategy(strategy))
                 {
                     return ManifestOperationResult<PlannedManagedFile>.Failure(
-                        $"Target '{target}' is already managed by '{existingManagedPacks[0].Id}'."
+                        $"Target '{target}' is already managed by '{existingManagedPacks[0].Name}'."
                     );
                 }
             }

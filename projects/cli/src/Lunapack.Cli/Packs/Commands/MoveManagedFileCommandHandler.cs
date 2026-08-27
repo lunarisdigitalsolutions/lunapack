@@ -23,6 +23,7 @@ internal sealed class MoveManagedFileCommandHandler(
             sourceArgument,
             targetArgument,
         };
+        command.Aliases.Add("move");
         command.SetAction(async parseResult =>
         {
             var workspaceDirectory = workspaceDirectoryResolver.Resolve(

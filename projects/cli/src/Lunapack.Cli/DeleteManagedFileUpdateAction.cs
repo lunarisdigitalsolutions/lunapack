@@ -1,7 +1,7 @@
 namespace Lunapack.Cli;
 
 internal sealed record DeleteManagedFileUpdateAction(
-    ProjectLockFile.ResolvedPack PreviousPack,
-    ProjectLockFile.ManagedFile PreviousManagedFile,
+    ManagedRootOwner PreviousOwner,
+    ManagedRootFile PreviousFile,
     string TargetPath
-) : PlannedPackUpdateAction(TargetPath, PreviousManagedFile.TargetPath, null);
+) : PlannedPackUpdateAction(TargetPath, PreviousFile.TargetPath, null);

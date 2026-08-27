@@ -38,6 +38,18 @@ Resolution builds one exact graph from requested roots and composite
 references. It rejects unavailable packs, cycles, and conflicting versions
 before lifecycle planning. A resolved graph has one version per pack ID.
 
+Link resolution remains outside pack catalogs and dependency graphs. It binds
+an exact configured source name, evaluates selectors, and snapshots selected
+regular-file bytes before planning. Local snapshots prevent live source changes
+from separating hashed bytes from copied bytes. Git snapshots resolve one
+immutable commit, enumerate regular blobs without requiring `pack.yml`, and
+materialize only selected content.
+
+Git link snapshots use the operating system's user cache, keyed by configured
+source identity and commit. Cache metadata and bytes are untrusted: reuse
+requires exact identity and commit evidence plus blob-ID verification. Invalid
+or incomplete entries are repaired or rejected before project mutation.
+
 ## Planning And Ownership
 
 Install and update resolve the full graph, bind parameters, evaluate managed
@@ -50,6 +62,11 @@ transient values unless a root declares the parameter.
 The planner supports copy, backup, skip, and merge actions. Shared targets
 require merge strategies for every owner. The lock document records final
 rendered bytes as SHA-256 digests.
+
+After pack-specific resolution, pack graphs adapt to managed roots. Links emit
+managed roots directly. Explicit owner kinds keep pack and link ownership
+separate while one ordinal target map rejects cross-root collisions. Links do
+not enter parameter, template, strategy, script, dependency, or trust behavior.
 
 ## Transactions And Safety
 
@@ -99,3 +116,12 @@ transaction, leaving pack-local aliases untouched. State loading therefore
 accepts resolved source identities that are no longer configured, while
 ordinary state writes continue to validate configured source matching.
 Source, rename, and uninstall writes use the narrow unavailable-source path.
+
+Link install, update, uninstall, and forced removal use the same transaction
+boundary as managed pack files. Configuration, lock evidence, and file actions
+commit together; failed state persistence restores prior bytes. Link uninstall
+removes lock ownership and managed files but retains configuration, while forced
+removal also deletes configuration. Command-scoped target remapping is applied
+after link target mapping so lock evidence retains declared and effective paths.
+Existing version-1 project and lock files may omit `links` and load as empty
+collections.

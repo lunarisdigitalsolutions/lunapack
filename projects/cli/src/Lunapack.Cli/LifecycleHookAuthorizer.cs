@@ -51,10 +51,6 @@ internal sealed class LifecycleHookAuthorizer(
         return AuthorizeInvocations(projectDirectory, configuration, trustContext, invocations);
     }
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Maintainability",
-        "MA0051:Method is too long"
-    )]
     private ManifestOperationResult<
         IReadOnlyList<ResolvedLifecycleHookInvocation>
     > AuthorizeInvocations(
@@ -73,14 +69,17 @@ internal sealed class LifecycleHookAuthorizer(
                 trustContext,
                 invocation
             );
-            if (authorization.Value is not { } command)
+            if (authorization.Value is not { } decision)
             {
                 return ManifestOperationResult<
                     IReadOnlyList<ResolvedLifecycleHookInvocation>
                 >.Failure(authorization.Error ?? "Lifecycle hook was not authorized.");
             }
 
-            authorized.Add(command);
+            if (decision.Command is { } command)
+            {
+                authorized.Add(command);
+            }
         }
 
         return ManifestOperationResult<IReadOnlyList<ResolvedLifecycleHookInvocation>>.Success(
@@ -88,7 +87,7 @@ internal sealed class LifecycleHookAuthorizer(
         );
     }
 
-    private ManifestOperationResult<ResolvedLifecycleHookInvocation> AuthorizeInvocation(
+    private ManifestOperationResult<AuthorizationDecision> AuthorizeInvocation(
         string projectDirectory,
         ProjectConfiguration configuration,
         TrustContext trustContext,
@@ -98,7 +97,7 @@ internal sealed class LifecycleHookAuthorizer(
         var resolved = commandResolver.Resolve(invocation);
         if (resolved.Value is not { } command)
         {
-            return ManifestOperationResult<ResolvedLifecycleHookInvocation>.Failure(
+            return ManifestOperationResult<AuthorizationDecision>.Failure(
                 resolved.Error ?? "Unable to resolve lifecycle hook command."
             );
         }
@@ -113,10 +112,8 @@ internal sealed class LifecycleHookAuthorizer(
                 invocation.Pack.SourceIdentity,
                 invocation.Pack.Manifest.Id
             ) || confirmer.Confirm(command)
-            ? ManifestOperationResult<ResolvedLifecycleHookInvocation>.Success(command)
-            : ManifestOperationResult<ResolvedLifecycleHookInvocation>.Failure(
-                $"Lifecycle hook '{LifecycleHookPlanner.ToManifestValue(invocation.Hook)}' for pack '{invocation.Pack.Manifest.Id}' was not authorized."
-            );
+            ? ManifestOperationResult<AuthorizationDecision>.Success(new(command))
+            : ManifestOperationResult<AuthorizationDecision>.Success(new(null));
     }
 
     private async Task<ManifestOperationResult<TrustContext>> LoadPromptContextAsync(
@@ -163,4 +160,6 @@ internal sealed class LifecycleHookAuthorizer(
     }
 
     private sealed record TrustContext(UserSettings Settings, string ProjectKey);
+
+    private sealed record AuthorizationDecision(ResolvedLifecycleHookInvocation? Command);
 }

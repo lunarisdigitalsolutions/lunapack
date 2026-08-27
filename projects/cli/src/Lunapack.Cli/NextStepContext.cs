@@ -25,4 +25,6 @@ internal enum NextStepContext
     MissingWorkspace,
     MissingSources,
     PackNotFound,
+    LinkAdded,
+    LinkInstalled,
 }

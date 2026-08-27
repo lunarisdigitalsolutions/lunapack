@@ -19,6 +19,9 @@ what LunaPack protects, what it restores, and what operators must still accept.
 - Packed hook files are resolved beneath the copied operation snapshot, hashed,
   and verified immediately before launch. Commands use `ProcessStartInfo` with
   shell execution disabled and literal `ArgumentList` values.
+- Interactive hooks inherit standard input, output, and error so child prompts
+  use the invoking terminal. Noninteractive hooks retain bounded, sanitized
+  output capture and must not prompt for input.
 - Exact original `lunapack.yml` bytes are retained. LunaPack verifies and
   restores them after every process, and restores managed files when a
   post-hook or persistence step fails.

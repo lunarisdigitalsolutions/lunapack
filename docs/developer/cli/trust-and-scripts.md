@@ -18,6 +18,17 @@ execution.
 Dry runs do not execute hooks or prompt. They show hook order, source, command or
 runner, arguments, suppression, and expected consent mode.
 
+## Hook input and output
+
+In an interactive terminal, approved hooks inherit LunaPack's standard input,
+output, and error streams. Commands such as `npm init` can display their own
+prompts and read answers directly. Their output is not prefixed or reformatted
+by LunaPack.
+
+In noninteractive sessions, LunaPack captures bounded hook output. Hooks used in
+automation must not require input; configure the underlying command's
+noninteractive or accept-defaults option instead.
+
 ## Trust scopes
 
 Trust always identifies a configured source. Pack-level trust also identifies a

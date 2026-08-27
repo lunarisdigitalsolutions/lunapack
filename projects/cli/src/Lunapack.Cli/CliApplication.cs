@@ -101,12 +101,14 @@ internal sealed class CliApplication(
             rootCommand,
             fileSystem,
             services.ProjectStateStore,
+            services.LinkServices.LinkLifecycleService,
             services.WorkspaceDirectoryResolver,
             projectDirectory,
             workspaceOption,
             services.PrerequisiteGuard,
             console
         );
+        AddLinksCommand(rootCommand, services, projectDirectory, workspaceOption, console);
 
         return rootCommand;
     }
@@ -155,6 +157,7 @@ internal sealed class CliApplication(
             effectiveGitProcessRunner,
             gitRefResolver
         );
+        var linkServices = CreateLinkServices(fileSystem, projectStateStore, console);
         return new CommandServices(
             projectStateStore,
             workspaceDirectoryResolver,
@@ -165,6 +168,7 @@ internal sealed class CliApplication(
                 new LocalPackDiscovery(fileSystem, console)
             ),
             lifecycleServices,
+            linkServices,
             packUpdatePrompter ?? new ConsolePackUpdatePrompter(console),
             nextStepAdvisor,
             nextStepRenderer,
@@ -292,6 +296,13 @@ internal sealed class CliApplication(
             rootCommand,
             fileSystem,
             services.LifecycleServices.PackLifecycleService,
+            services.LinkServices.CreateDispatcher(
+                services.ProjectStateStore,
+                services.NextStepAdvisor,
+                services.NextStepRenderer,
+                console
+            ),
+            services.LinkServices.LinkLifecycleService,
             services.LifecycleServices.PackUpdateService,
             services.LifecycleServices.PackUpdateSelectionService,
             services.PackUpdatePrompter,
@@ -450,6 +461,8 @@ internal sealed class CliApplication(
         RootCommand rootCommand,
         IFileSystem fileSystem,
         PackLifecycleService packLifecycleService,
+        LinkCommandDispatcher linkCommandDispatcher,
+        LinkLifecycleService linkLifecycleService,
         PackUpdateService packUpdateService,
         PackUpdateSelectionService updateSelectionService,
         IPackUpdatePrompter packUpdatePrompter,
@@ -466,6 +479,7 @@ internal sealed class CliApplication(
             new InstallPackCommandHandler(
                 fileSystem,
                 packLifecycleService,
+                linkCommandDispatcher,
                 workspaceDirectoryResolver,
                 nextStepAdvisor,
                 nextStepRenderer,
@@ -476,6 +490,7 @@ internal sealed class CliApplication(
         rootCommand.Add(
             new UninstallPackCommandHandler(
                 packLifecycleService,
+                linkCommandDispatcher,
                 workspaceDirectoryResolver,
                 nextStepAdvisor,
                 nextStepRenderer,
@@ -493,6 +508,7 @@ internal sealed class CliApplication(
         rootCommand.Add(
             new UpdatePackCommandHandler(
                 packUpdateService,
+                linkCommandDispatcher,
                 updateSelectionService,
                 packUpdatePrompter,
                 workspaceDirectoryResolver,
@@ -505,6 +521,7 @@ internal sealed class CliApplication(
         rootCommand.Add(
             new OutdatedPackCommandHandler(
                 updateSelectionService,
+                linkLifecycleService,
                 workspaceDirectoryResolver,
                 prerequisiteGuard,
                 console
@@ -512,10 +529,31 @@ internal sealed class CliApplication(
         );
     }
 
+    private static void AddLinksCommand(
+        RootCommand rootCommand,
+        CommandServices services,
+        string projectDirectory,
+        Option<string?> workspaceOption,
+        CliConsole console
+    ) =>
+        rootCommand.Add(
+            new LinksCommandHandler(
+                services.ProjectStateStore,
+                services.LinkServices.LinkDefinitionFactory,
+                services.LinkServices.LinkLifecycleService,
+                services.LinkServices.LinkInspectionService,
+                services.WorkspaceDirectoryResolver,
+                services.NextStepAdvisor,
+                services.NextStepRenderer,
+                console
+            ).CreateCommand(projectDirectory, workspaceOption)
+        );
+
     private static void AddAuditCommand(
         RootCommand rootCommand,
         IFileSystem fileSystem,
         ProjectStateStore projectStateStore,
+        LinkLifecycleService linkLifecycleService,
         WorkspaceDirectoryResolver workspaceDirectoryResolver,
         string projectDirectory,
         Option<string?> workspaceOption,
@@ -525,11 +563,68 @@ internal sealed class CliApplication(
         rootCommand.Add(
             new AuditCommandHandler(
                 new AuditService(fileSystem, projectStateStore),
+                projectStateStore,
+                linkLifecycleService,
                 workspaceDirectoryResolver,
                 prerequisiteGuard,
                 console
             ).CreateCommand(projectDirectory, workspaceOption)
         );
+
+    private static LinkServices CreateLinkServices(
+        IFileSystem fileSystem,
+        ProjectStateStore projectStateStore,
+        CliConsole console
+    )
+    {
+        var gitProcessRunner = new GitProcessRunner();
+        var linkResolver = new LinkResolver(
+            fileSystem,
+            new LinkTargetMapper(fileSystem),
+            [
+                new LocalLinkSourceProvider(fileSystem),
+                new GitLinkSourceProvider(
+                    fileSystem,
+                    gitProcessRunner,
+                    new GitRefResolver(gitProcessRunner),
+                    new GitLinkCache(fileSystem, LinkSourceCacheRoot.Resolve(fileSystem))
+                ),
+            ]
+        );
+        return new LinkServices(
+            new LinkDefinitionFactory(fileSystem),
+            new LinkLifecycleService(
+                fileSystem,
+                linkResolver,
+                new LinkPlanner(fileSystem),
+                new PackUpdateTransaction(fileSystem, console),
+                projectStateStore,
+                console
+            ),
+            new LinkInspectionService(fileSystem, projectStateStore)
+        );
+    }
+
+    private sealed record LinkServices(
+        LinkDefinitionFactory LinkDefinitionFactory,
+        LinkLifecycleService LinkLifecycleService,
+        LinkInspectionService LinkInspectionService
+    )
+    {
+        public LinkCommandDispatcher CreateDispatcher(
+            IProjectStateStore projectStateStore,
+            INextStepAdvisor nextStepAdvisor,
+            NextStepRenderer nextStepRenderer,
+            CliConsole console
+        ) =>
+            new(
+                projectStateStore,
+                LinkLifecycleService,
+                nextStepAdvisor,
+                nextStepRenderer,
+                console
+            );
+    }
 
     private sealed record LifecycleServices(
         PackLifecycleService PackLifecycleService,
@@ -543,6 +638,7 @@ internal sealed class CliApplication(
         CatalogService CatalogService,
         PackValidationService PackValidationService,
         LifecycleServices LifecycleServices,
+        LinkServices LinkServices,
         IPackUpdatePrompter PackUpdatePrompter,
         INextStepAdvisor NextStepAdvisor,
         NextStepRenderer NextStepRenderer,

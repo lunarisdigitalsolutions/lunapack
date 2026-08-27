@@ -54,4 +54,6 @@ Create a new architecture decision record from the [MADR-based template](templat
 | [ADR-0048](0048-use-rm-for-configuration-removal-commands.md)                   | Use `rm` consistently for configuration-removal subcommands.                            |
 | [ADR-0049](0049-separate-pack-authoring-validity-from-publication-readiness.md) | Separate incremental manifest validity from publication readiness.                      |
 | [ADR-0050](0050-require-pack-attribution-for-catalogs.md)                       | Require author and license attribution for pack manifests and catalogs.                 |
-| [ADR-0051](0051-normalized-source-fingerprint-authority.md)                     | Normalize source identity into one fingerprint authority for alias mapping and removal. |
+| [ADR-0051](0051-normalize-links-into-managed-root-lifecycle.md)                 | Normalize project-owned links into the shared managed-root lifecycle.                   |
+| [ADR-0052](0052-inherit-terminal-for-interactive-lifecycle-hooks.md)            | Inherit terminal streams for lifecycle hooks in interactive sessions.                   |
+| [ADR-0053](0053-normalized-source-fingerprint-authority.md)                     | Normalize source identity into one fingerprint authority for alias mapping and removal. |
