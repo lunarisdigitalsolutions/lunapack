@@ -5,6 +5,10 @@ internal maintenance work, such as CI, build, or release-process changes.
 
 ## Unreleased
 
+Update this section before creating a release tag.
+
+## Version 1.1.0 - 2026-08-27
+
 ### Luna Links
 
 - Luna `1.1.0` adds project-owned links that select exact files, directories,
