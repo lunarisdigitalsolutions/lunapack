@@ -129,11 +129,11 @@ public sealed class InstructionPreparerTests
 
     private static (MockFileSystem FileSystem, DiscoveredPack Pack) CreatePack(MockFileData content)
     {
-        const string snapshotPath = @"C:\snapshot";
-        const string packPath = @"C:\snapshot\example";
         var fileSystem = new MockFileSystem();
+        var snapshotPath = fileSystem.Path.GetFullPath("snapshot");
+        var packPath = fileSystem.Path.Combine(snapshotPath, "example");
         fileSystem.AddDirectory(packPath);
-        fileSystem.AddFile(@"C:\snapshot\example\instructions\setup.md", content);
+        fileSystem.AddFile(fileSystem.Path.Combine(packPath, "instructions", "setup.md"), content);
         var pack = new DiscoveredPack(
             snapshotPath,
             packPath,

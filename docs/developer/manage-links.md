@@ -1,7 +1,7 @@
 # Manage Luna Links
 
 Use Luna Links to copy and maintain selected files from a configured source
-that does not publish LunaPack manifests. Luna `1.1.0` or later is required.
+that does not publish LunaPack manifests.
 
 ## Install selected repository files
 
