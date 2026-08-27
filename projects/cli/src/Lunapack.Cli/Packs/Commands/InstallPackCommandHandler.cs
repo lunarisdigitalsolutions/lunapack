@@ -132,7 +132,7 @@ internal sealed class InstallPackCommandHandler(
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "Maintainability",
         "MA0051:Method is too long",
-        Justification = "Command request orchestration stays adjacent to CLI input handling; ADR-0040 owns lifecycle execution policy."
+        Justification = "Installation workflow preserves ordered validation, prompting, and execution."
     )]
     private async Task<int> InstallAsync(
         string workspaceDirectory,

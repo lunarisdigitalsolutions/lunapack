@@ -68,7 +68,7 @@ internal sealed class NextStepAdvisor(IFileSystem fileSystem, IProjectStateStore
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "Maintainability",
         "MA0051:Method is too long",
-        Justification = "ADR-0046 defines this closed recommendation mapping."
+        Justification = "Closed next-step context mapping remains visible as one exhaustive switch."
     )]
     private static IReadOnlyList<NextStepRecommendation> CreateRecommendations(
         NextStepContext context,

@@ -50,11 +50,6 @@ internal sealed class PackAuthoringCommandHandler(
         return command;
     }
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Design",
-        "MA0051:Method is too long",
-        Justification = "Command action methods are inherently long."
-    )]
     private Command CreateInitCommand(string projectDirectory, Option<string?> workspaceOption)
     {
         var idOption = new Option<string?>("--id") { Description = "Pack ID." };

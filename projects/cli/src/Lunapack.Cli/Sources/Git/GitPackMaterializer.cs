@@ -15,7 +15,7 @@ internal sealed class GitPackMaterializer(
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "Maintainability",
         "MA0051:Method is too long",
-        Justification = "Materialization coordinates temporary workspace ownership with graph replacement."
+        Justification = "Materialization owns the workspace lifecycle and snapshot cleanup boundary."
     )]
     public async Task<ManifestOperationResult<GitPackMaterialization>> MaterializeAsync(
         ResolvedPackGraph graph,

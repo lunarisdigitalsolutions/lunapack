@@ -570,11 +570,6 @@ public sealed class CliProcessTests
     }
 
     [Test]
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Maintainability",
-        "MA0051:Method is too long",
-        Justification = "ADR-0036 relocation integration requires one end-to-end lifecycle assertion."
-    )]
     public async Task PackLifecycle_WhenManagedTargetRemapped_RetainsAndRelocatesLockTarget()
     {
         using var workspace = new TestWorkspace();

@@ -57,11 +57,6 @@ internal sealed class PackInstallationPlanner(
             ManagedRootInventory.CreateOwnershipMap(lockFile)
         );
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Maintainability",
-        "MA0051:Method is too long",
-        Justification = "Planning iterates the resolved graph and preserves failure context at each boundary."
-    )]
     private ManifestOperationResult<List<PlannedManagedFile>> PlanManagedFiles(
         string projectDirectory,
         ResolvedPackGraph graph,
@@ -212,11 +207,6 @@ internal sealed class PackInstallationPlanner(
         return destination is null ? target : fileSystem.Path.Combine(destination, target);
     }
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Maintainability",
-        "MA0051:Method is too long",
-        Justification = "Selector dispatch keeps every selector kind and its failure context in one place."
-    )]
     private ManifestOperationResult<List<PlannedManagedFile>> CreateManagedFilePlans(
         string projectDirectory,
         DiscoveredPack pack,
@@ -543,11 +533,6 @@ internal sealed class PackInstallationPlanner(
 
     private sealed record ContentRoot(string Directory, ExternalContentRoot? External);
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Maintainability",
-        "MA0051:Method is too long",
-        Justification = "Flattening and target derivation stay together so duplicate names fail before any plan is produced."
-    )]
     private ManifestOperationResult<List<PlannedManagedFile>> CreateManagedFilePlans(
         string projectDirectory,
         DiscoveredPack pack,
@@ -623,11 +608,6 @@ internal sealed class PackInstallationPlanner(
         return ManifestOperationResult<List<PlannedManagedFile>>.Success(managedFiles);
     }
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Maintainability",
-        "MA0051:Method is too long",
-        Justification = "Plan generation validates each candidate file before returning a transactional plan."
-    )]
     private ManifestOperationResult<PlannedManagedFile> CreateManagedFilePlan(
         string projectDirectory,
         DiscoveredPack pack,

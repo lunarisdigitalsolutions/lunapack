@@ -1009,10 +1009,6 @@ internal sealed class PackLifecycleService(
             );
     }
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Maintainability",
-        "MA0051:Method is too long"
-    )]
     private async Task<int> ApplyUpdateAndSaveAsync(
         ProjectState state,
         ProjectConfiguration nextConfiguration,
