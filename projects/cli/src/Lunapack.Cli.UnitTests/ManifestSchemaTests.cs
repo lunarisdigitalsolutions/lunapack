@@ -453,7 +453,11 @@ public sealed class ManifestSchemaTests
         var normalized = PackManifestPathNormalizer.Normalize(manifest);
 
         await Assert
-            .That(normalized.Hooks!.PreInstall!.Select(hook => hook.File))
+            .That(
+                normalized.Hooks!.PreInstall!.Select(hook =>
+                    hook.File ?? throw new InvalidOperationException()
+                )
+            )
             .IsEquivalentTo(["scripts/setup.ps1", "instructions/setup.md"]);
     }
 

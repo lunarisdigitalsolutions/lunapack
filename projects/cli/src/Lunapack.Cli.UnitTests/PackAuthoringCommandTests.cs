@@ -579,12 +579,18 @@ public sealed class PackAuthoringCommandTests
 
         await Assert.That(commandExit).IsEqualTo(0);
         await Assert.That(fileExit).IsEqualTo(0);
-        await Assert.That(manifest.Hooks!.PostInstall!.Single().Command).IsEqualTo("npm");
-        await Assert
-            .That(manifest.Hooks.PostInstall.Single().Arguments)
-            .IsEquivalentTo(["install"]);
-        await Assert.That(manifest.Hooks.PreInstall!.Single().File).IsEqualTo("scripts/setup.ps1");
-        await Assert.That(manifest.Hooks.PreInstall.Single().Runner).IsEqualTo("pwsh");
+        var hooks =
+            manifest.Hooks ?? throw new InvalidOperationException("Hooks were not persisted.");
+        var postInstall =
+            hooks.PostInstall
+            ?? throw new InvalidOperationException("Post-install hooks were not persisted.");
+        var preInstall =
+            hooks.PreInstall
+            ?? throw new InvalidOperationException("Pre-install hooks were not persisted.");
+        await Assert.That(postInstall.Single().Command).IsEqualTo("npm");
+        await Assert.That(postInstall.Single().Arguments).IsEquivalentTo(["install"]);
+        await Assert.That(preInstall.Single().File).IsEqualTo("scripts/setup.ps1");
+        await Assert.That(preInstall.Single().Runner).IsEqualTo("pwsh");
     }
 
     [Test]
@@ -626,10 +632,15 @@ public sealed class PackAuthoringCommandTests
 
         await Assert.That(instructionExit).IsEqualTo(0);
         await Assert.That(replaceExit).IsEqualTo(0);
-        await Assert.That(manifest.Hooks!.PreInstall).Count().IsEqualTo(2);
-        await Assert.That(manifest.Hooks.PreInstall[0].File).IsEqualTo("scripts/setup.ps1");
-        await Assert.That(manifest.Hooks.PreInstall[1].File).IsEqualTo("instructions/setup.md");
-        await Assert.That(manifest.Hooks.PreInstall[1].Templating).IsTrue();
+        var hooks =
+            manifest.Hooks ?? throw new InvalidOperationException("Hooks were not persisted.");
+        var preInstall =
+            hooks.PreInstall
+            ?? throw new InvalidOperationException("Pre-install hooks were not persisted.");
+        await Assert.That(preInstall).Count().IsEqualTo(2);
+        await Assert.That(preInstall[0].File).IsEqualTo("scripts/setup.ps1");
+        await Assert.That(preInstall[1].File).IsEqualTo("instructions/setup.md");
+        await Assert.That(preInstall[1].Templating).IsTrue();
     }
 
     [Test]

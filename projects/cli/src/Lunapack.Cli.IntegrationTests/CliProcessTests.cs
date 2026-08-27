@@ -164,7 +164,10 @@ public sealed class CliProcessTests
         var first = install.StandardOutput.IndexOf("static-instruction", StringComparison.Ordinal);
         var script = install.StandardOutput.IndexOf("10.0.", StringComparison.Ordinal);
         var last = install.StandardOutput.IndexOf("Hello Example Corp", StringComparison.Ordinal);
-        var success = install.StandardOutput.IndexOf("Installed 'example' (version '1.0.0') in ");
+        var success = install.StandardOutput.IndexOf(
+            "Installed 'example' (version '1.0.0') in ",
+            StringComparison.Ordinal
+        );
         await Assert.That(first >= 0 && first < script && script < last && last < success).IsTrue();
         await Assert.That(install.StandardOutput).DoesNotContain("Press Enter to continue...");
         await Assert.That(install.StandardOutput).DoesNotContain("Applied managed-file changes");
