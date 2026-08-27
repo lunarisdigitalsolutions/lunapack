@@ -31,5 +31,5 @@ jobs:
         if:
         uses: ./.github/actions/cli/build
         with:
-          runtime-identifier: 'win-x64,linux-x64,linux-arm64,osx-x64,osx-arm64'
+          runtime-identifier: linux-x64
           publish-artifacts: 'false'
