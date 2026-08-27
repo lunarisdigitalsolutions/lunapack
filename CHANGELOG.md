@@ -51,6 +51,15 @@ internal maintenance work, such as CI, build, or release-process changes.
 - `luna --suppress-next-steps` suppresses contextual next-step recommendations for any
   command.
 
+### Lifecycle Hooks
+
+- Declining an untrusted lifecycle hook now warns and skips the hook instead of
+  failing the pack operation.
+- Windows lifecycle commands such as `npm` now resolve through `PATHEXT`,
+  avoiding invalid extensionless command shims.
+- Interactive lifecycle hooks now inherit terminal input and output, allowing
+  commands such as `npm init` to display and handle their prompts.
+
 ## Version 1.0.0 - 2026-08-25
 
 LunaPack 1.0.0 is the first public release for managing reusable, versioned

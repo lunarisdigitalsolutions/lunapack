@@ -5,6 +5,23 @@ namespace Lunapack.Cli.UnitTests;
 public sealed class LifecycleHookExecutorTests
 {
     [Test]
+    public async Task CreateStartInfo_WhenConsoleIsInteractive_InheritsTerminalStreams()
+    {
+        using var workspace = new TestWorkspace();
+
+        var startInfo = LifecycleHookExecutor.CreateStartInfo(
+            workspace.Path,
+            CreateInvocation(),
+            isInteractive: true
+        );
+
+        await Assert.That(startInfo.RedirectStandardInput).IsFalse();
+        await Assert.That(startInfo.RedirectStandardOutput).IsFalse();
+        await Assert.That(startInfo.RedirectStandardError).IsFalse();
+        await Assert.That(startInfo.CreateNoWindow).IsFalse();
+    }
+
+    [Test]
     public async Task ExecuteAsync_WhenHookExitsNonzero_ReturnsFailureContext()
     {
         using var workspace = new TestWorkspace();

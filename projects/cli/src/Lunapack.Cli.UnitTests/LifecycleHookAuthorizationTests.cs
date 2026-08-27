@@ -153,7 +153,7 @@ public sealed class LifecycleHookAuthorizationTests
     }
 
     [Test]
-    public async Task AuthorizeAsync_WhenPromptTrustIsAbsentAndConfirmationDeclined_FailsClosed()
+    public async Task AuthorizeAsync_WhenPromptTrustIsAbsentAndConfirmationDeclined_SkipsHook()
     {
         using var workspace = new TestWorkspace();
         var fileSystem = new FileSystem();
@@ -172,8 +172,28 @@ public sealed class LifecycleHookAuthorizationTests
             [CreateInvocation(workspace.Path, Environment.ProcessPath!)]
         );
 
-        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.RequireValue()).IsEmpty();
         await Assert.That(confirmer.CallCount).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task Confirm_WhenConfirmationIsUnavailable_WarnsThatHookIsSkipped()
+    {
+        using var workspace = new TestWorkspace();
+        var ansiConsole = new Spectre.Console.Testing.TestConsole();
+        ansiConsole.Profile.Width = 500;
+        var confirmer = new ConsoleLifecycleHookConfirmer(
+            new CliConsole(ansiConsole, CliLogLevel.Info)
+        );
+        var invocation = new ResolvedLifecycleHookInvocation(
+            CreateInvocation(workspace.Path, Environment.ProcessPath!),
+            Environment.ProcessPath!
+        );
+
+        var confirmed = confirmer.Confirm(invocation);
+
+        await Assert.That(confirmed).IsFalse();
+        await Assert.That(ansiConsole.Output).Contains("was not authorized and will be skipped");
     }
 
     [Test]

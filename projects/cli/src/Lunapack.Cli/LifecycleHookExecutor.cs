@@ -25,7 +25,7 @@ internal sealed class LifecycleHookExecutor(IFileSystem fileSystem, CliConsole c
         {
             using var process = new Process
             {
-                StartInfo = CreateStartInfo(projectDirectory, invocation),
+                StartInfo = CreateStartInfo(projectDirectory, invocation, console.IsInteractive),
             };
             if (!process.Start())
             {
@@ -34,8 +34,12 @@ internal sealed class LifecycleHookExecutor(IFileSystem fileSystem, CliConsole c
                 );
             }
 
-            var standardOutput = ReadBoundedAsync(process.StandardOutput);
-            var standardError = ReadBoundedAsync(process.StandardError);
+            var standardOutput = process.StartInfo.RedirectStandardOutput
+                ? ReadBoundedAsync(process.StandardOutput)
+                : Task.FromResult(string.Empty);
+            var standardError = process.StartInfo.RedirectStandardError
+                ? ReadBoundedAsync(process.StandardError)
+                : Task.FromResult(string.Empty);
             try
             {
                 await process.WaitForExitAsync(cancellationToken);
@@ -81,16 +85,17 @@ internal sealed class LifecycleHookExecutor(IFileSystem fileSystem, CliConsole c
             );
     }
 
-    private static ProcessStartInfo CreateStartInfo(
+    internal static ProcessStartInfo CreateStartInfo(
         string projectDirectory,
-        ResolvedLifecycleHookInvocation invocation
+        ResolvedLifecycleHookInvocation invocation,
+        bool isInteractive
     )
     {
         var startInfo = new ProcessStartInfo(invocation.Executable)
         {
-            CreateNoWindow = true,
-            RedirectStandardError = true,
-            RedirectStandardOutput = true,
+            CreateNoWindow = !isInteractive,
+            RedirectStandardError = !isInteractive,
+            RedirectStandardOutput = !isInteractive,
             UseShellExecute = false,
             WorkingDirectory = projectDirectory,
         };
