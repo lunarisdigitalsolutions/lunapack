@@ -34,6 +34,10 @@ internal sealed class UpdatePackCommandHandler(
         {
             Description = "Plan updates without modifying files or state.",
         };
+        var acceptSourcesOption = new Option<bool>("--accept-sources")
+        {
+            Description = "Approve conflict-free external source additions.",
+        };
         var scriptsOption = new Option<string?>("--scripts")
         {
             Description = "Lifecycle script mode: prompt, run, or skip.",
@@ -47,6 +51,7 @@ internal sealed class UpdatePackCommandHandler(
             packReferenceArgument,
             promptOption,
             dryRunOption,
+            acceptSourcesOption,
             scriptsOption,
             skipInstructionsOption,
         };
@@ -72,6 +77,7 @@ internal sealed class UpdatePackCommandHandler(
             }
 
             var dryRun = parseResult.GetValue(dryRunOption);
+            var acceptSources = parseResult.GetValue(acceptSourcesOption);
             var scriptMode = ScriptExecutionMode.Parse(
                 parseResult.GetValue(scriptsOption) ?? ScriptExecutionMode.Prompt.Value
             );
@@ -93,7 +99,8 @@ internal sealed class UpdatePackCommandHandler(
                         workspaceDirectory,
                         dryRun,
                         parsedScriptMode,
-                        parseResult.GetValue(skipInstructionsOption)
+                        parseResult.GetValue(skipInstructionsOption),
+                        acceptSources
                     ),
                     dryRun
                 );
@@ -108,7 +115,8 @@ internal sealed class UpdatePackCommandHandler(
                         dryRun,
                         parsedScriptMode,
                         parseResult.GetValue(skipInstructionsOption),
-                        "Updating packs..."
+                        "Updating packs...",
+                        acceptSources
                     ),
                     dryRun
                 );
@@ -138,7 +146,8 @@ internal sealed class UpdatePackCommandHandler(
                         dryRun,
                         parsedScriptMode,
                         parseResult.GetValue(skipInstructionsOption),
-                        $"Updating {reference.Id}..."
+                        $"Updating {reference.Id}...",
+                        acceptSources
                     ),
                     dryRun
                 );
@@ -160,7 +169,8 @@ internal sealed class UpdatePackCommandHandler(
         bool dryRun,
         ScriptExecutionMode scriptMode,
         bool skipInstructions,
-        string status
+        string status,
+        bool acceptSources
     ) =>
         scriptMode == ScriptExecutionMode.Prompt
             ? packUpdateService.UpdateAsync(
@@ -168,7 +178,8 @@ internal sealed class UpdatePackCommandHandler(
                 reference,
                 dryRun,
                 scriptMode,
-                skipInstructions
+                skipInstructions,
+                acceptSources
             )
             : console.RunWithStatusAsync(
                 status,
@@ -178,7 +189,8 @@ internal sealed class UpdatePackCommandHandler(
                         reference,
                         dryRun,
                         scriptMode,
-                        skipInstructions
+                        skipInstructions,
+                        acceptSources
                     )
             );
 
@@ -186,7 +198,8 @@ internal sealed class UpdatePackCommandHandler(
         string projectDirectory,
         bool dryRun,
         ScriptExecutionMode scriptMode,
-        bool skipInstructions
+        bool skipInstructions,
+        bool acceptSources
     )
     {
         var availableUpdates = await updateSelectionService.GetAvailableAsync(projectDirectory);
@@ -206,7 +219,8 @@ internal sealed class UpdatePackCommandHandler(
             confirmedIds,
             dryRun,
             scriptMode,
-            skipInstructions
+            skipInstructions,
+            acceptSources
         );
     }
 

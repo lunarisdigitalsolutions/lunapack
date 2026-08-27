@@ -26,7 +26,7 @@ internal sealed class ManagedFileConditionParser
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "Maintainability",
         "MA0051:Method is too long",
-        Justification = "Tokenization keeps all supported condition tokens in one ordered scanner."
+        Justification = "Token recognition order is a single parser invariant."
     )]
     private static ManifestOperationResult<IReadOnlyList<Token>> Tokenize(string condition)
     {

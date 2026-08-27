@@ -17,19 +17,25 @@ internal sealed class OutdatedPackCommandHandler(
             "outdated",
             "List installed packs and links with newer available content."
         );
+        var offlineOption = new Option<bool>("--offline")
+        {
+            Description = "Use lock and cache evidence without contacting remotes.",
+        };
+        command.Options.Add(offlineOption);
         command.SetAction(parseResult =>
             OutdatedAsync(
                 workspaceDirectoryResolver.Resolve(
                     projectDirectory,
                     parseResult.GetValue(workspaceOption)
-                )
+                ),
+                parseResult.GetValue(offlineOption)
             )
         );
 
         return command;
     }
 
-    public async Task<int> OutdatedAsync(string projectDirectory)
+    public async Task<int> OutdatedAsync(string projectDirectory, bool offline = false)
     {
         var prerequisiteFailure = await prerequisiteGuard.RequireSourcesAsync(projectDirectory);
         if (prerequisiteFailure is not null)
@@ -37,10 +43,20 @@ internal sealed class OutdatedPackCommandHandler(
             return prerequisiteFailure.Value;
         }
 
-        var availableUpdates = await updateSelectionService.GetAvailableAsync(projectDirectory);
+        var availableUpdates = await updateSelectionService.GetAvailableAsync(
+            projectDirectory,
+            offline
+        );
         if (availableUpdates.Value is not { } updates)
         {
             return console.Fail(availableUpdates.Error);
+        }
+
+        if (offline)
+        {
+            console.Info(
+                "Remote refs were not checked; results use available lock and cache evidence."
+            );
         }
 
         var reportedLinks = await linkLifecycleService.OutdatedAsync(projectDirectory);
@@ -61,12 +77,14 @@ internal sealed class OutdatedPackCommandHandler(
             table.AddColumn("[bold]Pack[/]");
             table.AddColumn("[bold]Current[/]");
             table.AddColumn("[bold]Latest[/]");
+            table.AddColumn("[bold]Reason[/]");
             foreach (var update in updates)
             {
                 table.AddRow(
                     Markup.Escape(update.RequestedRoot.Id),
                     Markup.Escape(update.Current.Version),
-                    Markup.Escape(update.Latest.Manifest.Version)
+                    Markup.Escape(update.Latest.Manifest.Version),
+                    Markup.Escape(update.Reason)
                 );
             }
 

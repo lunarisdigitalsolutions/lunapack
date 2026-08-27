@@ -40,9 +40,28 @@ internal sealed record ProjectLockFile
 
         public required string Sha256 { get; set; }
 
+        public string? SourceAlias { get; set; }
+
+        public string? SourceFingerprint { get; set; }
+
+        public string? SourceName { get; set; }
+
+        public string? SourcePath { get; set; }
+
         public ManagedFileStrategy? Strategy { get; set; }
 
         public required string TargetPath { get; set; }
+    }
+
+    internal sealed record ExternalSourceLock
+    {
+        public required string Fingerprint { get; set; }
+
+        public required string Ref { get; set; }
+
+        public required string ResolvedCommit { get; set; }
+
+        public required string SourceName { get; set; }
     }
 
     internal sealed record ManagedFileStrategy
@@ -66,6 +85,8 @@ internal sealed record ProjectLockFile
         public string? SourceName { get; set; }
 
         public string? Destination { get; set; }
+
+        public Dictionary<string, ExternalSourceLock> ExternalSources { get; set; } = [];
 
         public GitSourceProvenance? GitSource { get; set; }
 

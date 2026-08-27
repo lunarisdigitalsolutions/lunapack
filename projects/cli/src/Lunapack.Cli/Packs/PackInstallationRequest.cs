@@ -21,6 +21,8 @@ internal sealed record PackInstallationRequest(
 
     public bool UseProjectVariables { get; init; } = true;
 
+    public bool AcceptSources { get; init; }
+
     public ScriptExecutionMode ScriptMode { get; init; } = ScriptExecutionMode.Prompt;
 
     public bool SkipInstructions { get; init; }

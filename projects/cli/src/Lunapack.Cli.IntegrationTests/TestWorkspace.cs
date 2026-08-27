@@ -18,6 +18,13 @@ internal sealed class TestWorkspace : IDisposable
     {
         if (Directory.Exists(Path))
         {
+            foreach (
+                var filePath in Directory.EnumerateFiles(Path, "*", SearchOption.AllDirectories)
+            )
+            {
+                File.SetAttributes(filePath, FileAttributes.Normal);
+            }
+
             Directory.Delete(Path, recursive: true);
         }
     }

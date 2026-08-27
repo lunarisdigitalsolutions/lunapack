@@ -4,6 +4,7 @@ using Spectre.Console;
 namespace Lunapack.Cli;
 
 internal sealed class AuditCommandHandler(
+    AuditService auditService,
     ProjectStateStore projectStateStore,
     LinkLifecycleService linkLifecycleService,
     WorkspaceDirectoryResolver workspaceDirectoryResolver,
@@ -34,10 +35,10 @@ internal sealed class AuditCommandHandler(
             return prerequisiteFailure.Value;
         }
 
-        var state = await projectStateStore.LoadAsync(projectDirectory);
-        if (state.Value is not { } projectState)
+        var inspected = await auditService.InspectAsync(projectDirectory);
+        if (inspected.Value is not { } report)
         {
-            return console.Fail(state.Error);
+            return console.Fail(inspected.Error);
         }
 
         var table = new Table().Title("[bold]Resolved packs[/]").Border(TableBorder.Rounded);
@@ -45,9 +46,7 @@ internal sealed class AuditCommandHandler(
         table.AddColumn("[bold]Source[/]");
         table.AddColumn("[bold]Dependencies[/]");
         table.AddColumn("[bold]Managed files[/]");
-        foreach (
-            var pack in projectState.LockFile.Packs.OrderBy(pack => pack.Id, StringComparer.Ordinal)
-        )
+        foreach (var pack in report.Packs.OrderBy(pack => pack.Id, StringComparer.Ordinal))
         {
             table.AddRow(
                 Markup.Escape($"{pack.Id}@{pack.Version}"),
@@ -69,6 +68,22 @@ internal sealed class AuditCommandHandler(
         }
 
         console.Render(table);
+        foreach (var source in report.ExternalSources)
+        {
+            console.Info(AuditOutputFormatter.Format(source));
+        }
+
+        foreach (var file in report.ExternalFiles)
+        {
+            console.Info(AuditOutputFormatter.Format(file));
+        }
+
+        var state = await projectStateStore.LoadAsync(projectDirectory);
+        if (state.Value is not { } projectState)
+        {
+            return console.Fail(state.Error);
+        }
+
         RenderLinks(projectDirectory, projectState.LockFile);
         return 0;
     }

@@ -22,6 +22,8 @@ internal sealed record PackManifest
 
     public Dictionary<string, PackParameter> Parameters { get; set; } = [];
 
+    public Dictionary<string, PackSource> Sources { get; set; } = [];
+
     public List<string> Tags { get; set; } = [];
 
     public required string Version { get; set; }
@@ -32,7 +34,13 @@ internal sealed record PackManifest
 
         public string? Directory { get; set; }
 
+        public List<string> Exclude { get; set; } = [];
+
+        public bool Flatten { get; set; }
+
         public string? Glob { get; set; }
+
+        public string? Path { get; set; }
 
         public string? Source { get; set; }
 
@@ -42,6 +50,19 @@ internal sealed record PackManifest
         public bool Template { get; set; }
 
         public required string Target { get; set; }
+    }
+
+    internal sealed record PackSource
+    {
+        public string? Description { get; set; }
+
+        public string? Path { get; set; }
+
+        public required string Ref { get; set; }
+
+        public string Type { get; set; } = "git";
+
+        public required string Url { get; set; }
     }
 
     internal sealed record PackManagedFileStrategy

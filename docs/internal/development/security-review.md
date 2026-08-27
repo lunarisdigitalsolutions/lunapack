@@ -37,6 +37,15 @@ status at `NOT READY`. Accepted deferrals remain explicit residual risks.
 - Configuration, pack, and lock documents expose one public schema version.
 - Lock records require configured source identity and declared/effective target
   paths.
+- Pack-defined Git URLs reject embedded credentials. Source prompts, lock
+  records, fingerprints, audit output, and diagnostics use sanitized canonical
+  identities.
+- External source consent is graph-wide, defaults to no, and remains separate
+  from lifecycle-script trust. `--accept-sources` cannot resolve identifier
+  conflicts or bypass path, authentication, trust, or transaction checks.
+- External content resolves to an immutable commit in a private operation
+  directory. Sparse selection and followed links must remain below the approved
+  source root, and external files are never executed as lifecycle scripts.
 - Lifecycle processes use direct argument lists and explicit trust decisions.
 - Release reruns download and byte-compare the exact expected GitHub Release
   assets and compare release notes before registry publication resumes.

@@ -13,6 +13,11 @@ internal sealed class LinksCommandHandler(
     CliConsole console
 )
 {
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Maintainability",
+        "MA0051:Method is too long",
+        Justification = "Links command composition keeps related subcommands collocated."
+    )]
     public Command CreateCommand(string projectDirectory, Option<string?> workspaceOption)
     {
         return new Command("links", "Manage project-owned file links.")
@@ -27,7 +32,7 @@ internal sealed class LinksCommandHandler(
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "Maintainability",
         "MA0051:Method is too long",
-        Justification = "CLI option definitions remain collocated with their command action."
+        Justification = "Link definition options remain collocated with their command action."
     )]
     private Command CreateAddCommand(string projectDirectory, Option<string?> workspaceOption)
     {

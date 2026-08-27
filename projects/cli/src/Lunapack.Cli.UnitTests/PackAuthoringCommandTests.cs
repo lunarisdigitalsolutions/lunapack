@@ -221,7 +221,7 @@ public sealed class PackAuthoringCommandTests
             .That(new[] { fileExit, directoryExit, globExit }.All(code => code == 0))
             .IsTrue();
         await Assert
-            .That(manifest.ManagedFiles.Select(file => file.Source))
+            .That(manifest.ManagedFiles.Select(file => file.Path))
             .Contains("docs/README.md");
         await Assert
             .That(manifest.ManagedFiles.Select(file => file.Directory))
@@ -248,6 +248,290 @@ public sealed class PackAuthoringCommandTests
 
         await Assert.That(exitCode).IsEqualTo(1);
         await Assert.That(File.ReadAllText(path)).IsEqualTo(original);
+    }
+
+    [Test]
+    public async Task AddGitSource_WhenInputsValid_PersistsCanonicalDeclaration()
+    {
+        using var workspace = await CreateInitializedWorkspaceAsync();
+
+        var exitCode = await workspace.Application.RunAsync(
+            [
+                "pack",
+                "add",
+                "source",
+                "git",
+                "upstream",
+                "https://github.com/Example/Standards.git",
+                "--ref",
+                "main",
+                "--path",
+                @"docs\standards",
+                "--description",
+                "Shared standards",
+            ],
+            workspace.Path
+        );
+        var source = (await LoadAsync(workspace)).Sources["upstream"];
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(source.Ref).IsEqualTo("refs/heads/main");
+        await Assert.That(source.Path).IsEqualTo("docs/standards");
+        await Assert.That(source.Description).IsEqualTo("Shared standards");
+    }
+
+    [Test]
+    public async Task AddGitHubSource_WhenInputsValid_PersistsGitDeclaration()
+    {
+        using var workspace = await CreateInitializedWorkspaceAsync();
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["pack", "add", "source", "github", "upstream", "Example/Standards", "--ref", "main"],
+            workspace.Path
+        );
+        var source = (await LoadAsync(workspace)).Sources["upstream"];
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(source.Url).IsEqualTo("https://github.com/Example/Standards.git");
+        await Assert.That(source.Ref).IsEqualTo("refs/heads/main");
+    }
+
+    [Test]
+    public async Task AddSource_WhenRefMissing_PreservesManifest()
+    {
+        using var workspace = await CreateInitializedWorkspaceAsync();
+        var path = Path.Combine(workspace.Path, PackManifestStore.FileName);
+        var original = File.ReadAllText(path);
+
+        var exitCode = await workspace.Application.RunAsync(
+            [
+                "pack",
+                "add",
+                "source",
+                "git",
+                "upstream",
+                "https://github.com/example/standards.git",
+            ],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(File.ReadAllText(path)).IsEqualTo(original);
+    }
+
+    [Test]
+    public async Task AddSource_WhenManifestDirectorySelected_UpdatesSelectedManifest()
+    {
+        using var workspace = new TestWorkspace();
+        var packDirectory = Path.Combine(workspace.Path, "pack");
+        Directory.CreateDirectory(packDirectory);
+        var initExit = await workspace.Application.RunAsync(
+            [
+                "pack",
+                "init",
+                "--workspace",
+                packDirectory,
+                "--id",
+                "example",
+                "--author",
+                "Example Author",
+                "--license",
+                "MIT",
+            ],
+            workspace.Path
+        );
+
+        var addExit = await workspace.Application.RunAsync(
+            [
+                "pack",
+                "add",
+                "source",
+                "git",
+                "upstream",
+                "https://github.com/example/standards.git",
+                "--ref",
+                "main",
+                "--manifest",
+                "pack",
+            ],
+            workspace.Path
+        );
+        var selected = await new PackManifestStore(workspace.FileSystem).LoadAsync(packDirectory);
+
+        await Assert.That(initExit).IsEqualTo(0);
+        await Assert.That(addExit).IsEqualTo(0);
+        await Assert.That(selected.Value?.Sources).ContainsKey("upstream");
+        await Assert
+            .That(File.Exists(Path.Combine(workspace.Path, PackManifestStore.FileName)))
+            .IsFalse();
+    }
+
+    [Test]
+    public async Task AddExternalGlob_WhenOptionsValid_PersistsCanonicalSelector()
+    {
+        using var workspace = await CreateInitializedWorkspaceAsync();
+        await workspace.Application.RunAsync(
+            [
+                "pack",
+                "add",
+                "source",
+                "git",
+                "upstream",
+                "https://github.com/example/standards.git",
+                "--ref",
+                "main",
+            ],
+            workspace.Path
+        );
+
+        var exitCode = await workspace.Application.RunAsync(
+            [
+                "pack",
+                "add",
+                "glob",
+                @"docs\**\*.md",
+                "--source",
+                "upstream",
+                "--exclude",
+                @"docs\internal\**",
+                "--exclude",
+                @"docs\drafts\**",
+                "--flatten",
+                "--target",
+                @".github\standards",
+            ],
+            workspace.Path
+        );
+        var selector = (await LoadAsync(workspace)).ManagedFiles.Single();
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(selector.Source).IsEqualTo("upstream");
+        await Assert.That(selector.Glob).IsEqualTo("docs/**/*.md");
+        await Assert.That(selector.Exclude).IsEquivalentTo(["docs/internal/**", "docs/drafts/**"]);
+        await Assert.That(selector.Flatten).IsTrue();
+        await Assert.That(selector.Target).IsEqualTo(".github/standards");
+    }
+
+    [Test]
+    public async Task AddExternalFile_WhenSourceAliasUnknown_PreservesManifestAndGuidesAuthor()
+    {
+        var console = new SpectreTestConsole();
+        using var workspace = await CreateInitializedWorkspaceAsync(console);
+        var path = Path.Combine(workspace.Path, PackManifestStore.FileName);
+        var original = File.ReadAllText(path);
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["pack", "add", "file", "README.md", "--source", "missing"],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(File.ReadAllText(path)).IsEqualTo(original);
+        await Assert.That(console.Output).Contains("Pack source alias 'missing' is not declared");
+    }
+
+    [Test]
+    public async Task AddExternalFile_WhenPathIsRooted_PreservesManifest()
+    {
+        using var workspace = await CreateInitializedWorkspaceAsync();
+        await workspace.Application.RunAsync(
+            [
+                "pack",
+                "add",
+                "source",
+                "git",
+                "upstream",
+                "https://github.com/example/standards.git",
+                "--ref",
+                "main",
+            ],
+            workspace.Path
+        );
+        var path = Path.Combine(workspace.Path, PackManifestStore.FileName);
+        var original = File.ReadAllText(path);
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["pack", "add", "file", "/etc/passwd", "--source", "upstream"],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(File.ReadAllText(path)).IsEqualTo(original);
+    }
+
+    [Test]
+    public async Task Sources_WhenSourceReferenced_ListsSanitizedIdentityAndReferenceCount()
+    {
+        var console = new SpectreTestConsole();
+        console.Profile.Width = 200;
+        using var workspace = await CreateInitializedWorkspaceAsync(console);
+        await workspace.Application.RunAsync(
+            [
+                "pack",
+                "add",
+                "source",
+                "git",
+                "upstream",
+                "git@github.com:Example/Standards.git",
+                "--ref",
+                "main",
+            ],
+            workspace.Path
+        );
+        await workspace.Application.RunAsync(
+            ["pack", "add", "file", "README.md", "--source", "upstream"],
+            workspace.Path
+        );
+
+        var exitCode = await workspace.Application.RunAsync(["pack", "sources"], workspace.Path);
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(console.Output).Contains("github.com/example/standards");
+        await Assert.That(console.Output).Contains("refs/heads/main");
+        await Assert.That(console.Output).DoesNotContain("git@github.com");
+        await Assert.That(console.Output).Contains("References");
+    }
+
+    [Test]
+    public async Task RemoveSource_WhenReferenced_RefusesUntilSelectorRemoved()
+    {
+        using var workspace = await CreateInitializedWorkspaceAsync();
+        await workspace.Application.RunAsync(
+            [
+                "pack",
+                "add",
+                "source",
+                "git",
+                "upstream",
+                "https://github.com/example/standards.git",
+                "--ref",
+                "main",
+            ],
+            workspace.Path
+        );
+        await workspace.Application.RunAsync(
+            ["pack", "add", "file", "README.md", "--source", "upstream"],
+            workspace.Path
+        );
+        var path = Path.Combine(workspace.Path, PackManifestStore.FileName);
+        var referenced = File.ReadAllText(path);
+
+        var refusedExit = await workspace.Application.RunAsync(
+            ["pack", "rm", "source", "upstream"],
+            workspace.Path
+        );
+        var afterRefusal = File.ReadAllText(path);
+        await workspace.Application.RunAsync(["pack", "rm", "README.md"], workspace.Path);
+        var removedExit = await workspace.Application.RunAsync(
+            ["pack", "remove", "source", "upstream"],
+            workspace.Path
+        );
+        var manifest = await LoadAsync(workspace);
+
+        await Assert.That(refusedExit).IsEqualTo(1);
+        await Assert.That(afterRefusal).IsEqualTo(referenced);
+        await Assert.That(removedExit).IsEqualTo(0);
+        await Assert.That(manifest.Sources).DoesNotContainKey("upstream");
     }
 
     [Test]
@@ -550,6 +834,7 @@ public sealed class PackAuthoringCommandTests
     {
         var console = new SpectreTestConsole();
         using var workspace = new TestWorkspace(ansiConsole: console);
+        File.WriteAllText(Path.Combine(workspace.Path, "README.md"), "example");
         await workspace.Application.RunAsync(
             ["pack", "init", "--id", "example", "--author", "Example Author", "--license", "MIT"],
             workspace.Path
@@ -591,9 +876,87 @@ public sealed class PackAuthoringCommandTests
         await Assert.That(console.Output).Contains("Manifest valid.");
     }
 
-    private static async Task<TestWorkspace> CreateInitializedWorkspaceAsync()
+    [Test]
+    public async Task Validate_WhenLocalSourceFileIsMissing_ReportsFailure()
     {
-        var workspace = new TestWorkspace();
+        var console = new SpectreTestConsole();
+        using var workspace = await CreateInitializedWorkspaceAsync(console);
+        await workspace.Application.RunAsync(["pack", "add", "file", "missing.md"], workspace.Path);
+
+        var exitCode = await workspace.Application.RunAsync(["pack", "validate"], workspace.Path);
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(console.Output).Contains("source file 'missing.md' is unavailable");
+    }
+
+    [Test]
+    public async Task Validate_WhenExternalSourceIsUnused_WarnsAndSucceeds()
+    {
+        var console = new SpectreTestConsole();
+        using var workspace = await CreateInitializedWorkspaceAsync(console);
+        await workspace.Application.RunAsync(
+            [
+                "pack",
+                "add",
+                "source",
+                "git",
+                "upstream",
+                "https://github.com/example/standards.git",
+                "--ref",
+                "main",
+            ],
+            workspace.Path
+        );
+
+        var exitCode = await workspace.Application.RunAsync(["pack", "validate"], workspace.Path);
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(console.Output).Contains("Source alias 'upstream' is unused");
+        await Assert.That(console.Output).Contains("Manifest valid.");
+    }
+
+    [Test]
+    [Arguments(true, 0)]
+    [Arguments(false, 1)]
+    public async Task Validate_WhenExternalFileReachabilityVaries_ReturnsExpectedResult(
+        bool createExternalFile,
+        int expectedExitCode
+    )
+    {
+        var runner = new PackValidationGitProcessRunner(createExternalFile);
+        using var workspace = new TestWorkspace(gitProcessRunner: runner);
+        await workspace.Application.RunAsync(
+            ["pack", "init", "--id", "example", "--author", "Example", "--license", "MIT"],
+            workspace.Path
+        );
+        await workspace.Application.RunAsync(
+            [
+                "pack",
+                "add",
+                "source",
+                "git",
+                "upstream",
+                "https://github.com/example/standards.git",
+                "--ref",
+                "main",
+            ],
+            workspace.Path
+        );
+        await workspace.Application.RunAsync(
+            ["pack", "add", "file", "README.md", "--source", "upstream"],
+            workspace.Path
+        );
+
+        var exitCode = await workspace.Application.RunAsync(["pack", "validate"], workspace.Path);
+
+        await Assert.That(exitCode).IsEqualTo(expectedExitCode);
+    }
+
+    private static async Task<TestWorkspace> CreateInitializedWorkspaceAsync(
+        SpectreTestConsole? console = null
+    )
+    {
+        var workspace = new TestWorkspace(ansiConsole: console);
         var exitCode = await workspace.Application.RunAsync(
             ["pack", "init", "--id", "example", "--author", "Example Author", "--license", "MIT"],
             workspace.Path
@@ -611,5 +974,37 @@ public sealed class PackAuthoringCommandTests
     {
         var result = await new PackManifestStore(workspace.FileSystem).LoadAsync(workspace.Path);
         return result.Value ?? throw new InvalidOperationException(result.Error);
+    }
+
+    private sealed class PackValidationGitProcessRunner(bool createExternalFile) : IGitProcessRunner
+    {
+        public Task<ManifestOperationResult<GitProcessOutput>> RunAsync(
+            IReadOnlyList<string> arguments,
+            TimeSpan timeout,
+            CancellationToken cancellationToken
+        )
+        {
+            if (
+                arguments.Count > 0
+                && string.Equals(arguments[0], "ls-remote", StringComparison.Ordinal)
+            )
+            {
+                return Success("1111111111111111111111111111111111111111\trefs/heads/main");
+            }
+
+            if (createExternalFile && arguments.Contains("checkout", StringComparer.Ordinal))
+            {
+                File.WriteAllText(Path.Combine(arguments[1], "README.md"), "external content");
+            }
+
+            return Success(string.Empty);
+        }
+
+        private static Task<ManifestOperationResult<GitProcessOutput>> Success(string output) =>
+            Task.FromResult(
+                ManifestOperationResult<GitProcessOutput>.Success(
+                    new GitProcessOutput(output, string.Empty)
+                )
+            );
     }
 }

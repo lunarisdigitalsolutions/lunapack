@@ -1222,11 +1222,6 @@ public sealed class PackLifecycleTests
     }
 
     [Test]
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Maintainability",
-        "MA0051:Method is too long",
-        Justification = "Integration-style fixture validates the complete shared-target install and update workflow."
-    )]
     public async Task Scenario_InstallAndUpdateSharedMergeTargets_PreservesBothSectionsAndOwners()
     {
         using var workspace = new TestWorkspace();

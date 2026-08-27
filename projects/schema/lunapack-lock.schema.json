@@ -30,6 +30,12 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["declaredTargetPath", "targetPath", "sha256"],
+      "dependencies": {
+        "sourceAlias": ["sourceName", "sourceFingerprint", "sourcePath"],
+        "sourceName": ["sourceAlias", "sourceFingerprint", "sourcePath"],
+        "sourceFingerprint": ["sourceAlias", "sourceName", "sourcePath"],
+        "sourcePath": ["sourceAlias", "sourceName", "sourceFingerprint"]
+      },
       "properties": {
         "content": {
           "type": "string"
@@ -44,10 +50,57 @@
           "type": "string",
           "pattern": "^[A-Fa-f0-9]{64}$"
         },
+        "sourceAlias": {
+          "$ref": "#/definitions/sourceName"
+        },
+        "sourceName": {
+          "$ref": "#/definitions/sourceName"
+        },
+        "sourceFingerprint": {
+          "$ref": "#/definitions/sourceFingerprint"
+        },
+        "sourcePath": {
+          "$ref": "#/definitions/repositoryRelativePath"
+        },
         "strategy": {
           "$ref": "#/definitions/managedFileStrategy"
         }
       }
+    },
+    "externalSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceName", "fingerprint", "ref", "resolvedCommit"],
+      "properties": {
+        "sourceName": {
+          "$ref": "#/definitions/sourceName"
+        },
+        "fingerprint": {
+          "$ref": "#/definitions/sourceFingerprint"
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resolvedCommit": {
+          "type": "string",
+          "pattern": "^[A-Fa-f0-9]{40}(?:[A-Fa-f0-9]{24})?$"
+        }
+      }
+    },
+    "externalSources": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/externalSource"
+      }
+    },
+    "sourceFingerprint": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?:git|local):[^\\s]+$"
     },
     "managedFileStrategy": {
       "type": "object",
@@ -150,6 +203,9 @@
         "gitSource": {
           "$ref": "#/definitions/gitSource"
         },
+        "externalSources": {
+          "$ref": "#/definitions/externalSources"
+        },
         "packs": {
           "type": "array",
           "items": {
@@ -199,6 +255,9 @@
         },
         "packPath": {
           "$ref": "#/definitions/relativePath"
+        },
+        "externalSources": {
+          "$ref": "#/definitions/externalSources"
         },
         "packs": {
           "type": "array",

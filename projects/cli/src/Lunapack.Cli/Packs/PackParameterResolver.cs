@@ -156,7 +156,7 @@ internal static class PackParameterResolver
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "Maintainability",
         "MA0051:Method is too long",
-        Justification = "Binding preserves declared precedence among explicit values, variables, and defaults."
+        Justification = "Parameter precedence remains explicit in one ordered resolution workflow."
     )]
     private static ManifestOperationResult<ResolvedPackParameters> BindValues(
         IReadOnlyDictionary<string, PackParameterDefinition> declarations,

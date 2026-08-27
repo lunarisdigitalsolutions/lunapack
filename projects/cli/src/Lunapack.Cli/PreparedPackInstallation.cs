@@ -8,5 +8,7 @@ internal sealed record PreparedPackInstallation(
     PackUpdatePlan UpdatePlan,
     ResolvedPackParameters Parameters,
     PackReference SelectedRelease,
-    GitPackMaterialization Materialization
+    GitPackMaterialization Materialization,
+    ExternalSourceMaterialization ExternalMaterialization,
+    ExternalSourceRequirementPlan ExternalSources
 );

@@ -67,6 +67,15 @@
     },
     "hooks": {
       "$ref": "#/definitions/lifecycleHooks"
+    },
+    "sources": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/packSource"
+      }
     }
   },
   "definitions": {
@@ -136,13 +145,32 @@
       "required": ["target"],
       "oneOf": [
         {
-          "required": ["source"]
+          "required": ["path"],
+          "not": {
+            "anyOf": [{ "required": ["glob"] }, { "required": ["directory"] }]
+          }
         },
         {
-          "required": ["glob"]
+          "required": ["glob"],
+          "not": {
+            "anyOf": [{ "required": ["path"] }, { "required": ["directory"] }]
+          }
         },
         {
-          "required": ["directory"]
+          "required": ["directory"],
+          "not": {
+            "anyOf": [{ "required": ["path"] }, { "required": ["glob"] }]
+          }
+        },
+        {
+          "required": ["source"],
+          "not": {
+            "anyOf": [
+              { "required": ["path"] },
+              { "required": ["glob"] },
+              { "required": ["directory"] }
+            ]
+          }
         }
       ],
       "properties": {
@@ -154,9 +182,23 @@
           "type": "string",
           "minLength": 1
         },
+        "exclude": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/definitions/sourceRelativePattern"
+          }
+        },
+        "flatten": {
+          "type": "boolean",
+          "default": false
+        },
         "glob": {
           "type": "string",
           "minLength": 1
+        },
+        "path": {
+          "$ref": "#/definitions/sourceRelativePath"
         },
         "source": {
           "type": "string",
@@ -174,6 +216,42 @@
           "minLength": 1
         }
       }
+    },
+    "packSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "url", "ref"],
+      "properties": {
+        "type": {
+          "enum": ["git"]
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?!.*://[^/@]*:[^/@]*@)(?![Hh][Tt][Tt][Pp][Ss]?://[^/@]*@)(?!.*\\$\\{)(?:[Hh][Tt][Tt][Pp][Ss]?://|[Ss][Ss][Hh]://|[A-Za-z0-9._-]+@)[^\\s]+$"
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "$ref": "#/definitions/sourceRelativePath"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "sourceRelativePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![A-Za-z]:[\\\\/])(?![\\\\/])(?!.*(?:^|[\\\\/])\\.\\.(?:[\\\\/]|$)).+"
+    },
+    "sourceRelativePattern": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![A-Za-z]:[\\\\/])(?![\\\\/])(?!.*(?:^|[\\\\/])\\.\\.(?:[\\\\/]|$)).+"
     },
     "managedFileStrategy": {
       "type": "object",

@@ -46,6 +46,10 @@ internal sealed class InstallPackCommandHandler(
         {
             Description = "Plan the installation without modifying files or state.",
         };
+        var acceptSourcesOption = new Option<bool>("--accept-sources")
+        {
+            Description = "Approve conflict-free external source additions.",
+        };
         var parameterOption = new Option<string[]>("--parameter", "-p")
         {
             Description = "Template parameter in <name>=<value> form.",
@@ -74,6 +78,7 @@ internal sealed class InstallPackCommandHandler(
             remapFileOption,
             adoptExistingOption,
             dryRunOption,
+            acceptSourcesOption,
             parameterOption,
             noVariablesOption,
             skipVariableOption,
@@ -115,6 +120,7 @@ internal sealed class InstallPackCommandHandler(
                     parsedScriptMode,
                     parseResult.GetValue(skipInstructionsOption),
                     parseResult.GetValue(dryRunOption),
+                    parseResult.GetValue(acceptSourcesOption),
                     skipInstalledRoots: packReferences.Length > 1
                 );
                 if (exitCode != 0)
@@ -132,7 +138,7 @@ internal sealed class InstallPackCommandHandler(
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "Maintainability",
         "MA0051:Method is too long",
-        Justification = "Command request orchestration stays adjacent to CLI input handling; ADR-0040 owns lifecycle execution policy."
+        Justification = "Installation workflow preserves ordered validation, prompting, and execution."
     )]
     private async Task<int> InstallAsync(
         string workspaceDirectory,
@@ -147,6 +153,7 @@ internal sealed class InstallPackCommandHandler(
         ScriptExecutionMode scriptMode,
         bool skipInstructions,
         bool dryRun,
+        bool acceptSources,
         bool skipInstalledRoots
     )
     {
@@ -195,6 +202,8 @@ internal sealed class InstallPackCommandHandler(
         {
             return console.Fail(installationRequest.Error);
         }
+
+        request = request with { AcceptSources = acceptSources };
 
         var skippedInstall = await WarnWhenRootAlreadyInstalledAsync(
             workspaceDirectory,

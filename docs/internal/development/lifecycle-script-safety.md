@@ -7,12 +7,15 @@ must still accept.
 
 ## Boundaries
 
-- Source identity binds trust to a normalized local path or Git URL, ref, and
-  repository path. A source name alone is never authority.
+- Source identity binds trust to a normalized source fingerprint derived from a
+  local path or a Git URL, canonical ref, and repository path. A source name
+  alone is never authority.
 - Local-user, global-user, and project-declared trust remain separate. Project
   declarations require matching local-user acknowledgement before they apply.
-- Removing a configured source also removes project source and pack trust bound
-  to its name. Installed lock evidence remains but grants no authority.
+- Removing a configured source refuses to proceed while `lunapack-lock.yml`
+  still records an installed pack or its external content as a consumer. Once
+  no consumer remains, removal clears project source and pack trust bound to
+  its name; installed lock evidence remains but grants no authority.
 - Typed hooks are planned for every resolved graph node in event and declaration
   order before managed files mutate. Composite event suppression applies to
   scripts and instructions. Transient root trust does not authorize dependency

@@ -68,7 +68,7 @@ internal sealed class NextStepAdvisor(IFileSystem fileSystem, IProjectStateStore
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "Maintainability",
         "MA0051:Method is too long",
-        Justification = "ADR-0046 defines this closed recommendation mapping."
+        Justification = "Closed next-step context mapping remains visible as one exhaustive switch."
     )]
     private static IReadOnlyList<NextStepRecommendation> CreateRecommendations(
         NextStepContext context,
@@ -90,7 +90,37 @@ internal sealed class NextStepAdvisor(IFileSystem fileSystem, IProjectStateStore
             [
                 new("Add a managed file", "luna pack add file <path>"),
                 new("Add a lifecycle hook", "luna pack add hook instruction <event> <file>"),
+                new(
+                    "Add an external GitHub source",
+                    "luna pack add source github <name> <owner/repository> --ref <ref>"
+                ),
+            ],
+            NextStepContext.PackSourceAdded =>
+            [
+                new(
+                    "Add source-backed content",
+                    $"luna pack add file <path> --source {value ?? "<name>"}"
+                ),
                 new("Validate the manifest", "luna pack validate"),
+            ],
+            NextStepContext.UnknownPackSourceAlias =>
+            [
+                new(
+                    "Add a GitHub source",
+                    $"luna pack add source github {value ?? "<name>"} <owner/repository> --ref <ref>"
+                ),
+                new(
+                    "Add a Git source",
+                    $"luna pack add source git {value ?? "<name>"} <repository-url> --ref <ref>"
+                ),
+            ],
+            NextStepContext.SourceApprovalRejected =>
+            [
+                new("Inspect the pack", $"luna inspect {value ?? "<pack>"}"),
+                new(
+                    "Configure the source manually",
+                    "luna sources add git <name> <repository-url> --ref <ref>"
+                ),
             ],
             NextStepContext.PackModified =>
             [

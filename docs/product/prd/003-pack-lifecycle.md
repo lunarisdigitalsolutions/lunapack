@@ -11,6 +11,13 @@ restricted conditions; templates; and copy or merge strategies. The lock
 document records resolved sources, dependencies, effective targets, and
 rendered-content digests.
 
+Pack authors can declare credential-free external Git sources under local
+aliases and select files, directories, or globs from them. Consumers retain
+authority: equivalent workspace sources are reused, missing sources require one
+graph-wide approval, and source additions, files, and provenance commit in one
+transaction. Updates compare selected paths and hashes at current symbolic refs;
+audit reports each external file's pack ownership and source mapping.
+
 Consumers can map portable declared managed-file targets to repository-specific
 directories or exact files through project configuration, `luna remap
 set <directory|file> <target> <newTarget>`, or one installation command.

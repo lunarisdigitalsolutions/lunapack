@@ -56,6 +56,13 @@ target, and lifecycle-script file input. Glob input uses `Normalize` before
 separate checks reject rooted and parent-traversing patterns. Persisted
 `pack.yml` paths always use `/`.
 
+External selectors first pass through the managed-file compatibility adapter:
+legacy `source`-only files remain pack-relative, while `source` plus `path`,
+`directory`, or `glob` identifies a pack-local alias. Normalize selected paths
+and exclusions before resolving them below the materialized source root. Reject
+rooted paths, `..` escapes, links outside the root, empty matches, and duplicate
+flattened target names before project target planning.
+
 When a caller needs additional semantics such as trimming a repository-relative
 Git path, apply that operation after `ProjectPath` normalization. Do not create
 a second separator-normalization implementation.

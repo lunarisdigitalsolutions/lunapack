@@ -76,39 +76,37 @@ public sealed class CliProcessTests
     public async Task SourcesList_WhenSourcesConfigured_OutputsTypesAndProperties()
     {
         using var workspace = new TestWorkspace();
+        using var repository = await CreateGitPackSourceAsync();
         Directory.CreateDirectory(Path.Combine(workspace.Path, "packs"));
         await CliProcess.InvokeAsync(workspace.Path, "init");
         await CliProcess.InvokeAsync(workspace.Path, "sources", "add", "local", "local", "packs");
-        await CliProcess.InvokeAsync(
+        var gitSource = await CliProcess.InvokeAsync(
             workspace.Path,
             "sources",
             "add",
             "git",
             "git",
-            "https://example.test/platform-packs.git",
+            repository.Path,
             "--ref",
             "main",
             "--path",
-            "packs/platform"
+            "packs"
         );
 
         var result = await CliProcess.InvokeAsync(workspace.Path, "sources", "list");
         var output = result.StandardOutput.ReplaceLineEndings(string.Empty);
 
+        await Assert.That(gitSource.ExitCode).IsEqualTo(0);
         await Assert.That(result.ExitCode).IsEqualTo(0);
         await Assert
             .That(output)
             .Contains("local - local - path: packs - identity: local(path=packs)");
         await Assert
             .That(output)
-            .Contains(
-                "git - git - url: https://example.test/platform-packs.git - ref: main - path: packs/platform"
-            );
+            .Contains($"git - git - url: {repository.Path} - ref: refs/heads/main - path: packs");
         await Assert
             .That(output)
-            .Contains(
-                "identity: git(url=https://example.test/platform-packs.git, ref=main, path=packs/platform)"
-            );
+            .Contains($"identity: git(url={repository.Path}, ref=refs/heads/main, path=packs)");
         await Assert
             .That(output.IndexOf("local - local", StringComparison.Ordinal))
             .IsLessThan(output.IndexOf("git - git", StringComparison.Ordinal));
@@ -543,7 +541,7 @@ public sealed class CliProcessTests
             .IsEqualTo("from release branch");
         await Assert
             .That(File.ReadAllText(Path.Combine(workspace.Path, "lunapack-lock.yml")))
-            .Contains("ref: release");
+            .Contains("ref: refs/heads/release");
     }
 
     [Test]
@@ -846,11 +844,6 @@ public sealed class CliProcessTests
     }
 
     [Test]
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Maintainability",
-        "MA0051:Method is too long",
-        Justification = "ADR-0036 relocation integration requires one end-to-end lifecycle assertion."
-    )]
     public async Task PackLifecycle_WhenManagedTargetRemapped_RetainsAndRelocatesLockTarget()
     {
         using var workspace = new TestWorkspace();
