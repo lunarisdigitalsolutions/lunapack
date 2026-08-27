@@ -118,24 +118,24 @@ tie-breakers.
 - **THEN** `luna search` emits up to that many versions in descending Semantic
   Version order
 
-### Requirement: Inspect pack lifecycle scripts
+### Requirement: Inspect ordered lifecycle hooks
 
-`luna inspect <pack-id>[@<version>]` SHALL include a lifecycle scripts section when the resolved pack declares scripts. The section SHALL list hooks in `preInstall`, `postInstall`, `preUpdate`, and `postUpdate` order and show each hook type, optional description, and exact executable and ordered arguments. Inspection SHALL also list each composite reference's disabled lifecycle types. When a pack declares no scripts or a reference suppresses no hooks, inspection SHALL state that explicitly.
+`luna inspect <pack-id>[@<version>]` SHALL include a lifecycle hooks section when the resolved pack declares hooks. The section SHALL list events in `preInstall`, `postInstall`, `preUpdate`, and `postUpdate` order and list each event's hooks in declaration order. For a script hook, inspection SHALL show its optional description and exact executable and ordered arguments. For an instruction hook, inspection SHALL show its pack-relative file and effective templating state. Inspection SHALL also list each composite reference's disabled lifecycle events. When a pack declares no hooks or a reference suppresses no events, inspection SHALL state that explicitly.
 
-#### Scenario: Inspect every declared hook
+#### Scenario: Inspect mixed ordered hooks
 
-- **WHEN** a resolved pack declares all four lifecycle hooks and the user runs `luna inspect` for that release
-- **THEN** inspection lists all four hooks in lifecycle order with their descriptions and exact commands
+- **WHEN** a resolved pack event declares instruction and script hooks and the user inspects that release
+- **THEN** inspection lists both typed hooks in declaration order with their type-specific properties
 
-#### Scenario: Inspect a pack without scripts
+#### Scenario: Inspect a pack without hooks
 
-- **WHEN** a resolved pack declares no lifecycle scripts
-- **THEN** inspection reports that the pack has no lifecycle scripts
+- **WHEN** a resolved pack declares no lifecycle hooks
+- **THEN** inspection reports that the pack has no lifecycle hooks
 
 #### Scenario: Inspect transient hook suppression
 
-- **WHEN** a pack reference disables lifecycle hooks for its transient pack
-- **THEN** inspection lists the referenced pack ID and each disabled lifecycle type
+- **WHEN** a pack reference disables lifecycle events for its transient pack
+- **THEN** inspection lists the referenced pack ID and each disabled lifecycle event
 
 ### Requirement: Guide successful catalog exploration
 
@@ -147,20 +147,20 @@ replacement tokens when no single concrete value is available.
 
 - **WHEN** `luna discover` successfully displays one or more pack releases
 - **THEN** Luna reports the displayed pack count and recommends `luna install
-  <pack>`
+<pack>`
 
 #### Scenario: Search available packs
 
 - **WHEN** `luna search <keyword>` successfully displays one or more matching
   pack releases
 - **THEN** Luna reports the displayed match count and recommends `luna inspect
-  <pack>` and `luna install <pack>`
+<pack>` and `luna install <pack>`
 
 #### Scenario: Inspect a pack
 
 - **WHEN** `luna inspect <pack-reference>` successfully displays pack details
 - **THEN** Luna recommends installing that resolved pack ID and running `luna
-  discover`
+discover`
 
 ### Requirement: Guide recovery from an unresolved catalog pack
 
@@ -173,4 +173,4 @@ append commands that help find an available pack.
 - **WHEN** a user runs `luna inspect unknown-pack` and no configured source
   provides that pack
 - **THEN** Luna reports that the pack was not found and recommends `luna search
-  unknown-pack` followed by `luna discover`
+unknown-pack` followed by `luna discover`

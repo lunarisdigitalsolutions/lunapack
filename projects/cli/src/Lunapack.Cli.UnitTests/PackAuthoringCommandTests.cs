@@ -269,18 +269,19 @@ public sealed class PackAuthoringCommandTests
     }
 
     [Test]
-    public async Task ScriptCommands_WhenCommandAndFileFormsAdded_PreserveLiteralArguments()
+    public async Task HookCommands_WhenCommandAndFileScriptsAdded_PreserveLiteralArguments()
     {
         using var workspace = await CreateInitializedWorkspaceAsync();
 
         var commandExit = await workspace.Application.RunAsync(
-            ["pack", "add", "script", "command", "postInstall", "npm", "install"],
+            ["pack", "add", "hook", "script", "command", "postInstall", "npm", "install"],
             workspace.Path
         );
         var fileExit = await workspace.Application.RunAsync(
             [
                 "pack",
                 "add",
+                "hook",
                 "script",
                 "file",
                 "preInstall",
@@ -294,10 +295,171 @@ public sealed class PackAuthoringCommandTests
 
         await Assert.That(commandExit).IsEqualTo(0);
         await Assert.That(fileExit).IsEqualTo(0);
-        await Assert.That(manifest.Scripts!.PostInstall!.Command).IsEqualTo("npm");
-        await Assert.That(manifest.Scripts.PostInstall.Arguments).IsEquivalentTo(["install"]);
-        await Assert.That(manifest.Scripts.PreInstall!.File).IsEqualTo("scripts/setup.ps1");
-        await Assert.That(manifest.Scripts.PreInstall.Runner).IsEqualTo("pwsh");
+        await Assert.That(manifest.Hooks!.PostInstall!.Single().Command).IsEqualTo("npm");
+        await Assert
+            .That(manifest.Hooks.PostInstall.Single().Arguments)
+            .IsEquivalentTo(["install"]);
+        await Assert.That(manifest.Hooks.PreInstall!.Single().File).IsEqualTo("scripts/setup.ps1");
+        await Assert.That(manifest.Hooks.PreInstall.Single().Runner).IsEqualTo("pwsh");
+    }
+
+    [Test]
+    public async Task HookCommands_WhenAppendedAndReplaced_PreservePositionAndInstructionSettings()
+    {
+        using var workspace = await CreateInitializedWorkspaceAsync();
+        await workspace.Application.RunAsync(
+            ["pack", "add", "hook", "script", "command", "preInstall", "first"],
+            workspace.Path
+        );
+        var instructionExit = await workspace.Application.RunAsync(
+            [
+                "pack",
+                "add",
+                "hook",
+                "instruction",
+                "preInstall",
+                @"instructions\setup.md",
+                "--templating",
+            ],
+            workspace.Path
+        );
+        var replaceExit = await workspace.Application.RunAsync(
+            [
+                "pack",
+                "add",
+                "hook",
+                "script",
+                "file",
+                "preInstall",
+                @"scripts\setup.ps1",
+                "pwsh",
+                "--replace",
+                "1",
+            ],
+            workspace.Path
+        );
+        var manifest = await LoadAsync(workspace);
+
+        await Assert.That(instructionExit).IsEqualTo(0);
+        await Assert.That(replaceExit).IsEqualTo(0);
+        await Assert.That(manifest.Hooks!.PreInstall).Count().IsEqualTo(2);
+        await Assert.That(manifest.Hooks.PreInstall[0].File).IsEqualTo("scripts/setup.ps1");
+        await Assert.That(manifest.Hooks.PreInstall[1].File).IsEqualTo("instructions/setup.md");
+        await Assert.That(manifest.Hooks.PreInstall[1].Templating).IsTrue();
+    }
+
+    [Test]
+    public async Task HookCommands_WhenPositionInvalid_PreserveManifestBytes()
+    {
+        using var workspace = await CreateInitializedWorkspaceAsync();
+        await workspace.Application.RunAsync(
+            ["pack", "add", "hook", "script", "command", "preInstall", "first"],
+            workspace.Path
+        );
+        var path = Path.Combine(workspace.Path, PackManifestStore.FileName);
+        var original = File.ReadAllText(path);
+
+        var replaceExit = await workspace.Application.RunAsync(
+            [
+                "pack",
+                "add",
+                "hook",
+                "script",
+                "command",
+                "preInstall",
+                "replacement",
+                "--replace",
+                "2",
+            ],
+            workspace.Path
+        );
+        var removeExit = await workspace.Application.RunAsync(
+            ["pack", "rm", "hook", "preInstall", "0"],
+            workspace.Path
+        );
+
+        await Assert.That(replaceExit).IsEqualTo(1);
+        await Assert.That(removeExit).IsEqualTo(1);
+        await Assert.That(File.ReadAllText(path)).IsEqualTo(original);
+    }
+
+    [Test]
+    public async Task HookCommands_WhenInstructionInvalid_PreserveManifestBytes()
+    {
+        using var workspace = await CreateInitializedWorkspaceAsync();
+        var path = Path.Combine(workspace.Path, PackManifestStore.FileName);
+        var original = File.ReadAllText(path);
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["pack", "add", "hook", "instruction", "preInstall", "instructions/setup.txt"],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(File.ReadAllText(path)).IsEqualTo(original);
+    }
+
+    [Test]
+    public async Task HookCommands_WhenLegacySyntaxUsed_RejectsWithoutMutation()
+    {
+        using var workspace = await CreateInitializedWorkspaceAsync();
+        var path = Path.Combine(workspace.Path, PackManifestStore.FileName);
+        var original = File.ReadAllText(path);
+
+        var addExit = await workspace.Application.RunAsync(
+            ["pack", "add", "script", "command", "preInstall", "tool"],
+            workspace.Path
+        );
+        var listExit = await workspace.Application.RunAsync(["pack", "scripts"], workspace.Path);
+
+        await Assert.That(addExit).IsEqualTo(1);
+        await Assert.That(listExit).IsEqualTo(1);
+        await Assert.That(File.ReadAllText(path)).IsEqualTo(original);
+    }
+
+    [Test]
+    public async Task Hooks_WhenMixedHooksExist_ListsDeclarationOrderAndEffectiveSettings()
+    {
+        var console = new SpectreTestConsole();
+        console.Profile.Width = 500;
+        using var workspace = new TestWorkspace(ansiConsole: console);
+        await workspace.Application.RunAsync(
+            ["pack", "init", "--id", "example", "--author", "Example", "--license", "MIT"],
+            workspace.Path
+        );
+        await workspace.Application.RunAsync(
+            ["pack", "add", "hook", "instruction", "preInstall", "instructions/setup.md"],
+            workspace.Path
+        );
+        await workspace.Application.RunAsync(
+            ["pack", "add", "hook", "script", "command", "preInstall", "tool", "two words"],
+            workspace.Path
+        );
+
+        var exitCode = await workspace.Application.RunAsync(["pack", "hooks"], workspace.Path);
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(console.Output).Contains("instructions/setup.md; templating: disabled");
+        await Assert.That(console.Output).Contains("tool \"two words\"");
+        await Assert
+            .That(console.Output.LastIndexOf("instructions/setup.md", StringComparison.Ordinal))
+            .IsLessThan(console.Output.LastIndexOf("tool \"two words\"", StringComparison.Ordinal));
+    }
+
+    [Test]
+    public async Task Hooks_WhenNoHooksExist_ReportsExplicitEmptyState()
+    {
+        var console = new SpectreTestConsole();
+        using var workspace = new TestWorkspace(ansiConsole: console);
+        await workspace.Application.RunAsync(
+            ["pack", "init", "--id", "example", "--author", "Example", "--license", "MIT"],
+            workspace.Path
+        );
+
+        var exitCode = await workspace.Application.RunAsync(["pack", "hooks"], workspace.Path);
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(console.Output).Contains("No lifecycle hooks declared.");
     }
 
     [Test]
@@ -364,7 +526,7 @@ public sealed class PackAuthoringCommandTests
         using var workspace = await CreateInitializedWorkspaceAsync();
         await workspace.Application.RunAsync(["pack", "add", "file", "README.md"], workspace.Path);
         await workspace.Application.RunAsync(
-            ["pack", "add", "script", "command", "postInstall", "npm", "install"],
+            ["pack", "add", "hook", "script", "command", "postInstall", "npm", "install"],
             workspace.Path
         );
         var fileExit = await workspace.Application.RunAsync(
@@ -372,7 +534,7 @@ public sealed class PackAuthoringCommandTests
             workspace.Path
         );
         var scriptExit = await workspace.Application.RunAsync(
-            ["pack", "rm", "script", "postInstall"],
+            ["pack", "rm", "hook", "postInstall", "1"],
             workspace.Path
         );
         var manifest = await LoadAsync(workspace);
@@ -380,7 +542,7 @@ public sealed class PackAuthoringCommandTests
         await Assert.That(fileExit).IsEqualTo(0);
         await Assert.That(scriptExit).IsEqualTo(0);
         await Assert.That(manifest.ManagedFiles).IsEmpty();
-        await Assert.That(manifest.Scripts!.PostInstall).IsNull();
+        await Assert.That(manifest.Hooks!.PostInstall).IsNull();
     }
 
     [Test]
@@ -397,7 +559,7 @@ public sealed class PackAuthoringCommandTests
             workspace.Path
         );
         await workspace.Application.RunAsync(
-            ["pack", "add", "script", "command", "postInstall", "npm", "install"],
+            ["pack", "add", "hook", "script", "command", "postInstall", "npm", "install"],
             workspace.Path
         );
         await workspace.Application.RunAsync(
@@ -407,7 +569,7 @@ public sealed class PackAuthoringCommandTests
 
         var listExit = await workspace.Application.RunAsync(["pack", "list"], workspace.Path);
         var showExit = await workspace.Application.RunAsync(["pack", "show"], workspace.Path);
-        var scriptsExit = await workspace.Application.RunAsync(["pack", "scripts"], workspace.Path);
+        var scriptsExit = await workspace.Application.RunAsync(["pack", "hooks"], workspace.Path);
         var validateExit = await workspace.Application.RunAsync(
             ["pack", "validate"],
             workspace.Path

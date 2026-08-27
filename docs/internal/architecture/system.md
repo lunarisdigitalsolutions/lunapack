@@ -14,8 +14,8 @@ The CLI source groups behavior by project initialization, sources, local pack
 authoring, catalog, pack lifecycle, audit, and schema-backed persistence.
 `PackManifestStore` owns local `pack.yml` loading, typed mutation, complete-model
 validation, and same-directory atomic replacement. Authoring handlers parse
-intent and render results; they do not resolve catalogs, install packs, or run
-lifecycle scripts. A same-directory exclusive lock file serializes Luna writer
+intent and render results; they do not resolve catalogs, install packs, execute
+scripts, or display lifecycle instructions. A same-directory exclusive lock file serializes Luna writer
 processes; failed lock acquisition leaves `pack.yml` unchanged.
 
 Unit tests cover isolated behavior with an abstract filesystem. Integration

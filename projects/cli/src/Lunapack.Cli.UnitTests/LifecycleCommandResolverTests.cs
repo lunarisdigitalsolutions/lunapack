@@ -51,7 +51,7 @@ public sealed class LifecycleCommandResolverTests
                 ConfiguredSourceIdentity.CreateLocal("source")
             ),
             LifecycleHook.PostInstall,
-            new PackManifest.LifecycleScript { Command = command },
+            new PackManifest.PackHook { Type = "script", Command = command },
             null
         );
 }

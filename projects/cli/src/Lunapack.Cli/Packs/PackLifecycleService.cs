@@ -59,7 +59,8 @@ internal sealed class PackLifecycleService(
                 preparedInstallation.Configuration,
                 preparedInstallation.Graph,
                 preparedInstallation.Parameters,
-                installationRequest.ScriptMode
+                installationRequest.ScriptMode,
+                installationRequest.SkipInstructions
             );
             if (hooks.Value is not { } authorizedHooks)
             {
@@ -98,7 +99,8 @@ internal sealed class PackLifecycleService(
                 preparedInstallation.State,
                 preparedInstallation.Graph,
                 preparedInstallation.Parameters,
-                installationRequest.ScriptMode
+                installationRequest.ScriptMode,
+                installationRequest.SkipInstructions
             );
             if (lifecycle.Value is not { } dryRunLifecycle)
             {
@@ -422,7 +424,8 @@ internal sealed class PackLifecycleService(
                 preparedUpdate.Configuration,
                 preparedUpdate.Graph,
                 preparedUpdate.Parameters,
-                updateRequest.ScriptMode
+                updateRequest.ScriptMode,
+                updateRequest.SkipInstructions
             );
             if (hooks.Value is not { } authorizedHooks)
             {
@@ -465,7 +468,8 @@ internal sealed class PackLifecycleService(
                 preparedUpdate.State,
                 preparedUpdate.Graph,
                 preparedUpdate.Parameters,
-                updateRequest.ScriptMode
+                updateRequest.ScriptMode,
+                updateRequest.SkipInstructions
             );
             return lifecycle.Value is { } dryRunLifecycle
                 ? ManifestOperationResult<PackUpdatePlan>.Success(
@@ -920,12 +924,13 @@ internal sealed class PackLifecycleService(
         ProjectConfiguration configuration,
         ResolvedPackGraph graph,
         ResolvedPackParameters parameters,
-        ScriptExecutionMode scriptMode
+        ScriptExecutionMode scriptMode,
+        bool skipInstructions
     )
     {
         var lifecyclePlan = PackLifecyclePlanner.Plan(graph, state.LockFile);
-        var preHooks = _hookPlanner.PlanPreMutation(lifecyclePlan, parameters);
-        var postHooks = _hookPlanner.PlanPostMutation(lifecyclePlan, parameters);
+        var preHooks = _hookPlanner.PlanPreMutation(lifecyclePlan, parameters, skipInstructions);
+        var postHooks = _hookPlanner.PlanPostMutation(lifecyclePlan, parameters, skipInstructions);
         if (
             preHooks.Value is not { } plannedPreHooks
             || postHooks.Value is not { } plannedPostHooks
@@ -971,12 +976,13 @@ internal sealed class PackLifecycleService(
         ProjectState state,
         ResolvedPackGraph graph,
         ResolvedPackParameters parameters,
-        ScriptExecutionMode scriptMode
+        ScriptExecutionMode scriptMode,
+        bool skipInstructions
     )
     {
         var lifecyclePlan = PackLifecyclePlanner.Plan(graph, state.LockFile);
-        var preHooks = _hookPlanner.PlanPreMutation(lifecyclePlan, parameters);
-        var postHooks = _hookPlanner.PlanPostMutation(lifecyclePlan, parameters);
+        var preHooks = _hookPlanner.PlanPreMutation(lifecyclePlan, parameters, skipInstructions);
+        var postHooks = _hookPlanner.PlanPostMutation(lifecyclePlan, parameters, skipInstructions);
         return preHooks.Value is { } plannedPreHooks && postHooks.Value is { } plannedPostHooks
             ? ManifestOperationResult<LifecycleDryRunPlan>.Success(
                 new LifecycleDryRunPlan(
@@ -993,13 +999,13 @@ internal sealed class PackLifecycleService(
 
     private async Task<ManifestOperationResult<bool>> ExecuteHooksAsync(
         string projectDirectory,
-        IReadOnlyList<ResolvedLifecycleHookInvocation> hooks,
+        IReadOnlyList<AuthorizedLifecycleHook> hooks,
         ManifestSnapshot manifestSnapshot
     )
     {
         foreach (var hook in hooks)
         {
-            var execution = await _hookExecutor.ExecuteAsync(projectDirectory, hook);
+            var execution = await DispatchHookAsync(projectDirectory, hook);
             var integrity = VerifyManifestSnapshot(manifestSnapshot);
             if (!integrity.IsSuccess)
             {
@@ -1013,6 +1019,32 @@ internal sealed class PackLifecycleService(
         }
 
         return ManifestOperationResult<bool>.Success(true);
+    }
+
+    private async Task<ManifestOperationResult<bool>> DispatchHookAsync(
+        string projectDirectory,
+        AuthorizedLifecycleHook hook
+    )
+    {
+        if (hook.Script is { } script)
+        {
+            return await _hookExecutor.ExecuteAsync(projectDirectory, script);
+        }
+
+        if (hook.Invocation.Instruction is not { } instruction)
+        {
+            return ManifestOperationResult<bool>.Failure("Lifecycle instruction was not prepared.");
+        }
+
+        var verified = instruction.PackedFile.Verify(fileSystem);
+        if (!verified.IsSuccess)
+        {
+            return ManifestOperationResult<bool>.Failure(
+                verified.Error ?? "Packed lifecycle instruction integrity verification failed."
+            );
+        }
+
+        return new InstructionPresenter(_console).Present(instruction);
     }
 
     private ManifestSnapshot CreateManifestSnapshot(string projectDirectory)

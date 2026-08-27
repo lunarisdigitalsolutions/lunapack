@@ -37,6 +37,19 @@ public sealed class CliHelpDocumentationTests
         new("validate", "<pack-reference>"),
         new("inspect", "<pack-reference>"),
         new(
+            "pack add hook script command",
+            "<event> <command> [<arguments>...]",
+            ["--description", "-d", "--replace"]
+        ),
+        new(
+            "pack add hook script file",
+            "<event> <file> <runner> [<arguments>...]",
+            ["--description", "-d", "--replace"]
+        ),
+        new("pack add hook instruction", "<event> <file>", ["--templating", "--replace"]),
+        new("pack rm hook", "<event> <position>"),
+        new("pack hooks"),
+        new(
             "install",
             "<pack-reference> [<pack-reference>...]",
             [
@@ -53,11 +66,16 @@ public sealed class CliHelpDocumentationTests
                 "--skip-variable",
                 "-sv",
                 "--scripts",
+                "--skip-instructions",
             ]
         ),
         new("uninstall", "<pack-reference> [<pack-reference>...]"),
         new("outdated"),
-        new("update", "[<pack-reference>...]", ["--dry-run", "-D", "--prompt", "-p", "--scripts"]),
+        new(
+            "update",
+            "[<pack-reference>...]",
+            ["--dry-run", "-D", "--prompt", "-p", "--scripts", "--skip-instructions"]
+        ),
         new("mv", "<source> <target>"),
         new("audit"),
     ];
@@ -91,6 +109,18 @@ public sealed class CliHelpDocumentationTests
                 await Assert.That(documentation).Contains(option).Because(contract.Command);
             }
         }
+    }
+
+    [Test]
+    public async Task PackAuthoringGuidance_WhenDocumented_ContainsNoLegacyScriptCommands()
+    {
+        var documentation = await File.ReadAllTextAsync(
+            Path.Combine(AppContext.BaseDirectory, "TestData", "commands.md")
+        );
+
+        await Assert.That(documentation).DoesNotContain("luna pack add script");
+        await Assert.That(documentation).DoesNotContain("luna pack rm script");
+        await Assert.That(documentation).DoesNotContain("luna pack scripts");
     }
 
     [Test]

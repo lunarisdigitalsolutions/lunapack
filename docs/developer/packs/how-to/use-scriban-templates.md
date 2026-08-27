@@ -60,26 +60,41 @@ Template parsing is strict. An unknown variable, invalid expression, or invalid
 UTF-8 input fails planning before project files or state change. Templates do
 not receive filesystem, host-service, include, or custom-function access.
 
-## Render script arguments
+## Render lifecycle hooks
 
 Lifecycle script `arguments` are Scriban templates. Each rendered list item is
 passed as one literal process argument; LunaPack does not concatenate arguments
 into a shell command.
 
 ```yml
-scripts:
+hooks:
   postInstall:
-    command: dotnet
-    arguments:
-      - new
-      - '{{ projectType }}'
-      - --name
-      - '{{ companyName }}'
+    - type: script
+      command: dotnet
+      arguments:
+        - new
+        - '{{ projectType }}'
+        - --name
+        - '{{ companyName }}'
 ```
 
 Rendering occurs before trust authorization. Dry-run and consent output show the
 exact arguments that execution will receive. `command`, `runner`, and `file`
 remain literal and cannot be parameterized.
+
+Instruction hooks render only when `templating: true` is explicit:
+
+```yml
+hooks:
+  postInstall:
+    - type: instruction
+      file: instructions/next-steps.md
+      templating: true
+```
+
+Instruction rendering uses the same resolved parameters and strict variable
+rules. Static instructions leave `templating` unset. Invalid UTF-8, templates,
+or unknown variables fail before project mutation.
 
 ## Escape literal delimiters
 

@@ -1,7 +1,9 @@
-# Lifecycle Script Safety
+# Lifecycle Hook Safety
 
-Lifecycle scripts cross a trust and process boundary. This reference records
-what LunaPack protects, what it restores, and what operators must still accept.
+Executable lifecycle scripts cross a trust and process boundary. Instruction
+hooks display publisher-controlled text but never launch a process. This
+reference records what LunaPack protects, what it restores, and what operators
+must still accept.
 
 ## Boundaries
 
@@ -11,8 +13,15 @@ what LunaPack protects, what it restores, and what operators must still accept.
   declarations require matching local-user acknowledgement before they apply.
 - Removing a configured source also removes project source and pack trust bound
   to its name. Installed lock evidence remains but grants no authority.
-- Hooks are planned for every resolved graph node before managed files mutate.
-  Transient root trust does not authorize dependencies.
+- Typed hooks are planned for every resolved graph node in event and declaration
+  order before managed files mutate. Composite event suppression applies to
+  scripts and instructions. Transient root trust does not authorize dependency
+  scripts.
+- Every planned script is authorized before any hook is processed. Instructions
+  do not use persisted trust and cannot grant process authority.
+- Instruction files resolve beneath the copied operation snapshot, decode as
+  strict UTF-8, and optionally render with Scriban. The bounded parser recognizes
+  only H2 and H3 step headings; displayed links and code blocks gain no behavior.
 - Packed hook files are resolved beneath the copied operation snapshot, hashed,
   and verified immediately before launch. Commands use `ProcessStartInfo` with
   shell execution disabled and literal `ArgumentList` values.
@@ -21,7 +30,10 @@ what LunaPack protects, what it restores, and what operators must still accept.
   output capture and must not prompt for input.
 - Exact original `lunapack.yml` bytes are retained. LunaPack verifies and
   restores them after every process, and restores managed files when a
-  post-hook or persistence step fails.
+  post-hook, instruction cancellation, or persistence step fails.
+- Dry runs prepare and report hooks without launching scripts, prompting for
+  trust, or entering guided instruction display. `--scripts skip` and
+  `--skip-instructions` suppress only their respective hook types.
 
 ## Deferred No-Follow Control
 
@@ -46,9 +58,9 @@ source-identity checks during copying are implemented and tested.
    settings can change persistent execution authority.
 6. **Medium: same-user races.** Digest checks narrow staged-content races but
    cannot protect every process-visible resource.
-7. **Medium: mode trade-offs.** `run` bypasses consent for one invocation;
-   `skip` can omit setup required by a pack. Prefer `prompt` when reviewing
-   unfamiliar content.
+7. **Medium: mode trade-offs.** `--scripts run` bypasses consent for one
+   invocation; either skip control can omit setup required by a pack. Prefer
+   prompt mode when reviewing unfamiliar executable content.
 
 LunaPack is not a sandbox or privilege boundary. Treat lifecycle approval as
 approval to run publisher-controlled code on the current machine.

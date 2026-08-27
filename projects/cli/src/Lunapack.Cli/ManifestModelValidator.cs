@@ -38,7 +38,7 @@ internal static partial class ManifestModelValidator
         ValidateParameters(manifest.Parameters, issues);
         ValidateManagedFiles(manifest.ManagedFiles, issues);
         ValidatePackReferences(manifest.Packs, issues);
-        ValidateScripts(manifest.Scripts, issues);
+        ValidateHooks(manifest.Hooks, issues);
 
         return issues;
     }
@@ -295,51 +295,120 @@ internal static partial class ManifestModelValidator
         }
     }
 
-    private static void ValidateScripts(PackManifest.PackScripts? scripts, List<string> issues)
+    private static void ValidateHooks(PackManifest.PackHooks? hooks, List<string> issues)
     {
-        if (scripts is null)
+        if (hooks is null)
         {
             return;
         }
 
-        ValidateLifecycleScript("postInstall", scripts.PostInstall, issues);
-        ValidateLifecycleScript("postUpdate", scripts.PostUpdate, issues);
-        ValidateLifecycleScript("preInstall", scripts.PreInstall, issues);
-        ValidateLifecycleScript("preUpdate", scripts.PreUpdate, issues);
+        ValidateHooks("postInstall", hooks.PostInstall, issues);
+        ValidateHooks("postUpdate", hooks.PostUpdate, issues);
+        ValidateHooks("preInstall", hooks.PreInstall, issues);
+        ValidateHooks("preUpdate", hooks.PreUpdate, issues);
     }
 
-    private static void ValidateLifecycleScript(
-        string hook,
-        PackManifest.LifecycleScript? script,
+    private static void ValidateHooks(
+        string eventName,
+        List<PackManifest.PackHook>? hooks,
         List<string> issues
     )
     {
-        if (script is null)
+        if (hooks is null)
         {
             return;
         }
 
-        var hasCommand = script.Command is not null;
-        var hasFile = script.File is not null;
-        var hasRunner = script.Runner is not null;
+        if (hooks.Count == 0)
+        {
+            issues.Add($"Lifecycle hook event '{eventName}' must not be empty.");
+        }
+
+        foreach (var hook in hooks)
+        {
+            if (hook is null)
+            {
+                issues.Add($"Lifecycle hook event '{eventName}' contains an invalid declaration.");
+                continue;
+            }
+
+            switch (hook.Type)
+            {
+                case "script":
+                    ValidateScriptHook(eventName, hook, issues);
+                    break;
+                case "instruction":
+                    ValidateInstructionHook(eventName, hook, issues);
+                    break;
+                default:
+                    issues.Add($"Lifecycle hook event '{eventName}' has an invalid type.");
+                    break;
+            }
+        }
+    }
+
+    private static void ValidateScriptHook(
+        string eventName,
+        PackManifest.PackHook hook,
+        List<string> issues
+    )
+    {
+        var hasCommand = hook.Command is not null;
+        var hasFile = hook.File is not null;
+        var hasRunner = hook.Runner is not null;
         if (hasCommand == hasFile || hasFile != hasRunner)
         {
-            issues.Add($"Lifecycle script '{hook}' must define either command or file and runner.");
+            issues.Add(
+                $"Script hook in '{eventName}' must define either command or file and runner."
+            );
         }
 
-        if (script.Command is "" || script.File is "" || script.Runner is "")
+        if (hook.Command is "" || hook.File is "" || hook.Runner is "")
         {
-            issues.Add($"Lifecycle script '{hook}' execution values cannot be empty.");
+            issues.Add($"Script hook in '{eventName}' execution values cannot be empty.");
         }
 
-        if (script.Description is "")
+        if (hook.Description is "")
         {
-            issues.Add($"Lifecycle script '{hook}' description cannot be empty.");
+            issues.Add($"Script hook in '{eventName}' description cannot be empty.");
         }
 
-        if (script.File is not null && !IsSafeProjectRelativePath(script.File))
+        if (hook.File is not null && !IsSafeProjectRelativePath(hook.File))
         {
-            issues.Add($"Lifecycle script '{hook}' file must be a safe relative path.");
+            issues.Add($"Script hook in '{eventName}' file must be a safe relative path.");
+        }
+
+        if (hook.Templating is not null)
+        {
+            issues.Add($"Script hook in '{eventName}' cannot define templating.");
+        }
+    }
+
+    private static void ValidateInstructionHook(
+        string eventName,
+        PackManifest.PackHook hook,
+        List<string> issues
+    )
+    {
+        if (
+            string.IsNullOrEmpty(hook.File)
+            || !IsSafeProjectRelativePath(hook.File)
+            || !hook.File.EndsWith(".md", StringComparison.Ordinal)
+        )
+        {
+            issues.Add(
+                $"Instruction hook in '{eventName}' file must be a safe relative Markdown path."
+            );
+        }
+
+        if (
+            hook.Command is not null
+            || hook.Runner is not null
+            || hook.Arguments.Count > 0
+            || hook.Description is not null
+        )
+        {
+            issues.Add($"Instruction hook in '{eventName}' has unsupported properties.");
         }
     }
 

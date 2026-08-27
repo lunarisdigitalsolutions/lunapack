@@ -21,7 +21,7 @@ internal static class PackManifestInspectionFormatter
             renderables.Add(CreateParameterTable(manifest.Parameters));
         }
 
-        renderables.Add(CreateLifecycleScriptsTable(manifest.Scripts));
+        renderables.Add(CreateLifecycleHooksTable(manifest.Hooks));
 
         if (manifest.Packs.Count > 0)
         {
@@ -66,7 +66,7 @@ internal static class PackManifestInspectionFormatter
         table.AddRow("License", Markup.Escape(manifest.License ?? "-"));
         table.AddRow("Author", Markup.Escape(manifest.Author ?? "-"));
         table.AddRow("Homepage", Markup.Escape(manifest.Homepage ?? "-"));
-        table.AddRow("Lifecycle scripts", manifest.Scripts is null ? "none" : "declared");
+        table.AddRow("Lifecycle hooks", HasHooks(manifest.Hooks) ? "declared" : "none");
         table.AddRow(
             "Tags",
             Markup.Escape(manifest.Tags.Count == 0 ? "-" : string.Join(", ", manifest.Tags.Take(5)))
@@ -74,32 +74,65 @@ internal static class PackManifestInspectionFormatter
         return table;
     }
 
-    private static Table CreateLifecycleScriptsTable(PackManifest.PackScripts? scripts)
+    private static Table CreateLifecycleHooksTable(PackManifest.PackHooks? hooks)
     {
-        var table = CreateTable("Lifecycle scripts");
-        table.AddColumn("[bold]Hook[/]");
-        table.AddColumn("[bold]Description[/]");
-        table.AddColumn("[bold]Invocation[/]");
-        var hooks = new (string Name, PackManifest.LifecycleScript? Script)[]
+        var table = CreateTable("Lifecycle hooks");
+        table.AddColumn("[bold]Event[/]");
+        table.AddColumn("[bold]Position[/]");
+        table.AddColumn("[bold]Type[/]");
+        table.AddColumn("[bold]Details[/]");
+        var events = new (string Name, IReadOnlyList<PackManifest.PackHook>? Hooks)[]
         {
-            ("preInstall", scripts?.PreInstall),
-            ("postInstall", scripts?.PostInstall),
-            ("preUpdate", scripts?.PreUpdate),
-            ("postUpdate", scripts?.PostUpdate),
+            ("preInstall", hooks?.PreInstall),
+            ("postInstall", hooks?.PostInstall),
+            ("preUpdate", hooks?.PreUpdate),
+            ("postUpdate", hooks?.PostUpdate),
         };
-        foreach (var (name, script) in hooks)
+        var hasHooks = HasHooks(hooks);
+        foreach (var (name, declarations) in events)
         {
-            table.AddRow(
-                name,
-                Markup.Escape(script?.Description ?? "none"),
-                Markup.Escape(script is null ? "none" : FormatInvocation(script))
-            );
+            if (hasHooks && declarations is not { Count: > 0 })
+            {
+                table.AddRow(name, "-", "-", "none");
+                continue;
+            }
+
+            for (var index = 0; index < (declarations?.Count ?? 0); index++)
+            {
+                var hook = declarations![index];
+                var isInstruction = string.Equals(
+                    hook.Type,
+                    "instruction",
+                    StringComparison.Ordinal
+                );
+                table.AddRow(
+                    name,
+                    (index + 1).ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    Markup.Escape(hook.Type),
+                    Markup.Escape(
+                        isInstruction
+                            ? $"{hook.File ?? "-"}; templating: {(hook.Templating == true ? "enabled" : "disabled")}"
+                            : $"{FormatInvocation(hook)}; description: {hook.Description ?? "none"}"
+                    )
+                );
+            }
+        }
+
+        if (!hasHooks)
+        {
+            table.AddRow("No lifecycle hooks declared.", "-", "-", "-");
         }
 
         return table;
     }
 
-    private static string FormatInvocation(PackManifest.LifecycleScript script)
+    private static bool HasHooks(PackManifest.PackHooks? hooks) =>
+        hooks is not null
+        && new[] { hooks.PreInstall, hooks.PostInstall, hooks.PreUpdate, hooks.PostUpdate }.Any(
+            static declarations => declarations?.Count > 0
+        );
+
+    private static string FormatInvocation(PackManifest.PackHook script)
     {
         var executable = script.Runner ?? script.Command ?? "-";
         var arguments = script.File is { } file

@@ -8,10 +8,10 @@ public sealed class LifecycleHookAuthorizationTests
     public async Task Plan_WhenInstallHasScripts_EmitsOrderedPreAndPostHooks()
     {
         var pack = CreatePack(
-            new PackManifest.PackScripts
+            new PackManifest.PackHooks
             {
-                PreInstall = new PackManifest.LifecycleScript { Command = "pre" },
-                PostInstall = new PackManifest.LifecycleScript { Command = "post" },
+                PreInstall = [new PackManifest.PackHook { Type = "script", Command = "pre" }],
+                PostInstall = [new PackManifest.PackHook { Type = "script", Command = "post" }],
             }
         );
         var plan = new PackLifecyclePlan(
@@ -61,13 +61,17 @@ public sealed class LifecycleHookAuthorizationTests
     public async Task Plan_WhenScriptArgumentUsesParameter_RendersArgument()
     {
         var pack = CreatePack(
-            new PackManifest.PackScripts
+            new PackManifest.PackHooks
             {
-                PreInstall = new PackManifest.LifecycleScript
-                {
-                    Command = "tool",
-                    Arguments = ["--company", "{{ companyName }}"],
-                },
+                PreInstall =
+                [
+                    new PackManifest.PackHook
+                    {
+                        Type = "script",
+                        Command = "tool",
+                        Arguments = ["--company", "{{ companyName }}"],
+                    },
+                ],
             }
         );
         var entry = new PackLifecyclePlan.Entry(
@@ -93,13 +97,17 @@ public sealed class LifecycleHookAuthorizationTests
     public async Task Plan_WhenScriptArgumentUsesUnknownParameter_ReturnsFailure()
     {
         var pack = CreatePack(
-            new PackManifest.PackScripts
+            new PackManifest.PackHooks
             {
-                PreInstall = new PackManifest.LifecycleScript
-                {
-                    Command = "tool",
-                    Arguments = ["{{ unknown }}"],
-                },
+                PreInstall =
+                [
+                    new PackManifest.PackHook
+                    {
+                        Type = "script",
+                        Command = "tool",
+                        Arguments = ["{{ unknown }}"],
+                    },
+                ],
             }
         );
         var entry = new PackLifecyclePlan.Entry(
@@ -153,6 +161,51 @@ public sealed class LifecycleHookAuthorizationTests
     }
 
     [Test]
+    public async Task AuthorizeAsync_WhenHooksMixed_AppliesScriptModeWithoutSuppressingInstructions()
+    {
+        using var workspace = new TestWorkspace();
+        var fileSystem = new FileSystem();
+        var confirmer = new RecordingConfirmer();
+        var authorizer = new LifecycleHookAuthorizer(
+            new UserSettingsStore(fileSystem, workspace.Path),
+            new TrustPolicy(fileSystem),
+            new LifecycleCommandResolver(fileSystem),
+            confirmer
+        );
+        var script = CreateInvocation(workspace.Path, Environment.ProcessPath!) with
+        {
+            Position = 2,
+        };
+        var invocations = new[]
+        {
+            CreateInstructionInvocation(workspace.Path, 1),
+            script,
+            CreateInstructionInvocation(workspace.Path, 3),
+        };
+
+        var skipped = await authorizer.AuthorizeAsync(
+            workspace.Path,
+            CreateConfiguration(),
+            ScriptExecutionMode.Skip,
+            invocations
+        );
+        var run = await authorizer.AuthorizeAsync(
+            workspace.Path,
+            CreateConfiguration(),
+            ScriptExecutionMode.Run,
+            invocations
+        );
+
+        await Assert
+            .That(string.Join(",", skipped.RequireValue().Select(hook => hook.Invocation.Position)))
+            .IsEqualTo("1,3");
+        await Assert
+            .That(string.Join(",", run.RequireValue().Select(hook => hook.Invocation.Position)))
+            .IsEqualTo("1,2,3");
+        await Assert.That(confirmer.CallCount).IsEqualTo(0);
+    }
+
+    [Test]
     public async Task AuthorizeAsync_WhenPromptTrustIsAbsentAndConfirmationDeclined_SkipsHook()
     {
         using var workspace = new TestWorkspace();
@@ -173,6 +226,37 @@ public sealed class LifecycleHookAuthorizationTests
         );
 
         await Assert.That(result.RequireValue()).IsEmpty();
+        await Assert.That(confirmer.CallCount).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task AuthorizeAsync_WhenScriptDeclined_PreservesInstructionEntry()
+    {
+        using var workspace = new TestWorkspace();
+        var fileSystem = new FileSystem();
+        var confirmer = new RecordingConfirmer();
+        var authorizer = new LifecycleHookAuthorizer(
+            new UserSettingsStore(fileSystem, workspace.Path),
+            new TrustPolicy(fileSystem),
+            new LifecycleCommandResolver(fileSystem),
+            confirmer
+        );
+
+        var result = await authorizer.AuthorizeAsync(
+            workspace.Path,
+            CreateConfiguration(),
+            ScriptExecutionMode.Prompt,
+            [
+                CreateInstructionInvocation(workspace.Path, 1),
+                CreateInvocation(workspace.Path, Environment.ProcessPath!) with
+                {
+                    Position = 2,
+                },
+            ]
+        );
+
+        await Assert.That(result.RequireValue()).Count().IsEqualTo(1);
+        await Assert.That(result.RequireValue().Single().Invocation.IsInstruction).IsTrue();
         await Assert.That(confirmer.CallCount).IsEqualTo(1);
     }
 
@@ -237,8 +321,9 @@ public sealed class LifecycleHookAuthorizationTests
         var hookPath = Path.Combine(pack.PackDirectory, "scripts", "setup.ps1");
         Directory.CreateDirectory(Path.GetDirectoryName(hookPath)!);
         File.WriteAllText(hookPath, "Write-Output setup");
-        var script = new PackManifest.LifecycleScript
+        var script = new PackManifest.PackHook
         {
+            Type = "script",
             File = "scripts/setup.ps1",
             Runner = Environment.ProcessPath,
             Arguments = ["two words", "&"],
@@ -281,11 +366,35 @@ public sealed class LifecycleHookAuthorizationTests
         new(
             CreatePack(null, projectDirectory),
             LifecycleHook.PreInstall,
-            new PackManifest.LifecycleScript { Command = command },
+            new PackManifest.PackHook { Type = "script", Command = command },
             null
         );
 
-    private static DiscoveredPack CreatePack(PackManifest.PackScripts? scripts, string? root = null)
+    private static LifecycleHookInvocation CreateInstructionInvocation(
+        string projectDirectory,
+        int position
+    )
+    {
+        var packedFile = new PackedHookFile(
+            "instructions/setup.md",
+            Path.Combine(projectDirectory, "setup.md"),
+            "HASH"
+        );
+        return new LifecycleHookInvocation(
+            CreatePack(null, projectDirectory),
+            LifecycleHook.PreInstall,
+            new PackManifest.PackHook { Type = "instruction", File = "instructions/setup.md" },
+            packedFile,
+            position,
+            new PreparedInstruction(
+                packedFile,
+                false,
+                new InstructionDocument(string.Empty, [new InstructionStep(1, null, null, "Setup")])
+            )
+        );
+    }
+
+    private static DiscoveredPack CreatePack(PackManifest.PackHooks? hooks, string? root = null)
     {
         var sourcePath = root is null
             ? Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"))
@@ -302,7 +411,7 @@ public sealed class LifecycleHookAuthorizationTests
             {
                 Id = "example",
                 Version = "1.0.0",
-                Scripts = scripts,
+                Hooks = hooks,
             },
             "local",
             sourceIdentity

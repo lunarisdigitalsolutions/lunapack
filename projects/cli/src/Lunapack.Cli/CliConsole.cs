@@ -27,6 +27,18 @@ internal sealed class CliConsole(IAnsiConsole ansiConsole, CliLogLevel minimumLe
 
     public bool Confirm(string prompt) => ansiConsole.Confirm(prompt);
 
+    public bool WaitForContinue()
+    {
+        Info("Press Enter to continue...");
+        ConsoleKeyInfo? key;
+        do
+        {
+            key = ansiConsole.Input.ReadKey(intercept: true);
+        } while (key is not null && key.Value.Key != ConsoleKey.Enter);
+
+        return key is not null;
+    }
+
     public string Prompt(PackParameterPrompt parameter)
     {
         var prompt = FormatParameterPrompt(parameter);

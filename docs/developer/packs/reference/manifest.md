@@ -23,48 +23,58 @@ managedFiles:
 
 | Field                  | Rules                                                                                                                                  |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                   | Required stable identifier: alphanumeric segments joined by single hyphens.                                                           |
+| `id`                   | Required stable identifier: alphanumeric segments joined by single hyphens.                                                            |
 | `version`              | Required Semantic Version.                                                                                                             |
 | `name`                 | Optional non-empty human-readable name.                                                                                                |
 | `author`               | Required non-empty author or maintainer attribution.                                                                                   |
 | `homepage`             | Optional absolute HTTP or HTTPS URI.                                                                                                   |
 | `license`              | Required non-empty license identifier or expression.                                                                                   |
 | `managedFiles`         | Each entry has one `source`, `directory`, or `glob` selector and a project-relative `target`.                                          |
-| `packs`                | Each composite reference has a hyphen-separated alphanumeric ID and an exact version.                                                |
+| `packs`                | Each composite reference has a hyphen-separated alphanumeric ID and an exact version.                                                  |
 | `parameters`           | Identifier-named `string`, `bool`, or `enum` declarations. Optional display metadata labels prompts; enums require unique values.      |
 | Reference `parameters` | String or Boolean bindings for a referenced pack.                                                                                      |
 | `condition`            | A Boolean name or negation, or a quoted string or enum equality comparison joined with logical AND, logical OR, and parentheses.       |
 | `strategy`             | `copy` with `overwrite`, `fail-if-exists`, `skip-if-exists`, or `backup-and-overwrite`; or `merge` with `lines`, `section`, or `json`. |
 | `tags`                 | Optional list of up to 15 unique, non-empty tags. Search matches tags; discover lists them, and inspect previews the first five.       |
 | `template`             | Enables Scriban parsing. Defaults to `false`; set `true` only when this source uses parameters or Scriban functions.                   |
+| `hooks`                | Ordered `script` or `instruction` declarations grouped by lifecycle event.                                                             |
 
-## Lifecycle scripts
+## Lifecycle hooks
 
-Optional `scripts` hooks run around install and update. Each hook is either a
+Optional `hooks` arrays run or display ordered work around install and update.
+Each declaration is a `script` or `instruction`. Script hooks use either a
 direct executable command or a packed file with an explicit runner. Arguments
 are Scriban templates rendered from resolved pack parameters. Each rendered
 item remains one literal argv value, not part of a shell command string.
 
 ```yml
-scripts:
+hooks:
   preInstall:
-    file: scripts/setup.ps1
-    runner: pwsh
-    arguments:
-      - -ProjectType
-      - '{{ projectType }}'
-    description: Configure project tooling.
+    - type: instruction
+      file: instructions/setup.md
+      templating: true
+    - type: script
+      file: scripts/setup.ps1
+      runner: pwsh
+      arguments:
+        - -ProjectType
+        - '{{ projectType }}'
+      description: Configure project tooling.
   postUpdate:
-    command: dotnet
-    arguments:
-      - tool
-      - restore
+    - type: script
+      command: dotnet
+      arguments:
+        - tool
+        - restore
 ```
 
 Supported hook names are `preInstall`, `postInstall`, `preUpdate`, and
-`postUpdate`. Packed-file hooks require both `file` and `runner`; direct hooks
-require `command`. `file` must remain pack-relative. A composite reference can
-set `disabledHooks` to suppress selected hook types for that transient pack.
+`postUpdate`. Script items require `type: script`. Packed-file scripts require
+both `file` and `runner`; direct scripts require `command`. Instruction items
+require `type: instruction` and a pack-relative Markdown `file`; optional
+`templating: true` enables Scriban before display. Hook order within each event
+is significant. A composite reference can set `disabledHooks` to suppress every
+typed hook in selected events for that transient pack.
 
 ```yml
 id: application-foundation
@@ -82,11 +92,25 @@ packs:
 Consumers select `luna install` and `luna update` behavior with
 `--scripts prompt|run|skip`. Prompt mode requires a matching source or
 source-plus-pack trust entry, or interactive approval for each untrusted hook.
-Run mode permits all non-suppressed hooks for one invocation; skip mode runs no
-hooks. Hooks execute with the invoking user's authority, so authors should keep
-them minimal and describe externally visible effects. Argument rendering occurs
-before dry-run formatting and trust authorization. `command`, `runner`, and
-`file` remain literal. See [Use Scriban templates](../how-to/use-scriban-templates.md).
+Run mode permits all non-suppressed scripts for one invocation; skip mode runs
+no scripts. `--skip-instructions` independently prevents instruction loading
+and display. Scripts execute with the invoking user's authority, so authors
+should keep them minimal and describe externally visible effects. Instructions
+never execute and do not use script trust. Argument and instruction rendering
+occurs before dry-run formatting; script arguments render before trust
+authorization. `command`, `runner`, and `file` remain literal. See
+[Use Scriban templates](../how-to/use-scriban-templates.md).
+
+Manifests using the former top-level `scripts` map must migrate to `hooks`, turn
+each event value into an array, and add `type: script` to every declaration.
+LunaPack rejects the old shape so mixed ordering cannot be ambiguous.
+
+CLI authoring migration is direct:
+
+- Replace `luna pack add script ...` with `luna pack add hook script ...`.
+- Replace `luna pack rm script <event>` with `luna pack rm hook <event>
+<position>`.
+- Replace `luna pack scripts` with `luna pack hooks`.
 
 The manifest directory is the pack root. Source selectors read from that root;
 directory and glob matches retain their relative paths below the target.

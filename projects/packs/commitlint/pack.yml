@@ -12,13 +12,24 @@ managedFiles:
     target: .commitlintrc.cjs
   - source: templates/conventional-commits.md
     target: docs/developer/conventional-commits.md
-scripts:
+hooks:
   postInstall:
-    command: npm
-    arguments:
-      - install
-      - --save-dev
-      - --ignore-scripts
-      - '@commitlint/config-conventional@20.4.2'
-      - '@commitlint/cli@20.4.2'
-    description: Install Commitlint and its conventional-commit rules.
+    - type: script
+      command: npm
+      arguments:
+        - install
+        - --save-dev
+        - --ignore-scripts
+        - '@commitlint/config-conventional@20.4.2'
+        - '@commitlint/cli@20.4.2'
+      description: Install Commitlint and its conventional-commit rules.
+  postUpdate:
+    - type: script
+      command: npm
+      arguments:
+        - install
+        - --save-dev
+        - --ignore-scripts
+        - '@commitlint/config-conventional@20.4.2'
+        - '@commitlint/cli@20.4.2'
+      description: Update Commitlint and its conventional-commit rules.

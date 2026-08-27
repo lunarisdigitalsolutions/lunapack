@@ -17,16 +17,19 @@ target actions, then write files and paired project state transactionally. A
 dry run performs the same selection and preflight without changing files or
 state. Updating recomputes the complete selected-root graph as one transaction.
 
-Lifecycle scripts add ordered work around that transaction. For an installed
-node, `preInstall` runs before managed files and `postInstall` runs before
-state persistence; updates use `preUpdate` and `postUpdate`. Hooks run
+Lifecycle hooks add ordered work around that transaction. Each event can mix
+executable scripts and non-executable instructions in manifest order. For an
+installed node, `preInstall` runs before managed files and `postInstall` runs
+before state persistence; updates use `preUpdate` and `postUpdate`. Events run
 dependency-first. A composite reference can list `disabledHooks`; every
-incoming transient reference contributes to the suppression union, while a
-pack installed directly as a root keeps its own hooks enabled.
+incoming transient reference contributes to the event-suppression union, while
+a pack installed directly as a root keeps its own hooks enabled.
 
-LunaPack launches approved hooks with literal argv and no implicit shell. It
-can restore LunaPack-managed files and `lunapack.yml` after a failure, but it
-cannot roll back external process effects. Packed content is copied into an
-operation snapshot and hashed before launch. Snapshot traversal currently
-follows links and reparse points; see the lifecycle safety guidance before
-treating a source as trusted.
+LunaPack authorizes every script before processing any hook, then launches
+approved scripts with literal argv and no implicit shell. Instructions load
+from the operation snapshot and display without script trust. LunaPack can
+restore managed files and `lunapack.yml` after failure or instruction
+cancellation, but it cannot roll back external process effects. Packed content
+is copied into an operation snapshot and hashed before launch. Snapshot
+traversal currently follows links and reparse points; see lifecycle safety
+guidance before treating a source as trusted.

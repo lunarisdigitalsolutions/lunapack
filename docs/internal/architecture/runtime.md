@@ -48,7 +48,16 @@ rendered bytes as SHA-256 digests.
 After pack-specific resolution, pack graphs adapt to managed roots. Links emit
 managed roots directly. Explicit owner kinds keep pack and link ownership
 separate while one ordinal target map rejects cross-root collisions. Links do
-not enter parameter, template, strategy, script, dependency, or trust behavior.
+not enter parameter, template, strategy, lifecycle-hook, dependency, or trust
+behavior.
+
+Pack lifecycle planning emits immutable typed hooks in dependency-first event
+order and manifest declaration order. Instruction files are confined to the
+copied operation snapshot, decoded as strict UTF-8, optionally rendered with
+resolved parameters, and parsed into literal introductions and H2/H3 steps.
+Script arguments render before authorization. Every script is authorized before
+the dispatcher executes or displays any prepared hook; instructions never enter
+the script trust boundary.
 
 ## Transactions And Safety
 
@@ -57,11 +66,18 @@ snapshots changed files and restores them if an action or paired state save
 fails. Uninstall removes unreachable unchanged copy targets and recorded
 section-merge regions, while retaining line and JSON merge targets. Missing
 targets generate warnings but do not prevent state cleanup. The invocation-scoped
-Spectre.Console boundary writes command output and lifecycle diagnostics at a
+Spectre.Console boundary writes command output, guided instructions, and
+lifecycle diagnostics at a
 user-selected minimum level. Info output is plain; verbose, debug, warning, and
 error output has colored level prefixes. Long-running catalog and lifecycle
 commands show status spinners. Source trust is established by consumer
 configuration and preserved through provenance, not by pack manifests.
+
+Pre-mutation hooks run inside the transaction before managed-file changes;
+post-mutation hooks run before paired state persistence. Hook failure or guided
+instruction cancellation restores managed files and retained project-manifest
+bytes. External script effects remain outside rollback. Dry runs validate and
+report typed hooks without execution, consent prompts, or guided display.
 
 ## Workflow Guidance
 

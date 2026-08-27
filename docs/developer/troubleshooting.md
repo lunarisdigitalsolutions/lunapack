@@ -44,6 +44,13 @@ without automation, grant the narrowest appropriate trust scope, or use
 `--scripts run` for one reviewed invocation. See
 [Scripts and trust](cli/trust-and-scripts.md).
 
+## Lifecycle instructions are unsuitable for automation
+
+Noninteractive sessions print every prepared instruction without waiting for
+input. Use `--skip-instructions` when automation must suppress that output or
+when manual setup is handled elsewhere. This option does not change script
+consent; combine it with the intended `--scripts` mode explicitly.
+
 ## Legacy lock migration fails
 
 Luna cannot migrate a version-1 managed-file record when its declared target

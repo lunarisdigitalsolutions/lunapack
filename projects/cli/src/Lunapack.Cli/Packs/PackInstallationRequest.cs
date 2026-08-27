@@ -23,6 +23,8 @@ internal sealed record PackInstallationRequest(
 
     public ScriptExecutionMode ScriptMode { get; init; } = ScriptExecutionMode.Prompt;
 
+    public bool SkipInstructions { get; init; }
+
     public static ManifestOperationResult<PackInstallationRequest> Create(
         IFileSystem fileSystem,
         string projectDirectory,
@@ -34,7 +36,8 @@ internal sealed record PackInstallationRequest(
         IEnumerable<string> skippedVariables,
         IEnumerable<string>? directoryRemappings = null,
         IEnumerable<string>? fileRemappings = null,
-        ScriptExecutionMode? scriptMode = null
+        ScriptExecutionMode? scriptMode = null,
+        bool skipInstructions = false
     )
     {
         var parsedPackReference = PackReference.Parse(packReferenceValue);
@@ -85,7 +88,8 @@ internal sealed record PackInstallationRequest(
                     parsedInputs.SkippedVariables,
                     parsedRemapping,
                     noVariables,
-                    scriptMode ?? ScriptExecutionMode.Prompt
+                    scriptMode ?? ScriptExecutionMode.Prompt,
+                    skipInstructions
                 )
             );
     }
@@ -98,7 +102,8 @@ internal sealed record PackInstallationRequest(
         IReadOnlySet<string> skippedVariables,
         ManagedFileTargetRemapping targetRemapping,
         bool noVariables,
-        ScriptExecutionMode scriptMode
+        ScriptExecutionMode scriptMode,
+        bool skipInstructions
     ) =>
         new(packReference, destination, adoptExisting)
         {
@@ -107,6 +112,7 @@ internal sealed record PackInstallationRequest(
             TargetRemapping = targetRemapping,
             UseProjectVariables = !noVariables,
             ScriptMode = scriptMode,
+            SkipInstructions = skipInstructions,
         };
 
     private static string? NormalizeDestination(string? destination) =>

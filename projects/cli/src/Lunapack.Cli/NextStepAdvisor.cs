@@ -89,7 +89,7 @@ internal sealed class NextStepAdvisor(IFileSystem fileSystem, IProjectStateStore
             NextStepContext.PackInitialized =>
             [
                 new("Add a managed file", "luna pack add file <path>"),
-                new("Set pack metadata", "luna pack set description <value>"),
+                new("Add a lifecycle hook", "luna pack add hook instruction <event> <file>"),
                 new("Validate the manifest", "luna pack validate"),
             ],
             NextStepContext.PackModified =>
@@ -100,12 +100,14 @@ internal sealed class NextStepAdvisor(IFileSystem fileSystem, IProjectStateStore
             NextStepContext.PackDisplayed =>
             [
                 new("Add a managed file", "luna pack add file <path>"),
+                new("Add a lifecycle hook", "luna pack add hook instruction <event> <file>"),
                 new("Validate the manifest", "luna pack validate"),
             ],
             NextStepContext.PackValidated =>
             [
                 new("Show the manifest", "luna pack show"),
                 new("Add a managed file", "luna pack add file <path>"),
+                new("List lifecycle hooks", "luna pack hooks"),
             ],
             NextStepContext.WorkspaceInitialized =>
             [

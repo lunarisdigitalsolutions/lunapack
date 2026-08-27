@@ -70,7 +70,7 @@ public sealed class PackDryRunFormatterTests
         var preHook = new LifecycleHookInvocation(
             pack,
             LifecycleHook.PreInstall,
-            new PackManifest.LifecycleScript { Command = "cmd" },
+            new PackManifest.PackHook { Type = "script", Command = "cmd" },
             null
         );
         var postHook = preHook with { Hook = LifecycleHook.PostInstall };
@@ -85,8 +85,69 @@ public sealed class PackDryRunFormatterTests
         );
 
         await Assert.That(output).Contains("scripts: skip");
-        await Assert.That(output).Contains("pre-hook: example@1.0.0 preInstall consent: skipped");
-        await Assert.That(output).Contains("post-hook: example@1.0.0 postInstall consent: skipped");
+        await Assert
+            .That(output)
+            .Contains("pre-hook: example@1.0.0 preInstall script consent: skipped");
+        await Assert
+            .That(output)
+            .Contains("post-hook: example@1.0.0 postInstall script consent: skipped");
+    }
+
+    [Test]
+    public async Task Scenario_InstallPreviewHasInstruction_ReportsPreparedMetadata()
+    {
+        var pack = new DiscoveredPack(
+            "source",
+            "source/example",
+            new PackManifest { Id = "example", Version = "1.0.0" },
+            "local",
+            ConfiguredSourceIdentity.CreateLocal("source")
+        );
+        var packedFile = new PackedHookFile(
+            "instructions/setup.md",
+            "C:\\snapshot\\setup.md",
+            "HASH"
+        );
+        var instruction = new PreparedInstruction(
+            packedFile,
+            true,
+            new InstructionDocument(
+                string.Empty,
+                [
+                    new InstructionStep(1, null, "First", "One"),
+                    new InstructionStep(2, null, "Second", "Two"),
+                ]
+            )
+        );
+        var hook = new LifecycleHookInvocation(
+            pack,
+            LifecycleHook.PostUpdate,
+            new PackManifest.PackHook
+            {
+                Type = "instruction",
+                File = "instructions/setup.md",
+                Templating = true,
+            },
+            packedFile,
+            Instruction: instruction
+        );
+
+        var output = PackDryRunFormatter.FormatInstall(
+            new PackInstallDryRunResult(
+                new PackReference("example", "1.0.0"),
+                new PackUpdatePlan(
+                    [],
+                    new LifecycleDryRunPlan(ScriptExecutionMode.Prompt, [], [hook], [])
+                )
+            )
+        );
+
+        await Assert
+            .That(output)
+            .Contains(
+                "post-hook: example@1.0.0 postUpdate instruction file: instructions/setup.md templating: enabled steps: 2"
+            );
+        await Assert.That(output).DoesNotContain("Press Enter to continue...");
     }
 
     [Test]

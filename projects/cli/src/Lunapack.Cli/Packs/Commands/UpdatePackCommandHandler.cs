@@ -38,12 +38,17 @@ internal sealed class UpdatePackCommandHandler(
         {
             Description = "Lifecycle script mode: prompt, run, or skip.",
         };
+        var skipInstructionsOption = new Option<bool>("--skip-instructions")
+        {
+            Description = "Skip lifecycle instructions.",
+        };
         var command = new Command("update", "Update installed packs.")
         {
             packReferenceArgument,
             promptOption,
             dryRunOption,
             scriptsOption,
+            skipInstructionsOption,
         };
         command.SetAction(async parseResult =>
         {
@@ -84,7 +89,12 @@ internal sealed class UpdatePackCommandHandler(
             if (parseResult.GetValue(promptOption))
             {
                 return await HandleResultAsync(
-                    await PromptAndUpdateAsync(workspaceDirectory, dryRun, parsedScriptMode),
+                    await PromptAndUpdateAsync(
+                        workspaceDirectory,
+                        dryRun,
+                        parsedScriptMode,
+                        parseResult.GetValue(skipInstructionsOption)
+                    ),
                     dryRun
                 );
             }
@@ -97,6 +107,7 @@ internal sealed class UpdatePackCommandHandler(
                         null,
                         dryRun,
                         parsedScriptMode,
+                        parseResult.GetValue(skipInstructionsOption),
                         "Updating packs..."
                     ),
                     dryRun
@@ -126,6 +137,7 @@ internal sealed class UpdatePackCommandHandler(
                         reference,
                         dryRun,
                         parsedScriptMode,
+                        parseResult.GetValue(skipInstructionsOption),
                         $"Updating {reference.Id}..."
                     ),
                     dryRun
@@ -147,19 +159,34 @@ internal sealed class UpdatePackCommandHandler(
         PackReference? reference,
         bool dryRun,
         ScriptExecutionMode scriptMode,
+        bool skipInstructions,
         string status
     ) =>
         scriptMode == ScriptExecutionMode.Prompt
-            ? packUpdateService.UpdateAsync(projectDirectory, reference, dryRun, scriptMode)
+            ? packUpdateService.UpdateAsync(
+                projectDirectory,
+                reference,
+                dryRun,
+                scriptMode,
+                skipInstructions
+            )
             : console.RunWithStatusAsync(
                 status,
-                () => packUpdateService.UpdateAsync(projectDirectory, reference, dryRun, scriptMode)
+                () =>
+                    packUpdateService.UpdateAsync(
+                        projectDirectory,
+                        reference,
+                        dryRun,
+                        scriptMode,
+                        skipInstructions
+                    )
             );
 
     private async Task<PackUpdateService.UpdateResult> PromptAndUpdateAsync(
         string projectDirectory,
         bool dryRun,
-        ScriptExecutionMode scriptMode
+        ScriptExecutionMode scriptMode,
+        bool skipInstructions
     )
     {
         var availableUpdates = await updateSelectionService.GetAvailableAsync(projectDirectory);
@@ -178,7 +205,8 @@ internal sealed class UpdatePackCommandHandler(
             projectDirectory,
             confirmedIds,
             dryRun,
-            scriptMode
+            scriptMode,
+            skipInstructions
         );
     }
 

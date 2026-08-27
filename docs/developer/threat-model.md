@@ -2,14 +2,14 @@
 
 This document describes LunaPack's public security boundaries, controls, and
 residual risks. It covers the CLI, pack sources, manifests, lock files,
-lifecycle scripts, release packages, container image, website, and update
+lifecycle hooks, release packages, container image, website, and update
 channels.
 
 ## Scope And Assumptions
 
 Protected assets include consumer repository files, lock-file integrity, source
-provenance, user trust settings, credentials available to Luna or a lifecycle
-script, release signing identity, and published artifacts.
+provenance, user trust settings, credentials available to Luna or an executable
+lifecycle script, release signing identity, and published artifacts.
 
 Actors include pack consumers, pack authors, source maintainers, contributors,
 release maintainers, package registries, and attackers able to modify a source,
@@ -34,7 +34,8 @@ security boundaries. LunaPack is not a sandbox or privilege boundary.
 3. It validates schemas, resolves an exact dependency graph, binds parameters,
    evaluates conditions, and renders templates.
 4. It plans writes, merges, moves, or removals within the selected workspace.
-5. It may launch approved lifecycle commands with the invoking user's authority.
+5. It may display lifecycle instructions or launch approved lifecycle commands
+   with the invoking user's authority.
 6. It persists configuration and lock state after successful filesystem work.
 7. Release automation builds native binaries, stages npm and NuGet packages,
    builds an OCI image from the Linux binary, and publishes through federated
@@ -61,7 +62,7 @@ hardening, or Accepted or informational.
 ### LP-T01: Malicious Lifecycle Execution
 
 - **STRIDE:** Tampering, information disclosure, elevation of privilege.
-- **Component:** Pack lifecycle scripts and trust settings.
+- **Component:** Pack lifecycle script hooks and trust settings.
 - **Scenario:** An approved pack command reads credentials, changes unrelated
   files, accesses the network, or starts another process.
 - **Preconditions:** A consumer selects `run`, grants matching trust, or confirms
@@ -72,7 +73,8 @@ hardening, or Accepted or informational.
 - **Existing controls:** Default prompt mode, explicit skip and run modes,
   source-identity trust, dependency-specific authorization, immutable operation
   snapshots, script hashing before launch, direct argument lists, and project
-  manifest restoration.
+  manifest restoration. Instruction hooks never launch processes and remain
+  outside script trust.
 - **Recommended mitigation:** Review pack source and script content; use least
   privilege; add stronger isolation only when it can preserve required tooling.
 - **Priority:** Accepted or informational.

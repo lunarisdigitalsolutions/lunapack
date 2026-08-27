@@ -9,3 +9,18 @@ managedFiles:
     strategy:
       type: merge
       method: json
+hooks:
+  postInstall:
+    - type: script
+      command: dotnet
+      arguments:
+        - tool
+        - restore
+      description: Restore the repository-local CSharpier tool.
+  postUpdate:
+    - type: script
+      command: dotnet
+      arguments:
+        - tool
+        - restore
+      description: Restore the updated repository-local CSharpier tool.

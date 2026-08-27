@@ -14,28 +14,32 @@ internal sealed class PackUpdateService(
         string projectDirectory,
         PackReference? packReference,
         bool dryRun = false,
-        ScriptExecutionMode? scriptMode = null
+        ScriptExecutionMode? scriptMode = null,
+        bool skipInstructions = false
     ) =>
         await this.UpdateAsync(
             projectDirectory,
             packReference,
             selectedUpdateIds: null,
             dryRun,
-            scriptMode ?? ScriptExecutionMode.Prompt
+            scriptMode ?? ScriptExecutionMode.Prompt,
+            skipInstructions
         );
 
     public async Task<UpdateResult> UpdateSelectedAsync(
         string projectDirectory,
         IReadOnlySet<string> selectedUpdateIds,
         bool dryRun = false,
-        ScriptExecutionMode? scriptMode = null
+        ScriptExecutionMode? scriptMode = null,
+        bool skipInstructions = false
     ) =>
         await this.UpdateAsync(
             projectDirectory,
             packReference: null,
             selectedUpdateIds,
             dryRun,
-            scriptMode ?? ScriptExecutionMode.Prompt
+            scriptMode ?? ScriptExecutionMode.Prompt,
+            skipInstructions
         );
 
     private async Task<UpdateResult> UpdateAsync(
@@ -43,7 +47,8 @@ internal sealed class PackUpdateService(
         PackReference? packReference,
         IReadOnlySet<string>? selectedUpdateIds,
         bool dryRun,
-        ScriptExecutionMode scriptMode
+        ScriptExecutionMode scriptMode,
+        bool skipInstructions
     )
     {
         var loadedState = await projectStateStore.LoadAsync(projectDirectory);
@@ -70,7 +75,8 @@ internal sealed class PackUpdateService(
                 catalogPacks,
                 reference,
                 dryRun,
-                scriptMode
+                scriptMode,
+                skipInstructions
             )
             : await UpdateAllAsync(
                 projectDirectory,
@@ -78,7 +84,8 @@ internal sealed class PackUpdateService(
                 catalogPacks,
                 selectedUpdateIds,
                 dryRun,
-                scriptMode
+                scriptMode,
+                skipInstructions
             );
     }
 
@@ -88,7 +95,8 @@ internal sealed class PackUpdateService(
         IReadOnlyList<CatalogPack> catalog,
         PackReference packReference,
         bool dryRun,
-        ScriptExecutionMode scriptMode
+        ScriptExecutionMode scriptMode,
+        bool skipInstructions
     )
     {
         var selectedUpdate = SelectNamedUpdate(state, catalog, packReference);
@@ -145,6 +153,7 @@ internal sealed class PackUpdateService(
             [outcome],
             dryRun,
             scriptMode,
+            skipInstructions,
             update.SourceSwitch
         );
     }
@@ -234,7 +243,8 @@ internal sealed class PackUpdateService(
         IReadOnlyList<CatalogPack> catalog,
         IReadOnlySet<string>? selectedUpdateIds,
         bool dryRun,
-        ScriptExecutionMode scriptMode
+        ScriptExecutionMode scriptMode,
+        bool skipInstructions
     )
     {
         var selectedUpdates = PackUpdateSelectionService.SelectAvailable(state, catalog);
@@ -278,7 +288,8 @@ internal sealed class PackUpdateService(
             nextRequestedRoots[0],
             outcomes,
             dryRun,
-            scriptMode
+            scriptMode,
+            skipInstructions
         );
     }
 
@@ -289,6 +300,7 @@ internal sealed class PackUpdateService(
         IReadOnlyList<UpdateOutcome> outcomes,
         bool dryRun,
         ScriptExecutionMode scriptMode,
+        bool skipInstructions,
         LockedSourceUpdateSelector.SourceSwitch? proposedSourceSwitch = null
     )
     {
@@ -299,6 +311,7 @@ internal sealed class PackUpdateService(
         )
         {
             ScriptMode = scriptMode,
+            SkipInstructions = skipInstructions,
         };
         if (dryRun)
         {

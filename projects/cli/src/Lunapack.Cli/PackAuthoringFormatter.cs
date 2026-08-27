@@ -25,24 +25,36 @@ internal static class PackAuthoringFormatter
             references.AddRow(Markup.Escape(reference.Id), Markup.Escape(reference.Version));
         }
 
-        var scripts = CreateTable("Lifecycle scripts", "Hook");
-        foreach (var (hook, _) in GetScripts(manifest.Scripts))
+        var hooks = CreateTable("Lifecycle hooks", "Event");
+        foreach (var (eventName, _, _) in GetHooks(manifest.Hooks))
         {
-            scripts.AddRow(Markup.Escape(hook));
+            hooks.AddRow(Markup.Escape(eventName));
         }
 
-        return [files, references, scripts];
+        return [files, references, hooks];
     }
 
-    public static IReadOnlyList<IRenderable> FormatScripts(PackManifest manifest)
+    public static IReadOnlyList<IRenderable> FormatHooks(PackManifest manifest)
     {
-        var table = CreateTable("Lifecycle scripts", "Hook", "Invocation", "Description");
-        foreach (var (hook, script) in GetScripts(manifest.Scripts))
+        var table = CreateTable("Lifecycle hooks", "Event", "Position", "Type", "Details");
+        var hooks = GetHooks(manifest.Hooks);
+        if (hooks.Count == 0)
         {
+            table.AddRow("No lifecycle hooks declared.", "-", "-", "-");
+        }
+
+        foreach (var (eventName, position, hook) in hooks)
+        {
+            var isInstruction = string.Equals(hook.Type, "instruction", StringComparison.Ordinal);
             table.AddRow(
-                Markup.Escape(hook),
-                Markup.Escape(FormatInvocation(script)),
-                Markup.Escape(script.Description ?? "-")
+                Markup.Escape(eventName),
+                position.ToString(CultureInfo.InvariantCulture),
+                Markup.Escape(hook.Type),
+                Markup.Escape(
+                    isInstruction
+                        ? $"{hook.File ?? "-"}; templating: {(hook.Templating == true ? "enabled" : "disabled")}"
+                        : $"{FormatInvocation(hook)}; description: {hook.Description ?? "-"}"
+                )
             );
         }
 
@@ -65,7 +77,7 @@ internal static class PackAuthoringFormatter
         );
         table.AddRow(
             "Scripts",
-            GetScripts(manifest.Scripts).Count.ToString(CultureInfo.InvariantCulture)
+            GetHooks(manifest.Hooks).Count.ToString(CultureInfo.InvariantCulture)
         );
         table.AddRow("References", manifest.Packs.Count.ToString(CultureInfo.InvariantCulture));
         table.AddRow(
@@ -106,41 +118,51 @@ internal static class PackAuthoringFormatter
         return ("glob", managedFile.Glob ?? "-");
     }
 
-    private static List<(string Hook, PackManifest.LifecycleScript Script)> GetScripts(
-        PackManifest.PackScripts? scripts
+    private static List<(string Event, int Position, PackManifest.PackHook Hook)> GetHooks(
+        PackManifest.PackHooks? hooks
     )
     {
-        if (scripts is null)
+        if (hooks is null)
         {
             return [];
         }
 
-        var values = new List<(string, PackManifest.LifecycleScript)>();
-        AddScript(values, "preInstall", scripts.PreInstall);
-        AddScript(values, "postInstall", scripts.PostInstall);
-        AddScript(values, "preUpdate", scripts.PreUpdate);
-        AddScript(values, "postUpdate", scripts.PostUpdate);
+        var values = new List<(string, int, PackManifest.PackHook)>();
+        AddHooks(values, "preInstall", hooks.PreInstall);
+        AddHooks(values, "postInstall", hooks.PostInstall);
+        AddHooks(values, "preUpdate", hooks.PreUpdate);
+        AddHooks(values, "postUpdate", hooks.PostUpdate);
         return values;
     }
 
-    private static void AddScript(
-        List<(string Hook, PackManifest.LifecycleScript Script)> scripts,
-        string hook,
-        PackManifest.LifecycleScript? script
+    private static void AddHooks(
+        List<(string Event, int Position, PackManifest.PackHook Hook)> hooks,
+        string eventName,
+        List<PackManifest.PackHook>? declarations
     )
     {
-        if (script is not null)
+        if (declarations is null)
         {
-            scripts.Add((hook, script));
+            return;
+        }
+
+        for (var index = 0; index < declarations.Count; index++)
+        {
+            hooks.Add((eventName, index + 1, declarations[index]));
         }
     }
 
-    private static string FormatInvocation(PackManifest.LifecycleScript script)
+    private static string FormatInvocation(PackManifest.PackHook script)
     {
         var executable = script.Runner ?? script.Command ?? "-";
         var arguments = script.File is null
             ? script.Arguments
             : new[] { script.File }.Concat(script.Arguments);
-        return string.Join(" ", new[] { executable }.Concat(arguments));
+        return string.Join(" ", new[] { executable }.Concat(arguments.Select(EscapeArgument)));
     }
+
+    private static string EscapeArgument(string argument) =>
+        argument.Any(char.IsWhiteSpace) || argument.Contains('"')
+            ? $"\"{argument.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal)}\""
+            : argument;
 }

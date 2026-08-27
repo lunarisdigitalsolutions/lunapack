@@ -137,6 +137,131 @@ public sealed class CliProcessTests
     }
 
     [Test]
+    public async Task PackLifecycle_WhenInstructionsMixed_RendersOrderedNonInteractiveContent()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreateInstructionPackSource(
+            workspace.Path,
+            "example",
+            "id: example\nversion: 1.0.0\nparameters:\n  companyName:\n    type: string\n    required: true\nhooks:\n  preInstall:\n    - type: instruction\n      file: instructions/first.md\n    - type: script\n      command: dotnet\n      arguments:\n        - --version\n    - type: instruction\n      file: instructions/last.md\n      templating: true\nmanagedFiles:\n  - source: templates/content.txt\n    target: .pack\n",
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["first.md"] = "## First\nstatic-instruction",
+                ["last.md"] = "## Last\nHello {{ companyName }}",
+            }
+        );
+        await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
+
+        var install = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "install",
+            "example",
+            "--parameter",
+            "companyName=Example Corp",
+            "--scripts",
+            "run"
+        );
+
+        await Assert.That(install.ExitCode).IsEqualTo(0);
+        var first = install.StandardOutput.IndexOf("static-instruction", StringComparison.Ordinal);
+        var script = install.StandardOutput.IndexOf("10.0.", StringComparison.Ordinal);
+        var last = install.StandardOutput.IndexOf("Hello Example Corp", StringComparison.Ordinal);
+        await Assert.That(first >= 0 && first < script && script < last).IsTrue();
+        await Assert.That(install.StandardOutput).DoesNotContain("Press Enter to continue...");
+    }
+
+    [Test]
+    [Arguments("missing")]
+    [Arguments("invalid")]
+    public async Task PackLifecycle_WhenInstructionPreparationFails_PreservesProjectState(
+        string failure
+    )
+    {
+        using var workspace = new TestWorkspace();
+        var files = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (failure == "invalid")
+        {
+            files["setup.md"] = "{{ 1 + }}";
+        }
+
+        var sourcePath = CreateInstructionPackSource(
+            workspace.Path,
+            "example",
+            "id: example\nversion: 1.0.0\nhooks:\n  preInstall:\n    - type: instruction\n      file: instructions/setup.md\n      templating: true\nmanagedFiles:\n  - source: templates/content.txt\n    target: .pack\n",
+            files
+        );
+        await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
+        var configurationPath = Path.Combine(workspace.Path, "lunapack.yml");
+        var lockPath = Path.Combine(workspace.Path, "lunapack-lock.yml");
+        var initialConfiguration = File.ReadAllText(configurationPath);
+        var initialLock = File.ReadAllText(lockPath);
+
+        var install = await CliProcess.InvokeAsync(workspace.Path, "install", "example");
+
+        await Assert.That(install.ExitCode).IsEqualTo(1);
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, ".pack"))).IsFalse();
+        await Assert.That(File.ReadAllText(configurationPath)).IsEqualTo(initialConfiguration);
+        await Assert.That(File.ReadAllText(lockPath)).IsEqualTo(initialLock);
+    }
+
+    [Test]
+    public async Task PackLifecycle_WhenUpdateInstructionTemplated_RendersPreparedContent()
+    {
+        using var workspace = new TestWorkspace();
+        var sourceRoot = Path.Combine(workspace.Path, "source");
+        CreateInstructionPack(
+            sourceRoot,
+            "example-v1",
+            "id: example\nversion: 1.0.0\nmanagedFiles:\n  - source: templates/content.txt\n    target: .pack\n",
+            new Dictionary<string, string>(StringComparer.Ordinal),
+            "one"
+        );
+        CreateInstructionPack(
+            sourceRoot,
+            "example-v2",
+            "id: example\nversion: 2.0.0\nhooks:\n  postUpdate:\n    - type: instruction\n      file: instructions/update.md\n      templating: true\nmanagedFiles:\n  - source: templates/content.txt\n    target: .pack\n",
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["update.md"] = "## Updated\nYear {{ date.now.year }}",
+            },
+            "two"
+        );
+        await InitializeAndAddSourceAsync(workspace.Path, "source");
+        await CliProcess.InvokeAsync(workspace.Path, "install", "example@1.0.0");
+
+        var update = await CliProcess.InvokeAsync(workspace.Path, "update", "example");
+
+        await Assert.That(update.ExitCode).IsEqualTo(0);
+        await Assert.That(update.StandardOutput).Contains($"Year {DateTime.Now.Year}");
+        await Assert.That(File.ReadAllText(Path.Combine(workspace.Path, ".pack"))).IsEqualTo("two");
+    }
+
+    [Test]
+    public async Task PackLifecycle_WhenTransientEventSuppressed_DoesNotLoadInstruction()
+    {
+        using var workspace = new TestWorkspace();
+        var sourceRoot = Path.Combine(workspace.Path, "source");
+        CreateInstructionPack(
+            sourceRoot,
+            "dependency",
+            "id: dependency\nversion: 1.0.0\nhooks:\n  preInstall:\n    - type: instruction\n      file: instructions/missing.md\n",
+            new Dictionary<string, string>(StringComparer.Ordinal)
+        );
+        CreateInstructionPack(
+            sourceRoot,
+            "root",
+            "id: root\nversion: 1.0.0\npacks:\n  - id: dependency\n    version: 1.0.0\n    disabledHooks:\n      - preInstall\nmanagedFiles:\n  - source: templates/content.txt\n    target: .pack\n",
+            new Dictionary<string, string>(StringComparer.Ordinal)
+        );
+        await InitializeAndAddSourceAsync(workspace.Path, "source");
+
+        var install = await CliProcess.InvokeAsync(workspace.Path, "install", "root");
+
+        await Assert.That(install.ExitCode).IsEqualTo(0);
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, ".pack"))).IsTrue();
+    }
+
+    [Test]
     public async Task PackLifecycle_WhenGitSourceUsesDefaultBranch_InstallsAndLocksProvenance()
     {
         using var workspace = new TestWorkspace();
@@ -1381,6 +1506,50 @@ public sealed class CliProcessTests
         }
 
         return "source";
+    }
+
+    private static string CreateInstructionPackSource(
+        string projectDirectory,
+        string directory,
+        string manifest,
+        IReadOnlyDictionary<string, string> instructions
+    )
+    {
+        CreateInstructionPack(
+            Path.Combine(projectDirectory, "source"),
+            directory,
+            manifest,
+            instructions
+        );
+        return "source";
+    }
+
+    private static void CreateInstructionPack(
+        string sourceRoot,
+        string directory,
+        string manifest,
+        IReadOnlyDictionary<string, string> instructions,
+        string managedContent = "managed"
+    )
+    {
+        var packDirectory = Directory.CreateDirectory(Path.Combine(sourceRoot, directory)).FullName;
+        var templatesDirectory = Directory
+            .CreateDirectory(Path.Combine(packDirectory, "templates"))
+            .FullName;
+        File.WriteAllText(Path.Combine(packDirectory, "pack.yml"), AddRequiredMetadata(manifest));
+        File.WriteAllText(Path.Combine(templatesDirectory, "content.txt"), managedContent);
+        if (instructions.Count == 0)
+        {
+            return;
+        }
+
+        var instructionsDirectory = Directory
+            .CreateDirectory(Path.Combine(packDirectory, "instructions"))
+            .FullName;
+        foreach (var (name, content) in instructions)
+        {
+            File.WriteAllText(Path.Combine(instructionsDirectory, name), content);
+        }
     }
 
     private static string CreateRemappableVersionedPackSource(string projectDirectory)

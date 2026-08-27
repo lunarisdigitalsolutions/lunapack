@@ -23,22 +23,30 @@ The dry run resolves the pack and preflights the target changes without
 modifying project files or LunaPack state. Remove `--dry-run` when the plan is
 ready to apply.
 
-## Lifecycle scripts
+## Lifecycle hooks
 
 Packs can declare `preInstall`, `postInstall`, `preUpdate`, and `postUpdate`
-hooks. Select their behavior explicitly:
+events containing ordered script and instruction hooks. Select script behavior
+explicitly:
 
 ```powershell
 luna install dotnet-project --scripts prompt
 luna install dotnet-project --scripts run
 luna install dotnet-project --scripts skip
+luna install dotnet-project --skip-instructions
 ```
 
 `prompt` is the default. It uses existing source or source-plus-pack trust and
-otherwise asks for each hook. `run` approves non-suppressed hooks for this
-invocation only. `skip` runs no hooks. A dry run prints planned hook order,
-suppression, consent mode, and locked sources without prompting or starting a
-process.
+otherwise asks for each untrusted script. `run` approves non-suppressed scripts
+for this invocation only. `skip` runs no scripts. Instructions do not execute
+and need no trust. An interactive terminal shows one H2/H3 instruction step at
+a time and waits for Enter; a noninteractive session prints all prepared
+content without reading input. `--skip-instructions` prevents instruction files
+from being loaded or displayed without changing script behavior.
+
+A dry run validates instruction content and prints planned hook order, script
+consent, instruction file, effective templating, step count, suppression, and
+locked sources. It never prompts, starts a process, or enters guided display.
 
 Grant persistent trust only after reviewing a source:
 
@@ -47,7 +55,7 @@ luna trust source engineering
 luna trust pack dotnet-project --source engineering
 ```
 
-Trusted hooks run with your user account's authority. Review pack hook
+Trusted scripts run with your user account's authority. Review script
 descriptions and argv before allowing execution.
 
 ## Portable paths

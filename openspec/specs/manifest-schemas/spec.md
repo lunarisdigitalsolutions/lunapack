@@ -68,11 +68,13 @@ The repository SHALL publish a JSON Schema under `projects/schema/` for `lunapac
 
 The repository SHALL publish a JSON Schema under `projects/schema/` for
 `pack.yml`. The schema SHALL require a pack identity, semantic version,
-non-empty author, and non-empty license. It SHALL allow empty managed-file and
-composite-pack collections for incremental authoring. It SHALL allow optional
+non-empty author, and non-empty license. It SHALL allow empty managed-file,
+composite-pack, and lifecycle-hook collections for incremental authoring. It
+SHALL allow optional
 non-empty name and homepage metadata, an optional human-readable package
 description, and up to 15 unique, non-empty tags. A complete distributable pack
-MAY declare managed-file entries, composite pack references, or both. Each
+MAY declare managed-file entries, composite pack references, lifecycle hooks,
+or any combination of them. Each
 composite reference SHALL contain a pack ID and an exact Semantic Version and
 MAY bind identifier-named string or boolean parameters for its referenced pack.
 Managed-file selectors MAY set `template` to opt into Scriban parsing; it
@@ -123,7 +125,7 @@ defaults to false. Pack manifests SHALL not contain source configuration.
 
 #### Scenario: Validate a manifest with a description
 
-- **WHEN** the schema validates a pack manifest with a description and a managed-file declaration or composite pack reference
+- **WHEN** the schema validates a pack manifest with a description and a managed-file declaration, composite pack reference, or lifecycle hook
 - **THEN** validation succeeds
 
 #### Scenario: Validate bounded pack tags
@@ -138,17 +140,22 @@ defaults to false. Pack manifests SHALL not contain source configuration.
 
 #### Scenario: Preserve file-only manifests
 
-- **WHEN** the schema validates an existing complete pack manifest that declares managed files but no composite references
+- **WHEN** the schema validates an existing complete pack manifest that declares managed files but no composite references or lifecycle hooks
 - **THEN** validation succeeds
 
 #### Scenario: Validate a contentless composite manifest
 
-- **WHEN** the schema validates a pack manifest with one or more composite references and no managed files
+- **WHEN** the schema validates a pack manifest with one or more composite references and no managed files or lifecycle hooks
+- **THEN** validation succeeds
+
+#### Scenario: Validate an instruction-only manifest
+
+- **WHEN** the schema validates a pack manifest with one or more lifecycle hooks and no managed files or composite references
 - **THEN** validation succeeds
 
 #### Scenario: Reject an incomplete or unpinned composite reference
 
-- **WHEN** the schema validates a pack manifest without a managed-file or composite declaration, or with a composite reference lacking an exact version
+- **WHEN** the schema validates a pack manifest without a managed-file, composite, or lifecycle-hook declaration, or with a composite reference lacking an exact version
 - **THEN** validation fails
 
 #### Scenario: Validate composite reference parameter bindings
@@ -317,39 +324,34 @@ project configuration without variables SHALL remain valid.
   string or boolean
 - **THEN** the project manifest is invalid
 
-### Requirement: Define pack lifecycle scripts
+### Requirement: Define typed lifecycle hooks
 
-The `pack.yml` schema SHALL allow an optional `scripts` mapping with at most one declaration for each `preInstall`, `postInstall`, `preUpdate`, and `postUpdate` hook. Each declaration SHALL select exactly one execution form: a non-empty pack-relative `file` with a non-empty `runner`, or a non-empty external `command`. Both forms MAY contain an ordered `arguments` array of strings and a non-empty `description`. The schema SHALL reject unknown hook names, unknown declaration properties, unsafe file paths, mixed execution forms, and incomplete declarations. Existing pack manifests that omit `scripts` SHALL remain valid.
+The `pack.yml` schema SHALL allow an optional `hooks` mapping with `preInstall`, `postInstall`, `preUpdate`, and `postUpdate` properties. Each event SHALL contain a non-empty ordered list of typed hook declarations. A `script` hook SHALL select exactly one execution form: a non-empty pack-relative `file` with a non-empty `runner`, or a non-empty external `command`; both forms MAY contain an ordered `arguments` array of strings and a non-empty `description`. An `instruction` hook SHALL contain a non-empty safe pack-relative `.md` file and MAY set `templating`, which SHALL default to false. The schema SHALL reject unknown events, hook types, and properties; unsafe file paths; mixed or incomplete hook variants; and the removed top-level `scripts` property. Existing pack manifests that omit both `scripts` and `hooks` SHALL remain valid.
 
-#### Scenario: Validate a command that invokes a packed script
+#### Scenario: Validate mixed hooks in declared order
 
-- **WHEN** a pack declares `scripts/setup.ps1` as a hook file and `pwsh` as its runner
-- **THEN** the pack manifest is valid and preserves the file, runner, and ordered arguments
+- **WHEN** one event declares an instruction hook followed by command-form and file-form script hooks
+- **THEN** the manifest is valid and preserves all three typed declarations in their declared order
 
-#### Scenario: Reject a mixed execution form
+#### Scenario: Default instruction templating off
 
-- **WHEN** one hook declaration contains both `file` and `command`
-- **THEN** the pack manifest is invalid
+- **WHEN** an instruction hook declares a safe pack-relative `.md` file and omits `templating`
+- **THEN** the manifest is valid and the hook defaults to literal Markdown handling
 
-#### Scenario: Validate an inline tool command
+#### Scenario: Reject an invalid typed hook
 
-- **WHEN** a pack declares an executable and arguments without shipping a script file
-- **THEN** the pack manifest is valid
+- **WHEN** a hook mixes script and instruction properties or omits properties required by its declared type
+- **THEN** the manifest is invalid
 
-#### Scenario: Reject an unsafe packed file
+#### Scenario: Reject an unsafe hook file
 
-- **WHEN** a hook file is rooted or contains a parent traversal segment
-- **THEN** the pack manifest is invalid
+- **WHEN** a script or instruction hook file is rooted or contains a parent traversal segment
+- **THEN** the manifest is invalid
 
-#### Scenario: Reject multiple scripts for one hook
+#### Scenario: Reject the removed scripts section
 
-- **WHEN** a pack represents one hook as a collection of script declarations
-- **THEN** the pack manifest is invalid
-
-#### Scenario: Preserve a manifest without scripts
-
-- **WHEN** an existing valid pack manifest omits `scripts`
-- **THEN** the pack manifest remains valid
+- **WHEN** a pack manifest declares the former top-level `scripts` property
+- **THEN** the manifest is invalid and validation directs the author to migrate declarations into typed `hooks`
 
 ### Requirement: Define lifecycle suppression on composite references
 

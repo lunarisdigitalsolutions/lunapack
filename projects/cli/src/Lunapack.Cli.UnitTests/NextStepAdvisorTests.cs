@@ -58,6 +58,23 @@ public sealed class NextStepAdvisorTests
         await Assert.That(recommendations[2].Command).IsEqualTo("luna install <pack>");
     }
 
+    [Test]
+    public async Task Recommend_WhenAuthoringPack_UsesHookAwareActions()
+    {
+        using var workspace = new TestWorkspace();
+        var advisor = new NextStepAdvisor(workspace.FileSystem, workspace.StateStore);
+
+        var initialized = advisor.Recommend(NextStepContext.PackInitialized);
+        var validated = advisor.Recommend(NextStepContext.PackValidated);
+
+        await Assert
+            .That(initialized.Select(recommendation => recommendation.Command))
+            .Contains("luna pack add hook instruction <event> <file>");
+        await Assert
+            .That(validated.Select(recommendation => recommendation.Command))
+            .Contains("luna pack hooks");
+    }
+
     private static void CreatePack(string workspacePath)
     {
         var packDirectory = Path.Combine(workspacePath, "source", "example");

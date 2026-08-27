@@ -269,9 +269,13 @@ internal sealed class PackManifestStore(IFileSystem fileSystem)
             return "$.managedFiles";
         }
 
-        if (issue.StartsWith("Lifecycle script ", StringComparison.Ordinal))
+        if (
+            issue.StartsWith("Lifecycle hook ", StringComparison.Ordinal)
+            || issue.StartsWith("Script hook ", StringComparison.Ordinal)
+            || issue.StartsWith("Instruction hook ", StringComparison.Ordinal)
+        )
         {
-            return "$.scripts";
+            return "$.hooks";
         }
 
         if (issue.StartsWith("Pack reference ", StringComparison.Ordinal))

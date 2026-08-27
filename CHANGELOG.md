@@ -21,8 +21,11 @@ internal maintenance work, such as CI, build, or release-process changes.
 ### Pack Authoring
 
 - New `luna pack` commands initialize, inspect, validate, and incrementally
-  maintain managed content, composite references, lifecycle scripts, parameters,
-  tags, and metadata in local `pack.yml`.
+  maintain managed content, composite references, ordered lifecycle hooks,
+  parameters, tags, and metadata in local `pack.yml`.
+- `luna pack add hook`, `luna pack hooks`, and positioned `luna pack rm hook`
+  replace the former script-specific authoring commands. Hook lists and resolved
+  pack inspection now show ordered script and instruction details.
 - Pack manifests require ID, semantic version, non-empty author, and non-empty
   license. `luna pack init` accepts `--author` and `--license`, prompting for
   missing values interactively. Discovery and search exclude manifests missing
@@ -37,6 +40,8 @@ internal maintenance work, such as CI, build, or release-process changes.
   Boards references, and external-check gating workflows.
 - `github-actions-pr-gate` supports configurable case-insensitive check-name
   fragments for checks excluded from gate evaluation.
+- Lifecycle hooks install or update Commitlint dependencies, restore the local
+  CSharpier tool, and guide initial `github-actions-pr-gate` repository setup.
 
 ### CLI Workflow
 
@@ -53,6 +58,16 @@ internal maintenance work, such as CI, build, or release-process changes.
 
 ### Lifecycle Hooks
 
+- **Breaking:** Pack manifests replace the top-level `scripts` map with ordered
+  event arrays under `hooks`. Every declaration requires `type: script` or
+  `type: instruction`; legacy `scripts` manifests are rejected.
+- Lifecycle events can interleave multiple scripts and Markdown instructions in
+  declaration order. Script trust remains executable-only, while instructions
+  display one H2/H3 step at a time interactively or print completely in
+  noninteractive sessions.
+- `luna install` and every `luna update` form accept `--skip-instructions`
+  independently of `--scripts`. Dry runs validate instructions and report their
+  file, templating state, and step count without guided display.
 - Declining an untrusted lifecycle hook now warns and skips the hook instead of
   failing the pack operation.
 - Windows lifecycle commands such as `npm` now resolve through `PATHEXT`,
