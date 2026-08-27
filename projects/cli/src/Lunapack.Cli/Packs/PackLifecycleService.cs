@@ -1300,57 +1300,19 @@ internal sealed class PackLifecycleService(
         var isPersisted = false;
         try
         {
-            var resultingContents = CreateResultingContents(updatePlan);
-            var updatedLockFile = CreateLockFile(
-                projectDirectory,
+            var completion = await CompleteUpdateAsync(
+                state,
                 nextConfiguration,
                 graph,
                 installationPlan,
-                state.LockFile,
-                resultingContents
-            );
-            var mergedLockFile = preserveExistingLock
-                ? MergeLockFiles(state.LockFile, updatedLockFile)
-                : ManifestOperationResult<ProjectLockFile>.Success(updatedLockFile);
-            if (mergedLockFile.Value is not { } nextLockFile)
-            {
-                return _console.Fail(mergedLockFile.Error);
-            }
-            foreach (var (targetPath, contents) in resultingContents)
-            {
-                UpdateManagedFileHash(nextLockFile, targetPath, contents);
-            }
-
-            var nextState = state with
-            {
-                Configuration = nextConfiguration,
-                LockFile = nextLockFile,
-            };
-            var checkpoint = await projectStateStore.SaveAsync(projectDirectory, nextState);
-            if (!checkpoint.IsSuccess)
-            {
-                return _console.Fail(checkpoint.Error);
-            }
-
-            isCheckpointPersisted = true;
-            var postExecution = await ExecuteHooksAsync(
+                updatePlan,
                 projectDirectory,
-                authorizedHooks?.PostMutation ?? [],
-                CreateManifestSnapshot(projectDirectory)
+                preserveExistingLock,
+                authorizedHooks
             );
-            if (!postExecution.IsSuccess)
-            {
-                return _console.Fail(postExecution.Error);
-            }
-
-            var savedState = await projectStateStore.SaveAsync(projectDirectory, nextState);
-            if (!savedState.IsSuccess)
-            {
-                return _console.Fail(savedState.Error);
-            }
-
-            isPersisted = true;
-            return 0;
+            isCheckpointPersisted = completion.IsCheckpointPersisted;
+            isPersisted = completion.IsPersisted;
+            return completion.ExitCode;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
@@ -1375,6 +1337,66 @@ internal sealed class PackLifecycleService(
                 rollback.Restore();
             }
         }
+    }
+
+    private async Task<(
+        int ExitCode,
+        bool IsCheckpointPersisted,
+        bool IsPersisted
+    )> CompleteUpdateAsync(
+        ProjectState state,
+        ProjectConfiguration nextConfiguration,
+        ResolvedPackGraph graph,
+        PackInstallationPlan installationPlan,
+        PackUpdatePlan updatePlan,
+        string projectDirectory,
+        bool preserveExistingLock,
+        AuthorizedLifecycleHooks? authorizedHooks
+    )
+    {
+        var resultingContents = CreateResultingContents(updatePlan);
+        var updatedLockFile = CreateLockFile(
+            projectDirectory,
+            nextConfiguration,
+            graph,
+            installationPlan,
+            state.LockFile,
+            resultingContents
+        );
+        var mergedLockFile = preserveExistingLock
+            ? MergeLockFiles(state.LockFile, updatedLockFile)
+            : ManifestOperationResult<ProjectLockFile>.Success(updatedLockFile);
+        if (mergedLockFile.Value is not { } nextLockFile)
+        {
+            return (_console.Fail(mergedLockFile.Error), false, false);
+        }
+
+        foreach (var (targetPath, contents) in resultingContents)
+        {
+            UpdateManagedFileHash(nextLockFile, targetPath, contents);
+        }
+
+        var nextState = state with { Configuration = nextConfiguration, LockFile = nextLockFile };
+        var checkpoint = await projectStateStore.SaveAsync(projectDirectory, nextState);
+        if (!checkpoint.IsSuccess)
+        {
+            return (_console.Fail(checkpoint.Error), false, false);
+        }
+
+        var postExecution = await ExecuteHooksAsync(
+            projectDirectory,
+            authorizedHooks?.PostMutation ?? [],
+            CreateManifestSnapshot(projectDirectory)
+        );
+        if (!postExecution.IsSuccess)
+        {
+            return (_console.Fail(postExecution.Error), true, false);
+        }
+
+        var savedState = await projectStateStore.SaveAsync(projectDirectory, nextState);
+        return savedState.IsSuccess
+            ? (0, true, true)
+            : (_console.Fail(savedState.Error), true, false);
     }
 
     private async Task<ManifestOperationResult<AuthorizedLifecycleHooks>> AuthorizeHooksAsync(
