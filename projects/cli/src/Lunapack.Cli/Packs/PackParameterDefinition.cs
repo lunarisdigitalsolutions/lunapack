@@ -6,5 +6,6 @@ internal sealed record PackParameterDefinition(
     IReadOnlyList<string> Values,
     string? DisplayName = null,
     string? Description = null,
-    object? Default = null
+    object? Default = null,
+    bool Multiple = false
 );

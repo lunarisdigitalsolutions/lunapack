@@ -132,7 +132,9 @@ project. Pack trust and pack-trust revocation require `--source` or `-s`. See
   `description`, `author`, `homepage`, or `license`.
 - `luna pack set parameter <name> <string|bool|enum>`: Creates or replaces a
   parameter. Use `--required`, repeatable enum `--value`, `--display-name`, and
-  `--description`; `--default` supplies a typed prompt or optional binding default.
+  `--description`; `--default` supplies a typed prompt or optional binding
+  default. For a multi-select enum, add `--multiple` and repeat `--default` to
+  preserve an ordered default selection.
 - `luna pack set reference <id> <version>`: Creates or replaces a composite
   reference.
 - `luna pack rm <selector>`: Removes one exact managed selector.
@@ -195,6 +197,8 @@ trust or interactive consent for each script hook. Interactive consent defaults
 to no. Use `--skip-instructions` to suppress instruction loading and display
 without changing script consent behavior. Uninstall also accepts lifecycle
 `--parameter`, `--no-variables`, and `--skip-variable` inputs.
+Repeat `--parameter <name>=<value>` for each selected value of a multi-select
+enum. Repeated scalar names and duplicate or unknown selections are rejected.
 Interactive sessions show one prepared instruction step at a time and wait for
 Enter. Noninteractive sessions print all instruction content without reading
 input. Dry runs report validated instruction metadata and step counts without

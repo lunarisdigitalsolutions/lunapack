@@ -140,6 +140,24 @@ public sealed class PackManifestStoreTests
     }
 
     [Test]
+    public async Task Load_WhenCompositeBindingIsStringArray_PreservesOrderedValues()
+    {
+        using var workspace = new TestWorkspace();
+        File.WriteAllText(
+            Path.Combine(workspace.Path, PackManifestStore.FileName),
+            "id: example\nversion: 1.0.0\nauthor: Example\nlicense: MIT\npacks:\n  - id: child\n    version: 1.0.0\n    parameters:\n      features: [docker, api]\n"
+        );
+        var store = new PackManifestStore(workspace.FileSystem);
+
+        var result = await store.LoadAsync(workspace.Path);
+
+        await Assert.That(result.IsSuccess).IsTrue().Because(result.Error ?? string.Empty);
+        await Assert
+            .That(result.RequireValue().Packs.Single().Parameters["features"])
+            .IsEquivalentTo(new List<string> { "docker", "api" });
+    }
+
+    [Test]
     public async Task Load_WhenMixedHooksDeclared_PreservesOrderAndNormalizesFiles()
     {
         using var workspace = new TestWorkspace();

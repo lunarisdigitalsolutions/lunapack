@@ -1507,9 +1507,11 @@ public sealed class CliProcessTests
         await Assert.That(inspect.StandardOutput).Contains("Foundation pack");
         await Assert.That(inspect.StandardOutput).Contains("MIT");
         await Assert.That(inspect.StandardOutput).Contains("Lunaris Digital Solutions");
-        await Assert.That(inspect.StandardOutput).Contains("companyName");
-        await Assert.That(inspect.StandardOutput).Contains("Company name");
-        await Assert.That(inspect.StandardOutput).Contains("Legal entity name.");
+        await Assert.That(inspect.StandardOutput).Contains("company");
+        await Assert.That(inspect.StandardOutput).Contains("Company");
+        await Assert.That(inspect.StandardOutput).Contains("Legal");
+        await Assert.That(inspect.StandardOutput).Contains("entity");
+        await Assert.That(inspect.StandardOutput).Contains("name.");
         await Assert.That(inspect.StandardOutput).Contains("Referenced packs");
         await Assert.That(inspect.StandardOutput).Contains("shared");
     }

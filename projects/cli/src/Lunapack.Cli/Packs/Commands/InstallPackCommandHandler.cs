@@ -382,15 +382,21 @@ internal sealed class InstallPackCommandHandler(
             return request;
         }
 
-        var parameters = new Dictionary<string, string>(request.Parameters, StringComparer.Ordinal);
+        var parameters = request
+            .GetParameterValues()
+            .ToDictionary(
+                parameter => parameter.Key,
+                parameter => parameter.Value,
+                StringComparer.Ordinal
+            );
         foreach (var prompt in prompts)
         {
-            parameters.Add(prompt.Id, console.Prompt(prompt));
+            parameters.Add(prompt.Id, console.PromptValues(prompt));
         }
 
         return request with
         {
-            Parameters = parameters,
+            ParameterValues = parameters,
         };
     }
 }

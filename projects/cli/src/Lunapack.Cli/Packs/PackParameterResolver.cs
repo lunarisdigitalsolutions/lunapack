@@ -56,11 +56,12 @@ internal static class PackParameterResolver
             );
         }
 
+        var inputValues = installationRequest.GetParameterValues();
         var unresolved = resolvedDeclarations
             .Where(declaration =>
                 declaration.Value.Required
                 && !resolvedCompositeValues.ContainsKey(declaration.Key)
-                && !installationRequest.Parameters.ContainsKey(declaration.Key)
+                && !inputValues.ContainsKey(declaration.Key)
                 && !(
                     installationRequest.UseProjectVariables
                     && !installationRequest.SkippedVariables.Contains(declaration.Key)
@@ -93,7 +94,10 @@ internal static class PackParameterResolver
 
                 if (declarations.TryGetValue(name, out var existingDeclaration))
                 {
-                    if (existingDeclaration.Type != parameterDeclaration.Type)
+                    if (
+                        existingDeclaration.Type != parameterDeclaration.Type
+                        || existingDeclaration.Multiple != parameterDeclaration.Multiple
+                    )
                     {
                         return ManifestOperationResult<
                             IReadOnlyDictionary<string, PackParameterDefinition>
@@ -198,7 +202,7 @@ internal static class PackParameterResolver
             resolvedValues.Add(name, resolvedValue);
         }
 
-        foreach (var (name, value) in installationRequest.Parameters)
+        foreach (var (name, values) in installationRequest.GetParameterValues())
         {
             if (!declarations.TryGetValue(name, out var declaration))
             {
@@ -214,7 +218,7 @@ internal static class PackParameterResolver
                 );
             }
 
-            var commandLineValue = ParseCommandLineValue(name, declaration, value);
+            var commandLineValue = ParseCommandLineValue(name, declaration, values);
             if (commandLineValue.Value is not { } resolvedValue)
             {
                 return ManifestOperationResult<ResolvedPackParameters>.Failure(
@@ -311,7 +315,8 @@ internal static class PackParameterResolver
                     values,
                     declaration.DisplayName,
                     declaration.Description,
-                    declaration.Default
+                    declaration.Default,
+                    declaration.Multiple is true
                 )
             );
         }
@@ -324,7 +329,8 @@ internal static class PackParameterResolver
                     [],
                     declaration.DisplayName,
                     declaration.Description,
-                    declaration.Default
+                    declaration.Default,
+                    false
                 )
             )
             : ManifestOperationResult<PackParameterDefinition>.Failure(
@@ -335,9 +341,22 @@ internal static class PackParameterResolver
     private static ManifestOperationResult<ResolvedPackParameterValue> ParseCommandLineValue(
         string name,
         PackParameterDefinition declaration,
-        string value
+        IReadOnlyList<string> values
     )
     {
+        if (!declaration.Multiple && values.Count != 1)
+        {
+            return ManifestOperationResult<ResolvedPackParameterValue>.Failure(
+                $"Parameter '{name}' was supplied more than once."
+            );
+        }
+
+        if (declaration.Multiple)
+        {
+            return CreateStringValues(name, declaration, values, "Parameter");
+        }
+
+        var value = values[0];
         if (declaration.Type == PackParameterType.Bool)
         {
             return value switch
@@ -363,7 +382,7 @@ internal static class PackParameterResolver
     ) =>
         declaration.Default is null
             ? ManifestOperationResult<ResolvedPackParameterValue>.Success(
-                CreateOptionalValue(declaration.Type)
+                CreateOptionalValue(declaration.Type, declaration.Multiple)
             )
             : ParseCompositeValue(name, declaration, declaration.Default);
 
@@ -378,6 +397,11 @@ internal static class PackParameterResolver
             return ManifestOperationResult<ResolvedPackParameterValue>.Success(
                 new ResolvedPackParameterValue(declaration.Type, string.Empty, booleanValue)
             );
+        }
+
+        if (declaration.Multiple && TryGetStringValues(value, out var stringValues))
+        {
+            return CreateStringValues(name, declaration, stringValues, "Composite parameter");
         }
 
         return declaration.Type != PackParameterType.Bool && value is string stringValue
@@ -398,6 +422,11 @@ internal static class PackParameterResolver
             return ManifestOperationResult<ResolvedPackParameterValue>.Success(
                 new ResolvedPackParameterValue(declaration.Type, string.Empty, booleanValue)
             );
+        }
+
+        if (declaration.Multiple && TryGetStringValues(variable, out var stringValues))
+        {
+            return CreateStringValues(name, declaration, stringValues, "Project variable");
         }
 
         if (declaration.Type != PackParameterType.Bool && variable is string stringValue)
@@ -432,6 +461,56 @@ internal static class PackParameterResolver
         );
     }
 
-    private static ResolvedPackParameterValue CreateOptionalValue(PackParameterType type) =>
-        new(type, string.Empty, false);
+    private static ManifestOperationResult<ResolvedPackParameterValue> CreateStringValues(
+        string name,
+        PackParameterDefinition declaration,
+        IReadOnlyList<string> values,
+        string source
+    )
+    {
+        if (values.Distinct(StringComparer.Ordinal).Count() != values.Count)
+        {
+            return ManifestOperationResult<ResolvedPackParameterValue>.Failure(
+                $"{source} '{name}' cannot contain duplicate values."
+            );
+        }
+
+        var invalidValue = values.FirstOrDefault(value =>
+            !declaration.Values.Contains(value, StringComparer.Ordinal)
+        );
+        if (invalidValue is not null)
+        {
+            return ManifestOperationResult<ResolvedPackParameterValue>.Failure(
+                $"{source} '{name}' must contain only: {string.Join(", ", declaration.Values)}."
+            );
+        }
+
+        return ManifestOperationResult<ResolvedPackParameterValue>.Success(
+            new ResolvedPackParameterValue(declaration.Type, string.Empty, false, values)
+        );
+    }
+
+    private static bool TryGetStringValues(object value, out IReadOnlyList<string> stringValues)
+    {
+        if (value is not IEnumerable<object> values)
+        {
+            stringValues = [];
+            return false;
+        }
+
+        var materializedValues = values.OfType<string>().ToList();
+        if (materializedValues.Count != values.Count())
+        {
+            stringValues = [];
+            return false;
+        }
+
+        stringValues = materializedValues;
+        return true;
+    }
+
+    private static ResolvedPackParameterValue CreateOptionalValue(
+        PackParameterType type,
+        bool multiple = false
+    ) => new(type, string.Empty, false, multiple ? [] : null);
 }

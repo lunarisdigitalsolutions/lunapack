@@ -26,6 +26,24 @@ Update this section before creating a release tag.
 - Project remappings with trailing `/` or `\\` separators now match declared
   targets and persist effective targets without trailing separators.
 
+### Parameters
+
+- Enum parameters can set `multiple: true` and resolve ordered, unique
+  selections from repeated CLI input, prompts, array defaults, project
+  variables, and composite bindings.
+- Managed-file conditions support `"docker" in features`; Scriban templates,
+  lifecycle instructions, and script arguments support `features contains
+"docker"`. Invalid, duplicate, or incompatible selections fail before
+  project mutation.
+
+### Pack Templates
+
+- Managed-file Scriban templates can use `files.path` to resolve a declared
+  managed target after consumer remapping and `files.relative_path` to render a
+  path relative to the current effective target. Paths use `/` on every platform.
+- Missing, conditionally excluded, or ambiguous managed-file references warn and
+  preserve the supplied declared target during install, update, and dry-run.
+
 ## Version 1.1.0 - 2026-08-27
 
 ### Luna Links

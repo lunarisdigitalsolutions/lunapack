@@ -42,7 +42,7 @@ The repository SHALL publish a JSON Schema under `projects/schema/` for `lunapac
 
 ### Requirement: Publish project lock-file schema
 
-The repository SHALL publish a JSON Schema under `projects/schema/` for `lunapack-lock.yml`. The schema SHALL require its explicit schema version and a resolved pack graph with exact pack identity and version, source provenance, composite references, and managed target-path SHA-256 records. Git-sourced pack provenance SHALL record the repository URL, requested ref when configured, configured repository path when configured, and the resolved commit SHA. It SHALL reject unknown lock schema versions and incomplete resolved pack records. Existing valid local-source lock records SHALL remain valid.
+The repository SHALL publish a JSON Schema under `projects/schema/` for `lunapack-lock.yml`. The schema SHALL require its explicit schema version and a resolved pack graph with exact pack identity and version, source provenance, composite references, and managed target-path SHA-256 records. Git-sourced pack provenance SHALL record the repository URL, requested ref when configured, configured repository path when configured, and the resolved commit SHA. A pack that uses an external source SHALL record each used pack-local source alias, its authoritative workspace source identifier, normalized fingerprint, canonical requested ref, and resolved commit. Each externally sourced managed-file record SHALL identify its owning pack, pack version, pack-local source alias, workspace source identifier, fingerprint, source-relative path, effective target, and installed content hash. The schema SHALL reject unknown lock schema versions and incomplete resolved pack or external-source records. Existing valid local-source and Git-source lock records that contain no external-source provenance SHALL remain valid.
 
 #### Scenario: Validate resolved composite lock state
 
@@ -54,6 +54,11 @@ The repository SHALL publish a JSON Schema under `projects/schema/` for `lunapac
 - **WHEN** the lock schema validates a Git-sourced pack record with its repository URL and resolved commit SHA
 - **THEN** validation succeeds
 
+#### Scenario: Validate external-source provenance
+
+- **WHEN** the lock schema validates an externally sourced file and its pack alias mapping with all required identity, revision, path, ownership, and hash fields
+- **THEN** validation succeeds
+
 #### Scenario: Reject incomplete resolved state
 
 - **WHEN** the lock schema validates a resolved pack record without source provenance, an exact version, or a required managed-file digest
@@ -61,24 +66,14 @@ The repository SHALL publish a JSON Schema under `projects/schema/` for `lunapac
 
 #### Scenario: Reject Git provenance without a resolved commit
 
-- **WHEN** the lock schema validates a Git-sourced pack record without a resolved commit SHA
+- **WHEN** the lock schema validates a Git-sourced pack or external-source record without a resolved commit SHA
 - **THEN** validation fails
 
 ### Requirement: Publish local pack-manifest schema
 
-The repository SHALL publish a JSON Schema under `projects/schema/` for
-`pack.yml`. The schema SHALL require a pack identity, semantic version,
-non-empty author, and non-empty license. It SHALL allow empty managed-file,
-composite-pack, and lifecycle-hook collections for incremental authoring. It
-SHALL allow optional
-non-empty name and homepage metadata, an optional human-readable package
-description, and up to 15 unique, non-empty tags. A complete distributable pack
-MAY declare managed-file entries, composite pack references, lifecycle hooks,
-or any combination of them. Each
-composite reference SHALL contain a pack ID and an exact Semantic Version and
-MAY bind identifier-named string or boolean parameters for its referenced pack.
-Managed-file selectors MAY set `template` to opt into Scriban parsing; it
-defaults to false. Pack manifests SHALL not contain source configuration.
+The repository SHALL publish a JSON Schema under `projects/schema/` for `pack.yml`. The schema SHALL require a pack identity, semantic version, non-empty author, and non-empty license. It SHALL allow empty managed-file and composite-pack collections for incremental authoring. It SHALL allow optional non-empty name and homepage metadata, an optional human-readable package description, and up to 15 unique, non-empty tags. A complete distributable pack MAY declare managed-file entries, composite pack references, or both. Each composite reference SHALL contain a pack ID and an exact Semantic Version and MAY bind identifier-named string or boolean parameters for its referenced pack. Managed-file selectors MAY set `template` to opt into Scriban parsing; it defaults to false.
+
+The schema SHALL allow an optional `sources` mapping whose keys are pack-local aliases and whose values are Git source declarations. Each declaration SHALL require `type: git`, a credential-free repository URL, and an explicit ref, and MAY contain a safe repository-relative base `path` and non-empty `description`. Pack-defined local sources and credential placeholders SHALL be invalid. Managed-file selectors MAY name a declared source alias and MAY select a file, recursive directory, or glob with repeatable exclusion patterns and optional flattening. Source and exclusion paths SHALL be relative and SHALL not escape the resolved source root. A selector without a source alias SHALL continue to resolve from the pack source. Lifecycle scripts SHALL resolve only from the pack source and SHALL not reference an external source.
 
 #### Scenario: Reject a manifest without required attribution
 
@@ -125,7 +120,7 @@ defaults to false. Pack manifests SHALL not contain source configuration.
 
 #### Scenario: Validate a manifest with a description
 
-- **WHEN** the schema validates a pack manifest with a description and a managed-file declaration, composite pack reference, or lifecycle hook
+- **WHEN** the schema validates a pack manifest with a description and a managed-file declaration or composite pack reference
 - **THEN** validation succeeds
 
 #### Scenario: Validate bounded pack tags
@@ -140,22 +135,17 @@ defaults to false. Pack manifests SHALL not contain source configuration.
 
 #### Scenario: Preserve file-only manifests
 
-- **WHEN** the schema validates an existing complete pack manifest that declares managed files but no composite references or lifecycle hooks
+- **WHEN** the schema validates an existing complete pack manifest that declares managed files but no composite references or external sources
 - **THEN** validation succeeds
 
 #### Scenario: Validate a contentless composite manifest
 
-- **WHEN** the schema validates a pack manifest with one or more composite references and no managed files or lifecycle hooks
-- **THEN** validation succeeds
-
-#### Scenario: Validate an instruction-only manifest
-
-- **WHEN** the schema validates a pack manifest with one or more lifecycle hooks and no managed files or composite references
+- **WHEN** the schema validates a pack manifest with one or more composite references and no managed files
 - **THEN** validation succeeds
 
 #### Scenario: Reject an incomplete or unpinned composite reference
 
-- **WHEN** the schema validates a pack manifest without a managed-file, composite, or lifecycle-hook declaration, or with a composite reference lacking an exact version
+- **WHEN** the schema validates a pack manifest without a managed-file or composite declaration, or with a composite reference lacking an exact version
 - **THEN** validation fails
 
 #### Scenario: Validate composite reference parameter bindings
@@ -165,7 +155,32 @@ defaults to false. Pack manifests SHALL not contain source configuration.
 
 #### Scenario: Reject a source declaration in a pack manifest
 
-- **WHEN** the schema validates a pack manifest containing source configuration
+- **WHEN** a pack manifest declares a source that is local, lacks an explicit ref, contains credentials, or otherwise violates the pack-defined Git source contract
+- **THEN** validation fails
+
+#### Scenario: Validate a pack-defined Git source
+
+- **WHEN** a pack manifest declares a credential-free Git source with an explicit ref and a managed file references its alias
+- **THEN** validation succeeds
+
+#### Scenario: Reject a pack-defined local source
+
+- **WHEN** a pack manifest declares a source with `type: local`
+- **THEN** validation fails
+
+#### Scenario: Reject an unpinned pack-defined source
+
+- **WHEN** a pack manifest declares a Git source without a ref
+- **THEN** validation fails
+
+#### Scenario: Reject an unknown source alias
+
+- **WHEN** a managed-file selector names an alias absent from the pack's `sources` mapping
+- **THEN** validation fails
+
+#### Scenario: Reject an external lifecycle script
+
+- **WHEN** a lifecycle script attempts to select its file from a pack-defined external source
 - **THEN** validation fails
 
 #### Scenario: Preserve a managed file without template parsing
@@ -272,18 +287,32 @@ The `pack.yml` schema SHALL allow an optional `parameters` mapping keyed by a
 non-empty parameter name. Each parameter declaration SHALL require a `type` of
 `string`, `bool`, or `enum`; its `required` flag SHALL default to false. An
 `enum` declaration SHALL contain a non-empty, unique collection of allowed
-string `values`; other parameter types SHALL reject `values`. A parameter MAY
-declare non-empty `displayName` and `description` strings for interactive
-prompts. A parameter MAY define a `default` matching its declared type. The JSON
-Schema SHALL enforce the default's primitive type; runtime manifest validation
-SHALL require an enum default to be one of its declared values. Existing valid
-version-1 pack manifests without parameters SHALL remain valid.
+string `values` and MAY set `multiple` to true; other parameter types SHALL
+reject `values` and `multiple`. An omitted `multiple` property SHALL be
+equivalent to false. A parameter MAY declare non-empty `displayName` and
+`description` strings for interactive prompts. A parameter MAY define a
+`default` matching its declared type. A scalar enum default SHALL be one of its
+declared values. A multi-select enum default SHALL be a unique array containing
+zero or more declared values. Existing valid version-1 pack manifests without
+parameters or `multiple` SHALL remain valid.
 
 #### Scenario: Validate an enum parameter declaration
 
 - **WHEN** schema validation receives a parameter with type `enum`, a required
   flag, and distinct allowed string values
 - **THEN** the pack manifest is valid
+
+#### Scenario: Validate a multi-select enum declaration
+
+- **WHEN** schema validation receives an enum parameter with `multiple: true`
+  and distinct allowed string values
+- **THEN** the pack manifest is valid
+
+#### Scenario: Reject multiple on another parameter type
+
+- **WHEN** schema validation receives a string or boolean parameter with a
+  `multiple` property
+- **THEN** the pack manifest is invalid
 
 #### Scenario: Validate parameter display metadata
 
@@ -301,9 +330,16 @@ version-1 pack manifests without parameters SHALL remain valid.
 - **WHEN** a string or boolean parameter declares a default of the matching type
 - **THEN** the pack manifest is valid
 
+#### Scenario: Validate a multi-select enum default
+
+- **WHEN** a multi-select enum default is an empty array or a unique array of
+  values from its allowed set
+- **THEN** the pack manifest is valid
+
 #### Scenario: Reject an invalid enum default
 
-- **WHEN** an enum parameter default is not one of its declared values
+- **WHEN** an enum default has the wrong scalar-or-array shape, contains a
+  duplicate, or contains a value outside its declared values
 - **THEN** the pack manifest is invalid
 
 ### Requirement: Define conditional managed files
@@ -321,20 +357,42 @@ remain valid.
 ### Requirement: Define project variables
 
 The `lunapack.yml` schema SHALL allow an optional `variables` mapping whose
-non-empty names map to string or boolean values. Existing valid version-1
-project configuration without variables SHALL remain valid.
+non-empty names map to string values, boolean values, or unique arrays of
+strings. Arrays SHALL preserve their declared order and provide values for
+multi-select enum parameters. Existing valid version-1 project configuration
+without variables or array values SHALL remain valid.
 
 #### Scenario: Validate configured template variables
 
-- **WHEN** schema validation receives project configuration with string and
-  boolean variable values
+- **WHEN** schema validation receives project configuration with string,
+  boolean, and unique string-array variable values
 - **THEN** the project manifest is valid
 
 #### Scenario: Reject a non-scalar project variable
 
 - **WHEN** schema validation receives a project variable whose value is not a
-  string or boolean
+  string, boolean, or unique string array
 - **THEN** the project manifest is invalid
+
+### Requirement: Define multi-select composite parameter bindings
+
+The `pack.yml` schema SHALL allow a composite reference parameter binding to
+contain a unique array of strings for a referenced multi-select enum parameter.
+The schema SHALL preserve existing string and boolean binding values, and
+runtime validation SHALL reject an array binding for any non-multi-select
+parameter or any selected value outside the referenced declaration.
+
+#### Scenario: Validate a multi-select composite binding
+
+- **WHEN** a composite reference binds a unique string array to a multi-select
+  enum declared by its referenced pack
+- **THEN** the pack manifest and runtime binding are valid
+
+#### Scenario: Reject an incompatible composite binding
+
+- **WHEN** a composite reference binds an array to a scalar parameter or binds
+  a value outside the referenced enum declaration
+- **THEN** LunaPack rejects the pack before changing project files or state
 
 ### Requirement: Define typed lifecycle hooks
 

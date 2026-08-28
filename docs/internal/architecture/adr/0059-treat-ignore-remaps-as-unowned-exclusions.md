@@ -4,7 +4,7 @@ date: 2026-08-28
 decision-makers: [LunaPack maintainers]
 ---
 
-# ADR-0057: Treat ignore remaps as unowned exclusions
+# ADR-0059: Treat ignore remaps as unowned exclusions
 
 ## Context and Problem Statement
 

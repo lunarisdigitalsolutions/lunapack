@@ -68,7 +68,7 @@ public sealed class PackInstallationRequestTests
     }
 
     [Test]
-    public async Task Create_WhenParameterNameRepeated_ReturnsFailure()
+    public async Task Create_WhenParameterNameRepeated_PreservesValuesInOrder()
     {
         var result = PackInstallationRequest.Create(
             new MockFileSystem(),
@@ -81,7 +81,10 @@ public sealed class PackInstallationRequestTests
             []
         );
 
-        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert
+            .That(result.RequireValue().ParameterValues["companyName"])
+            .IsEquivalentTo(["Lunaris", "Digital"]);
     }
 
     [Test]
