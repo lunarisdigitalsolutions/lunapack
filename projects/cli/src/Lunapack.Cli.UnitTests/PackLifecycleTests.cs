@@ -69,6 +69,51 @@ public sealed class PackLifecycleTests
     }
 
     [Test]
+    public async Task Install_WhenScriptsDenied_WarnsBeforeHooksAndContinuesWithoutScripts()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        ansiConsole.Profile.Capabilities.Interactive = false;
+        ansiConsole.Profile.Width = 500;
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var sourcePath = CreatePackSource(
+            workspace.Path,
+            $"id: dotnet-gitignore\nversion: 1.0.0\nhooks:\n  preInstall:\n    - type: script\n      command: {ShellExecutable}\n      arguments:\n        - {ShellArgument}\n        - 'echo pre > lifecycle.txt'\n    - type: instruction\n      file: instructions/setup.md\n  postInstall:\n    - type: script\n      command: {ShellExecutable}\n      arguments:\n        - {ShellArgument}\n        - 'echo post >> lifecycle.txt'\nmanagedFiles:\n  - source: templates/dotnet.gitignore\n    target: .gitignore\n"
+        );
+        var instructionsDirectory = Path.Combine(
+            workspace.Path,
+            sourcePath,
+            "dotnet-gitignore",
+            "instructions"
+        );
+        Directory.CreateDirectory(instructionsDirectory);
+        File.WriteAllText(
+            Path.Combine(instructionsDirectory, "setup.md"),
+            "## Setup\nretained-instruction"
+        );
+        await ConfigureSourceAsync(workspace, sourcePath);
+        await workspace.Application.RunAsync(
+            ["trust", "scripts", "deny", "--project"],
+            workspace.Path
+        );
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["install", "dotnet-gitignore", "--scripts", "run"],
+            workspace.Path
+        );
+        var output = ansiConsole.Output;
+        var preWarning = output.IndexOf("event preInstall", StringComparison.Ordinal);
+        var postWarning = output.IndexOf("event postInstall", StringComparison.Ordinal);
+        var instruction = output.IndexOf("retained-instruction", StringComparison.Ordinal);
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(preWarning >= 0 && postWarning > preWarning).IsTrue();
+        await Assert.That(instruction > postWarning).IsTrue();
+        await Assert.That(output).Contains("scopes: project");
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, "lifecycle.txt"))).IsFalse();
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, ".gitignore"))).IsTrue();
+    }
+
+    [Test]
     public async Task Install_WhenInstructionsSkipped_DoesNotValidateThemAndStillRunsScripts()
     {
         using var workspace = new TestWorkspace();
@@ -309,6 +354,42 @@ public sealed class PackLifecycleTests
         await Assert.That(exitCode).IsEqualTo(0);
         await Assert.That(File.Exists(targetPath)).IsFalse();
         await Assert.That(await ReadStateAsync(workspace.Path)).IsEqualTo(initialState);
+    }
+
+    [Test]
+    [Arguments("local-user")]
+    [Arguments("project")]
+    [Arguments("global-user")]
+    public async Task InstallDryRun_WhenScriptsDenied_ReportsSelectedScopeWithoutExecutionWarning(
+        string scopeName
+    )
+    {
+        var ansiConsole = new SpectreTestConsole();
+        ansiConsole.Profile.Capabilities.Interactive = false;
+        ansiConsole.Profile.Width = 500;
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var sourcePath = CreatePackSource(
+            workspace.Path,
+            "id: dotnet-gitignore\nversion: 1.0.0\nhooks:\n  preInstall:\n    - type: script\n      command: command-that-must-not-be-resolved\nmanagedFiles:\n  - source: templates/dotnet.gitignore\n    target: .gitignore\n"
+        );
+        await ConfigureSourceAsync(workspace, sourcePath);
+        var denyArguments = scopeName switch
+        {
+            "project" => new[] { "trust", "scripts", "deny", "--project" },
+            "global-user" => new[] { "trust", "scripts", "deny", "--global" },
+            _ => new[] { "trust", "scripts", "deny" },
+        };
+        await workspace.Application.RunAsync(denyArguments, workspace.Path);
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["install", "dotnet-gitignore", "-D", "--scripts", "run"],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(ansiConsole.Output).Contains($"policy-denied scopes: {scopeName}");
+        await Assert.That(ansiConsole.Output).DoesNotContain("Lifecycle script denied by policy");
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, ".gitignore"))).IsFalse();
     }
 
     [Test]
@@ -1339,6 +1420,55 @@ public sealed class PackLifecycleTests
         await Assert
             .That(resolvedPack.ManagedFiles.Single().Sha256)
             .IsEqualTo(Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("version two"))));
+    }
+
+    [Test]
+    public async Task UpdateAndUninstall_WhenScriptsDenied_WarnAndCompleteWithoutScripts()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        ansiConsole.Profile.Capabilities.Interactive = false;
+        ansiConsole.Profile.Width = 500;
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var sourceDirectory = Path.Combine(workspace.Path, "source");
+        CreatePack(
+            sourceDirectory,
+            "dotnet-gitignore-v1",
+            "id: dotnet-gitignore\nversion: 1.0.0\nmanagedFiles:\n  - source: templates/content.txt\n    target: .gitignore\n",
+            "version one"
+        );
+        CreatePack(
+            sourceDirectory,
+            "dotnet-gitignore-v2",
+            $"id: dotnet-gitignore\nversion: 2.0.0\nhooks:\n  preUpdate:\n    - type: script\n      command: {ShellExecutable}\n      arguments: [{ShellArgument}, 'echo pre-update > lifecycle.txt']\n  postUpdate:\n    - type: script\n      command: {ShellExecutable}\n      arguments: [{ShellArgument}, 'echo post-update >> lifecycle.txt']\n  preUninstall:\n    - type: script\n      command: {ShellExecutable}\n      arguments: [{ShellArgument}, 'echo pre-uninstall >> lifecycle.txt']\n  postUninstall:\n    - type: script\n      command: {ShellExecutable}\n      arguments: [{ShellArgument}, 'echo post-uninstall >> lifecycle.txt']\nmanagedFiles:\n  - source: templates/content.txt\n    target: .gitignore\n",
+            "version two"
+        );
+        await ConfigureSourceAsync(workspace, "source");
+        await workspace.Application.RunAsync(["install", "dotnet-gitignore@1.0.0"], workspace.Path);
+        await workspace.Application.RunAsync(
+            ["trust", "scripts", "deny", "--project"],
+            workspace.Path
+        );
+
+        var updateExitCode = await workspace.Application.RunAsync(
+            ["update", "dotnet-gitignore", "--scripts", "run"],
+            workspace.Path
+        );
+        var uninstallExitCode = await workspace.Application.RunAsync(
+            ["uninstall", "dotnet-gitignore", "--scripts", "run"],
+            workspace.Path
+        );
+        var state = await workspace.StateStore.LoadAsync(workspace.Path);
+
+        await Assert.That(updateExitCode).IsEqualTo(0);
+        await Assert.That(uninstallExitCode).IsEqualTo(0);
+        await Assert.That(ansiConsole.Output).Contains("event preUpdate");
+        await Assert.That(ansiConsole.Output).Contains("event postUpdate");
+        await Assert.That(ansiConsole.Output).Contains("event preUninstall");
+        await Assert.That(ansiConsole.Output).Contains("event postUninstall");
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, "lifecycle.txt"))).IsFalse();
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, ".gitignore"))).IsFalse();
+        await Assert.That(state.RequireValue().Configuration.Packs).IsEmpty();
+        await Assert.That(state.RequireValue().LockFile.Packs).IsEmpty();
     }
 
     [Test]

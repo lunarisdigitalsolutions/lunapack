@@ -77,6 +77,12 @@ Script arguments render before authorization. Every script is authorized before
 the dispatcher executes or displays any prepared hook; instructions never enter
 the script trust boundary.
 
+Script policy loads project, project-local user, and global-user denial before
+script mode or trust evaluation. Any denial dominates and records every origin
+in project, local-user, global-user order. Authorization returns denied-hook
+diagnostics without resolving commands. The lifecycle service emits all denial
+warnings before dispatching retained instructions or mutating managed files.
+
 ## Transactions And Safety
 
 Dry runs perform resolution and preflight without mutation. A transaction
@@ -90,6 +96,12 @@ user-selected minimum level. Info output is plain; verbose, debug, warning, and
 error output has colored level prefixes. Long-running catalog and lifecycle
 commands show status spinners. Source trust is established by consumer
 configuration and preserved through provenance, not by pack manifests.
+
+Version-1 project and user-settings schemas accept optional `deny.scripts` and
+optional trust grant collections. Omitted denial and explicit `false` mean no
+restriction; acknowledgements remain positive-only. Project and pack
+initialization use AOT-registered required-property projections, while later
+normal store writes retain canonical full-model serialization.
 
 Pre-mutation hooks run inside the transaction before managed-file changes;
 post-mutation hooks run before paired state persistence. Hook failure or guided

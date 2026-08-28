@@ -59,9 +59,12 @@ current ownership; `luna mv` relocates one uniquely owned managed file.
 
 ## A lifecycle script is denied
 
-Review the source and hook first. Use `--scripts skip` when files can be applied
-without automation, grant the narrowest appropriate trust scope, or use
-`--scripts run` for one reviewed invocation. See
+Run `luna trust list` for local-user policy, or add `--project` or `--global` to
+inspect another scope. A `policy-denied` hook cannot be enabled with
+`--scripts run` or a positive grant. Reset every reported denial scope only
+after reviewing retained grants; reset requires interactive confirmation.
+Without persistent denial, use `--scripts skip`, grant the narrowest appropriate
+trust scope, or use `--scripts run` for one reviewed invocation. See
 [Scripts and trust](cli/trust-and-scripts.md).
 
 ## Lifecycle instructions are unsuitable for automation

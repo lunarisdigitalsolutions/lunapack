@@ -194,7 +194,7 @@ public sealed class TrustPolicyTests
             {
                 [projectKey] = new LocalProjectTrust
                 {
-                    Acknowledgements = new UserTrust
+                    Acknowledgements = new TrustAcknowledgements
                     {
                         Sources = trustSource ? [identity] : [],
                         Packs = trustSource

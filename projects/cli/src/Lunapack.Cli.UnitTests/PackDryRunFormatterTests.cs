@@ -151,6 +151,45 @@ public sealed class PackDryRunFormatterTests
     }
 
     [Test]
+    public async Task Scenario_InstallPreviewHasScriptDenial_ReportsPolicyAndOrigins()
+    {
+        var pack = new DiscoveredPack(
+            "source",
+            "source/example",
+            new PackManifest { Id = "example", Version = "1.0.0" },
+            "local",
+            ConfiguredSourceIdentity.CreateLocal("source")
+        );
+        var hook = new LifecycleHookInvocation(
+            pack,
+            LifecycleHook.PreInstall,
+            new PackManifest.PackHook { Type = "script", Command = "cmd" },
+            null
+        );
+        var output = PackDryRunFormatter.FormatInstall(
+            new PackInstallDryRunResult(
+                new PackReference("example", "1.0.0"),
+                new PackUpdatePlan(
+                    [],
+                    new LifecycleDryRunPlan(
+                        ScriptExecutionMode.Run,
+                        [hook],
+                        [],
+                        [],
+                        [ScriptDenialOrigin.Project, ScriptDenialOrigin.GlobalUser]
+                    )
+                )
+            )
+        );
+
+        await Assert
+            .That(output)
+            .Contains(
+                "pre-hook: example@1.0.0 preInstall script consent: policy-denied scopes: project, global-user"
+            );
+    }
+
+    [Test]
     public async Task Scenario_UpdatePreviewHasProposedSourceSwitch_ReportsBothIdentities()
     {
         var output = PackDryRunFormatter.FormatUpdate(

@@ -97,12 +97,10 @@ internal static class PackDryRunFormatter
 
         var lines = new List<string> { $"scripts: {lifecycle.ScriptMode.Value}" };
         lines.AddRange(
-            lifecycle.PreMutation.Select(hook => FormatHook("pre-hook", hook, lifecycle.ScriptMode))
+            lifecycle.PreMutation.Select(hook => FormatHook("pre-hook", hook, lifecycle))
         );
         lines.AddRange(
-            lifecycle.PostMutation.Select(hook =>
-                FormatHook("post-hook", hook, lifecycle.ScriptMode)
-            )
+            lifecycle.PostMutation.Select(hook => FormatHook("post-hook", hook, lifecycle))
         );
         lines.AddRange(
             lifecycle
@@ -124,18 +122,20 @@ internal static class PackDryRunFormatter
     private static string FormatHook(
         string phase,
         LifecycleHookInvocation hook,
-        ScriptExecutionMode scriptMode
+        LifecycleDryRunPlan lifecycle
     )
     {
         var prefix =
             $"{phase}: {hook.Pack.Manifest.Id}@{hook.Pack.Manifest.Version} {LifecycleHookPlanner.ToManifestValue(hook.Hook)}";
         return hook.Instruction is { } instruction
             ? $"{prefix} instruction file: {instruction.PackedFile.RelativePath} templating: {(instruction.Templating ? "enabled" : "disabled")} steps: {instruction.Document.Steps.Count}"
-            : $"{prefix} script consent: {GetConsentStatus(scriptMode)}";
+            : $"{prefix} script consent: {GetConsentStatus(lifecycle)}";
     }
 
-    private static string GetConsentStatus(ScriptExecutionMode scriptMode) =>
-        scriptMode == ScriptExecutionMode.Skip ? "skipped"
-        : scriptMode == ScriptExecutionMode.Run ? "invocation-approved"
+    private static string GetConsentStatus(LifecycleDryRunPlan lifecycle) =>
+        lifecycle.ScriptDenialScopes is { Count: > 0 } denyingScopes
+            ? $"policy-denied scopes: {string.Join(", ", denyingScopes.Select(ScriptDenialOriginFormatter.Format))}"
+        : lifecycle.ScriptMode == ScriptExecutionMode.Skip ? "skipped"
+        : lifecycle.ScriptMode == ScriptExecutionMode.Run ? "invocation-approved"
         : "trust-or-confirm";
 }

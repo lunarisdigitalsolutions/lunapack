@@ -12,6 +12,9 @@ must still accept.
   alone is never authority.
 - Local-user, global-user, and project-declared trust remain separate. Project
   declarations require matching local-user acknowledgement before they apply.
+- Each scope can set blanket script denial. Any active denial dominates every
+  grant and script mode. Evaluation reports project, local-user, then
+  global-user origins before resolving commands or requesting confirmation.
 - Removing a configured source refuses to proceed while `lunapack-lock.yml`
   still records an installed pack or its external content as a consumer. Once
   no consumer remains, removal clears project source and pack trust bound to
@@ -22,6 +25,8 @@ must still accept.
   scripts.
 - Every planned script is authorized before any hook is processed. Instructions
   do not use persisted trust and cannot grant process authority.
+- Policy-denied scripts produce one warning per hook before any lifecycle or
+  managed-file work. Instructions remain ordered and lifecycle state continues.
 - Instruction files resolve beneath the copied operation snapshot, decode as
   strict UTF-8, and optionally render with Scriban. The bounded parser recognizes
   only H2 and H3 step headings; displayed links and code blocks gain no behavior.
@@ -40,7 +45,8 @@ must still accept.
 - Uninstall hooks resolve from exact installed releases. Source-resolution
   failure emits a warning and skips hooks so removal can continue.
 - Dry runs prepare and report hooks without launching scripts, prompting for
-  trust, or entering guided instruction display. `--scripts skip` and
+  trust, or entering guided instruction display. Denied rows report
+  `policy-denied` and all origins without execution warnings. `--scripts skip` and
   `--skip-instructions` suppress only their respective hook types.
 
 ## Deferred No-Follow Control
@@ -66,9 +72,10 @@ source-identity checks during copying are implemented and tested.
    settings can change persistent execution authority.
 6. **Medium: same-user races.** Digest checks narrow staged-content races but
    cannot protect every process-visible resource.
-7. **Medium: mode trade-offs.** `--scripts run` bypasses consent for one
-   invocation; either skip control can omit setup required by a pack. Prefer
-   prompt mode when reviewing unfamiliar executable content.
+7. **Medium: mode trade-offs.** Without persistent denial, `--scripts run`
+   bypasses consent for one invocation. Either skip control or policy denial can
+   omit setup required by a pack. Resetting denial can reactivate retained
+   grants. Prefer prompt mode when reviewing unfamiliar executable content.
 
 LunaPack is not a sandbox or privilege boundary. Treat lifecycle approval as
 approval to run publisher-controlled code on the current machine.

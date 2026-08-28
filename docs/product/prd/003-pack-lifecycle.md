@@ -35,6 +35,10 @@ Optional `preInstall`, `postInstall`, `preUpdate`, and `postUpdate` arrays conta
 ordered script and instruction hooks. Scripts support automation that cannot be
 represented as managed files. They are not sandboxed; consumers choose prompt,
 run, or skip behavior and own persisted trust by source or by pack and source.
+Project, project-local user, and global-user policy can deny all scripts. Any
+active denial overrides invocation mode and positive trust. Luna warns for each
+denied hook before lifecycle processing, preserves instructions, and continues
+managed-file and state work without the script.
 Instructions display pack-authored Markdown without executing it and can be
 skipped independently. Composite packs suppress every typed hook in a selected
 dependency event.
@@ -43,7 +47,8 @@ Lifecycle planning preserves dependency-first event order and manifest
 declaration order. Every script is authorized before any hook is processed.
 Instruction files load from the operation snapshot as strict UTF-8 and may use
 explicit Scriban rendering. Dry runs validate and summarize both types without
-execution or guided display. Pre-hooks run before managed-file mutation;
+execution or guided display; denied rows include every policy origin. Pre-hooks
+run before managed-file mutation;
 post-hooks run before state persistence. Failures and interactive cancellation
 restore LunaPack-managed files and state, but cannot reverse external script
 effects.

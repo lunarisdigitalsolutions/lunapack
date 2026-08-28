@@ -158,6 +158,7 @@ internal sealed class CliApplication(
             fileSystem,
             packCatalog,
             projectStateStore,
+            effectiveUserSettingsStore,
             console,
             effectiveGitProcessRunner,
             gitRefResolver
@@ -352,6 +353,7 @@ internal sealed class CliApplication(
         IFileSystem fileSystem,
         PackCatalog packCatalog,
         ProjectStateStore projectStateStore,
+        UserSettingsStore userSettingsStore,
         CliConsole console,
         IGitProcessRunner gitProcessRunner,
         GitRefResolver gitRefResolver
@@ -370,6 +372,12 @@ internal sealed class CliApplication(
             projectStateStore,
             console,
             new GitPackMaterializer(fileSystem, gitProcessRunner),
+            configuredHookAuthorizer: new LifecycleHookAuthorizer(
+                userSettingsStore,
+                new TrustPolicy(fileSystem),
+                new LifecycleCommandResolver(fileSystem),
+                new ConsoleLifecycleHookConfirmer(console)
+            ),
             configuredExternalSourceRequirementPlanner: new ExternalSourceRequirementPlanner(
                 gitRefResolver,
                 new ManagedFileConditionParser()

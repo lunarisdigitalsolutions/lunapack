@@ -42,14 +42,7 @@ internal sealed class ProjectInitializationCommandHandler(
             return console.Fail("Project state already exists.");
         }
 
-        var result = await projectStateStore.SaveAsync(
-            projectDirectory,
-            new ProjectState
-            {
-                Configuration = new ProjectConfiguration { SchemaVersion = 1, Variables = [] },
-                LockFile = new ProjectLockFile { SchemaVersion = 1 },
-            }
-        );
+        var result = await projectStateStore.InitializeAsync(projectDirectory);
 
         if (!result.IsSuccess)
         {

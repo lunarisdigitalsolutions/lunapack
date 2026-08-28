@@ -183,8 +183,10 @@
     "projectTrust": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sources", "packs"],
       "properties": {
+        "deny": {
+          "$ref": "#/definitions/scriptDenial"
+        },
         "packs": {
           "type": "array",
           "uniqueItems": true,
@@ -198,6 +200,16 @@
           "items": {
             "$ref": "#/definitions/sourceName"
           }
+        }
+      }
+    },
+    "scriptDenial": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "scripts": {
+          "type": "boolean",
+          "default": false
         }
       }
     },

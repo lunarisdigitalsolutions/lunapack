@@ -2,7 +2,9 @@ namespace Lunapack.Cli;
 
 internal sealed record LocalProjectTrust
 {
-    public UserTrust Acknowledgements { get; set; } = new();
+    public TrustAcknowledgements Acknowledgements { get; set; } = new();
+
+    public ScriptDenial? Deny { get; set; }
 
     public List<TrustedPackIdentity> Packs { get; set; } = [];
 

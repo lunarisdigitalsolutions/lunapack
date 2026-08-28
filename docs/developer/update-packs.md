@@ -30,3 +30,5 @@ requires confirmation before the update runs.
 
 Packs may run scripts or show instructions during updates. See
 [Lifecycle hooks](lifecycle-hooks.md) before changing hook behavior or trust.
+Persistent denial cannot be bypassed with `--scripts run`; updates warn before
+mutation and continue without denied scripts.

@@ -20,7 +20,8 @@ commands for the current workspace stage.
 
 ## Project And Sources
 
-- `luna init`: Creates version-1 `lunapack.yml` and `lunapack-lock.yml`.
+- `luna init`: Creates version-1 `lunapack.yml` and `lunapack-lock.yml` with
+  only their schema-required properties.
 - `luna variables list`: Lists configured project variables in a table.
 - `luna variables set <name> <value>`: Sets a string project variable. Names
   must start with a letter or underscore and may contain letters, digits, and
@@ -55,6 +56,10 @@ commands for the current workspace stage.
 - `luna trust pack <id>... --source <name>`: Grants trust only to selected pack
   IDs from one configured source.
 - `luna trust list`: Lists persisted trust.
+- `luna trust scripts deny`: Denies every lifecycle script in the selected
+  scope without confirmation.
+- `luna trust scripts reset`: Removes denial from the selected scope after
+  interactive confirmation; retained grants are not removed.
 - `luna trust revoke source <name>...`: Revokes source trust.
 - `luna trust revoke pack <id>... --source <name>`: Revokes pack trust from one
   configured source.
@@ -102,7 +107,8 @@ project. Pack trust and pack-trust revocation require `--source` or `-s`. See
 - `luna pack init --id <id> --author <author> --license <license> [--version <version>]`:
   Creates local `pack.yml`; version defaults to `1.0.0`. Missing required
   values prompt only in an interactive terminal. The license prompt defaults
-  to `MIT`, so Enter accepts it. Invalid prompted pack IDs display their error
+  to `MIT`, so Enter accepts it. Initial output contains only author, ID,
+  license, and version. Invalid prompted pack IDs display their error
   immediately and prompt again before collecting remaining values.
 - `luna pack add file|directory|glob <path>`: Adds managed content.
   `--source`, repeatable `--exclude`, `--flatten`, `--target`,

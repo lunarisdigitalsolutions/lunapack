@@ -12,15 +12,101 @@ internal sealed class TrustCommandHandler(
     {
         var sourceCommand = CreateSourceCommand(projectDirectory, workspaceOption);
         var packCommand = CreatePackCommand(projectDirectory, workspaceOption);
+        var scriptsCommand = CreateScriptsCommand(projectDirectory, workspaceOption);
         var listCommand = CreateListCommand(projectDirectory, workspaceOption);
         var revokeCommand = CreateRevokeCommand(projectDirectory, workspaceOption);
         return new Command("trust", "Manage lifecycle script trust.")
         {
             sourceCommand,
             packCommand,
+            scriptsCommand,
             listCommand,
             revokeCommand,
         };
+    }
+
+    private Command CreateScriptsCommand(
+        string projectDirectory,
+        Option<string?> workspaceOption
+    ) =>
+        new("scripts", "Manage blanket lifecycle script denial.")
+        {
+            CreateDenyScriptsCommand(projectDirectory, workspaceOption),
+            CreateResetScriptsCommand(projectDirectory, workspaceOption),
+        };
+
+    private Command CreateDenyScriptsCommand(
+        string projectDirectory,
+        Option<string?> workspaceOption
+    )
+    {
+        var projectOption = CreateProjectOption();
+        var globalOption = CreateGlobalOption();
+        var command = new Command("deny", "Deny all lifecycle scripts.")
+        {
+            projectOption,
+            globalOption,
+        };
+        command.SetAction(async parseResult =>
+        {
+            if (
+                !TryGetScope(
+                    parseResult.GetValue(projectOption),
+                    parseResult.GetValue(globalOption),
+                    out var scope
+                )
+            )
+            {
+                return console.Fail("The --project and --global options are mutually exclusive.");
+            }
+
+            var result = await trustService.DenyScriptsAsync(
+                workspaceDirectoryResolver.Resolve(
+                    projectDirectory,
+                    parseResult.GetValue(workspaceOption)
+                ),
+                scope
+            );
+            return result.IsSuccess ? 0 : console.Fail(result.Error);
+        });
+        return command;
+    }
+
+    private Command CreateResetScriptsCommand(
+        string projectDirectory,
+        Option<string?> workspaceOption
+    )
+    {
+        var projectOption = CreateProjectOption();
+        var globalOption = CreateGlobalOption();
+        var command = new Command("reset", "Reset lifecycle script denial.")
+        {
+            projectOption,
+            globalOption,
+        };
+        command.SetAction(async parseResult =>
+        {
+            if (
+                !TryGetScope(
+                    parseResult.GetValue(projectOption),
+                    parseResult.GetValue(globalOption),
+                    out var scope
+                )
+            )
+            {
+                return console.Fail("The --project and --global options are mutually exclusive.");
+            }
+
+            var result = await trustService.ResetScriptDenialAsync(
+                workspaceDirectoryResolver.Resolve(
+                    projectDirectory,
+                    parseResult.GetValue(workspaceOption)
+                ),
+                scope
+            );
+            return result.IsSuccess ? 0 : console.Fail(result.Error);
+        });
+        return command;
     }
 
     private Command CreateListCommand(string projectDirectory, Option<string?> workspaceOption)

@@ -3,6 +3,11 @@
 Choose selectors and conflict strategies for files a pack owns in consumer
 projects.
 
+Start with `luna pack init --id <id> --author <author> --license <license>`.
+The generated `pack.yml` contains only required author, ID, license, and version
+properties. Subsequent authoring commands load that minimal manifest and add
+only requested declarations.
+
 ## Select files
 
 Use a file selector for one source and a directory or glob for a set:

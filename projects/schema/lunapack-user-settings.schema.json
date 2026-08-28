@@ -49,16 +49,28 @@
     "localProjectTrust": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sources", "packs"],
       "properties": {
         "acknowledgements": {
-          "$ref": "#/definitions/userTrust"
+          "$ref": "#/definitions/trustAcknowledgements"
+        },
+        "deny": {
+          "$ref": "#/definitions/scriptDenial"
         },
         "packs": {
           "$ref": "#/definitions/trustedPacks"
         },
         "sources": {
           "$ref": "#/definitions/trustedSources"
+        }
+      }
+    },
+    "scriptDenial": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "scripts": {
+          "type": "boolean",
+          "default": false
         }
       }
     },
@@ -104,11 +116,25 @@
         "$ref": "#/definitions/configuredSourceIdentity"
       }
     },
+    "trustAcknowledgements": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "packs": {
+          "$ref": "#/definitions/trustedPacks"
+        },
+        "sources": {
+          "$ref": "#/definitions/trustedSources"
+        }
+      }
+    },
     "userTrust": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sources", "packs"],
       "properties": {
+        "deny": {
+          "$ref": "#/definitions/scriptDenial"
+        },
         "packs": {
           "$ref": "#/definitions/trustedPacks"
         },

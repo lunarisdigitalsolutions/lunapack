@@ -226,6 +226,12 @@ internal sealed class UserSettingsStore
 
     private static string GetUserProfileDirectory()
     {
+        var configuredPath = Environment.GetEnvironmentVariable("LUNAPACK_USER_PROFILE");
+        if (!string.IsNullOrWhiteSpace(configuredPath))
+        {
+            return configuredPath;
+        }
+
         var path = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         return string.IsNullOrEmpty(path)
             ? throw new InvalidOperationException("Unable to locate the current user profile.")

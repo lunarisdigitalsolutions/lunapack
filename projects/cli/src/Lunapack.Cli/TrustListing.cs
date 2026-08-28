@@ -4,6 +4,8 @@ internal sealed record TrustListing
 {
     public required TrustScope Scope { get; init; }
 
+    public bool ScriptsDenied { get; init; }
+
     public IReadOnlyList<ConfiguredSourceIdentity> Sources { get; init; } = [];
 
     public IReadOnlyList<TrustedPackIdentity> Packs { get; init; } = [];

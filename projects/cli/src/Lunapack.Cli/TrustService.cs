@@ -10,6 +10,111 @@ internal sealed class TrustService(
     ITrustConfirmer confirmer
 )
 {
+    public async Task<ManifestOperationResult<bool>> DenyScriptsAsync(
+        string projectDirectory,
+        TrustScope scope
+    )
+    {
+        if (scope is TrustScope.Project)
+        {
+            var stateResult = await projectStateStore.LoadAsync(projectDirectory);
+            if (stateResult.Value is not { } state)
+            {
+                return ManifestOperationResult<bool>.Failure(
+                    stateResult.Error ?? "Unable to load project state."
+                );
+            }
+
+            if (state.Configuration.Trust.Deny?.Scripts == true)
+            {
+                return ManifestOperationResult<bool>.Success(true);
+            }
+
+            var updatedState = CloneState(state);
+            updatedState.Configuration.Trust.Deny = new ScriptDenial { Scripts = true };
+            return await projectStateStore.SaveAsync(projectDirectory, updatedState);
+        }
+
+        var contextResult = await LoadContextAsync(projectDirectory);
+        if (contextResult.Value is not { } context)
+        {
+            return ManifestOperationResult<bool>.Failure(
+                contextResult.Error ?? "Unable to load trust state."
+            );
+        }
+
+        var updatedSettings = CloneSettings(context.Settings);
+        if (GetUserScriptDenial(updatedSettings, context.ProjectKey, scope)?.Scripts == true)
+        {
+            return ManifestOperationResult<bool>.Success(true);
+        }
+
+        SetUserScriptDenial(
+            updatedSettings,
+            context.ProjectKey,
+            scope,
+            new ScriptDenial { Scripts = true }
+        );
+        return await userSettingsStore.SaveAsync(updatedSettings);
+    }
+
+    public async Task<ManifestOperationResult<bool>> ResetScriptDenialAsync(
+        string projectDirectory,
+        TrustScope scope
+    )
+    {
+        if (scope is TrustScope.Project)
+        {
+            var stateResult = await projectStateStore.LoadAsync(projectDirectory);
+            if (stateResult.Value is not { } state)
+            {
+                return ManifestOperationResult<bool>.Failure(
+                    stateResult.Error ?? "Unable to load project state."
+                );
+            }
+
+            if (state.Configuration.Trust.Deny?.Scripts != true)
+            {
+                return ManifestOperationResult<bool>.Success(true);
+            }
+
+            if (!confirmer.Confirm(CreateResetWarning(scope)))
+            {
+                return ManifestOperationResult<bool>.Failure(
+                    "Script denial reset was not confirmed interactively."
+                );
+            }
+
+            var updatedState = CloneState(state);
+            updatedState.Configuration.Trust.Deny = null;
+            return await projectStateStore.SaveAsync(projectDirectory, updatedState);
+        }
+
+        var contextResult = await LoadContextAsync(projectDirectory);
+        if (contextResult.Value is not { } context)
+        {
+            return ManifestOperationResult<bool>.Failure(
+                contextResult.Error ?? "Unable to load trust state."
+            );
+        }
+
+        var updatedSettings = CloneSettings(context.Settings);
+        if (GetUserScriptDenial(updatedSettings, context.ProjectKey, scope)?.Scripts != true)
+        {
+            return ManifestOperationResult<bool>.Success(true);
+        }
+
+        if (!confirmer.Confirm(CreateResetWarning(scope)))
+        {
+            return ManifestOperationResult<bool>.Failure(
+                "Script denial reset was not confirmed interactively."
+            );
+        }
+
+        SetUserScriptDenial(updatedSettings, context.ProjectKey, scope, denial: null);
+        return await userSettingsStore.SaveAsync(updatedSettings);
+    }
+
     public async Task<ManifestOperationResult<bool>> TrustSourcesAsync(
         string projectDirectory,
         IReadOnlyList<string> sourceNames,
@@ -122,18 +227,21 @@ internal sealed class TrustService(
                 TrustScope.LocalUser => new TrustListing
                 {
                     Scope = scope,
+                    ScriptsDenied = localTrust?.Deny?.Scripts == true,
                     Sources = localTrust?.Sources ?? [],
                     Packs = localTrust?.Packs ?? [],
                 },
                 TrustScope.GlobalUser => new TrustListing
                 {
                     Scope = scope,
+                    ScriptsDenied = context.Settings.Global.Deny?.Scripts == true,
                     Sources = context.Settings.Global.Sources,
                     Packs = context.Settings.Global.Packs,
                 },
                 TrustScope.Project => new TrustListing
                 {
                     Scope = scope,
+                    ScriptsDenied = context.State.Configuration.Trust.Deny?.Scripts == true,
                     ProjectSourceDeclarations = context.State.Configuration.Trust.Sources,
                     ProjectPackDeclarations = context.State.Configuration.Trust.Packs,
                     ProjectSourceAcknowledgements = localTrust?.Acknowledgements.Sources ?? [],
@@ -467,6 +575,38 @@ internal sealed class TrustService(
         return trust;
     }
 
+    private static ScriptDenial? GetUserScriptDenial(
+        UserSettings settings,
+        string projectKey,
+        TrustScope scope
+    ) =>
+        scope switch
+        {
+            TrustScope.LocalUser => GetProjectTrust(settings, projectKey).Deny,
+            TrustScope.GlobalUser => settings.Global.Deny,
+            _ => throw new ArgumentOutOfRangeException(nameof(scope)),
+        };
+
+    private static void SetUserScriptDenial(
+        UserSettings settings,
+        string projectKey,
+        TrustScope scope,
+        ScriptDenial? denial
+    )
+    {
+        switch (scope)
+        {
+            case TrustScope.LocalUser:
+                GetProjectTrust(settings, projectKey).Deny = denial;
+                break;
+            case TrustScope.GlobalUser:
+                settings.Global.Deny = denial;
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(scope));
+        }
+    }
+
     private static bool AddProjectSource(List<string> sources, string sourceName) =>
         AddUnique(sources, sourceName);
 
@@ -527,6 +667,7 @@ internal sealed class TrustService(
             {
                 Trust = new ProjectConfiguration.ProjectTrust
                 {
+                    Deny = state.Configuration.Trust.Deny,
                     Sources = [.. state.Configuration.Trust.Sources],
                     Packs = [.. state.Configuration.Trust.Packs],
                 },
@@ -541,16 +682,26 @@ internal sealed class TrustService(
                 entry => entry.Key,
                 entry => new LocalProjectTrust
                 {
+                    Deny = entry.Value.Deny,
                     Sources = [.. entry.Value.Sources],
                     Packs = [.. entry.Value.Packs],
-                    Acknowledgements = CloneTrust(entry.Value.Acknowledgements),
+                    Acknowledgements = CloneAcknowledgements(entry.Value.Acknowledgements),
                 },
                 StringComparer.Ordinal
             ),
         };
 
     private static UserTrust CloneTrust(UserTrust trust) =>
-        new() { Sources = [.. trust.Sources], Packs = [.. trust.Packs] };
+        new()
+        {
+            Deny = trust.Deny,
+            Sources = [.. trust.Sources],
+            Packs = [.. trust.Packs],
+        };
+
+    private static TrustAcknowledgements CloneAcknowledgements(
+        TrustAcknowledgements acknowledgements
+    ) => new() { Sources = [.. acknowledgements.Sources], Packs = [.. acknowledgements.Packs] };
 
     private static string CreateWarning(
         TrustScope scope,
@@ -579,6 +730,9 @@ internal sealed class TrustService(
 
         return warning.ToString();
     }
+
+    private static string CreateResetWarning(TrustScope scope) =>
+        $"DANGER: Resetting script denial can reactivate retained source and pack trust grants. Scope: {FormatScope(scope)}";
 
     private static string FormatScope(TrustScope scope) =>
         scope switch

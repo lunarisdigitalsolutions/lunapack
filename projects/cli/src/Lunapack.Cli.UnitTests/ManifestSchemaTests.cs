@@ -6,6 +6,63 @@ namespace Lunapack.Cli.UnitTests;
 public sealed class ManifestSchemaTests
 {
     [Test]
+    public async Task ProjectSchema_WhenTrustDeclared_AllowsDenialWithoutGrantCollections()
+    {
+        using var schema = JsonDocument.Parse(
+            File.ReadAllText(
+                Path.Combine(AppContext.BaseDirectory, "TestData", "lunapack.schema.json")
+            )
+        );
+        var definitions = schema.RootElement.GetProperty("definitions");
+        var projectTrust = definitions.GetProperty("projectTrust");
+        var denial = definitions.GetProperty("scriptDenial");
+
+        await Assert.That(projectTrust.TryGetProperty("required", out _)).IsFalse();
+        await Assert
+            .That(projectTrust.GetProperty("properties").TryGetProperty("deny", out _))
+            .IsTrue();
+        await Assert
+            .That(
+                denial
+                    .GetProperty("properties")
+                    .GetProperty("scripts")
+                    .GetProperty("default")
+                    .GetBoolean()
+            )
+            .IsFalse();
+    }
+
+    [Test]
+    public async Task UserSettingsSchema_WhenTrustDeclared_SeparatesDenialFromAcknowledgements()
+    {
+        using var schema = JsonDocument.Parse(
+            File.ReadAllText(
+                Path.Combine(
+                    AppContext.BaseDirectory,
+                    "TestData",
+                    "lunapack-user-settings.schema.json"
+                )
+            )
+        );
+        var definitions = schema.RootElement.GetProperty("definitions");
+        var userTrust = definitions.GetProperty("userTrust");
+        var localTrust = definitions.GetProperty("localProjectTrust");
+        var acknowledgements = definitions.GetProperty("trustAcknowledgements");
+
+        await Assert.That(userTrust.TryGetProperty("required", out _)).IsFalse();
+        await Assert.That(localTrust.TryGetProperty("required", out _)).IsFalse();
+        await Assert
+            .That(userTrust.GetProperty("properties").TryGetProperty("deny", out _))
+            .IsTrue();
+        await Assert
+            .That(localTrust.GetProperty("properties").TryGetProperty("deny", out _))
+            .IsTrue();
+        await Assert
+            .That(acknowledgements.GetProperty("properties").TryGetProperty("deny", out _))
+            .IsFalse();
+    }
+
+    [Test]
     public async Task PackManifest_WhenRequiredMetadataMissing_IsRejected()
     {
         var manifest = new PackManifest { Id = "example", Version = "1.0.0" };

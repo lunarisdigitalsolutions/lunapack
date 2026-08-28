@@ -20,6 +20,12 @@ otherwise asks before each untrusted script. Pressing Enter declines execution;
 users must select yes explicitly. `run` permits all non-suppressed
 scripts for this invocation. `skip` runs no scripts.
 
+Persistent denial overrides every mode and grant. Use `luna trust scripts deny`
+with optional `--project` or `--global`; use the corresponding `reset` command
+only when retained grants may become active again. Luna warns for each denied
+hook before processing lifecycle work, then continues with instructions and
+managed files.
+
 Grant persistent trust only after reviewing a source or pack:
 
 ```powershell
@@ -48,7 +54,8 @@ luna install dotnet-project --skip-instructions
 ```
 
 Dry runs validate and summarize scripts and instructions without prompting,
-starting a process, or entering guided display.
+starting a process, or entering guided display. Denied script rows show
+`policy-denied` and every applicable scope without execution warnings.
 
 ## Understand hook timing
 

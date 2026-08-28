@@ -161,6 +161,138 @@ public sealed class LifecycleHookAuthorizationTests
     }
 
     [Test]
+    public async Task AuthorizeAsync_WhenProjectDeniesScripts_DeniesRunBeforeCommandResolution()
+    {
+        using var workspace = new TestWorkspace();
+        var fileSystem = new FileSystem();
+        var confirmer = new RecordingConfirmer();
+        var authorizer = new LifecycleHookAuthorizer(
+            new UserSettingsStore(fileSystem, workspace.Path),
+            new TrustPolicy(fileSystem),
+            new LifecycleCommandResolver(fileSystem),
+            confirmer
+        );
+        var configuration = CreateConfiguration() with
+        {
+            Trust = new ProjectConfiguration.ProjectTrust
+            {
+                Deny = new ScriptDenial { Scripts = true },
+            },
+        };
+
+        var result = await authorizer.AuthorizeAsync(
+            workspace.Path,
+            configuration,
+            ScriptExecutionMode.Run,
+            [CreateInvocation(workspace.Path, "command-that-must-not-be-resolved")]
+        );
+
+        await Assert.That(result.RequireValue()).IsEmpty();
+        await Assert.That(confirmer.CallCount).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task AuthorizeWithDiagnosticsAsync_WhenMultipleScopesDeny_ReportsOrderedOrigins()
+    {
+        using var workspace = new TestWorkspace();
+        var fileSystem = new FileSystem();
+        var settingsStore = new UserSettingsStore(fileSystem, workspace.Path);
+        var projectKey = settingsStore.GetProjectKey(workspace.Path).RequireValue();
+        await settingsStore.SaveAsync(
+            new UserSettings
+            {
+                Global = new UserTrust { Deny = new ScriptDenial { Scripts = true } },
+                Projects = new Dictionary<string, LocalProjectTrust>(StringComparer.Ordinal)
+                {
+                    [projectKey] = new LocalProjectTrust
+                    {
+                        Deny = new ScriptDenial { Scripts = true },
+                    },
+                },
+            }
+        );
+        var authorizer = new LifecycleHookAuthorizer(
+            settingsStore,
+            new TrustPolicy(fileSystem),
+            new LifecycleCommandResolver(fileSystem),
+            new RecordingConfirmer()
+        );
+        var configuration = CreateConfiguration() with
+        {
+            Trust = new ProjectConfiguration.ProjectTrust
+            {
+                Deny = new ScriptDenial { Scripts = true },
+            },
+        };
+
+        var result = await authorizer.AuthorizeWithDiagnosticsAsync(
+            workspace.Path,
+            configuration,
+            ScriptExecutionMode.Run,
+            [CreateInvocation(workspace.Path, "command-that-must-not-be-resolved")]
+        );
+
+        await Assert.That(result.RequireValue().AuthorizedHooks).IsEmpty();
+        await Assert
+            .That(string.Join(",", result.RequireValue().DeniedScripts.Single().DenyingScopes))
+            .IsEqualTo("Project,LocalUser,GlobalUser");
+    }
+
+    [Test]
+    [Arguments("prompt", "source")]
+    [Arguments("prompt", "pack")]
+    [Arguments("run", "source")]
+    [Arguments("run", "pack")]
+    [Arguments("skip", "source")]
+    [Arguments("skip", "pack")]
+    public async Task AuthorizeWithDiagnosticsAsync_WhenDenied_OverridesModeAndPositiveTrust(
+        string scriptModeValue,
+        string grantKind
+    )
+    {
+        var scriptMode = ScriptExecutionMode.Parse(scriptModeValue).RequireValue();
+        using var workspace = new TestWorkspace();
+        var fileSystem = new FileSystem();
+        var settingsStore = new UserSettingsStore(fileSystem, workspace.Path);
+        var invocation = CreateInvocation(workspace.Path, "command-that-must-not-be-resolved");
+        var globalTrust = new UserTrust { Deny = new ScriptDenial { Scripts = true } };
+        if (string.Equals(grantKind, "source", StringComparison.Ordinal))
+        {
+            globalTrust.Sources.Add(invocation.Pack.SourceIdentity);
+        }
+        else
+        {
+            globalTrust.Packs.Add(
+                new TrustedPackIdentity
+                {
+                    Id = invocation.Pack.Manifest.Id,
+                    Source = invocation.Pack.SourceIdentity,
+                }
+            );
+        }
+
+        await settingsStore.SaveAsync(new UserSettings { Global = globalTrust });
+        var confirmer = new RecordingConfirmer();
+        var authorizer = new LifecycleHookAuthorizer(
+            settingsStore,
+            new TrustPolicy(fileSystem),
+            new LifecycleCommandResolver(fileSystem),
+            confirmer
+        );
+
+        var result = await authorizer.AuthorizeWithDiagnosticsAsync(
+            workspace.Path,
+            CreateConfiguration(),
+            scriptMode,
+            [invocation]
+        );
+
+        await Assert.That(result.RequireValue().AuthorizedHooks).IsEmpty();
+        await Assert.That(result.RequireValue().DeniedScripts).Count().IsEqualTo(1);
+        await Assert.That(confirmer.CallCount).IsEqualTo(0);
+    }
+
+    [Test]
     public async Task AuthorizeAsync_WhenHooksMixed_AppliesScriptModeWithoutSuppressingInstructions()
     {
         using var workspace = new TestWorkspace();

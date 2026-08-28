@@ -41,7 +41,12 @@ internal sealed class PackManifestStore(IFileSystem fileSystem)
             );
         }
 
-        return WriteAsync(projectDirectory, PackManifestPathNormalizer.Normalize(manifest), null);
+        return WriteAsync(
+            projectDirectory,
+            PackManifestPathNormalizer.Normalize(manifest),
+            null,
+            initialization: true
+        );
     }
 
     public Task<ManifestOperationResult<PackManifest>> LoadAsync(string projectDirectory)
@@ -152,7 +157,8 @@ internal sealed class PackManifestStore(IFileSystem fileSystem)
     private Task<ManifestOperationResult<PackManifest>> WriteAsync(
         string projectDirectory,
         PackManifest manifest,
-        string? expectedContents
+        string? expectedContents,
+        bool initialization = false
     )
     {
         var issues = ManifestModelValidator.Validate(manifest);
@@ -168,7 +174,18 @@ internal sealed class PackManifestStore(IFileSystem fileSystem)
         try
         {
             fileSystem.Directory.CreateDirectory(projectDirectory);
-            fileSystem.File.WriteAllText(temporaryPath, _serializer.Serialize(manifest));
+            var contents = initialization
+                ? _serializer.Serialize(
+                    new InitialPackManifest
+                    {
+                        Author = manifest.Author,
+                        Id = manifest.Id,
+                        License = manifest.License,
+                        Version = manifest.Version,
+                    }
+                )
+                : _serializer.Serialize(manifest);
+            fileSystem.File.WriteAllText(temporaryPath, contents);
             if (
                 expectedContents is not null
                 && (
