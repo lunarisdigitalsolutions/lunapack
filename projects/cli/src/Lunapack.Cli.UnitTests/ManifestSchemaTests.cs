@@ -80,6 +80,78 @@ public sealed class ManifestSchemaTests
     }
 
     [Test]
+    public async Task PackManifest_WhenMultiSelectEnumDefaultIsAllowed_IsAccepted()
+    {
+        var manifest = CreateValidPackManifest();
+        manifest.Parameters["features"] = new PackManifest.PackParameter
+        {
+            Type = "enum",
+            Multiple = true,
+            Values = ["api", "docker"],
+            Default = new List<object> { "api", "docker" },
+        };
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert.That(issues).IsEmpty();
+    }
+
+    [Test]
+    public async Task PackManifest_WhenMultiSelectEnumDefaultContainsUnknownValue_IsRejected()
+    {
+        var manifest = CreateValidPackManifest();
+        manifest.Parameters["features"] = new PackManifest.PackParameter
+        {
+            Type = "enum",
+            Multiple = true,
+            Values = ["api"],
+            Default = new List<object> { "docker" },
+        };
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert
+            .That(issues)
+            .Contains("Enum parameter 'features' defaults must be among its values.");
+    }
+
+    [Test]
+    public async Task PackManifest_WhenMultiSelectEnumDefaultContainsDuplicate_IsRejected()
+    {
+        var manifest = CreateValidPackManifest();
+        manifest.Parameters["features"] = new PackManifest.PackParameter
+        {
+            Type = "enum",
+            Multiple = true,
+            Values = ["api"],
+            Default = new List<object> { "api", "api" },
+        };
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert
+            .That(issues)
+            .Contains("Parameter 'features' has a default value incompatible with its type.");
+    }
+
+    [Test]
+    public async Task PackManifest_WhenMultipleUsedForString_IsRejected()
+    {
+        var manifest = CreateValidPackManifest();
+        manifest.Parameters["features"] = new PackManifest.PackParameter
+        {
+            Type = "string",
+            Multiple = true,
+        };
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert
+            .That(issues)
+            .Contains("Parameter 'features' can only set multiple for enum values.");
+    }
+
+    [Test]
     [Arguments("example-pack", true)]
     [Arguments("Example-Pack2", true)]
     [Arguments("example_pack", false)]
@@ -263,6 +335,25 @@ public sealed class ManifestSchemaTests
         await Assert
             .That(string.Join(",", hookVariants))
             .IsEqualTo("#/definitions/scriptHook,#/definitions/instructionHook");
+    }
+
+    [Test]
+    public async Task PackSchema_WhenMultiSelectDeclared_DefinesArrayContracts()
+    {
+        using var schema = JsonDocument.Parse(
+            File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "pack.schema.json"))
+        );
+        var definitions = schema.RootElement.GetProperty("definitions");
+        var parameter = definitions.GetProperty("parameter");
+        var parameterVariants = parameter.GetProperty("oneOf").EnumerateArray().ToArray();
+
+        await Assert
+            .That(parameter.GetProperty("properties").TryGetProperty("multiple", out _))
+            .IsTrue();
+        await Assert.That(parameterVariants).Count().IsEqualTo(4);
+        await Assert
+            .That(definitions.GetProperty("stringArray").GetProperty("uniqueItems").GetBoolean())
+            .IsTrue();
     }
 
     [Test]
@@ -481,6 +572,28 @@ public sealed class ManifestSchemaTests
     }
 
     [Test]
+    public async Task PackManifest_WhenReferenceParameterIsUniqueStringArray_IsAccepted()
+    {
+        var manifest = CreateValidPackManifest();
+        manifest.Packs =
+        [
+            new PackManifest.PackReference
+            {
+                Id = "dependency",
+                Version = "1.0.0",
+                Parameters = new Dictionary<string, object>(StringComparer.Ordinal)
+                {
+                    ["features"] = new List<object> { "api", "docker" },
+                },
+            },
+        ];
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert.That(issues).IsEmpty();
+    }
+
+    [Test]
     public async Task PackManifest_WhenReferenceSuppressionDuplicated_IsRejected()
     {
         var manifest = CreateValidPackManifest();
@@ -579,6 +692,40 @@ public sealed class ManifestSchemaTests
         var issues = ManifestModelValidator.Validate(configuration);
 
         await Assert.That(issues).IsEmpty();
+    }
+
+    [Test]
+    public async Task ProjectConfiguration_WhenVariableIsUniqueStringArray_IsAccepted()
+    {
+        var configuration = new ProjectConfiguration
+        {
+            SchemaVersion = 1,
+            Variables = new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                ["features"] = new List<object> { "api", "docker" },
+            },
+        };
+
+        var issues = ManifestModelValidator.Validate(configuration);
+
+        await Assert.That(issues).IsEmpty();
+    }
+
+    [Test]
+    public async Task ProjectConfiguration_WhenVariableArrayContainsDuplicate_IsRejected()
+    {
+        var configuration = new ProjectConfiguration
+        {
+            SchemaVersion = 1,
+            Variables = new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                ["features"] = new List<object> { "api", "api" },
+            },
+        };
+
+        var issues = ManifestModelValidator.Validate(configuration);
+
+        await Assert.That(issues).IsNotEmpty();
     }
 
     [Test]

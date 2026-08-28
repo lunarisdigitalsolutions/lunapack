@@ -39,6 +39,60 @@ public sealed class ManagedFileConditionParserTests
     }
 
     [Test]
+    public async Task Parse_WhenMembershipCombined_EvaluatesSelectedValues()
+    {
+        var result = new ManagedFileConditionParser().Parse(
+            "\"api\" in features && (\"docker\" in features || includeCi)",
+            CreateDeclarations()
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert
+            .That(
+                result
+                    .RequireValue()
+                    .Evaluate(CreateValues(includeCi: false, features: ["api", "docker"]))
+            )
+            .IsTrue();
+    }
+
+    [Test]
+    public async Task Parse_WhenMembershipValueAbsent_EvaluatesFalse()
+    {
+        var result = new ManagedFileConditionParser().Parse(
+            "\"docker\" in features",
+            CreateDeclarations()
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert
+            .That(result.RequireValue().Evaluate(CreateValues(includeCi: false, features: [])))
+            .IsFalse();
+    }
+
+    [Test]
+    public async Task Parse_WhenMembershipUsesScalarEnum_ReturnsFailure()
+    {
+        var result = new ManagedFileConditionParser().Parse(
+            "\"mit\" in licenseKind",
+            CreateDeclarations()
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+    }
+
+    [Test]
+    public async Task Parse_WhenMultiSelectUsesEquality_ReturnsFailure()
+    {
+        var result = new ManagedFileConditionParser().Parse(
+            "features == \"api\"",
+            CreateDeclarations()
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+    }
+
+    [Test]
     public async Task Parse_WhenParameterUndeclared_ReturnsFailure()
     {
         var result = new ManagedFileConditionParser().Parse("unknown", CreateDeclarations());
@@ -80,13 +134,15 @@ public sealed class ManagedFileConditionParserTests
             ["includeCi"] = new(PackParameterType.Bool, false, []),
             ["includeSecurity"] = new(PackParameterType.Bool, false, []),
             ["licenseKind"] = new(PackParameterType.Enum, false, ["mit", "apache-2.0"]),
+            ["features"] = new(PackParameterType.Enum, false, ["api", "docker"], Multiple: true),
         };
 
     private static Dictionary<string, ResolvedPackParameterValue> CreateValues(
         bool includeCi,
         bool includeSecurity = false,
         string licenseKind = "mit",
-        string environment = "development"
+        string environment = "development",
+        IReadOnlyList<string>? features = null
     ) =>
         new Dictionary<string, ResolvedPackParameterValue>(StringComparer.Ordinal)
         {
@@ -94,5 +150,6 @@ public sealed class ManagedFileConditionParserTests
             ["includeCi"] = new(PackParameterType.Bool, string.Empty, includeCi),
             ["includeSecurity"] = new(PackParameterType.Bool, string.Empty, includeSecurity),
             ["licenseKind"] = new(PackParameterType.Enum, licenseKind, false),
+            ["features"] = new(PackParameterType.Enum, string.Empty, false, features ?? []),
         };
 }

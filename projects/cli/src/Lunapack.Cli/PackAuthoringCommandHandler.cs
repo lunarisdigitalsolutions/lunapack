@@ -803,7 +803,8 @@ internal sealed class PackAuthoringCommandHandler(
         var typeArgument = new Argument<string>("type");
         var valueOption = new Option<string[]>("--value", "-v");
         var requiredOption = new Option<bool>("--required");
-        var defaultOption = new Option<string?>("--default");
+        var defaultOption = new Option<string[]>("--default");
+        var multipleOption = new Option<bool>("--multiple");
         var displayNameOption = new Option<string?>("--display-name");
         var descriptionOption = new Option<string?>("--description", "-d");
         var command = new Command("parameter", "Set a pack parameter.")
@@ -813,6 +814,7 @@ internal sealed class PackAuthoringCommandHandler(
             valueOption,
             requiredOption,
             defaultOption,
+            multipleOption,
             displayNameOption,
             descriptionOption,
         };
@@ -826,7 +828,12 @@ internal sealed class PackAuthoringCommandHandler(
             }
 
             var values = parseResult.GetValue(valueOption) ?? [];
-            var defaultValue = ParseParameterDefault(type, parseResult.GetValue(defaultOption));
+            var multiple = parseResult.GetValue(multipleOption);
+            var defaultValue = ParseParameterDefault(
+                type,
+                parseResult.GetValue(defaultOption) ?? [],
+                multiple
+            );
             if (!defaultValue.IsSuccess)
             {
                 return console.Fail(defaultValue.Error);
@@ -840,6 +847,7 @@ internal sealed class PackAuthoringCommandHandler(
                         Type = type,
                         Required = parseResult.GetValue(requiredOption),
                         Default = defaultValue.Value,
+                        Multiple = multiple ? true : null,
                         Values = string.Equals(type, "enum", StringComparison.Ordinal)
                             ? [.. values]
                             : null,
@@ -856,16 +864,40 @@ internal sealed class PackAuthoringCommandHandler(
 
     private static ManifestOperationResult<object?> ParseParameterDefault(
         string type,
-        string? value
-    ) =>
-        value is null ? ManifestOperationResult<object?>.Success(null)
-        : string.Equals(type, "bool", StringComparison.Ordinal)
+        string[] values,
+        bool multiple
+    )
+    {
+        if (multiple)
+        {
+            return string.Equals(type, "enum", StringComparison.Ordinal)
+                ? ManifestOperationResult<object?>.Success(values.ToList())
+                : ManifestOperationResult<object?>.Failure(
+                    "Only enum parameters can be multi-select."
+                );
+        }
+
+        if (values.Length > 1)
+        {
+            return ManifestOperationResult<object?>.Failure(
+                "Scalar parameters accept at most one default value."
+            );
+        }
+
+        if (values.Length == 0)
+        {
+            return ManifestOperationResult<object?>.Success(null);
+        }
+
+        var value = values[0];
+        return string.Equals(type, "bool", StringComparison.Ordinal)
             ? bool.TryParse(value, out var booleanValue)
-                    ? ManifestOperationResult<object?>.Success(booleanValue)
+                ? ManifestOperationResult<object?>.Success(booleanValue)
                 : ManifestOperationResult<object?>.Failure(
                     "Boolean parameter default must be 'true' or 'false'."
                 )
-        : ManifestOperationResult<object?>.Success(value);
+            : ManifestOperationResult<object?>.Success(value);
+    }
 
     private Command CreateTagCommand(
         string name,

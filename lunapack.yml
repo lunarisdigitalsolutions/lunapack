@@ -1,26 +1,26 @@
 packs:
-- id: dotnet-gitignore
-- id: dotnet-sdk-10
-- id: dotnet-editorconfig
-  version: 1.0.0
-- id: dotnet-csharpier-tool
-- id: dotnet-project
-  version: 1.0.0
-- id: madr-adr-template
-  version: 1.0.0
-- destination: docs/internal/development/coding-guidelines
-  id: clean-code-guidelines
-- destination: docs/internal/development/coding-guidelines
-  id: csharp-guidelines
-- id: license-mit
-- id: gitignore-general
-- id: github-actions-commitlint
-- id: github-actions-pr-gate
+  - id: dotnet-gitignore
+  - id: dotnet-sdk-10
+  - id: dotnet-editorconfig
+    version: 1.0.0
+  - id: dotnet-csharpier-tool
+  - id: dotnet-project
+    version: 1.0.0
+  - id: madr-adr-template
+    version: 1.0.0
+  - destination: docs/internal/development/coding-guidelines
+    id: clean-code-guidelines
+  - destination: docs/internal/development/coding-guidelines
+    id: csharp-guidelines
+  - id: license-mit
+  - id: gitignore-general
+  - id: github-actions-commitlint
+  - id: github-actions-pr-gate
 schemaVersion: 1
 sources:
-- path: projects/packs
-  type: local
-  name: repository-packs
+  - path: projects/packs
+    type: local
+    name: repository-packs
 trust:
   packs: []
   sources: []

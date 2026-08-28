@@ -7,6 +7,16 @@ internal maintenance work, such as CI, build, or release-process changes.
 
 Update this section before creating a release tag.
 
+### Parameters
+
+- Enum parameters can set `multiple: true` and resolve ordered, unique
+  selections from repeated CLI input, prompts, array defaults, project
+  variables, and composite bindings.
+- Managed-file conditions support `"docker" in features`; Scriban templates,
+  lifecycle instructions, and script arguments support `features contains
+"docker"`. Invalid, duplicate, or incompatible selections fail before
+  project mutation.
+
 ## Version 1.1.0 - 2026-08-27
 
 ### Luna Links

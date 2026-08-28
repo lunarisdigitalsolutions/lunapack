@@ -14,6 +14,9 @@ internal sealed record PackInstallationRequest(
     public IReadOnlyDictionary<string, string> Parameters { get; init; } =
         new Dictionary<string, string>(StringComparer.Ordinal);
 
+    public IReadOnlyDictionary<string, IReadOnlyList<string>> ParameterValues { get; init; } =
+        new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+
     public IReadOnlySet<string> SkippedVariables { get; init; } =
         new HashSet<string>(StringComparer.Ordinal);
 
@@ -100,7 +103,7 @@ internal sealed record PackInstallationRequest(
         PackReference packReference,
         string? destination,
         bool adoptExisting,
-        IReadOnlyDictionary<string, string> parameters,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> parameters,
         IReadOnlySet<string> skippedVariables,
         ManagedFileTargetRemapping targetRemapping,
         bool noVariables,
@@ -109,7 +112,12 @@ internal sealed record PackInstallationRequest(
     ) =>
         new(packReference, destination, adoptExisting)
         {
-            Parameters = parameters,
+            Parameters = parameters.ToDictionary(
+                parameter => parameter.Key,
+                parameter => parameter.Value[0],
+                StringComparer.Ordinal
+            ),
+            ParameterValues = parameters,
             SkippedVariables = skippedVariables,
             TargetRemapping = targetRemapping,
             UseProjectVariables = !noVariables,
@@ -179,32 +187,48 @@ internal sealed record PackInstallationRequest(
             : ManifestOperationResult<ManagedFileTargetRemapping>.Success(parsedRemapping);
     }
 
-    private static ManifestOperationResult<IReadOnlyDictionary<string, string>> ParseParameters(
-        IEnumerable<string> parameterValues
-    )
+    private static ManifestOperationResult<
+        IReadOnlyDictionary<string, IReadOnlyList<string>>
+    > ParseParameters(IEnumerable<string> parameterValues)
     {
-        var parameters = new Dictionary<string, string>(StringComparer.Ordinal);
+        var parameters = new Dictionary<string, List<string>>(StringComparer.Ordinal);
         foreach (var parameterValue in parameterValues)
         {
             var separatorIndex = parameterValue.IndexOf('=', StringComparison.Ordinal);
             if (separatorIndex <= 0 || !IsIdentifier(parameterValue[..separatorIndex]))
             {
-                return ManifestOperationResult<IReadOnlyDictionary<string, string>>.Failure(
-                    $"Invalid parameter '{parameterValue}'. Expected <name>=<value>."
-                );
+                return ManifestOperationResult<
+                    IReadOnlyDictionary<string, IReadOnlyList<string>>
+                >.Failure($"Invalid parameter '{parameterValue}'. Expected <name>=<value>.");
             }
 
             var name = parameterValue[..separatorIndex];
-            if (!parameters.TryAdd(name, parameterValue[(separatorIndex + 1)..]))
+            if (!parameters.TryGetValue(name, out var values))
             {
-                return ManifestOperationResult<IReadOnlyDictionary<string, string>>.Failure(
-                    $"Parameter '{name}' was supplied more than once."
-                );
+                values = [];
+                parameters.Add(name, values);
             }
+
+            values.Add(parameterValue[(separatorIndex + 1)..]);
         }
 
-        return ManifestOperationResult<IReadOnlyDictionary<string, string>>.Success(parameters);
+        return ManifestOperationResult<IReadOnlyDictionary<string, IReadOnlyList<string>>>.Success(
+            parameters.ToDictionary(
+                parameter => parameter.Key,
+                parameter => (IReadOnlyList<string>)parameter.Value,
+                StringComparer.Ordinal
+            )
+        );
     }
+
+    public IReadOnlyDictionary<string, IReadOnlyList<string>> GetParameterValues() =>
+        ParameterValues.Count > 0
+            ? ParameterValues
+            : Parameters.ToDictionary(
+                parameter => parameter.Key,
+                parameter => (IReadOnlyList<string>)[parameter.Value],
+                StringComparer.Ordinal
+            );
 
     private static ManifestOperationResult<IReadOnlySet<string>> ParseSkippedVariables(
         IEnumerable<string> skippedVariables
@@ -262,7 +286,7 @@ internal sealed record PackInstallationRequest(
         character is >= 'A' and <= 'Z' or >= 'a' and <= 'z' or '_';
 
     private sealed record ParsedInputs(
-        IReadOnlyDictionary<string, string> Parameters,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> Parameters,
         IReadOnlySet<string> SkippedVariables
     );
 }

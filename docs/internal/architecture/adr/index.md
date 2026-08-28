@@ -60,3 +60,4 @@ Create a new architecture decision record from the [MADR-based template](templat
 | [ADR-0054](0054-use-semantic-cli-presentation-and-explicit-defaults.md)         | Use semantic CLI presentation and explicit safe defaults.                               |
 | [ADR-0055](0055-extend-recoverable-lifecycle-hooks-through-uninstall.md)        | Extend recoverable lifecycle hooks through uninstall.                                   |
 | [ADR-0056](0056-normalized-source-fingerprint-authority.md)                     | Normalize source identity into one fingerprint authority for alias mapping and removal. |
+| [ADR-0057](0057-represent-multi-select-enums-as-ordered-arrays.md)              | Represent multi-select enums as ordered unique arrays validated at graph boundaries.    |

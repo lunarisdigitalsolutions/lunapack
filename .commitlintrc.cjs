@@ -4,8 +4,16 @@ module.exports = {
     'header-max-length': [1, 'always', 144],
     'subject-case': [2, 'always', ['sentence-case', 'start-case']],
     'type-case': [2, 'always', ['lower-case']],
-    'type-enum': [2, 'always', ['build', 'ci', 'docs', 'feat', 'fix', 'revert', 'release']],
+    'type-enum': [
+      2,
+      'always',
+      ['build', 'ci', 'docs', 'feat', 'fix', 'revert', 'release']
+    ],
     'scope-case': [2, 'always', ['lower-case']],
-    'scope-enum': [2, 'always', { scopes: [null, 'cli', 'website', 'pack'], delimiters: [','] }]
+    'scope-enum': [
+      2,
+      'always',
+      { scopes: [null, 'cli', 'website', 'pack'], delimiters: [','] }
+    ]
   }
-};
+}

@@ -82,6 +82,28 @@ internal sealed class CliConsole(IAnsiConsole ansiConsole, CliLogLevel minimumLe
         };
     }
 
+    public IReadOnlyList<string> PromptValues(PackParameterPrompt parameter)
+    {
+        if (!parameter.Definition.Multiple)
+        {
+            return [Prompt(parameter)];
+        }
+
+        var prompt = new MultiSelectionPrompt<string>()
+            .Title(FormatParameterPrompt(parameter))
+            .NotRequired()
+            .AddChoices(parameter.Definition.Values);
+        if (parameter.Definition.Default is IEnumerable<object> defaultValues)
+        {
+            foreach (var defaultValue in defaultValues.OfType<string>())
+            {
+                prompt.Select(defaultValue);
+            }
+        }
+
+        return ansiConsole.Prompt(prompt);
+    }
+
     public string PromptText(string prompt, string? defaultValue = null)
     {
         var textPrompt = new TextPrompt<string>(Markup.Escape(prompt));

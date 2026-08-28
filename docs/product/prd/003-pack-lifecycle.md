@@ -11,6 +11,11 @@ restricted conditions; templates; and copy or merge strategies. The lock
 document records resolved sources, dependencies, effective targets, and
 rendered-content digests.
 
+Enum parameters may allow one value or an ordered set of unique values. A
+multi-select enum uses the same resolved array for managed-file membership,
+Scriban templates, lifecycle instructions, and script arguments. Invalid or
+duplicate selections fail before project mutation.
+
 Pack authors can declare credential-free external Git sources under local
 aliases and select files, directories, or globs from them. Consumers retain
 authority: equivalent workspace sources are reused, missing sources require one

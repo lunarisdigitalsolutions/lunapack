@@ -19,13 +19,13 @@ only actions meaningful for that stage.
 - **WHEN** a user runs `luna` where neither `lunapack.yml` nor
   `lunapack-lock.yml` exists
 - **THEN** Luna reports that no LunaPack workspace was found, recommends `luna
-  init`, and states that initialization creates both project-state files
+init`, and states that initialization creates both project-state files
 
 #### Scenario: Open a workspace without sources
 
 - **WHEN** a user runs `luna` in a valid workspace with no configured sources
 - **THEN** Luna reports the workspace and missing sources and recommends `luna
-  sources add git <name> <repository-url>`
+sources add git <name> <repository-url>`
 
 #### Scenario: Open a workspace ready for discovery
 
@@ -117,4 +117,4 @@ non-successful.
 - **WHEN** a user runs a catalog or installation command in a valid workspace
   with no configured sources
 - **THEN** Luna reports that no sources are configured and recommends `luna
-  sources add git <name> <repository-url>`
+sources add git <name> <repository-url>`

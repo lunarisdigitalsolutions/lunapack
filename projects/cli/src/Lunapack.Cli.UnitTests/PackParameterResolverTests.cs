@@ -96,6 +96,64 @@ public sealed class PackParameterResolverTests
     }
 
     [Test]
+    public async Task Resolve_WhenMultiSelectValuesProvided_PreservesInputOrder()
+    {
+        var pack = CreatePack("features", "enum", values: ["api", "docker"]);
+        pack.Manifest.Parameters["companyName"].Multiple = true;
+        var result = PackParameterResolver.Resolve(
+            new ResolvedPackGraph([pack]),
+            new ProjectConfiguration(),
+            CreateRequest(
+                parameterValues: new Dictionary<string, IReadOnlyList<string>>
+                {
+                    ["companyName"] = ["docker", "api"],
+                }
+            )
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert
+            .That(result.RequireValue().Values["companyName"].StringValues)
+            .IsEquivalentTo(["docker", "api"]);
+    }
+
+    [Test]
+    public async Task Resolve_WhenMultiSelectValueRepeated_ReturnsFailure()
+    {
+        var pack = CreatePack("features", "enum", values: ["api"]);
+        pack.Manifest.Parameters["companyName"].Multiple = true;
+        var result = PackParameterResolver.Resolve(
+            new ResolvedPackGraph([pack]),
+            new ProjectConfiguration(),
+            CreateRequest(
+                parameterValues: new Dictionary<string, IReadOnlyList<string>>
+                {
+                    ["companyName"] = ["api", "api"],
+                }
+            )
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+    }
+
+    [Test]
+    public async Task Resolve_WhenScalarParameterRepeated_ReturnsFailure()
+    {
+        var result = PackParameterResolver.Resolve(
+            new ResolvedPackGraph([CreatePack("name", "string")]),
+            new ProjectConfiguration(),
+            CreateRequest(
+                parameterValues: new Dictionary<string, IReadOnlyList<string>>
+                {
+                    ["companyName"] = ["Lunaris", "Digital"],
+                }
+            )
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+    }
+
+    [Test]
     public async Task Resolve_WhenSharedDeclarationsCompatible_BindsParameterOnce()
     {
         var result = PackParameterResolver.Resolve(
@@ -121,6 +179,22 @@ public sealed class PackParameterResolverTests
                 CreatePack("root", "string", required: true),
                 CreatePack("dependency", "bool", required: true),
             ]),
+            new ProjectConfiguration(),
+            CreateRequest()
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+    }
+
+    [Test]
+    public async Task Resolve_WhenSharedEnumsDifferInMultipleShape_ReturnsFailure()
+    {
+        var root = CreatePack("root", "enum", values: ["api"]);
+        root.Manifest.Parameters["companyName"].Multiple = true;
+        var dependency = CreatePack("dependency", "enum", values: ["api"]);
+
+        var result = PackParameterResolver.Resolve(
+            new ResolvedPackGraph([root, dependency]),
             new ProjectConfiguration(),
             CreateRequest()
         );
@@ -179,6 +253,45 @@ public sealed class PackParameterResolverTests
         await Assert
             .That(result.RequireValue().Values["companyName"].StringValue)
             .IsEqualTo("Lunaris");
+    }
+
+    [Test]
+    public async Task Resolve_WhenCompositeSetsTransientMultiSelect_BindsArray()
+    {
+        var dependency = CreatePack("dependency", "enum", required: true, values: ["api"]);
+        dependency.Manifest.Parameters["companyName"].Multiple = true;
+        var root = new DiscoveredPack(
+            "source",
+            "root",
+            new PackManifest
+            {
+                Id = "root",
+                Version = "1.0.0",
+                Packs =
+                [
+                    new PackManifest.PackReference
+                    {
+                        Id = "dependency",
+                        Version = "1.0.0",
+                        Parameters = new Dictionary<string, object>
+                        {
+                            ["companyName"] = new List<object> { "api" },
+                        },
+                    },
+                ],
+            }
+        );
+
+        var result = PackParameterResolver.Resolve(
+            new ResolvedPackGraph([dependency, root]),
+            new ProjectConfiguration(),
+            CreateRequest()
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert
+            .That(result.RequireValue().Values["companyName"].StringValues)
+            .IsEquivalentTo(["api"]);
     }
 
     [Test]
@@ -245,6 +358,46 @@ public sealed class PackParameterResolverTests
     }
 
     [Test]
+    public async Task Resolve_WhenOptionalMultiSelectOmitted_UsesEmptyArray()
+    {
+        var pack = CreatePack("features", "enum", values: ["api"]);
+        pack.Manifest.Parameters["companyName"].Multiple = true;
+
+        var result = PackParameterResolver.Resolve(
+            new ResolvedPackGraph([pack]),
+            new ProjectConfiguration(),
+            CreateRequest()
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert.That(result.RequireValue().Values["companyName"].StringValues).IsEmpty();
+    }
+
+    [Test]
+    public async Task Resolve_WhenProjectVariableProvidesMultiSelect_BindsArray()
+    {
+        var pack = CreatePack("features", "enum", required: true, values: ["api", "docker"]);
+        pack.Manifest.Parameters["companyName"].Multiple = true;
+
+        var result = PackParameterResolver.Resolve(
+            new ResolvedPackGraph([pack]),
+            new ProjectConfiguration
+            {
+                Variables = new Dictionary<string, object>
+                {
+                    ["companyName"] = new List<object> { "api", "docker" },
+                },
+            },
+            CreateRequest()
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert
+            .That(result.RequireValue().Values["companyName"].StringValues)
+            .IsEquivalentTo(["api", "docker"]);
+    }
+
+    [Test]
     public async Task Resolve_WhenOptionalParameterHasDefault_UsesTypedDefault()
     {
         var pack = CreatePack("defaults", "string");
@@ -260,6 +413,46 @@ public sealed class PackParameterResolverTests
         await Assert
             .That(result.RequireValue().Values["companyName"].StringValue)
             .IsEqualTo("Lunaris");
+    }
+
+    [Test]
+    public async Task Resolve_WhenMultiSelectHasDefault_UsesOrderedArray()
+    {
+        var pack = CreatePack("defaults", "enum", values: ["api", "docker"]);
+        pack.Manifest.Parameters["companyName"].Multiple = true;
+        pack.Manifest.Parameters["companyName"].Default = new List<object> { "docker", "api" };
+
+        var result = PackParameterResolver.Resolve(
+            new ResolvedPackGraph([pack]),
+            new ProjectConfiguration(),
+            CreateRequest()
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert
+            .That(result.RequireValue().Values["companyName"].StringValues)
+            .IsEquivalentTo(["docker", "api"]);
+    }
+
+    [Test]
+    public async Task Resolve_WhenMultiSelectProjectVariableContainsUnknownValue_ReturnsFailure()
+    {
+        var pack = CreatePack("features", "enum", values: ["api"]);
+        pack.Manifest.Parameters["companyName"].Multiple = true;
+
+        var result = PackParameterResolver.Resolve(
+            new ResolvedPackGraph([pack]),
+            new ProjectConfiguration
+            {
+                Variables = new Dictionary<string, object>
+                {
+                    ["companyName"] = new List<object> { "docker" },
+                },
+            },
+            CreateRequest()
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
     }
 
     private static DiscoveredPack CreatePack(
@@ -289,11 +482,15 @@ public sealed class PackParameterResolverTests
 
     private static PackInstallationRequest CreateRequest(
         IReadOnlyDictionary<string, string>? parameters = null,
+        IReadOnlyDictionary<string, IReadOnlyList<string>>? parameterValues = null,
         IReadOnlySet<string>? skippedVariables = null
     ) =>
         new(new PackReference("root", null), null, false)
         {
             Parameters = parameters ?? new Dictionary<string, string>(StringComparer.Ordinal),
+            ParameterValues =
+                parameterValues
+                ?? new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal),
             SkippedVariables = skippedVariables ?? new HashSet<string>(StringComparer.Ordinal),
         };
 }
