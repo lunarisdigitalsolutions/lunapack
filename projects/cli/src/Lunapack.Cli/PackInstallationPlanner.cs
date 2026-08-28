@@ -20,6 +20,7 @@ internal sealed class PackInstallationPlanner(
         ExternalContentRoots? externalContentRoots = null
     )
     {
+        var ignoredDeclaredTargets = new HashSet<string>(StringComparer.Ordinal);
         var existingManagedTargets = CreateExistingManagedTargetMap(lockFile);
         if (existingManagedTargets.Value is not { } managedTargetMap)
         {
@@ -36,7 +37,8 @@ internal sealed class PackInstallationPlanner(
             configuration.Packs,
             installationRequest,
             parameters,
-            externalContentRoots ?? ExternalContentRoots.Empty
+            externalContentRoots ?? ExternalContentRoots.Empty,
+            ignoredDeclaredTargets
         );
         if (plannedManagedFiles.Value is not { } plan)
         {
@@ -45,7 +47,12 @@ internal sealed class PackInstallationPlanner(
             );
         }
 
-        return ManifestOperationResult<PackInstallationPlan>.Success(plan);
+        return ManifestOperationResult<PackInstallationPlan>.Success(
+            plan with
+            {
+                IgnoredDeclaredTargets = ignoredDeclaredTargets,
+            }
+        );
     }
 
     private static ManifestOperationResult<
@@ -63,7 +70,8 @@ internal sealed class PackInstallationPlanner(
         IReadOnlyList<ProjectConfiguration.RequestedPack> requestedPacks,
         PackInstallationRequest installationRequest,
         ResolvedPackParameters parameters,
-        ExternalContentRoots externalContentRoots
+        ExternalContentRoots externalContentRoots,
+        HashSet<string> ignoredDeclaredTargets
     )
     {
         var expandedCandidates = CreateManagedFileCandidates(
@@ -80,14 +88,8 @@ internal sealed class PackInstallationPlanner(
                 expandedCandidates.Error ?? "Unable to expand managed files."
             );
         }
-        var effectiveTargets = candidates
-            .GroupBy(candidate => NormalizePath(candidate.DeclaredTarget), StringComparer.Ordinal)
-            .Where(group => group.Count() == 1)
-            .ToDictionary(
-                group => group.Key,
-                group => NormalizePath(group.Single().Target),
-                StringComparer.Ordinal
-            );
+        candidates = FilterIgnoredCandidates(candidates, ignoredDeclaredTargets);
+        var effectiveTargets = CreateEffectiveTargetMap(candidates);
         var diagnostics = new List<ManagedFileTemplateDiagnostic>();
         var plannedTargets = new Dictionary<string, List<PlannedManagedFile>>(
             StringComparer.Ordinal
@@ -146,6 +148,41 @@ internal sealed class PackInstallationPlanner(
             }
         );
     }
+
+    private static List<ManagedFilePlanCandidate> FilterIgnoredCandidates(
+        IReadOnlyList<ManagedFilePlanCandidate> candidates,
+        HashSet<string> ignoredDeclaredTargets
+    ) =>
+        [
+            .. candidates.Where(candidate =>
+            {
+                if (
+                    !string.Equals(
+                        candidate.Target,
+                        ManagedFileTargetRemapping.IgnoreTarget,
+                        StringComparison.Ordinal
+                    )
+                )
+                {
+                    return true;
+                }
+
+                ignoredDeclaredTargets.Add(NormalizePath(candidate.DeclaredTarget));
+                return false;
+            }),
+        ];
+
+    private static Dictionary<string, string> CreateEffectiveTargetMap(
+        IReadOnlyList<ManagedFilePlanCandidate> candidates
+    ) =>
+        candidates
+            .GroupBy(candidate => NormalizePath(candidate.DeclaredTarget), StringComparer.Ordinal)
+            .Where(group => group.Count() == 1)
+            .ToDictionary(
+                group => group.Key,
+                group => NormalizePath(group.Single().Target),
+                StringComparer.Ordinal
+            );
 
     private ManifestOperationResult<List<ManagedFilePlanCandidate>> CreateManagedFileCandidates(
         ResolvedPackGraph graph,
@@ -585,12 +622,12 @@ internal sealed class PackInstallationPlanner(
                 sourcePathRelativeToDirectory = fileName;
             }
 
-            var targetPath = fileSystem.Path.Combine(
-                targetDirectory,
-                sourcePathRelativeToDirectory
-            );
             var declaredTargetPath = fileSystem.Path.Combine(
                 declaredTargetDirectory,
+                sourcePathRelativeToDirectory
+            );
+            var targetPath = fileSystem.Path.Combine(
+                targetDirectory,
                 sourcePathRelativeToDirectory
             );
             candidates.Add(

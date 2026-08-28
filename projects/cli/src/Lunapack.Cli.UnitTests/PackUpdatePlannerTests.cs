@@ -319,6 +319,26 @@ public sealed class PackUpdatePlannerTests
         await Assert.That(action.ResultingSha256).IsNull();
     }
 
+    [Test]
+    public async Task Plan_WhenManagedTargetIgnored_DoesNotCreateDeleteAction()
+    {
+        var planner = new PackUpdatePlanner(new MockFileSystem());
+
+        var result = planner.Plan(
+            _projectDirectory,
+            CreateLockFile("example", "target.txt", "old content"),
+            new PackInstallationPlan([])
+            {
+                IgnoredDeclaredTargets = new HashSet<string>(StringComparer.Ordinal)
+                {
+                    "target.txt",
+                },
+            }
+        );
+
+        await Assert.That(result.RequireValue().Actions).IsEmpty();
+    }
+
     private static PlannedManagedFile CreateManagedFile(
         string packId,
         string target,

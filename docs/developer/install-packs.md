@@ -109,18 +109,37 @@ precedence over global file mappings; command-line directory mappings take
 precedence over global directory mappings. `--destination` cannot be combined
 with either remapping option.
 
+Add `--save-remap` to persist the command-line mappings in `lunapack.yml` after
+a successful install. The option requires at least one `--remap-directory` or
+`--remap-file` value. Failed installs preserve the previous configuration.
+
+Use `@ignore` as a mapping value to omit a declared file or directory tree:
+
+```powershell
+luna install dotnet-project --remap-directory docs/generated=@ignore --save-remap
+```
+
+Ignored files are neither written nor recorded as managed files. Updates leave
+newly ignored local files unchanged and remove their lock ownership. Removing
+the mapping lets a later update install files that were previously omitted.
+Exact file mappings take precedence over an ignored directory mapping.
+
 LunaPack records both the manifest-declared target and its effective target in
 `lunapack-lock.yml`. Updates and uninstalls use that recorded effective target,
-so changing a global mapping does not move an installed file. `luna inspect`
-shows applicable global mappings as `declared -> effective`.
+so changing a global mapping does not move an installed file. The `@ignore`
+target is the exception: it removes ownership without deleting local content.
+`luna inspect` shows applicable global mappings as `declared -> effective`.
 
-Relocate an installed managed file explicitly:
+Relocate an installed managed file or directory explicitly:
 
 ```powershell
 luna mv docs/adr/template.md docs/architecture/adr/_template.md
+luna mv docs/adr docs/architecture/adr
 ```
 
-The command moves one uniquely owned managed file when the source exists and
-the target does not. When a consumer has already moved the source and the
-target exists, it rebinds lock ownership without changing file contents. It
-rejects unsafe paths, ownership conflicts, and states where both files exist.
+For a directory source, the command moves every managed descendant and retains
+its relative path. When a consumer has already moved the source files and only
+the targets exist, it rebinds lock ownership without changing file contents.
+Add `--save-remap` to make the file or directory relocation apply to future
+installs. The command rejects unsafe paths, ownership conflicts, overlapping
+directory moves, and inconsistent source and target states.

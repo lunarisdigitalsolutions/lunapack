@@ -18,10 +18,15 @@ internal sealed class MoveManagedFileCommandHandler(
         {
             Description = "New project-relative managed-file target.",
         };
-        var command = new Command("mv", "Relocate a managed file while retaining ownership.")
+        var saveRemapOption = new Option<bool>("--save-remap")
+        {
+            Description = "Save the move as a target remapping in lunapack.yml.",
+        };
+        var command = new Command("mv", "Relocate managed files while retaining ownership.")
         {
             sourceArgument,
             targetArgument,
+            saveRemapOption,
         };
         command.Aliases.Add("move");
         command.SetAction(async parseResult =>
@@ -36,7 +41,8 @@ internal sealed class MoveManagedFileCommandHandler(
                     packLifecycleService.MoveManagedFileAsync(
                         workspaceDirectory,
                         parseResult.GetValue(sourceArgument) ?? string.Empty,
-                        parseResult.GetValue(targetArgument) ?? string.Empty
+                        parseResult.GetValue(targetArgument) ?? string.Empty,
+                        parseResult.GetValue(saveRemapOption)
                     )
             );
         });

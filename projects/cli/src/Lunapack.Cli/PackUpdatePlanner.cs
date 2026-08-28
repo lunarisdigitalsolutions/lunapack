@@ -37,6 +37,7 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
             previousTargetMap,
             installationPlan.ManagedFiles,
             plannedTargetMap,
+            installationPlan.IgnoredDeclaredTargets,
             removeUnplannedManagedFiles
         );
         if (updateActions.Value is not { } actions)
@@ -59,6 +60,7 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
         Dictionary<PackTargetKey, PreviousManagedTarget> previousTargetMap,
         IReadOnlyList<PlannedManagedFile> plannedManagedFiles,
         Dictionary<PackTargetKey, PlannedManagedFile> plannedTargetMap,
+        IReadOnlySet<string> ignoredDeclaredTargets,
         bool removeUnplannedManagedFiles
     )
     {
@@ -130,6 +132,7 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
             if (
                 plannedTargetMap.ContainsKey(key)
                 || plannedTargetPaths.Contains(NormalizePath(previousTarget.ManagedFile.TargetPath))
+                || ignoredDeclaredTargets.Contains(key.TargetPath)
             )
             {
                 continue;

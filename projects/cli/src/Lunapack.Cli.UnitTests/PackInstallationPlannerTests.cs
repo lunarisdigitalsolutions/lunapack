@@ -184,6 +184,85 @@ public sealed class PackInstallationPlannerTests
     }
 
     [Test]
+    [Arguments("file", "configuration", "file")]
+    [Arguments("file", "invocation", "directory")]
+    [Arguments("directory", "configuration", "directory")]
+    [Arguments("directory", "invocation", "file")]
+    [Arguments("glob", "configuration", "file")]
+    [Arguments("glob", "invocation", "directory")]
+    public async Task Plan_WhenManagedTargetRemapped_ResolvesConcreteTarget(
+        string selectorKind,
+        string mappingSource,
+        string mappingKind
+    )
+    {
+        var fileSystem = CreateFileSystem(
+            (PacksPath("one", "content", "nested", "guide.txt"), "guide")
+        );
+        var planner = CreatePlanner(fileSystem);
+        var isFileSelector = string.Equals(selectorKind, "file", StringComparison.Ordinal);
+        var declaredTarget = isFileSelector
+            ? "docs/development/guide.txt"
+            : "docs/development/nested/guide.txt";
+        var source = string.Equals(mappingKind, "file", StringComparison.Ordinal)
+            ? declaredTarget
+            : "docs/development";
+        var directories = string.Equals(mappingKind, "directory", StringComparison.Ordinal)
+            ? new[] { $"{source.Replace('/', '\\')}=docs\\04-development\\" }
+            : [];
+        var files = string.Equals(mappingKind, "file", StringComparison.Ordinal)
+            ? new[] { $"{source.Replace('/', '\\')}=docs\\04-development\\guide.txt" }
+            : [];
+        var invocationRemapping = ManagedFileTargetRemapping
+            .Create(fileSystem, _projectDirectory, directories, files)
+            .RequireValue();
+        var configurationRemapping = new ProjectConfiguration.Remapping();
+        var target = string.Equals(mappingKind, "file", StringComparison.Ordinal)
+            ? "docs/04-development/guide.txt"
+            : "docs/04-development";
+        var configuredMappings = string.Equals(mappingKind, "file", StringComparison.Ordinal)
+            ? configurationRemapping.Files
+            : configurationRemapping.Directories;
+        configuredMappings[source] = target;
+        var pack = new DiscoveredPack(
+            _packsDirectory,
+            PacksPath("one"),
+            new PackManifest
+            {
+                Id = "one",
+                Version = "1.0.0",
+                ManagedFiles = [CreateSelectorManagedFile(selectorKind)],
+            }
+        );
+        var usesInvocation = string.Equals(mappingSource, "invocation", StringComparison.Ordinal);
+
+        var result = planner.Plan(
+            _projectDirectory,
+            new ResolvedPackGraph([pack]),
+            new ProjectLockFile { SchemaVersion = 1 },
+            new ProjectConfiguration
+            {
+                SchemaVersion = 1,
+                Remap = usesInvocation ? null : configurationRemapping,
+            },
+            new PackInstallationRequest(new PackReference("one", null), null, false)
+            {
+                TargetRemapping = usesInvocation ? invocationRemapping : null,
+            },
+            _emptyParameters
+        );
+
+        var plannedFile = result.RequireValue().ManagedFiles.Single();
+        var expectedTarget =
+            string.Equals(mappingKind, "file", StringComparison.Ordinal)
+                ? "docs/04-development/guide.txt"
+            : isFileSelector ? "docs/04-development/guide.txt"
+            : "docs/04-development/nested/guide.txt";
+        await Assert.That(plannedFile.DeclaredTargetPath).IsEqualTo(declaredTarget);
+        await Assert.That(plannedFile.TargetPathRelativeToProject).IsEqualTo(expectedTarget);
+    }
+
+    [Test]
     public async Task Plan_WhenInvocationFileRemappingMatches_OverridesGlobalDirectoryRemapping()
     {
         var fileSystem = CreateFileSystem((PacksPath("one", "source.txt"), "template"));
@@ -494,6 +573,43 @@ public sealed class PackInstallationPlannerTests
             .IsEquivalentTo([new ManagedFileTemplateDiagnostic("docs/shared.md", "docs/index.md")]);
     }
 
+    [Test]
+    public async Task Plan_WhenConfiguredDirectoryMapsToIgnore_OmitsMatchingManagedFiles()
+    {
+        var fileSystem = CreateFileSystem(
+            (PacksPath("one", "content", "nested", "guide.txt"), "guide")
+        );
+        var planner = CreatePlanner(fileSystem);
+        var pack = new DiscoveredPack(
+            _packsDirectory,
+            PacksPath("one"),
+            new PackManifest
+            {
+                Id = "one",
+                Version = "1.0.0",
+                ManagedFiles = [CreateSelectorManagedFile("directory")],
+            }
+        );
+
+        var result = planner.Plan(
+            _projectDirectory,
+            new ResolvedPackGraph([pack]),
+            new ProjectLockFile { SchemaVersion = 1 },
+            new ProjectConfiguration
+            {
+                SchemaVersion = 1,
+                Remap = new ProjectConfiguration.Remapping
+                {
+                    Directories = { ["docs/development"] = "@ignore" },
+                },
+            },
+            new PackInstallationRequest(new PackReference("one", null), null, false),
+            _emptyParameters
+        );
+
+        await Assert.That(result.RequireValue().ManagedFiles).IsEmpty();
+    }
+
     private static DiscoveredPack CreatePack(
         string id,
         string packDirectory,
@@ -519,6 +635,26 @@ public sealed class PackInstallationPlannerTests
                 ],
             }
         );
+
+    private static PackManifest.PackManagedFile CreateSelectorManagedFile(string selectorKind) =>
+        selectorKind switch
+        {
+            "file" => new PackManifest.PackManagedFile
+            {
+                Source = "content/nested/guide.txt",
+                Target = "docs/development/guide.txt",
+            },
+            "directory" => new PackManifest.PackManagedFile
+            {
+                Directory = "content",
+                Target = "docs/development/",
+            },
+            _ => new PackManifest.PackManagedFile
+            {
+                Glob = "content/**/*.txt",
+                Target = "docs/development/",
+            },
+        };
 
     private static DiscoveredPack CreateSelectorPack(
         params PackManifest.PackManagedFile[] managedFiles

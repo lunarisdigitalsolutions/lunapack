@@ -200,7 +200,8 @@ internal sealed class PackLifecycleService(
     public async Task<int> MoveManagedFileAsync(
         string projectDirectory,
         string sourcePath,
-        string targetPath
+        string targetPath,
+        bool saveRemapping = false
     )
     {
         var moveRequest = CreateManagedFileMoveRequest(projectDirectory, sourcePath, targetPath);
@@ -215,18 +216,19 @@ internal sealed class PackLifecycleService(
             return _console.Fail(loadedState.Error);
         }
 
-        var owner = FindManagedFileMoveOwner(state.LockFile, request);
-        if (owner.Value is not { } managedFileOwner)
+        var selection = FindManagedFileMoveSelection(state.LockFile, request);
+        if (selection.Value is not { } managedFiles)
         {
-            return _console.Fail(owner.Error);
+            return _console.Fail(selection.Error);
         }
 
-        return await ApplyManagedFileMoveAndSaveAsync(
+        return await ApplyManagedFileMovesAndSaveAsync(
             projectDirectory,
             state,
             state.LockFile,
-            managedFileOwner,
-            request
+            managedFiles,
+            request,
+            saveRemapping
         );
     }
 
@@ -269,13 +271,29 @@ internal sealed class PackLifecycleService(
             );
     }
 
-    private static ManifestOperationResult<ProjectLockFile.ManagedFile> FindManagedFileMoveOwner(
+    private static ManifestOperationResult<ManagedFileMoveSelection> FindManagedFileMoveSelection(
         ProjectLockFile lockFile,
         ManagedFileMoveRequest request
     )
     {
-        var sourceOwners = lockFile
+        var managedFiles = lockFile
             .Packs.SelectMany(pack => pack.ManagedFiles)
+            .Select(file => new ManagedMoveFile(
+                file.DeclaredTargetPath,
+                file.TargetPath,
+                targetPath => file.TargetPath = targetPath
+            ))
+            .Concat(
+                lockFile
+                    .Links.Values.SelectMany(link => link.Files)
+                    .Select(file => new ManagedMoveFile(
+                        file.DeclaredTargetPath,
+                        file.TargetPath,
+                        targetPath => file.TargetPath = targetPath
+                    ))
+            )
+            .ToList();
+        var exactOwners = managedFiles
             .Where(file =>
                 string.Equals(
                     NormalizePath(file.TargetPath),
@@ -284,78 +302,323 @@ internal sealed class PackLifecycleService(
                 )
             )
             .ToList();
-        if (sourceOwners.Count != 1)
+        if (exactOwners.Count > 1)
         {
-            return ManifestOperationResult<ProjectLockFile.ManagedFile>.Failure(
+            return ManifestOperationResult<ManagedFileMoveSelection>.Failure(
                 $"Managed file source '{request.SourcePath}' must be owned by exactly one lock record."
             );
         }
 
-        return lockFile
-            .Packs.SelectMany(pack => pack.ManagedFiles)
-            .Any(file =>
-                string.Equals(
-                    NormalizePath(file.TargetPath),
-                    request.TargetPath,
-                    StringComparison.Ordinal
-                )
-            )
-            ? ManifestOperationResult<ProjectLockFile.ManagedFile>.Failure(
-                $"Managed file target '{request.TargetPath}' is already owned."
-            )
-            : ManifestOperationResult<ProjectLockFile.ManagedFile>.Success(sourceOwners[0]);
-    }
-
-    private async Task<int> ApplyManagedFileMoveAndSaveAsync(
-        string projectDirectory,
-        ProjectState state,
-        ProjectLockFile lockFile,
-        ProjectLockFile.ManagedFile managedFile,
-        ManagedFileMoveRequest request
-    )
-    {
-        var sourceFilePath = fileSystem.Path.GetFullPath(request.SourcePath, projectDirectory);
-        var targetFilePath = fileSystem.Path.GetFullPath(request.TargetPath, projectDirectory);
-        var sourceExists = fileSystem.File.Exists(sourceFilePath);
-        var targetExists = fileSystem.File.Exists(targetFilePath);
-        if (sourceExists == targetExists)
+        if (exactOwners.Count == 1)
         {
-            return _console.Fail(
-                "Managed file move requires an existing source and missing target, or a missing source and existing target."
+            var move = new ManagedFileMove(exactOwners[0], request.SourcePath, request.TargetPath);
+            return ValidateManagedFileMoveTargets(managedFiles, [move], isDirectory: false);
+        }
+
+        var sourcePrefix = $"{request.SourcePath}/";
+        var directoryMoves = managedFiles
+            .Where(file =>
+                NormalizePath(file.TargetPath).StartsWith(sourcePrefix, StringComparison.Ordinal)
+            )
+            .Select(file =>
+            {
+                var normalizedTarget = NormalizePath(file.TargetPath);
+                return new ManagedFileMove(
+                    file,
+                    normalizedTarget,
+                    $"{request.TargetPath}/{normalizedTarget[sourcePrefix.Length..]}"
+                );
+            })
+            .ToList();
+        if (directoryMoves.Count == 0)
+        {
+            return ManifestOperationResult<ManagedFileMoveSelection>.Failure(
+                $"Managed file source '{request.SourcePath}' must identify one lock record or a directory containing managed files."
             );
         }
 
-        var movedFile = false;
+        if (
+            request.TargetPath.StartsWith(sourcePrefix, StringComparison.Ordinal)
+            || request.SourcePath.StartsWith($"{request.TargetPath}/", StringComparison.Ordinal)
+        )
+        {
+            return ManifestOperationResult<ManagedFileMoveSelection>.Failure(
+                "Managed directory source and target must not contain one another."
+            );
+        }
+
+        return ValidateManagedFileMoveTargets(managedFiles, directoryMoves, isDirectory: true);
+    }
+
+    private static ManifestOperationResult<ManagedFileMoveSelection> ValidateManagedFileMoveTargets(
+        IReadOnlyList<ManagedMoveFile> managedFiles,
+        IReadOnlyList<ManagedFileMove> moves,
+        bool isDirectory
+    )
+    {
+        if (
+            moves.Select(move => move.TargetPath).Distinct(StringComparer.Ordinal).Count()
+            != moves.Count
+        )
+        {
+            return ManifestOperationResult<ManagedFileMoveSelection>.Failure(
+                "Managed file move produces duplicate targets."
+            );
+        }
+
+        var selectedFiles = moves
+            .Select(move => move.ManagedFile)
+            .ToHashSet(ReferenceEqualityComparer.Instance);
+        var ownedTargets = managedFiles
+            .Where(file => !selectedFiles.Contains(file))
+            .Select(file => NormalizePath(file.TargetPath))
+            .ToHashSet(StringComparer.Ordinal);
+        var conflict = moves.FirstOrDefault(move => ownedTargets.Contains(move.TargetPath));
+        return conflict is null
+            ? ManifestOperationResult<ManagedFileMoveSelection>.Success(
+                new ManagedFileMoveSelection(moves, isDirectory)
+            )
+            : ManifestOperationResult<ManagedFileMoveSelection>.Failure(
+                $"Managed file target '{conflict.TargetPath}' is already owned."
+            );
+    }
+
+    private async Task<int> ApplyManagedFileMovesAndSaveAsync(
+        string projectDirectory,
+        ProjectState state,
+        ProjectLockFile lockFile,
+        ManagedFileMoveSelection selection,
+        ManagedFileMoveRequest request,
+        bool saveRemapping
+    )
+    {
+        var operations = selection
+            .Moves.Select(move => CreateManagedFileMoveOperation(projectDirectory, move))
+            .ToList();
+        var operationError = ValidateManagedFileMoveOperations(operations);
+        if (operationError is not null)
+        {
+            return _console.Fail(operationError);
+        }
+
         var createdDirectories = new List<string>();
+        var movedOperations = new List<ManagedFileMoveOperation>();
         try
         {
-            if (sourceExists)
+            foreach (var operation in operations.Where(operation => operation.SourceExists))
             {
-                createdDirectories = CreateTargetDirectories(targetFilePath);
-                fileSystem.File.Move(sourceFilePath, targetFilePath);
-                movedFile = true;
+                createdDirectories.AddRange(CreateTargetDirectories(operation.TargetFilePath));
+                fileSystem.File.Move(operation.SourceFilePath, operation.TargetFilePath);
+                movedOperations.Add(operation);
             }
 
-            managedFile.TargetPath = request.TargetPath;
+            foreach (var move in selection.Moves)
+            {
+                move.ManagedFile.SetTargetPath(move.TargetPath);
+            }
+
+            var configuration = saveRemapping
+                ? AddSavedMoveRemapping(state.Configuration, selection, request)
+                : ManifestOperationResult<ProjectConfiguration>.Success(state.Configuration);
+            if (configuration.Value is not { } nextConfiguration)
+            {
+                RestoreManagedFileMoves(movedOperations, createdDirectories);
+                RestoreManagedFileMoveTargets(selection.Moves);
+                return _console.Fail(configuration.Error);
+            }
+
             var savedState = await projectStateStore.SaveAsync(
                 projectDirectory,
                 state with
                 {
+                    Configuration = nextConfiguration,
                     LockFile = lockFile,
                 }
             );
             if (savedState.IsSuccess)
             {
+                if (selection.IsDirectory)
+                {
+                    try
+                    {
+                        RemoveEmptyMovedDirectories(projectDirectory, request.SourcePath);
+                    }
+                    catch (Exception exception)
+                        when (exception is IOException or UnauthorizedAccessException)
+                    {
+                        _console.Warning(
+                            $"Unable to remove empty source directories: {exception.Message}"
+                        );
+                    }
+                }
+
                 return 0;
             }
 
-            RestoreManagedFileMove(sourceFilePath, targetFilePath, movedFile, createdDirectories);
+            RestoreManagedFileMoves(movedOperations, createdDirectories);
+            RestoreManagedFileMoveTargets(selection.Moves);
             return _console.Fail(savedState.Error);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            RestoreManagedFileMove(sourceFilePath, targetFilePath, movedFile, createdDirectories);
-            return _console.Fail($"Unable to move managed file: {exception.Message}");
+            RestoreManagedFileMoves(movedOperations, createdDirectories);
+            RestoreManagedFileMoveTargets(selection.Moves);
+            return _console.Fail($"Unable to move managed files: {exception.Message}");
+        }
+    }
+
+    private string? ValidateManagedFileMoveOperations(
+        IReadOnlyList<ManagedFileMoveOperation> operations
+    )
+    {
+        var invalidOperation = operations.FirstOrDefault(operation =>
+            operation.SourceExists == fileSystem.File.Exists(operation.TargetFilePath)
+        );
+        if (invalidOperation is not null)
+        {
+            return $"Managed file move for '{invalidOperation.Move.SourcePath}' requires an existing source and missing target, or a missing source and existing target.";
+        }
+
+        return operations.Select(operation => operation.SourceExists).Distinct().Count() > 1
+            ? "Managed directory move requires every file to be moved or every lock record to be rebound."
+            : null;
+    }
+
+    private ManagedFileMoveOperation CreateManagedFileMoveOperation(
+        string projectDirectory,
+        ManagedFileMove move
+    )
+    {
+        var sourceFilePath = fileSystem.Path.GetFullPath(move.SourcePath, projectDirectory);
+        return new ManagedFileMoveOperation(
+            move,
+            sourceFilePath,
+            fileSystem.Path.GetFullPath(move.TargetPath, projectDirectory),
+            fileSystem.File.Exists(sourceFilePath)
+        );
+    }
+
+    private static ManifestOperationResult<ProjectConfiguration> AddSavedMoveRemapping(
+        ProjectConfiguration configuration,
+        ManagedFileMoveSelection selection,
+        ManagedFileMoveRequest request
+    )
+    {
+        var remapping = configuration.Remap ?? new ProjectConfiguration.Remapping();
+        var directories = new Dictionary<string, string>(
+            remapping.Directories,
+            StringComparer.Ordinal
+        );
+        var files = new Dictionary<string, string>(remapping.Files, StringComparer.Ordinal);
+        if (!selection.IsDirectory)
+        {
+            var declaredTarget = selection.Moves[0].ManagedFile.DeclaredTargetPath;
+            files[NormalizePath(declaredTarget ?? request.SourcePath)] = request.TargetPath;
+        }
+        else
+        {
+            var declaredSource = FindDeclaredMoveDirectory(selection.Moves, request.SourcePath);
+            if (declaredSource is null)
+            {
+                return ManifestOperationResult<ProjectConfiguration>.Failure(
+                    "Managed directory remapping cannot be derived from lock-file declared targets."
+                );
+            }
+
+            directories[declaredSource] = request.TargetPath;
+        }
+
+        return ManifestOperationResult<ProjectConfiguration>.Success(
+            configuration with
+            {
+                Remap = new ProjectConfiguration.Remapping
+                {
+                    Directories = directories,
+                    Files = files,
+                },
+            }
+        );
+    }
+
+    private static string? FindDeclaredMoveDirectory(
+        IReadOnlyList<ManagedFileMove> moves,
+        string sourceDirectory
+    )
+    {
+        var sourcePrefix = $"{sourceDirectory}/";
+        var declaredDirectories = moves
+            .Select(move =>
+            {
+                var declaredTarget = NormalizePath(
+                    move.ManagedFile.DeclaredTargetPath ?? string.Empty
+                );
+                var relativePath = move.SourcePath[sourcePrefix.Length..];
+                var suffix = $"/{relativePath}";
+                return declaredTarget.EndsWith(suffix, StringComparison.Ordinal)
+                    ? declaredTarget[..^suffix.Length]
+                    : null;
+            })
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        return declaredDirectories.Count == 1 ? declaredDirectories[0] : null;
+    }
+
+    private void RestoreManagedFileMoves(
+        IReadOnlyList<ManagedFileMoveOperation> movedOperations,
+        IReadOnlyList<string> createdDirectories
+    )
+    {
+        foreach (var operation in movedOperations.Reverse())
+        {
+            if (fileSystem.File.Exists(operation.TargetFilePath))
+            {
+                fileSystem.File.Move(operation.TargetFilePath, operation.SourceFilePath);
+            }
+        }
+
+        foreach (var directory in createdDirectories.Distinct(StringComparer.Ordinal).Reverse())
+        {
+            if (
+                fileSystem.Directory.Exists(directory)
+                && !fileSystem.Directory.EnumerateFileSystemEntries(directory).Any()
+            )
+            {
+                fileSystem.Directory.Delete(directory);
+            }
+        }
+    }
+
+    private static void RestoreManagedFileMoveTargets(IReadOnlyList<ManagedFileMove> moves)
+    {
+        foreach (var move in moves)
+        {
+            move.ManagedFile.SetTargetPath(move.SourcePath);
+        }
+    }
+
+    private void RemoveEmptyMovedDirectories(string projectDirectory, string sourceDirectory)
+    {
+        var sourcePath = fileSystem.Path.GetFullPath(sourceDirectory, projectDirectory);
+        if (!fileSystem.Directory.Exists(sourcePath))
+        {
+            return;
+        }
+
+        foreach (
+            var directory in fileSystem
+                .Directory.EnumerateDirectories(sourcePath, "*", SearchOption.AllDirectories)
+                .OrderByDescending(path => path.Length)
+        )
+        {
+            if (!fileSystem.Directory.EnumerateFileSystemEntries(directory).Any())
+            {
+                fileSystem.Directory.Delete(directory);
+            }
+        }
+
+        if (!fileSystem.Directory.EnumerateFileSystemEntries(sourcePath).Any())
+        {
+            fileSystem.Directory.Delete(sourcePath);
         }
     }
 
@@ -591,6 +854,9 @@ internal sealed class PackLifecycleService(
                     Version = packReference.Version,
                 },
             ],
+            Remap = installationRequest.SaveRemapping
+                ? installationRequest.TargetRemapping?.MergeInto(state.Configuration.Remap)
+                : state.Configuration.Remap,
         };
         var graph = await ResolveUninstalledGraphAsync(
             projectDirectory,
@@ -2295,30 +2561,6 @@ internal sealed class PackLifecycleService(
         return createdDirectories;
     }
 
-    private void RestoreManagedFileMove(
-        string sourcePath,
-        string targetPath,
-        bool movedFile,
-        IReadOnlyList<string> createdDirectories
-    )
-    {
-        if (movedFile && fileSystem.File.Exists(targetPath))
-        {
-            fileSystem.File.Move(targetPath, sourcePath);
-        }
-
-        foreach (var directory in createdDirectories.Reverse())
-        {
-            if (
-                fileSystem.Directory.Exists(directory)
-                && !fileSystem.Directory.EnumerateFileSystemEntries(directory).Any()
-            )
-            {
-                fileSystem.Directory.Delete(directory);
-            }
-        }
-    }
-
     private static bool IsSamePack(ProjectLockFile.ResolvedPack lockPack, DiscoveredPack pack) =>
         IsSamePackId(lockPack, pack)
         && string.Equals(lockPack.Version, pack.Manifest.Version, StringComparison.Ordinal);
@@ -2333,6 +2575,30 @@ internal sealed class PackLifecycleService(
     private static string NormalizePath(string path) => ProjectPath.Normalize(path);
 
     private sealed record ManagedFileMoveRequest(string SourcePath, string TargetPath);
+
+    private sealed record ManagedFileMove(
+        ManagedMoveFile ManagedFile,
+        string SourcePath,
+        string TargetPath
+    );
+
+    private sealed record ManagedMoveFile(
+        string? DeclaredTargetPath,
+        string TargetPath,
+        Action<string> SetTargetPath
+    );
+
+    private sealed record ManagedFileMoveSelection(
+        IReadOnlyList<ManagedFileMove> Moves,
+        bool IsDirectory
+    );
+
+    private sealed record ManagedFileMoveOperation(
+        ManagedFileMove Move,
+        string SourceFilePath,
+        string TargetFilePath,
+        bool SourceExists
+    );
 
     private sealed record ManagedFileSnapshot(string Path, byte[] Contents);
 

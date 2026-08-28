@@ -57,6 +57,7 @@ by single hyphens.
   configured or installed link.
 - `luna install <name> --remap-directory <source>=<target>` and
   `--remap-file <source>=<target>` override link targets for that installation.
+  Add `--save-remap` to persist the mappings after a successful install.
 - `luna outdated` and `luna audit` include installed links.
 
 Normal removal refuses installed links and directs users to `luna uninstall`.
