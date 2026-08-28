@@ -1,5 +1,12 @@
 # LunaPack
 
+![GitHub release](https://img.shields.io/github/v/release/lunarisdigitalsolutions/lunapack)
+![NuGet downloads](https://img.shields.io/nuget/dt/Lunaris.Lunapack.Luna?label=NuGet%20downloads)
+![npm downloads](https://img.shields.io/npm/dy/%40lunarisdigitalsolutions%2Flunapack?style=flat&label=npm%20downloads)
+![Container downloads](https://img.shields.io/github/downloads/lunarisdigitalsolutions/lunapack/total?label=Container%20downloads)
+
+![LunaPack Logo](docs/branding/logos/logo-white-bg.png)
+
 LunaPack is a command-line tool and manifest format for applying versioned sets
 of files to software repositories. A pack can contain managed files, parameters,
 references to other packs, and opt-in lifecycle scripts. Luna records requested

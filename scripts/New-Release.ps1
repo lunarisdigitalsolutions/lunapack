@@ -343,12 +343,12 @@ try {
     }
 
     if (Test-GitPathChanged -Path 'CHANGELOG.md') {
-        if (-not (Confirm-Action -Action "Create commit 'chore: Release version $releaseVersion' containing CHANGELOG.md?")) {
+        if (-not (Confirm-Action -Action "Create commit 'release: Release version $releaseVersion' containing CHANGELOG.md?")) {
             Write-Information 'Release cancelled before commit.'
             return
         }
 
-        Invoke-Git -Arguments @('commit', '--only', 'CHANGELOG.md', '-m', "chore: Release version $releaseVersion") | Out-Null
+        Invoke-Git -Arguments @('commit', '--only', 'CHANGELOG.md', '-m', "release: Release version $releaseVersion") | Out-Null
 
         if (-not (Confirm-Action -Action 'Push main to origin?')) {
             Write-Information "Release commit created locally. Push main before creating tag '$releaseTag'."

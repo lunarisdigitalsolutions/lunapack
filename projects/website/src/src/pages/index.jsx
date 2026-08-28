@@ -1,5 +1,4 @@
 import Link from '@docusaurus/Link'
-import useBaseUrl from '@docusaurus/useBaseUrl'
 import Layout from '@theme/Layout'
 import {
   ArrowRight,
@@ -25,9 +24,15 @@ import styles from './index.module.css'
 const quickStartCommand = `luna init
 luna sources add github lunapack lunarisdigitalsolutions/lunapack
 luna discover
-luna install dotnet-project --dry-run`
+luna install dotnet-project --dry-run
+
+# Apply after reviewing the plan
+luna install dotnet-project
+luna outdated
+luna update dotnet-project --dry-run`
 
 const authorCommand = `mkdir my-pack
+
 # Add my-pack/pack.yml and managed content
 luna sources add local my-packs .
 luna validate my-pack`
@@ -47,6 +52,33 @@ const solutionSteps = [
     icon: FolderGit2,
     title: 'Project',
     detail: 'The project records what it requested and what LunaPack resolved.'
+  }
+]
+
+const comparisonPoints = [
+  {
+    icon: Package,
+    title: 'Not a package manager',
+    detail:
+      'NuGet, npm, pip, Cargo, and similar tools resolve libraries for an application. LunaPack delivers the project foundation around those libraries: configuration, tooling, documentation, and other managed files, with a version your project can update.'
+  },
+  {
+    icon: GitBranch,
+    title: 'More than workflow reuse',
+    detail:
+      'GitHub Actions can call actions and reusable workflows from other repositories, while Azure Pipelines can load templates from another Git repository. LunaPack complements those mechanisms by versioning and applying the broader project foundation around them, with previewable updates across managed files.'
+  },
+  {
+    icon: Layers3,
+    title: 'Around IaC modules',
+    detail:
+      'Terraform and Bicep modules can live in central registries and be consumed by deployments. LunaPack solves the surrounding project setup instead: main files, linting, formatting, CI, documentation, and repository conventions, versioned and updated together.'
+  },
+  {
+    icon: FolderGit2,
+    title: 'More than a template',
+    detail:
+      'Project templates and generators create a starting snapshot. LunaPack keeps the foundation connected to a versioned source, so teams can inspect and apply updates after project creation.'
   }
 ]
 
@@ -85,28 +117,30 @@ const benefits = [
 
 const featuredPacks = [
   {
-    title: '.NET project',
-    detail: 'Applies shared .NET build and package-management policy.'
+    title: 'Repository basics',
+    detail:
+      'Use gitignore-general and license-mit to establish clean, portable repository defaults.'
   },
   {
-    title: '.NET SDK 10',
-    detail: 'Pins the approved SDK with a generated global.json file.'
+    title: 'Team standards',
+    detail:
+      'Use clean-code-guidelines, C# guidance, and ADR templates to share engineering practices.'
   },
   {
-    title: 'CSharpier tool',
-    detail: 'Pins CSharpier as a local .NET tool for consistent formatting.'
+    title: 'Pull request quality',
+    detail:
+      'Use Commitlint and GitHub Actions packs to make review checks repeatable.'
   },
   {
-    title: 'C# guidelines',
-    detail: 'Adds portable C# coding guidance to a software project.'
+    title: '.NET foundations',
+    detail:
+      'Use the .NET packs for shared build, SDK, package, and formatting policy when your project is .NET.'
   }
 ]
 
 export default function Home() {
   const [copied, setCopied] = useState(false)
   const [authorCommandCopied, setAuthorCommandCopied] = useState(false)
-  const markUrl = useBaseUrl('/img/lunapack-mark.svg')
-  const workflowImageUrl = useBaseUrl('/img/lunapack-pack-workflow.png')
 
   async function copyInstallationCommand() {
     await navigator.clipboard.writeText(quickStartCommand)
@@ -130,7 +164,6 @@ export default function Home() {
           <div className={styles.heroInner}>
             <div className={styles.heroCopy}>
               <div className={styles.eyebrow}>
-                <img className={styles.mark} src={markUrl} alt='' />
                 LunaPack for engineering foundations
               </div>
               <h1>Start new projects without recreating the setup.</h1>
@@ -161,7 +194,7 @@ export default function Home() {
                 </div>
                 <div>
                   <dt>Start</dt>
-                  <dd>Three commands</dd>
+                  <dd>Preview and update</dd>
                 </div>
               </dl>
             </div>
@@ -169,11 +202,6 @@ export default function Home() {
               className={styles.heroVisual}
               aria-label='Example LunaPack workflow'
             >
-              <img
-                className={styles.workflowImage}
-                src={workflowImageUrl}
-                alt=''
-              />
               <div className={styles.terminalHeader}>
                 <span>new project, shared setup</span>
                 <span className={styles.terminalStatus}>ready to use</span>
@@ -217,7 +245,8 @@ export default function Home() {
               <p>
                 Technical leads know the routine: copy a starter repository,
                 repair its pipeline, repeat security settings, and explain the
-                project shape again. Each copy begins to drift.
+                project shape again. The cost compounds as each copy begins to
+                drift.
               </p>
             </div>
             <div className={styles.problemGrid}>
@@ -272,6 +301,32 @@ export default function Home() {
           </div>
         </section>
 
+        <section className={styles.comparison}>
+          <div className={styles.sectionInner}>
+            <div className={styles.sectionHeader}>
+              <div>
+                <div className={styles.sectionLabel}>A different layer</div>
+                <h2>LunaPack connects the setup between your tools.</h2>
+              </div>
+              <p>
+                Package managers, workflow reuse, IaC modules, and project
+                templates each solve a focused problem. LunaPack assembles the
+                broader project foundation around them, then keeps its managed
+                files versioned and updateable.
+              </p>
+            </div>
+            <div className={styles.comparisonGrid}>
+              {comparisonPoints.map(({ icon: Icon, title, detail }) => (
+                <article className={styles.comparisonCard} key={title}>
+                  <Icon aria-hidden='true' size={24} />
+                  <h3>{title}</h3>
+                  <p>{detail}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+
         <section className={styles.workflow}>
           <div className={styles.sectionInner}>
             <div className={styles.sectionLabel}>How it works</div>
@@ -301,6 +356,12 @@ export default function Home() {
                 <p className={styles.commandNote}>
                   Remove <code>--dry-run</code> when the preview is ready to
                   apply.
+                </p>
+                <p className={styles.installationLink}>
+                  <Link to='/developer/installation'>
+                    Install via npm, NuGet, or Docker{' '}
+                    <ArrowRight aria-hidden='true' size={18} />
+                  </Link>
                 </p>
               </div>
               <div className={styles.commandPanel}>
@@ -335,11 +396,12 @@ export default function Home() {
             <div className={styles.sectionHeader}>
               <div>
                 <div className={styles.sectionLabel}>Featured packs</div>
-                <h2>Start with an included foundation.</h2>
+                <h2>Start with foundations for your stack.</h2>
               </div>
               <p>
-                These packs are ready to discover from the repository catalog.
-                Combine them only when the project needs them.
+                The catalog includes repository basics, team standards, and CI
+                checks alongside stack-specific packs. Pick one or compose
+                several as your project needs them.
               </p>
             </div>
             <div className={styles.featuredGrid}>
