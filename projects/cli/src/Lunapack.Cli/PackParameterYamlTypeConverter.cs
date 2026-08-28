@@ -27,16 +27,19 @@ internal sealed class PackParameterYamlTypeConverter : IYamlTypeConverter
                     parameter.DisplayName = (string?)rootDeserializer(typeof(string));
                     break;
                 case "multiple":
-                    parameter.Multiple = (bool?)rootDeserializer(typeof(bool));
+                    parameter.Multiple = DeserializeRequired<bool>(rootDeserializer, propertyName);
                     break;
                 case "required":
-                    parameter.Required = (bool)rootDeserializer(typeof(bool));
+                    parameter.Required = DeserializeRequired<bool>(rootDeserializer, propertyName);
                     break;
                 case "type":
-                    parameter.Type = (string)rootDeserializer(typeof(string));
+                    parameter.Type = DeserializeRequired<string>(rootDeserializer, propertyName);
                     break;
                 case "values":
-                    parameter.Values = (List<string>)rootDeserializer(typeof(List<string>));
+                    parameter.Values = DeserializeRequired<List<string>>(
+                        rootDeserializer,
+                        propertyName
+                    );
                     break;
                 default:
                     throw new YamlException($"Unknown pack parameter property '{propertyName}'.");
@@ -69,13 +72,28 @@ internal sealed class PackParameterYamlTypeConverter : IYamlTypeConverter
     {
         if (parser.Accept<SequenceStart>(out _))
         {
-            return rootDeserializer(typeof(List<string>));
+            return DeserializeRequired<List<string>>(rootDeserializer, "default");
         }
 
-        var scalar = parser.Peek<Scalar>();
+        if (!parser.Accept<Scalar>(out var scalar) || scalar is null)
+        {
+            throw new YamlException("Pack parameter default must be a scalar or sequence.");
+        }
+
         return scalar.Style == ScalarStyle.Plain && bool.TryParse(scalar.Value, out _)
-            ? rootDeserializer(typeof(bool))
-            : rootDeserializer(typeof(string));
+            ? DeserializeRequired<bool>(rootDeserializer, "default")
+            : DeserializeRequired<string>(rootDeserializer, "default");
+    }
+
+    private static T DeserializeRequired<T>(
+        ObjectDeserializer rootDeserializer,
+        string propertyName
+    )
+    {
+        var value = rootDeserializer(typeof(T));
+        return value is T typedValue
+            ? typedValue
+            : throw new YamlException($"Pack parameter property '{propertyName}' is invalid.");
     }
 
     private static void EmitOptional(

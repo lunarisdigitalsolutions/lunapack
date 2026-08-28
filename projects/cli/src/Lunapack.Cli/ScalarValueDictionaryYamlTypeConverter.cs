@@ -43,12 +43,24 @@ internal sealed class ScalarValueDictionaryYamlTypeConverter : IYamlTypeConverte
     {
         if (parser.Accept<SequenceStart>(out _))
         {
-            return rootDeserializer(typeof(List<string>));
+            return DeserializeRequired<List<string>>(rootDeserializer);
         }
 
-        var scalar = parser.Peek<Scalar>();
+        if (!parser.Accept<Scalar>(out var scalar) || scalar is null)
+        {
+            throw new YamlException("Named value must be a scalar or sequence.");
+        }
+
         return scalar.Style == ScalarStyle.Plain && bool.TryParse(scalar.Value, out _)
-            ? rootDeserializer(typeof(bool))
-            : rootDeserializer(typeof(string));
+            ? DeserializeRequired<bool>(rootDeserializer)
+            : DeserializeRequired<string>(rootDeserializer);
+    }
+
+    private static T DeserializeRequired<T>(ObjectDeserializer rootDeserializer)
+    {
+        var value = rootDeserializer(typeof(T));
+        return value is T typedValue
+            ? typedValue
+            : throw new YamlException("Named value has an invalid type.");
     }
 }

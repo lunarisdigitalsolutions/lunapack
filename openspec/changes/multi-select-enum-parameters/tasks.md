@@ -56,5 +56,5 @@
 - [x] 5.3 Add maintainer guidance in `docs/internal`, create the next ADR from
       the template for array representation and validation boundaries, add it to
       the ADR index, and add the external feature to `CHANGELOG.md`.
-- [ ] 5.4 Run schema validation, focused CLI tests, the complete CLI test suite,
+- [x] 5.4 Run schema validation, focused CLI tests, the complete CLI test suite,
       Markdown/link checks, locked restore, and Release Native AOT publish.
