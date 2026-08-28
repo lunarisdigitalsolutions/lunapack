@@ -14,8 +14,8 @@ const sidebars = {
         'installation',
         'sources',
         'install-packs',
-        'update-packs',
-        'copy-files-from-git'
+        'copy-files-from-git',
+        'update-packs'
       ]
     },
     {

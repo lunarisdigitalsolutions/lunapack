@@ -1,10 +1,9 @@
-# Copy Files from Git
+# Get Files from Git Without a Pack
 
-Copy a file from a remote Git repository even when that repository does not
-publish a LunaPack manifest. Create a Luna Link that records the source file,
-its target, and the locked revision Luna installed.
+Get a file from a Git repository and place it in your project in one command.
+The repository does not need to publish a LunaPack or define a `pack.yml`.
 
-For example, copy an agent definition from `github/awesome-copilot` into the
+This example copies an agent definition from `github/awesome-copilot` into the
 current project.
 
 ## Add the repository as a source
@@ -13,31 +12,32 @@ current project.
 luna sources add github awesome-copilot github/awesome-copilot
 ```
 
-## Copy and manage one file
+## Copy one file into your project
 
-Create the link, copy the file into `.github/agents`, and install it in one
-command:
+Register the file, copy it into `.github/agents`, and install it in one command:
 
 ```powershell
 luna links add csharp-expert-agent --source awesome-copilot --path agents --include CSharpExpert.agent.md --target .github/agents --install
 ```
 
-Luna records the copied file and its Git commit in `lunapack-lock.yml`. The
-remote repository needs no `pack.yml` because the link selects the file
-directly.
+Luna records the source file, target, and locked Git commit in
+`lunapack-lock.yml`. The upstream repository needs no `pack.yml`; Luna selects
+the file directly.
 
-Check for a newer revision and update when ready:
+## Keep it current
+
+Check for a newer revision, then update when ready:
 
 ```powershell
 luna outdated
 luna update csharp-expert-agent
 ```
 
-Remove the copied file while keeping the reusable link definition:
+Remove the copied file while keeping its reusable definition:
 
 ```powershell
 luna uninstall csharp-expert-agent
 ```
 
-Use [Manage Luna Links](manage-links.md) when you need multiple includes,
-mapping, recovery, or full command reference details.
+The [Luna Links](manage-links.md) feature powers this workflow. Its guide
+covers multiple files, mapping, recovery, and full command details.

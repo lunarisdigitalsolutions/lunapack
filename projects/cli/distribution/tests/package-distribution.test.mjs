@@ -117,6 +117,13 @@ test('Scenario_ValidArchives_StagesConstrainedNpmPackages', () => {
   )
   assert.deepEqual(platformPackage.os, ['linux'])
   assert.deepEqual(platformPackage.cpu, ['x64'])
+  assert.equal(
+    readFileSync(
+      join(staged.packageRoot, 'lunapack-linux-x64', 'README.md'),
+      'utf8'
+    ),
+    readFileSync(join(staged.packageRoot, 'lunapack', 'README.md'), 'utf8')
+  )
 
   const entryPackage = JSON.parse(
     readFileSync(join(staged.packageRoot, 'lunapack', 'package.json'))
@@ -127,4 +134,5 @@ test('Scenario_ValidArchives_StagesConstrainedNpmPackages', () => {
     ],
     '1.2.3'
   )
+  assert.deepEqual(entryPackage.files, ['run-luna.mjs', 'README.md'])
 })

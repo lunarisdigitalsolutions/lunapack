@@ -247,13 +247,17 @@ export function stagePackages({ archiveDirectory, outputDirectory, version }) {
     )
     mkdirSync(packageDirectory, { recursive: true })
     cpSync(binaryPath, join(packageDirectory, target.binary))
+    cpSync(
+      resolve(import.meta.dirname, '..', 'README.md'),
+      join(packageDirectory, 'README.md')
+    )
     writeJson(join(packageDirectory, 'package.json'), {
       name: packageName(target),
       version,
       description: `Luna native binary for ${target.os} ${target.cpu}.`,
       os: [target.os],
       cpu: [target.cpu],
-      files: [target.binary],
+      files: [target.binary, 'README.md'],
       license: 'MIT',
       repository: 'github:lunarisdigitalsolutions/lunapack'
     })
@@ -265,6 +269,10 @@ export function stagePackages({ archiveDirectory, outputDirectory, version }) {
     resolve(import.meta.dirname, 'run-luna.mjs'),
     join(entryDirectory, 'run-luna.mjs')
   )
+  cpSync(
+    resolve(import.meta.dirname, '..', 'README.md'),
+    join(entryDirectory, 'README.md')
+  )
   writeJson(join(entryDirectory, 'package.json'), {
     name: '@lunarisdigitalsolutions/lunapack',
     version,
@@ -273,7 +281,7 @@ export function stagePackages({ archiveDirectory, outputDirectory, version }) {
     optionalDependencies: Object.fromEntries(
       targets.map((target) => [packageName(target), version])
     ),
-    files: ['run-luna.mjs'],
+    files: ['run-luna.mjs', 'README.md'],
     license: 'MIT',
     repository: 'github:lunarisdigitalsolutions/lunapack'
   })

@@ -1,10 +1,12 @@
 // @ts-check
 
+const { default: src } = require('@marp-team/marp-cli')
+
 /** @type {import('@docusaurus/types').Config} */
 const config = {
   title: 'LunaPack',
   tagline: 'Versioned engineering foundations for real projects.',
-  favicon: 'img/favicon.svg',
+  favicon: 'icons/favicon.svg',
   url: 'https://lunapack.dev',
   baseUrl: '/',
   organizationName: 'lunarisdigitalsolutions',
@@ -38,12 +40,30 @@ const config = {
       })
     ]
   ],
+  themes: [
+    [
+      require.resolve('@easyops-cn/docusaurus-search-local'),
+      /** @type {import("@easyops-cn/docusaurus-search-local").PluginOptions} */
+      ({
+        hashed: true,
+        indexPages: true
+      })
+    ]
+  ],
   themeConfig:
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
-      image: 'img/lunapack-pack-workflow.png',
+      colorMode: {
+        respectPrefersColorScheme: true
+      },
       navbar: {
         title: 'LunaPack',
+        logo: {
+          alt: 'LunaPack Logo',
+          src: 'icons/favicon.svg',
+          width: 32,
+          height: 32
+        },
         items: [
           {
             type: 'docSidebar',
@@ -60,6 +80,14 @@ const config = {
       },
       footer: {
         style: 'dark',
+        logo: {
+          alt: 'LunaPack Logo',
+          src: 'img/logo.png',
+          srcDark: 'img/logo-dark.png',
+          href: 'https://lunapack.dev',
+          width: 600,
+          height: 160
+        },
         links: [
           {
             title: 'Documentation',

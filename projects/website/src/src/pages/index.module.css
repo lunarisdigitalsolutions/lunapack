@@ -97,7 +97,7 @@
 }
 
 .heroVisual {
-  background: var(--color-primary);
+  background: var(--color-panel-background);
   border: 1px solid var(--color-primary-700);
   border-radius: 6px;
   box-shadow: 14px 14px 0 var(--color-alternate1);
@@ -195,12 +195,14 @@
 
 .problem,
 .solution,
+.comparison,
 .workflow,
 .commandSection,
 .benefits,
 .callToAction,
 .updates,
 .company {
+  border-top: 1px solid var(--color-gray-200);
   padding: 6rem 0;
 }
 
@@ -306,6 +308,46 @@
   color: var(--color-primary-700);
 }
 
+.comparison {
+  background: var(--color-white);
+}
+
+.comparisonGrid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 3.5rem;
+}
+
+.comparisonCard {
+  border-top: 2px solid var(--color-alternate1);
+  padding: 1.25rem 0.25rem 0;
+}
+
+.comparisonCard svg {
+  color: var(--color-primary-700);
+}
+
+.comparisonCard h3 {
+  color: var(--color-primary);
+  font-size: 1.2rem;
+  margin: 1rem 0 0.6rem;
+}
+
+.comparisonCard p {
+  color: var(--color-text);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.comparisonNote {
+  border-left: 2px solid var(--color-secondary);
+  color: var(--color-primary-700);
+  line-height: 1.6;
+  margin: 3rem 0 0;
+  padding-left: 1rem;
+}
+
 .workflow {
   background: var(--color-gray-100);
 }
@@ -334,7 +376,7 @@
 }
 
 .commandSection {
-  background: var(--color-primary);
+  background: var(--color-panel-background);
 }
 
 .commandSection .sectionLabel,
@@ -359,6 +401,15 @@
   color: var(--color-accent) !important;
   font-size: 0.9rem !important;
   margin-top: 1.5rem !important;
+}
+
+.installationLink {
+  margin-top: 1.5rem !important;
+}
+
+.installationLink a {
+  color: var(--color-text-light);
+  font-weight: 700;
 }
 
 .commandPanel {
@@ -400,6 +451,38 @@
   padding: 1.7rem;
 }
 
+.safety {
+  background: var(--color-section-soft);
+}
+
+.safetyGrid {
+  display: grid;
+  gap: 2rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 3.5rem;
+}
+
+.safetyCard {
+  border-top: 2px solid var(--color-alternate1);
+  padding: 1.25rem 0.25rem 0;
+}
+
+.safetyCard svg {
+  color: var(--color-primary-700);
+}
+
+.safetyCard h3 {
+  color: var(--color-primary);
+  font-size: 1.3rem;
+  margin: 1rem 0 0.6rem;
+}
+
+.safetyCard p {
+  color: var(--color-text);
+  line-height: 1.6;
+  margin: 0;
+}
+
 .benefits {
   background: var(--color-white);
 }
@@ -429,7 +512,7 @@
 }
 
 .callToAction {
-  background: var(--color-primary-700);
+  background: var(--color-alternate1);
 }
 
 .callToAction .sectionInner {
@@ -451,6 +534,12 @@
   flex: 0 0 auto;
 }
 
+.home :global(.button--primary) {
+  background: var(--color-alternate1);
+  border-color: var(--color-alternate1);
+  color: var(--color-text-light);
+}
+
 .commandSection :global(code:not(pre code)),
 .authoring :global(code:not(pre code)) {
   background: var(--color-primary-800);
@@ -465,7 +554,16 @@
 .featuredPacks,
 .community {
   background: var(--color-white);
+  border-top: 1px solid var(--color-gray-200);
   padding: 6rem 0;
+}
+
+.featuredPacks {
+  background: var(--color-section-soft);
+}
+
+.community {
+  background: var(--color-gray-100);
 }
 
 .updates {
@@ -535,6 +633,7 @@
 
 .authoring {
   background: var(--color-gray-200);
+  border-top: 1px solid var(--color-gray-200);
   padding: 6rem 0;
 }
 
@@ -558,7 +657,7 @@
 }
 
 .authorPanel {
-  background: var(--color-primary);
+  background: var(--color-panel-background);
   border: 1px solid var(--color-primary-700);
   border-radius: 6px;
   color: var(--color-text-light);
@@ -608,7 +707,7 @@
 .communityLinks a:hover,
 .communityLinks a:focus-visible {
   background: var(--color-accent);
-  color: var(--color-primary);
+  color: var(--color-gray-100);
   text-decoration: none;
 }
 
@@ -670,6 +769,10 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .comparisonGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .benefits ul,
   .company .sectionInner {
     grid-template-columns: 1fr;
@@ -688,8 +791,10 @@
   .heroInner,
   .problem,
   .solution,
+  .comparison,
   .workflow,
   .commandSection,
+  .safety,
   .benefits,
   .callToAction,
   .updates,
@@ -705,6 +810,8 @@
   .heroFacts,
   .problemGrid,
   .solutionGrid,
+  .comparisonGrid,
+  .safetyGrid,
   .lifecycleGrid,
   .benefits ul,
   .featuredGrid,
