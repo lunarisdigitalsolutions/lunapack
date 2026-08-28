@@ -272,7 +272,23 @@ internal sealed class PackLifecycleService(
         ManagedFileMoveRequest request
     )
     {
-        var managedFiles = lockFile.Packs.SelectMany(pack => pack.ManagedFiles).ToList();
+        var managedFiles = lockFile
+            .Packs.SelectMany(pack => pack.ManagedFiles)
+            .Select(file => new ManagedMoveFile(
+                file.DeclaredTargetPath,
+                file.TargetPath,
+                targetPath => file.TargetPath = targetPath
+            ))
+            .Concat(
+                lockFile
+                    .Links.Values.SelectMany(link => link.Files)
+                    .Select(file => new ManagedMoveFile(
+                        file.DeclaredTargetPath,
+                        file.TargetPath,
+                        targetPath => file.TargetPath = targetPath
+                    ))
+            )
+            .ToList();
         var exactOwners = managedFiles
             .Where(file =>
                 string.Equals(
@@ -331,7 +347,7 @@ internal sealed class PackLifecycleService(
     }
 
     private static ManifestOperationResult<ManagedFileMoveSelection> ValidateManagedFileMoveTargets(
-        IReadOnlyList<ProjectLockFile.ManagedFile> managedFiles,
+        IReadOnlyList<ManagedMoveFile> managedFiles,
         IReadOnlyList<ManagedFileMove> moves,
         bool isDirectory
     )
@@ -375,14 +391,10 @@ internal sealed class PackLifecycleService(
         var operations = selection
             .Moves.Select(move => CreateManagedFileMoveOperation(projectDirectory, move))
             .ToList();
-        var invalidOperation = operations.FirstOrDefault(operation =>
-            operation.SourceExists == fileSystem.File.Exists(operation.TargetFilePath)
-        );
-        if (invalidOperation is not null)
+        var operationError = ValidateManagedFileMoveOperations(operations);
+        if (operationError is not null)
         {
-            return _console.Fail(
-                $"Managed file move for '{invalidOperation.Move.SourcePath}' requires an existing source and missing target, or a missing source and existing target."
-            );
+            return _console.Fail(operationError);
         }
 
         var createdDirectories = new List<string>();
@@ -398,7 +410,7 @@ internal sealed class PackLifecycleService(
 
             foreach (var move in selection.Moves)
             {
-                move.ManagedFile.TargetPath = move.TargetPath;
+                move.ManagedFile.SetTargetPath(move.TargetPath);
             }
 
             var configuration = saveRemapping
@@ -449,6 +461,23 @@ internal sealed class PackLifecycleService(
             RestoreManagedFileMoveTargets(selection.Moves);
             return _console.Fail($"Unable to move managed files: {exception.Message}");
         }
+    }
+
+    private string? ValidateManagedFileMoveOperations(
+        IReadOnlyList<ManagedFileMoveOperation> operations
+    )
+    {
+        var invalidOperation = operations.FirstOrDefault(operation =>
+            operation.SourceExists == fileSystem.File.Exists(operation.TargetFilePath)
+        );
+        if (invalidOperation is not null)
+        {
+            return $"Managed file move for '{invalidOperation.Move.SourcePath}' requires an existing source and missing target, or a missing source and existing target.";
+        }
+
+        return operations.Select(operation => operation.SourceExists).Distinct().Count() > 1
+            ? "Managed directory move requires every file to be moved or every lock record to be rebound."
+            : null;
     }
 
     private ManagedFileMoveOperation CreateManagedFileMoveOperation(
@@ -559,7 +588,7 @@ internal sealed class PackLifecycleService(
     {
         foreach (var move in moves)
         {
-            move.ManagedFile.TargetPath = move.SourcePath;
+            move.ManagedFile.SetTargetPath(move.SourcePath);
         }
     }
 
@@ -2530,9 +2559,15 @@ internal sealed class PackLifecycleService(
     private sealed record ManagedFileMoveRequest(string SourcePath, string TargetPath);
 
     private sealed record ManagedFileMove(
-        ProjectLockFile.ManagedFile ManagedFile,
+        ManagedMoveFile ManagedFile,
         string SourcePath,
         string TargetPath
+    );
+
+    private sealed record ManagedMoveFile(
+        string? DeclaredTargetPath,
+        string TargetPath,
+        Action<string> SetTargetPath
     );
 
     private sealed record ManagedFileMoveSelection(

@@ -43,10 +43,40 @@ The saved mappings apply to later installs. A failed installation leaves the
 project mappings unchanged. `--save-remap` requires at least one command-line
 mapping.
 
+## Ignore pack targets
+
+Use `@ignore` as the exact mapping value to exclude a declared file or every
+file below a declared directory:
+
+```yml
+remap:
+  directories:
+    docs/generated: '@ignore'
+  files:
+    .github/dependabot.yml: '@ignore'
+```
+
+For one installation, pass the same value through a remapping option. Add
+`--save-remap` to retain it:
+
+```powershell
+luna install engineering --remap-directory docs/generated=@ignore --save-remap
+```
+
+Ignored files are not written and receive no managed-file lock entry. An exact
+file mapping still takes precedence over a matching ignored directory, so it
+can retain or relocate one file below that directory.
+
+When an update adds an ignore mapping, Luna leaves an existing file unchanged
+but removes its pack or link ownership from the lock. When an ignored target
+has no local file and its ignore mapping is later removed, a subsequent update
+can write and manage it again. `@ignore` is case-sensitive and reserved as a
+special mapping target.
+
 Luna records declared and effective targets in `lunapack-lock.yml`. Updates and
 uninstalls continue using the recorded effective target even if project
-mappings later change. `luna inspect` shows applicable project mappings as
-`declared -> effective`.
+mappings later change, except when `@ignore` explicitly removes ownership.
+`luna inspect` shows applicable project mappings as `declared -> effective`.
 
 ## Move installed files
 

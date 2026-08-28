@@ -944,6 +944,30 @@ public sealed class CliProcessTests
     }
 
     [Test]
+    public async Task PackLifecycle_WhenInstallIgnoreRemapSaved_OmitsTargetAndLockEntry()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreateRemapSelectorPackSource(workspace.Path, "directory");
+        await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
+
+        var install = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "install",
+            "example",
+            "--remap-directory",
+            "docs/development=@ignore",
+            "--save-remap"
+        );
+        var configuration = File.ReadAllText(Path.Combine(workspace.Path, "lunapack.yml"));
+        var lockFile = File.ReadAllText(Path.Combine(workspace.Path, "lunapack-lock.yml"));
+
+        await Assert.That(install.ExitCode).IsEqualTo(0);
+        await Assert.That(Directory.Exists(Path.Combine(workspace.Path, "docs"))).IsFalse();
+        await Assert.That(configuration).Contains("docs/development: '@ignore'");
+        await Assert.That(lockFile).DoesNotContain("declaredTargetPath:");
+    }
+
+    [Test]
     public async Task PackLifecycle_WhenDirectoryMoveRemapSaved_ReusesMappingOnFutureInstall()
     {
         using var workspace = new TestWorkspace();

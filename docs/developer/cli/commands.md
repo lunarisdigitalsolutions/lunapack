@@ -183,7 +183,10 @@ commands select the latest available release. `install` accepts `--dry-run`
 Install also accepts repeatable `--remap-directory <source>=<target>` and
 `--remap-file <source>=<target>` options. Add `--save-remap` to persist those
 mappings after a successful installation. `--save-remap` requires at least one
-remapping option.
+remapping option. Use `@ignore` as a target to omit a matching file or directory
+tree from installation and lock ownership. Updates preserve newly ignored
+local files without updating them; removing the mapping allows omitted files to
+be installed by a later update.
 `update` accepts `--dry-run` (`-D`); update-all also accepts `--prompt` (`-p`).
 Both install and update accept `--accept-sources` for conflict-free proposed
 source additions. `install`, `update`, and `uninstall` accept

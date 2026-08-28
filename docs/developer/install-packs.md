@@ -113,10 +113,22 @@ Add `--save-remap` to persist the command-line mappings in `lunapack.yml` after
 a successful install. The option requires at least one `--remap-directory` or
 `--remap-file` value. Failed installs preserve the previous configuration.
 
+Use `@ignore` as a mapping value to omit a declared file or directory tree:
+
+```powershell
+luna install dotnet-project --remap-directory docs/generated=@ignore --save-remap
+```
+
+Ignored files are neither written nor recorded as managed files. Updates leave
+newly ignored local files unchanged and remove their lock ownership. Removing
+the mapping lets a later update install files that were previously omitted.
+Exact file mappings take precedence over an ignored directory mapping.
+
 LunaPack records both the manifest-declared target and its effective target in
 `lunapack-lock.yml`. Updates and uninstalls use that recorded effective target,
-so changing a global mapping does not move an installed file. `luna inspect`
-shows applicable global mappings as `declared -> effective`.
+so changing a global mapping does not move an installed file. The `@ignore`
+target is the exception: it removes ownership without deleting local content.
+`luna inspect` shows applicable global mappings as `declared -> effective`.
 
 Relocate an installed managed file or directory explicitly:
 

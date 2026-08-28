@@ -126,6 +126,22 @@ public sealed class ManagedFileTargetRemappingTests
     }
 
     [Test]
+    public async Task Resolve_WhenDirectoryIgnoredAndFileRemapped_UsesFileException()
+    {
+        var remapping = ManagedFileTargetRemapping.FromConfiguration(
+            new ProjectConfiguration.Remapping
+            {
+                Directories = { ["docs/development"] = "@ignore" },
+                Files = { ["docs/development/keep.md"] = "docs/selected/keep.md" },
+            }
+        );
+
+        var target = remapping.Resolve("docs/development/keep.md");
+
+        await Assert.That(target).IsEqualTo("docs/selected/keep.md");
+    }
+
+    [Test]
     public async Task Create_WhenMappingEscapesProject_ReturnsFailure()
     {
         var remapping = ManagedFileTargetRemapping.Create(

@@ -14,6 +14,10 @@ Update this section before creating a release tag.
   project mappings for future installs.
 - `luna install --save-remap` now persists command-line file and directory
   remappings after a successful pack or link installation.
+- Managed-target remappings now accept `@ignore` to omit matching pack or link
+  files from installation, updates, and lock ownership. Newly ignored existing
+  files remain unchanged, and removing the mapping allows omitted files to be
+  installed later.
 
 ### Fixed
 

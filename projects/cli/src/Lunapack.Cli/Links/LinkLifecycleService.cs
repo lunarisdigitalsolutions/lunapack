@@ -295,7 +295,13 @@ internal sealed class LinkLifecycleService(
             return await SaveEvidenceAsync(projectDirectory, state, resolved.Snapshot);
         }
 
-        var plan = linkPlanner.Plan(projectDirectory, resolved, state.LockFile, adoptExisting);
+        var plan = linkPlanner.Plan(
+            projectDirectory,
+            resolved,
+            state.LockFile,
+            adoptExisting,
+            GetIgnoredDeclaredTargets(state.Configuration, lockedLink)
+        );
         if (plan.Value is not { } updatePlan)
         {
             return console.Fail(plan.Error);
@@ -413,7 +419,7 @@ internal sealed class LinkLifecycleService(
     private static ManagedRootFile ToManagedRootFile(ProjectLockFile.LinkFile file) =>
         new(file.SourcePath, file.DeclaredTargetPath, file.TargetPath, file.Sha256);
 
-    private static IReadOnlyDictionary<string, string> GetRetainedLinkTargets(
+    private static Dictionary<string, string> GetRetainedLinkTargets(
         ProjectLockFile.ResolvedLink link
     ) =>
         link.Files.ToDictionary(
@@ -421,6 +427,29 @@ internal sealed class LinkLifecycleService(
             file => file.TargetPath,
             StringComparer.Ordinal
         );
+
+    private static HashSet<string> GetIgnoredDeclaredTargets(
+        ProjectConfiguration configuration,
+        ProjectLockFile.ResolvedLink? lockedLink
+    )
+    {
+        if (lockedLink is null)
+        {
+            return new HashSet<string>(StringComparer.Ordinal);
+        }
+
+        var remapping = ManagedFileTargetRemapping.FromConfiguration(configuration.Remap);
+        return lockedLink
+            .Files.Where(file =>
+                string.Equals(
+                    remapping.Resolve(file.DeclaredTargetPath),
+                    ManagedFileTargetRemapping.IgnoreTarget,
+                    StringComparison.Ordinal
+                )
+            )
+            .Select(file => file.DeclaredTargetPath)
+            .ToHashSet(StringComparer.Ordinal);
+    }
 
     private static IEnumerable<KeyValuePair<string, ProjectConfiguration.Link>> OrderedLinks(
         ProjectConfiguration configuration

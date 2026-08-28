@@ -1055,6 +1055,27 @@ public sealed class PackLifecycleTests
     }
 
     [Test]
+    public async Task Install_WhenIgnoredFileRemapSaved_OmitsFileAndLockAndPersistsRemap()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreatePackSource(workspace.Path);
+        await ConfigureSourceAsync(workspace, sourcePath);
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["install", "dotnet-gitignore", "--remap-file", ".gitignore=@ignore", "--save-remap"],
+            workspace.Path
+        );
+        var state = (await workspace.StateStore.LoadAsync(workspace.Path)).RequireValue();
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, ".gitignore"))).IsFalse();
+        await Assert.That(state.LockFile.Packs.Single().ManagedFiles).IsEmpty();
+        await Assert
+            .That(state.Configuration.Remap!.Files[".gitignore"])
+            .IsEqualTo(ManagedFileTargetRemapping.IgnoreTarget);
+    }
+
+    [Test]
     public async Task Uninstall_WhenTargetInstalledWithFileRemapping_RemovesRecordedEffectiveTarget()
     {
         using var workspace = new TestWorkspace();
@@ -1106,6 +1127,57 @@ public sealed class PackLifecycleTests
         await Assert
             .That(state.LockFile.Packs.Single().ManagedFiles.Single().TargetPath)
             .IsEqualTo("docs/managed/.gitignore");
+    }
+
+    [Test]
+    public async Task MoveManagedFile_WhenSourceOwnedByLink_UpdatesLinkLockTarget()
+    {
+        using var workspace = new TestWorkspace();
+        await workspace.Application.RunAsync(["init"], workspace.Path);
+        var state = (await workspace.StateStore.LoadAsync(workspace.Path)).RequireValue();
+        state.Configuration.Sources =
+        [
+            new ProjectConfiguration.LocalSource { Name = "local", Path = "source" },
+        ];
+        state.Configuration.Links["agents"] = new ProjectConfiguration.Link
+        {
+            Includes = ["expert.agent.md"],
+            Source = "local",
+        };
+        state.LockFile.Links["agents"] = new ProjectLockFile.ResolvedLink
+        {
+            DefinitionSha256 = new string('A', 64),
+            Files =
+            [
+                new ProjectLockFile.LinkFile
+                {
+                    DeclaredTargetPath = ".github/agents/expert.agent.md",
+                    Sha256 = new string('B', 64),
+                    SourcePath = "expert.agent.md",
+                    TargetPath = ".github/agents/expert.agent.md",
+                },
+            ],
+            SourceIdentity = ConfiguredSourceIdentity.CreateLocal("source"),
+            SourceName = "local",
+        };
+        await workspace.StateStore.SaveAsync(workspace.Path, state);
+        var sourceFile = Path.Combine(workspace.Path, ".github", "agents", "expert.agent.md");
+        Directory.CreateDirectory(Path.GetDirectoryName(sourceFile)!);
+        File.WriteAllText(sourceFile, "expert");
+
+        var exitCode = await CreatePackLifecycleService(workspace)
+            .MoveManagedFileAsync(
+                workspace.Path,
+                ".github/agents/expert.agent.md",
+                "docs/agents/expert.agent.md"
+            );
+        var updatedState = (await workspace.StateStore.LoadAsync(workspace.Path)).RequireValue();
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(File.Exists(sourceFile)).IsFalse();
+        await Assert
+            .That(updatedState.LockFile.Links["agents"].Files.Single().TargetPath)
+            .IsEqualTo("docs/agents/expert.agent.md");
     }
 
     [Test]
@@ -1322,6 +1394,35 @@ public sealed class PackLifecycleTests
             .That(File.Exists(Path.Combine(workspace.Path, "docs", "04-development", "root.txt")))
             .IsFalse();
         await Assert.That(File.ReadAllText(lockFilePath)).IsEqualTo(initialLockFile);
+    }
+
+    [Test]
+    public async Task MoveManagedFile_WhenDirectoryBatchMixesMoveAndRebind_RefusesAllChanges()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreateSelectorPackSource(workspace.Path);
+        await ConfigureSourceAsync(workspace, sourcePath);
+        await workspace.Application.RunAsync(["install", "selectors"], workspace.Path);
+        var sourceRoot = Path.Combine(workspace.Path, "directory-output");
+        var targetRoot = Path.Combine(workspace.Path, "docs", "04-development");
+        var manuallyMovedSource = Path.Combine(sourceRoot, "root.txt");
+        var manuallyMovedTarget = Path.Combine(targetRoot, "root.txt");
+        Directory.CreateDirectory(targetRoot);
+        File.Move(manuallyMovedSource, manuallyMovedTarget);
+
+        var exitCode = await CreatePackLifecycleService(workspace)
+            .MoveManagedFileAsync(workspace.Path, "directory-output", "docs/04-development");
+        var targets = (await workspace.StateStore.LoadAsync(workspace.Path))
+            .RequireValue()
+            .LockFile.Packs.Single()
+            .ManagedFiles.Select(file => file.TargetPath)
+            .ToList();
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(File.Exists(manuallyMovedTarget)).IsTrue();
+        await Assert.That(File.Exists(Path.Combine(sourceRoot, "nested", "child.txt"))).IsTrue();
+        await Assert.That(targets).Contains("directory-output/root.txt");
+        await Assert.That(targets).Contains("directory-output/nested/child.txt");
     }
 
     [Test]

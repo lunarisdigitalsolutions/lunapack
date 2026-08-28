@@ -109,6 +109,18 @@ LunaPack SHALL map each selected source path beneath the optional target directo
 - **WHEN** a consumer changes a project mapping after a link file is installed and checks or updates the link
 - **THEN** LunaPack retains that file's lock-recorded effective target and applies the changed mapping only to newly selected files
 
+#### Scenario: Ignore selected link files
+
+- **WHEN** a selected link target matches a file or directory mapping to
+  `@ignore`
+- **THEN** LunaPack writes no matching file and records no lock ownership for it
+
+#### Scenario: Stop managing an ignored installed link file
+
+- **WHEN** an installed link file becomes matched by `@ignore` before update
+- **THEN** LunaPack preserves its local content unchanged and omits it from the
+  updated link lock record
+
 #### Scenario: Reject an escaping target
 
 - **WHEN** a target or calculated effective path resolves outside the workspace

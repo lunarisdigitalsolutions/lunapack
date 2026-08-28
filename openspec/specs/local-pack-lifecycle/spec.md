@@ -439,6 +439,44 @@ Every declared and effective target supplied by remapping SHALL be non-empty, pr
 - **WHEN** an installation with `--save-remap` fails before state persistence
 - **THEN** LunaPack leaves the previous project mappings unchanged
 
+### Requirement: Ignore managed targets through remapping
+
+LunaPack SHALL treat the exact, case-sensitive remapping target `@ignore` as a
+reserved exclusion for pack and link files. A file mapping SHALL exclude its
+declared file. A directory mapping SHALL exclude every concrete declared target
+beneath that directory while retaining existing file-over-directory
+precedence. Install and update plans SHALL omit ignored files from filesystem
+mutation and managed-file lock records. When an existing managed target becomes
+ignored, update SHALL leave its local content unchanged and remove its lock
+ownership. When an ignore mapping is removed, a later update SHALL be allowed
+to install and manage a previously absent target.
+
+#### Scenario: Ignore a managed directory during install
+
+- **WHEN** a consumer installs with `--remap-directory docs/generated=@ignore`
+- **THEN** LunaPack writes no files declared below `docs/generated` and records
+  no lock ownership for them
+
+#### Scenario: Retain a file exception below an ignored directory
+
+- **WHEN** a directory maps to `@ignore` and an exact descendant file maps to a
+  project-relative target
+- **THEN** LunaPack ignores the other descendants and installs the exact file at
+  its mapped target
+
+#### Scenario: Stop managing an ignored installed file
+
+- **WHEN** an installed managed file becomes matched by `@ignore` before update
+- **THEN** LunaPack does not update or delete its local content and omits it from
+  the new lock
+
+#### Scenario: Install a target after removing ignore
+
+- **WHEN** an ignored target has no local file and the consumer removes its
+  ignore mapping before update
+- **THEN** LunaPack writes the selected release content and records managed
+  ownership
+
 ### Requirement: Preserve effective ownership during lifecycle operations
 
 LunaPack SHALL use the effective managed-file targets recorded in `lunapack-lock.yml` for updates and uninstalls. An update SHALL apply retained managed files at their recorded effective targets and SHALL apply project-level remapping only to newly introduced declared targets. Changing global remapping after installation SHALL not relocate an already managed file; consumers SHALL use `luna mv` to relocate it explicitly.
