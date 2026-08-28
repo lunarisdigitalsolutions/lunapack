@@ -10,8 +10,14 @@ Use repeatable `--parameter` or `-p` options:
 ```powershell
 luna install company-foundation \
   --parameter companyName="Lunaris Digital Solutions" \
-  --parameter projectType=service
+  --parameter projectType=service \
+  --parameter features=api \
+  --parameter features=docker
 ```
+
+Repeated names collect values only when the declaration is an enum with
+`multiple: true`. Selection order is preserved. Duplicate selections, values
+outside the declared enum, and repeated scalar names fail before mutation.
 
 Required values that are not supplied by command input, a composite pack, or a
 matching project variable prompt in an interactive terminal. Parameter values
@@ -25,6 +31,16 @@ Store a value in `lunapack.yml` through the CLI:
 luna variables set companyName "Lunaris Digital Solutions"
 luna variables list
 ```
+
+Multi-select variables use unique string arrays in `lunapack.yml`:
+
+```yml
+variables:
+  features: [api, docker]
+```
+
+An optional multi-select parameter with no input, matching variable, composite
+binding, or default resolves to `[]`.
 
 Explicit `--parameter` values take precedence over project variables. Disable
 all variable matching with `--no-variables`, or exclude selected names with a
@@ -44,4 +60,5 @@ luna variables rm companyName
 Variables are project configuration, while explicit installation inputs are
 not persisted as variables. Pack authors define `string`, `bool`, and `enum`
 parameters. See [Use Scriban templates](packs/how-to/use-scriban-templates.md)
-for declarations, template rendering, and conditions.
+for declarations, template rendering, conditions, and the managed-file
+`files.path` and `files.relative_path` functions.

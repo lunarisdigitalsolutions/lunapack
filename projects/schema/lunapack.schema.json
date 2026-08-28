@@ -45,11 +45,22 @@
         "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
       },
       "additionalProperties": {
-        "type": ["string", "boolean"]
+        "oneOf": [
+          { "type": "string" },
+          { "type": "boolean" },
+          { "$ref": "#/definitions/stringArray" }
+        ]
       }
     }
   },
   "definitions": {
+    "stringArray": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string"
+      }
+    },
     "gitSource": {
       "type": "object",
       "additionalProperties": false,

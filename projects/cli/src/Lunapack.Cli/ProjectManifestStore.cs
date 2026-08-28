@@ -12,6 +12,7 @@ internal sealed class ProjectManifestStore
         new LunapackYamlContext()
     )
         .WithNamingConvention(CamelCaseNamingConvention.Instance)
+        .WithTypeConverter(new ScalarValueDictionaryYamlTypeConverter())
         .Build();
 
     private readonly IFileSystem _fileSystem;
@@ -21,6 +22,7 @@ internal sealed class ProjectManifestStore
     )
         .ConfigureDefaultValuesHandling(DefaultValuesHandling.OmitNull)
         .WithNamingConvention(CamelCaseNamingConvention.Instance)
+        .WithTypeConverter(new ScalarValueDictionaryYamlTypeConverter())
         .Build();
 
     public ProjectManifestStore(IFileSystem fileSystem)

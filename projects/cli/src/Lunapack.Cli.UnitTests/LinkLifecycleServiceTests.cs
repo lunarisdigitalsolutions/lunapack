@@ -146,6 +146,32 @@ public sealed class LinkLifecycleServiceTests
     }
 
     [Test]
+    public async Task UpdateAsync_WhenTargetDirectoryBecomesIgnored_PreservesFilesAndDropsOwnership()
+    {
+        var fileSystem = CreateFileSystem();
+        var service = CreateService(fileSystem);
+        var configuration = CreateConfiguration();
+        await WriteConfigurationAsync(fileSystem, configuration);
+        await service.InstallAsync(ProjectDirectory, "agents");
+        configuration.Remap = new ProjectConfiguration.Remapping
+        {
+            Directories = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [".github/agents"] = ManagedFileTargetRemapping.IgnoreTarget,
+            },
+        };
+        await WriteConfigurationAsync(fileSystem, configuration);
+
+        var exitCode = await service.UpdateAsync(ProjectDirectory, "agents");
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(fileSystem.File.Exists(TargetPath("CSharpExpert.agent.md"))).IsTrue();
+        await Assert.That(fileSystem.File.Exists(TargetPath("ai-team.agent.md"))).IsTrue();
+        var lockFile = await LoadLockFileAsync(fileSystem);
+        await Assert.That(lockFile.Links["agents"].Files).IsEmpty();
+    }
+
+    [Test]
     public async Task UpdateAsync_WhenNothingChanged_KeepsLockRecord()
     {
         var fileSystem = CreateFileSystem();

@@ -68,7 +68,7 @@ public sealed class PackInstallationRequestTests
     }
 
     [Test]
-    public async Task Create_WhenParameterNameRepeated_ReturnsFailure()
+    public async Task Create_WhenParameterNameRepeated_PreservesValuesInOrder()
     {
         var result = PackInstallationRequest.Create(
             new MockFileSystem(),
@@ -81,7 +81,10 @@ public sealed class PackInstallationRequestTests
             []
         );
 
-        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert
+            .That(result.RequireValue().ParameterValues["companyName"])
+            .IsEquivalentTo(["Lunaris", "Digital"]);
     }
 
     [Test]
@@ -171,5 +174,24 @@ public sealed class PackInstallationRequestTests
         );
 
         await Assert.That(result.IsSuccess).IsFalse();
+    }
+
+    [Test]
+    public async Task Create_WhenSaveRemapHasNoMappings_ReturnsFailure()
+    {
+        var result = PackInstallationRequest.Create(
+            new MockFileSystem(),
+            "C:\\project",
+            "madr-adr-template",
+            null,
+            false,
+            [],
+            false,
+            [],
+            saveRemapping: true
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("--save-remap requires");
     }
 }

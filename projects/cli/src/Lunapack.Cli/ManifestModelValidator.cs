@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Text.RegularExpressions;
 
 namespace Lunapack.Cli;
@@ -143,6 +144,14 @@ internal static partial class ManifestModelValidator
                 issues.Add($"Parameter '{name}' has an invalid type.");
             }
 
+            if (
+                parameter.Multiple is not null
+                && !string.Equals(parameter.Type, "enum", StringComparison.Ordinal)
+            )
+            {
+                issues.Add($"Parameter '{name}' can only set multiple for enum values.");
+            }
+
             ValidateParameterDefault(name, parameter, issues);
 
             if (
@@ -178,12 +187,20 @@ internal static partial class ManifestModelValidator
         List<string> issues
     )
     {
+        var isMultiSelect =
+            string.Equals(parameter.Type, "enum", StringComparison.Ordinal)
+            && parameter.Multiple is true;
         if (
             parameter.Default is not null
             && (
                 string.Equals(parameter.Type, "bool", StringComparison.Ordinal)
                     && parameter.Default is not bool
-                || parameter.Type is "string" or "enum" && parameter.Default is not string
+                || string.Equals(parameter.Type, "string", StringComparison.Ordinal)
+                    && parameter.Default is not string
+                || string.Equals(parameter.Type, "enum", StringComparison.Ordinal)
+                    && !isMultiSelect
+                    && parameter.Default is not string
+                || isMultiSelect && !TryGetUniqueStringValues(parameter.Default, out _)
             )
         )
         {
@@ -198,6 +215,17 @@ internal static partial class ManifestModelValidator
         )
         {
             issues.Add($"Enum parameter '{name}' default must be one of its values.");
+        }
+
+        if (
+            isMultiSelect
+            && parameter.Default is not null
+            && TryGetUniqueStringValues(parameter.Default, out var defaultValues)
+            && parameter.Values is { } allowedValues
+            && defaultValues.Any(value => !allowedValues.Contains(value, StringComparer.Ordinal))
+        )
+        {
+            issues.Add($"Enum parameter '{name}' defaults must be among its values.");
         }
     }
 
@@ -437,10 +465,13 @@ internal static partial class ManifestModelValidator
 
             foreach (var (name, value) in packReference.Parameters)
             {
-                if (!ParameterNameRegex().IsMatch(name) || value is not string and not bool)
+                if (
+                    !ParameterNameRegex().IsMatch(name)
+                    || value is not string and not bool && !TryGetUniqueStringValues(value, out _)
+                )
                 {
                     issues.Add(
-                        $"Pack reference parameter '{name}' must be a named string or Boolean."
+                        $"Pack reference parameter '{name}' must be a named string, Boolean, or unique string array."
                     );
                 }
             }
@@ -1008,11 +1039,44 @@ internal static partial class ManifestModelValidator
     {
         foreach (var (name, value) in variables)
         {
-            if (!ParameterNameRegex().IsMatch(name) || value is not string and not bool)
+            if (
+                !ParameterNameRegex().IsMatch(name)
+                || value is not string and not bool && !TryGetUniqueStringValues(value, out _)
+            )
             {
-                issues.Add($"Variable '{name}' must be a named string or Boolean.");
+                issues.Add(
+                    $"Variable '{name}' must be a named string, Boolean, or unique string array."
+                );
             }
         }
+    }
+
+    private static bool TryGetUniqueStringValues(
+        object value,
+        out IReadOnlyList<string> stringValues
+    )
+    {
+        if (value is string || value is not IEnumerable values)
+        {
+            stringValues = [];
+            return false;
+        }
+
+        var materializedValues = new List<string>();
+        var uniqueValues = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var item in values)
+        {
+            if (item is not string stringValue || !uniqueValues.Add(stringValue))
+            {
+                stringValues = [];
+                return false;
+            }
+
+            materializedValues.Add(stringValue);
+        }
+
+        stringValues = materializedValues;
+        return true;
     }
 
     private static void ValidateResolvedPack(

@@ -138,7 +138,9 @@ project. Pack trust and pack-trust revocation require `--source` or `-s`. See
   `description`, `author`, `homepage`, or `license`.
 - `luna pack set parameter <name> <string|bool|enum>`: Creates or replaces a
   parameter. Use `--required`, repeatable enum `--value`, `--display-name`, and
-  `--description`; `--default` supplies a typed prompt or optional binding default.
+  `--description`; `--default` supplies a typed prompt or optional binding
+  default. For a multi-select enum, add `--multiple` and repeat `--default` to
+  preserve an ordered default selection.
 - `luna pack set reference <id> <version>`: Creates or replaces a composite
   reference.
 - `luna pack rm <selector>`: Removes one exact managed selector.
@@ -173,9 +175,10 @@ adding content, viewing the manifest, or validating it.
   external content. `--offline` avoids remote checks and reports uncertainty.
 - `luna update [<pack-reference>...]`: Updates all roots or one or more selected
   roots.
-- `luna mv <source> <target>`: Moves one uniquely owned managed file and updates
-  lock ownership. If the file was moved manually, it can rebind ownership when
-  only the target exists.
+- `luna mv <source> <target>`: Moves one managed file or all managed files below
+  a directory and updates lock ownership. If files were moved manually, it can
+  rebind ownership when only the targets exist. `--save-remap` also records the
+  move as a reusable project mapping.
 - `luna audit`: Reports resolved packs, dependencies, external alias mappings,
   fingerprints, refs, commits, source and target paths, ownership, digests, and
   drift or local-modification status.
@@ -185,6 +188,13 @@ commands select the latest available release. `install` accepts `--dry-run`
 (`-D`), `--destination` (`-d`),
 `--adopt-existing` (`-a`), repeatable `--parameter` (`-p`),
 `--no-variables` (`-nv`), and repeatable `--skip-variable` (`-sv`).
+Install also accepts repeatable `--remap-directory <source>=<target>` and
+`--remap-file <source>=<target>` options. Add `--save-remap` to persist those
+mappings after a successful installation. `--save-remap` requires at least one
+remapping option. Use `@ignore` as a target to omit a matching file or directory
+tree from installation and lock ownership. Updates preserve newly ignored
+local files without updating them; removing the mapping allows omitted files to
+be installed by a later update.
 `update` accepts `--dry-run` (`-D`); update-all also accepts `--prompt` (`-p`).
 Both install and update accept `--accept-sources` for conflict-free proposed
 source additions. `install`, `update`, and `uninstall` accept
@@ -193,6 +203,8 @@ trust or interactive consent for each script hook. Interactive consent defaults
 to no. Use `--skip-instructions` to suppress instruction loading and display
 without changing script consent behavior. Uninstall also accepts lifecycle
 `--parameter`, `--no-variables`, and `--skip-variable` inputs.
+Repeat `--parameter <name>=<value>` for each selected value of a multi-select
+enum. Repeated scalar names and duplicate or unknown selections are rejected.
 Interactive sessions show one prepared instruction step at a time and wait for
 Enter. Noninteractive sessions print all instruction content without reading
 input. Dry runs report validated instruction metadata and step counts without

@@ -12,6 +12,8 @@ internal sealed class PackManifestStore(IFileSystem fileSystem)
         new LunapackYamlContext()
     )
         .WithNamingConvention(CamelCaseNamingConvention.Instance)
+        .WithTypeConverter(new PackParameterYamlTypeConverter())
+        .WithTypeConverter(new ScalarValueDictionaryYamlTypeConverter())
         .Build();
 
     private static readonly ISerializer _serializer = new StaticSerializerBuilder(
@@ -19,6 +21,8 @@ internal sealed class PackManifestStore(IFileSystem fileSystem)
     )
         .ConfigureDefaultValuesHandling(DefaultValuesHandling.OmitNull)
         .WithNamingConvention(CamelCaseNamingConvention.Instance)
+        .WithTypeConverter(new PackParameterYamlTypeConverter())
+        .WithTypeConverter(new ScalarValueDictionaryYamlTypeConverter())
         .Build();
 
     public Task<ManifestOperationResult<PackManifest>> CreateAsync(

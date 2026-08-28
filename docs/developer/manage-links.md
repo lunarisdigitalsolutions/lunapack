@@ -65,8 +65,9 @@ luna audit
 
 Use `--remap-directory <source>=<target>` or
 `--remap-file <source>=<target>` with `luna install` to override declared link
-targets for that installation. Luna records both declared and effective target
-paths in the lock file.
+targets for that installation. Add `--save-remap` to persist the mappings in
+`lunapack.yml` after a successful install. Luna records both declared and
+effective target paths in the lock file.
 
 Git links lock one immutable commit per operation. A new commit alone is not an
 update when selected paths, mapped targets, definition, and content are

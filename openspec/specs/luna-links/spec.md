@@ -77,7 +77,7 @@ Each include value SHALL resolve as an exact file, a directory selected recursiv
 
 ### Requirement: Map selected files to safe targets
 
-LunaPack SHALL map each selected source path beneath the optional target directory while preserving its path relative to the link base. When `target` is omitted, the workspace root SHALL be used. When `strip-prefix` is present, every selected relative source path SHALL begin with that complete normalized path prefix and LunaPack SHALL remove it before applying the target. When `flatten` is present, LunaPack SHALL use only each selected file's name beneath the target. Base, target, prefix, source, and resulting paths SHALL accept either directory separator at input boundaries and SHALL be persisted with `/`. LunaPack SHALL reject rooted paths, traversal outside the source or workspace, an incompatible strip prefix, duplicate effective targets, and ownership or filesystem conflicts before mutation.
+LunaPack SHALL map each selected source path beneath the optional target directory while preserving its path relative to the link base. When `target` is omitted, the workspace root SHALL be used. When `strip-prefix` is present, every selected relative source path SHALL begin with that complete normalized path prefix and LunaPack SHALL remove it before applying the target. When `flatten` is present, LunaPack SHALL use only each selected file's name beneath the target. Project file and directory remappings SHALL apply to link targets, with exact file mappings and command-line mappings taking precedence as they do for pack targets. Updates and outdated checks SHALL retain each existing selected source path's lock-recorded effective target and SHALL apply current project mappings only to newly selected source paths. `luna install <link> --save-remap` SHALL persist supplied command-line mappings only after a successful installation. Base, target, prefix, source, and resulting paths SHALL accept either directory separator at input boundaries and SHALL be persisted with `/`. LunaPack SHALL reject rooted paths, traversal outside the source or workspace, an incompatible strip prefix, duplicate effective targets, and ownership or filesystem conflicts before mutation.
 
 #### Scenario: Preserve selected source hierarchy
 
@@ -98,6 +98,28 @@ LunaPack SHALL map each selected source path beneath the optional target directo
 
 - **WHEN** two selected files have the same file name and flattening maps them to one target
 - **THEN** LunaPack returns a non-success result without changing managed files or project state
+
+#### Scenario: Reuse a saved link remapping
+
+- **WHEN** a link install saves a command-line mapping and the link is later installed without command-line mappings
+- **THEN** LunaPack applies the persisted project mapping to the selected link targets
+
+#### Scenario: Retain an installed link target after mapping changes
+
+- **WHEN** a consumer changes a project mapping after a link file is installed and checks or updates the link
+- **THEN** LunaPack retains that file's lock-recorded effective target and applies the changed mapping only to newly selected files
+
+#### Scenario: Ignore selected link files
+
+- **WHEN** a selected link target matches a file or directory mapping to
+  `@ignore`
+- **THEN** LunaPack writes no matching file and records no lock ownership for it
+
+#### Scenario: Stop managing an ignored installed link file
+
+- **WHEN** an installed link file becomes matched by `@ignore` before update
+- **THEN** LunaPack preserves its local content unchanged and omits it from the
+  updated link lock record
 
 #### Scenario: Reject an escaping target
 

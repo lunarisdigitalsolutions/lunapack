@@ -22,6 +22,13 @@ parameters:
     values:
       - library
       - service
+  features:
+    type: enum
+    multiple: true
+    default: [api]
+    values:
+      - api
+      - docker
 ```
 
 Consumers pass values with repeatable `--parameter` or `-p` options:
@@ -29,14 +36,16 @@ Consumers pass values with repeatable `--parameter` or `-p` options:
 ```powershell
 luna install company-foundation \
   -p companyName="Lunaris Digital Solutions" \
-  -p projectType=service
+  -p projectType=service \
+  -p features=api \
+  -p features=docker
 ```
 
 Matching values in the project-level `variables` mapping are used when no
 explicit value is supplied. Explicit command arguments take precedence.
-Use `default` with a string, boolean, or allowed enum value. Optional parameters
-use their default automatically. Required parameters still prompt and offer the
-default so consumers can press Enter to accept it.
+Use `default` with a string, Boolean, allowed scalar enum value, or unique array
+of allowed multi-select enum values. Optional parameters use their default
+automatically. Required parameters still prompt and offer the default.
 
 ## Render managed files
 
@@ -58,11 +67,45 @@ A template can use resolved parameter names and Scriban date functions:
 ```scriban
 Copyright {{ date.now.year }} {{ companyName }}
 Project type: {{ projectType }}
+{{ if features contains "docker" }}Docker support enabled{{ end }}
 ```
+
+Multi-select values are Scriban arrays. Use `features contains "docker"` for
+membership. Empty selections behave as empty arrays.
 
 Template parsing is strict. An unknown variable, invalid expression, or invalid
 UTF-8 input fails planning before project files or state change. Templates do
-not receive filesystem, host-service, include, or custom-function access.
+not receive filesystem, host-service, or include access.
+
+## Resolve managed-file paths
+
+Reference another managed file by its declared `target`. LunaPack resolves the
+consumer's effective target after remapping:
+
+```scriban
+See {{ files.path "docs/development/code-review.md" }}.
+```
+
+For a reference relative to the current template's effective target directory,
+use `files.relative_path`:
+
+```scriban
+See {{ files.relative_path "docs/development/code-review.md" }}.
+```
+
+Both functions use the complete condition-selected installation plan. Directory
+and glob selectors resolve by their expanded concrete declared targets. Returned
+paths always use `/`, including on Windows. Install, update, and dry-run use the
+same resolution behavior.
+
+If the declared target is missing, excluded by a condition, or ambiguous,
+LunaPack warns and returns the supplied target unchanged. This fallback does not
+fail the operation. The `files` object exposes no filesystem discovery, content,
+or existence checks.
+
+These functions are available only to template-enabled managed files.
+Instruction and lifecycle script argument templates continue to expose resolved
+parameters and Scriban date functions, but not `files`.
 
 ## Render lifecycle hooks
 

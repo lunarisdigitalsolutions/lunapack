@@ -163,6 +163,9 @@ internal static class PackManifestInspectionFormatter
         table.AddColumn("[bold]Display name[/]");
         table.AddColumn("[bold]Description[/]");
         table.AddColumn("[bold]Type[/]");
+        table.AddColumn("[bold]Multiple[/]");
+        table.AddColumn("[bold]Values[/]");
+        table.AddColumn("[bold]Default[/]");
         table.AddColumn("[bold]Required[/]");
         foreach (
             var parameter in parameters.OrderBy(parameter => parameter.Key, StringComparer.Ordinal)
@@ -174,12 +177,27 @@ internal static class PackManifestInspectionFormatter
                 Markup.Escape(declaration.DisplayName ?? parameter.Key),
                 Markup.Escape(declaration.Description ?? "-"),
                 Markup.Escape(declaration.Type),
+                declaration.Multiple == true ? "yes" : "no",
+                Markup.Escape(
+                    declaration.Values is { Count: > 0 }
+                        ? string.Join(", ", declaration.Values)
+                        : "-"
+                ),
+                Markup.Escape(FormatParameterDefault(declaration.Default)),
                 declaration.Required ? "yes" : "no"
             );
         }
 
         return table;
     }
+
+    private static string FormatParameterDefault(object? value) =>
+        value switch
+        {
+            null => "-",
+            IEnumerable<object> values => $"[{string.Join(", ", values)}]",
+            _ => value.ToString() ?? "-",
+        };
 
     private static Table CreateReferencedPacksTable(
         IReadOnlyList<PackManifest.PackReference> references

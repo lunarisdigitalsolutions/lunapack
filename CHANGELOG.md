@@ -7,6 +7,8 @@ internal maintenance work, such as CI, build, or release-process changes.
 
 Update this section before creating a release tag.
 
+### Added
+
 - Added persistent blanket lifecycle-script denial for portable project,
   project-local user, and global-user scopes. Denial overrides `--scripts run`
   and retained source or pack grants, reports every denying scope before
@@ -14,6 +16,41 @@ Update this section before creating a release tag.
   list, set, and confirm reset of denial without deleting grants.
 - `luna init` and `luna pack init` now generate minimal schema-valid YAML with
   only required properties and values.
+
+- `luna mv` now moves managed directories as atomic batches while preserving
+  descendant paths. `--save-remap` records file or directory moves as reusable
+  project mappings for future installs.
+- `luna install --save-remap` now persists command-line file and directory
+  remappings after a successful pack or link installation.
+- Managed-target remappings now accept `@ignore` to omit matching pack or link
+  files from installation, updates, and lock ownership. Newly ignored existing
+  files remain unchanged, and removing the mapping allows omitted files to be
+  installed later.
+
+### Fixed
+
+- Managed files expanded from pack directory and glob selectors now honor exact
+  file remappings from project configuration and install command options.
+- Project remappings with trailing `/` or `\\` separators now match declared
+  targets and persist effective targets without trailing separators.
+
+### Parameters
+
+- Enum parameters can set `multiple: true` and resolve ordered, unique
+  selections from repeated CLI input, prompts, array defaults, project
+  variables, and composite bindings.
+- Managed-file conditions support `"docker" in features`; Scriban templates,
+  lifecycle instructions, and script arguments support `features contains
+"docker"`. Invalid, duplicate, or incompatible selections fail before
+  project mutation.
+
+### Pack Templates
+
+- Managed-file Scriban templates can use `files.path` to resolve a declared
+  managed target after consumer remapping and `files.relative_path` to render a
+  path relative to the current effective target. Paths use `/` on every platform.
+- Missing, conditionally excluded, or ambiguous managed-file references warn and
+  preserve the supplied declared target during install, update, and dry-run.
 
 ## Version 1.1.0 - 2026-08-27
 

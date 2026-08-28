@@ -824,6 +824,69 @@ public sealed class PackAuthoringCommandTests
     }
 
     [Test]
+    public async Task Parameter_WhenMultiSelectEnumAuthored_RoundTripsOrderedDefaultsAndListsShape()
+    {
+        var console = new SpectreTestConsole();
+        using var workspace = await CreateInitializedWorkspaceAsync(console);
+
+        var setExit = await workspace.Application.RunAsync(
+            [
+                "pack",
+                "set",
+                "parameter",
+                "features",
+                "enum",
+                "--multiple",
+                "--value",
+                "api",
+                "--value",
+                "docker",
+                "--default",
+                "docker",
+                "--default",
+                "api",
+            ],
+            workspace.Path
+        );
+        var listExit = await workspace.Application.RunAsync(["pack", "list"], workspace.Path);
+        var manifest = await LoadAsync(workspace);
+
+        await Assert.That(setExit).IsEqualTo(0);
+        await Assert.That(listExit).IsEqualTo(0);
+        await Assert.That(manifest.Parameters["features"].Multiple).IsTrue();
+        await Assert
+            .That(manifest.Parameters["features"].Default)
+            .IsEquivalentTo(new List<string> { "docker", "api" });
+        await Assert.That(console.Output).Contains("docker, api");
+        await Assert.That(console.Output).Contains("[docker, api]");
+    }
+
+    [Test]
+    [Arguments("string", new[] { "--multiple", "--default", "value" })]
+    [Arguments(
+        "enum",
+        new[] { "--multiple", "--value", "api", "--default", "api", "--default", "api" }
+    )]
+    [Arguments("enum", new[] { "--multiple", "--value", "api", "--default", "docker" })]
+    public async Task Parameter_WhenMultiSelectDeclarationInvalid_PreservesManifestBytes(
+        string type,
+        string[] options
+    )
+    {
+        using var workspace = await CreateInitializedWorkspaceAsync();
+        var manifestPath = Path.Combine(workspace.Path, PackManifestStore.FileName);
+        var original = File.ReadAllText(manifestPath);
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["pack", "set", "parameter", "features", type, .. options],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(File.ReadAllText(manifestPath)).IsEqualTo(original);
+    }
+
+    [Test]
     public async Task RemoveCommands_WhenEntriesExist_RemoveOnlySelectedEntries()
     {
         using var workspace = await CreateInitializedWorkspaceAsync();

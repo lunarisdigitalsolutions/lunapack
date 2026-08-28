@@ -234,10 +234,7 @@ test('Scenario_ContainerImage_UsesPublishedBinaryAndNonRootRuntime', () => {
 })
 
 test('Scenario_ReleaseAction_ContainerUsesExistingLinuxArtifact', () => {
-  assert.match(
-    releaseAction,
-    /uses: docker\/setup-buildx-action@[0-9a-f]{40}/
-  )
+  assert.match(releaseAction, /uses: docker\/setup-buildx-action@[0-9a-f]{40}/)
   assert.match(
     releaseAction,
     /packages\/native\/linux-x64\/luna[\s\S]*docker buildx build/

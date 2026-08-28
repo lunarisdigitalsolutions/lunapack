@@ -95,6 +95,26 @@ public sealed class ProjectStateStoreTests
     }
 
     [Test]
+    public async Task Save_WhenVariableIsStringArray_RoundTripsOrderedValues()
+    {
+        var fileSystem = CreateFileSystem();
+        const string projectDirectory = @"C:\project";
+        fileSystem.AddDirectory(projectDirectory);
+        var stateStore = new ProjectStateStore(fileSystem);
+        var state = CreateValidState();
+        state.Configuration.Variables["features"] = new List<string> { "docker", "api" };
+
+        var saved = await stateStore.SaveAsync(projectDirectory, state);
+        var loaded = await stateStore.LoadAsync(projectDirectory);
+
+        await Assert.That(saved.IsSuccess).IsTrue().Because(saved.Error ?? string.Empty);
+        await Assert.That(loaded.IsSuccess).IsTrue().Because(loaded.Error ?? string.Empty);
+        await Assert
+            .That(loaded.RequireValue().Configuration.Variables["features"])
+            .IsEquivalentTo(new List<string> { "docker", "api" });
+    }
+
+    [Test]
     public async Task LoadAndSave_WhenDocumentsContainWindowsPaths_UsesCanonicalPaths()
     {
         var fileSystem = CreateFileSystem();

@@ -31,6 +31,19 @@ public sealed class InstructionPreparerTests
     }
 
     [Test]
+    public async Task Prepare_WhenMultiSelectContainsValue_SelectsMatchingContent()
+    {
+        var (fileSystem, pack) = CreatePack(
+            "## Setup\n{{ if features contains \"docker\" }}Docker{{ else }}Other{{ end }}"
+        );
+
+        var result = Prepare(fileSystem, pack, templating: true);
+
+        await Assert.That(result.IsSuccess).IsTrue().Because(result.Error ?? string.Empty);
+        await Assert.That(result.RequireValue().Document.Steps[0].Content).IsEqualTo("Docker");
+    }
+
+    [Test]
     public async Task Prepare_WhenTemplateUsesCurrentTime_RendersCurrentYear()
     {
         var (fileSystem, pack) = CreatePack("## Setup\n{{ date.now.year }}");
@@ -149,10 +162,17 @@ public sealed class InstructionPreparerTests
             new Dictionary<string, PackParameterDefinition>(StringComparer.Ordinal)
             {
                 ["enabled"] = new(PackParameterType.Bool, true, []),
+                ["features"] = new(
+                    PackParameterType.Enum,
+                    false,
+                    ["api", "docker"],
+                    Multiple: true
+                ),
             },
             new Dictionary<string, ResolvedPackParameterValue>(StringComparer.Ordinal)
             {
                 ["enabled"] = new(PackParameterType.Bool, string.Empty, true),
+                ["features"] = new(PackParameterType.Enum, string.Empty, false, ["api", "docker"]),
             }
         );
 }

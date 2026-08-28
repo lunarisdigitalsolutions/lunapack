@@ -15,6 +15,7 @@ internal sealed class ProjectStateStore : IProjectStateStore
     )
         .WithNamingConvention(CamelCaseNamingConvention.Instance)
         .WithTypeConverter(new ProjectConfigurationSourceYamlTypeConverter())
+        .WithTypeConverter(new ScalarValueDictionaryYamlTypeConverter())
         .Build();
 
     private static readonly ISerializer _serializer = new StaticSerializerBuilder(
@@ -23,6 +24,7 @@ internal sealed class ProjectStateStore : IProjectStateStore
         .ConfigureDefaultValuesHandling(DefaultValuesHandling.OmitNull)
         .DisableAliases()
         .WithNamingConvention(CamelCaseNamingConvention.Instance)
+        .WithTypeConverter(new ScalarValueDictionaryYamlTypeConverter())
         .Build();
 
     private readonly IFileSystem _fileSystem;

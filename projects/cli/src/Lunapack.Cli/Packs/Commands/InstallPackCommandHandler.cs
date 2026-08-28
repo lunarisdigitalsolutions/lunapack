@@ -38,6 +38,10 @@ internal sealed class InstallPackCommandHandler(
         {
             Description = "Remap a declared target file with <source>=<target>.",
         };
+        var saveRemapOption = new Option<bool>("--save-remap")
+        {
+            Description = "Save provided target remappings to lunapack.yml.",
+        };
         var adoptExistingOption = new Option<bool>("--adopt-existing", "-a")
         {
             Description = "Adopt matching existing files for the requested pack.",
@@ -76,6 +80,7 @@ internal sealed class InstallPackCommandHandler(
             destinationOption,
             remapDirectoryOption,
             remapFileOption,
+            saveRemapOption,
             adoptExistingOption,
             dryRunOption,
             acceptSourcesOption,
@@ -113,6 +118,7 @@ internal sealed class InstallPackCommandHandler(
                     parseResult.GetValue(destinationOption),
                     parseResult.GetValue(remapDirectoryOption) ?? [],
                     parseResult.GetValue(remapFileOption) ?? [],
+                    parseResult.GetValue(saveRemapOption),
                     parseResult.GetValue(adoptExistingOption),
                     parseResult.GetValue(parameterOption) ?? [],
                     parseResult.GetValue(noVariablesOption),
@@ -146,6 +152,7 @@ internal sealed class InstallPackCommandHandler(
         string? destination,
         string[] directoryRemappings,
         string[] fileRemappings,
+        bool saveRemapping,
         bool adoptExisting,
         string[] parameters,
         bool noVariables,
@@ -174,11 +181,17 @@ internal sealed class InstallPackCommandHandler(
             return console.Fail(remapping.Error);
         }
 
+        if (saveRemapping && !targetRemapping.HasMappings)
+        {
+            return console.Fail("--save-remap requires --remap-directory or --remap-file.");
+        }
+
         var linkExitCode = await linkCommandDispatcher.TryInstallAsync(
             workspaceDirectory,
             packReference,
             adoptExisting,
-            targetRemapping
+            targetRemapping,
+            saveRemapping
         );
         if (linkExitCode is not null)
         {
@@ -196,7 +209,8 @@ internal sealed class InstallPackCommandHandler(
             noVariables,
             skippedVariables,
             scriptMode,
-            skipInstructions
+            skipInstructions,
+            saveRemapping
         );
         if (installationRequest.Value is not { } request)
         {
@@ -310,7 +324,8 @@ internal sealed class InstallPackCommandHandler(
         bool noVariables,
         string[] skippedVariables,
         ScriptExecutionMode scriptMode,
-        bool skipInstructions
+        bool skipInstructions,
+        bool saveRemapping
     ) =>
         PackInstallationRequest.Create(
             fileSystem,
@@ -324,7 +339,8 @@ internal sealed class InstallPackCommandHandler(
             directoryRemappings,
             fileRemappings,
             scriptMode,
-            skipInstructions
+            skipInstructions,
+            saveRemapping
         );
 
     private async Task<int?> WarnWhenRootAlreadyInstalledAsync(
@@ -366,15 +382,21 @@ internal sealed class InstallPackCommandHandler(
             return request;
         }
 
-        var parameters = new Dictionary<string, string>(request.Parameters, StringComparer.Ordinal);
+        var parameters = request
+            .GetParameterValues()
+            .ToDictionary(
+                parameter => parameter.Key,
+                parameter => parameter.Value,
+                StringComparer.Ordinal
+            );
         foreach (var prompt in prompts)
         {
-            parameters.Add(prompt.Id, console.Prompt(prompt));
+            parameters.Add(prompt.Id, console.PromptValues(prompt));
         }
 
         return request with
         {
-            Parameters = parameters,
+            ParameterValues = parameters,
         };
     }
 }

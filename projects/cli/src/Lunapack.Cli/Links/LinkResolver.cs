@@ -16,6 +16,7 @@ internal sealed class LinkResolver(
         ProjectConfiguration.Link link,
         ConfiguredSourceIdentity? lockedIdentity = null,
         ManagedFileTargetRemapping? targetRemapping = null,
+        IReadOnlyDictionary<string, string>? retainedTargets = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -57,6 +58,8 @@ internal sealed class LinkResolver(
             listing,
             lockedIdentity,
             targetRemapping,
+            ManagedFileTargetRemapping.FromConfiguration(configuration.Remap),
+            retainedTargets,
             cancellationToken
         );
     }
@@ -70,6 +73,8 @@ internal sealed class LinkResolver(
         LinkSourceListing listing,
         ConfiguredSourceIdentity? lockedIdentity,
         ManagedFileTargetRemapping? targetRemapping,
+        ManagedFileTargetRemapping configuredRemapping,
+        IReadOnlyDictionary<string, string>? retainedTargets,
         CancellationToken cancellationToken
     )
     {
@@ -93,7 +98,9 @@ internal sealed class LinkResolver(
             linkName,
             link,
             selectedPaths,
-            targetRemapping
+            targetRemapping,
+            configuredRemapping,
+            retainedTargets
         );
         if (mapping.Value is not { } mappings)
         {

@@ -9,7 +9,8 @@ internal sealed class LinkPlanner(IFileSystem fileSystem)
         string projectDirectory,
         LinkResolution resolution,
         ProjectLockFile lockFile,
-        bool adoptExisting
+        bool adoptExisting,
+        IReadOnlySet<string>? ignoredDeclaredTargets = null
     )
     {
         ArgumentNullException.ThrowIfNull(resolution);
@@ -50,7 +51,15 @@ internal sealed class LinkPlanner(IFileSystem fileSystem)
             );
         }
 
-        actions.AddRange(PlanRemovals(projectDirectory, snapshot, lockFile, owner));
+        actions.AddRange(
+            PlanRemovals(
+                projectDirectory,
+                snapshot,
+                lockFile,
+                owner,
+                ignoredDeclaredTargets ?? new HashSet<string>(StringComparer.Ordinal)
+            )
+        );
         return ManifestOperationResult<PackUpdatePlan>.Success(new PackUpdatePlan(actions));
     }
 
@@ -58,7 +67,8 @@ internal sealed class LinkPlanner(IFileSystem fileSystem)
         string projectDirectory,
         ResolvedLinkSnapshot snapshot,
         ProjectLockFile lockFile,
-        ManagedRootOwner owner
+        ManagedRootOwner owner,
+        IReadOnlySet<string> ignoredDeclaredTargets
     )
     {
         if (!lockFile.Links.TryGetValue(snapshot.Name, out var lockedLink))
@@ -71,7 +81,10 @@ internal sealed class LinkPlanner(IFileSystem fileSystem)
             .ToHashSet(StringComparer.Ordinal);
         foreach (var lockedFile in lockedLink.Files)
         {
-            if (plannedTargets.Contains(lockedFile.TargetPath))
+            if (
+                plannedTargets.Contains(lockedFile.TargetPath)
+                || ignoredDeclaredTargets.Contains(lockedFile.DeclaredTargetPath)
+            )
             {
                 continue;
             }

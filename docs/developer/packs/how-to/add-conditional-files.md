@@ -15,6 +15,10 @@ luna pack set parameter projectType enum `
   --required `
   --value library `
   --value service
+luna pack set parameter features enum `
+  --multiple `
+  --value api `
+  --value docker
 ```
 
 ## Attach conditions
@@ -31,11 +35,16 @@ luna pack add file templates/service.json `
 luna pack add file templates/library.props `
   --target Directory.Build.props `
   --condition 'projectType == "library"'
+luna pack add file templates/docker.yml `
+  --target compose.yml `
+  --condition '"docker" in features'
 ```
 
 Conditions support Boolean names, `!` negation, `==` and `!=` comparisons with
-quoted string or enum values, `&&`, `||`, and parentheses. Boolean parameters
-cannot be compared to strings. Every referenced parameter must be declared.
+quoted scalar string or enum values, multi-select membership as `"literal" in
+identifier`, `&&`, `||`, and parentheses. Membership requires a declared
+multi-select enum on the right. Boolean parameters cannot be compared to
+strings, and multi-select parameters cannot use scalar equality.
 
 Operator precedence evaluates `&&` before `||`. Use parentheses when intent is
 not immediate:
