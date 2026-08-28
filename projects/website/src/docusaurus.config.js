@@ -1,7 +1,5 @@
 // @ts-check
 
-const { default: src } = require('@marp-team/marp-cli')
-
 /** @type {import('@docusaurus/types').Config} */
 const config = {
   title: 'LunaPack',
