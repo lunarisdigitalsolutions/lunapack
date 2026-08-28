@@ -197,6 +197,28 @@ public sealed class LinkSelectionTests
     }
 
     [Test]
+    public async Task Map_WhenDirectoryMapsToIgnore_OmitsMatchingFiles()
+    {
+        var fileSystem = new MockFileSystem();
+        var mapper = new LinkTargetMapper(fileSystem);
+        var remapping = ManagedFileTargetRemapping
+            .Create(fileSystem, @"C:\project", ["agents/=@ignore"], [])
+            .RequireValue();
+
+        var mappings = mapper
+            .Map(
+                @"C:\project",
+                "agents",
+                CreateLink(includes: ["**/*"]),
+                ["agents/CSharpExpert.agent.md", "agents/nested/deep.agent.md"],
+                remapping
+            )
+            .RequireValue();
+
+        await Assert.That(mappings).IsEmpty();
+    }
+
+    [Test]
     public async Task Map_WhenStripPrefixIsConfigured_RemovesIt()
     {
         var mapper = new LinkTargetMapper(new MockFileSystem());

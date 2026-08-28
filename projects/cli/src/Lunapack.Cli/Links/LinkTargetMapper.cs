@@ -9,7 +9,9 @@ internal sealed class LinkTargetMapper(IFileSystem fileSystem)
         string linkName,
         ProjectConfiguration.Link link,
         IReadOnlyList<string> selectedSourcePaths,
-        ManagedFileTargetRemapping? targetRemapping = null
+        ManagedFileTargetRemapping? targetRemapping = null,
+        ManagedFileTargetRemapping? configuredRemapping = null,
+        IReadOnlyDictionary<string, string>? retainedTargets = null
     )
     {
         ArgumentNullException.ThrowIfNull(link);
@@ -36,7 +38,22 @@ internal sealed class LinkTargetMapper(IFileSystem fileSystem)
                 return Failure($"Link '{linkName}': {normalizedTarget.Error}");
             }
 
-            var remappedTarget = targetRemapping?.Resolve(effectiveTarget) ?? effectiveTarget;
+            var configuredTarget =
+                targetRemapping?.Resolve(effectiveTarget, configuredRemapping)
+                ?? configuredRemapping?.Resolve(effectiveTarget)
+                ?? effectiveTarget;
+            if (
+                string.Equals(
+                    configuredTarget,
+                    ManagedFileTargetRemapping.IgnoreTarget,
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                continue;
+            }
+
+            var remappedTarget = retainedTargets?.GetValueOrDefault(sourcePath) ?? configuredTarget;
             if (claimedTargets.TryGetValue(remappedTarget, out var claimingSourcePath))
             {
                 return Failure(

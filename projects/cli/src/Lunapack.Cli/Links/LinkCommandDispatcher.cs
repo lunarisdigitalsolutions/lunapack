@@ -12,7 +12,8 @@ internal sealed class LinkCommandDispatcher(
         string projectDirectory,
         string name,
         bool adoptExisting,
-        ManagedFileTargetRemapping targetRemapping
+        ManagedFileTargetRemapping targetRemapping,
+        bool saveRemapping
     )
     {
         if (!await IsConfiguredLinkAsync(projectDirectory, name))
@@ -26,6 +27,7 @@ internal sealed class LinkCommandDispatcher(
             name,
             adoptExisting,
             targetRemapping: targetRemapping,
+            saveRemapping: saveRemapping,
             onManagedFileChangesApplied: duration => managedFileChangesDuration = duration
         );
         if (exitCode != 0)

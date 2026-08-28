@@ -167,9 +167,10 @@ adding content, viewing the manifest, or validating it.
   external content. `--offline` avoids remote checks and reports uncertainty.
 - `luna update [<pack-reference>...]`: Updates all roots or one or more selected
   roots.
-- `luna mv <source> <target>`: Moves one uniquely owned managed file and updates
-  lock ownership. If the file was moved manually, it can rebind ownership when
-  only the target exists.
+- `luna mv <source> <target>`: Moves one managed file or all managed files below
+  a directory and updates lock ownership. If files were moved manually, it can
+  rebind ownership when only the targets exist. `--save-remap` also records the
+  move as a reusable project mapping.
 - `luna audit`: Reports resolved packs, dependencies, external alias mappings,
   fingerprints, refs, commits, source and target paths, ownership, digests, and
   drift or local-modification status.
@@ -179,6 +180,10 @@ commands select the latest available release. `install` accepts `--dry-run`
 (`-D`), `--destination` (`-d`),
 `--adopt-existing` (`-a`), repeatable `--parameter` (`-p`),
 `--no-variables` (`-nv`), and repeatable `--skip-variable` (`-sv`).
+Install also accepts repeatable `--remap-directory <source>=<target>` and
+`--remap-file <source>=<target>` options. Add `--save-remap` to persist those
+mappings after a successful installation. `--save-remap` requires at least one
+remapping option.
 `update` accepts `--dry-run` (`-D`); update-all also accepts `--prompt` (`-p`).
 Both install and update accept `--accept-sources` for conflict-free proposed
 source additions. `install`, `update`, and `uninstall` accept

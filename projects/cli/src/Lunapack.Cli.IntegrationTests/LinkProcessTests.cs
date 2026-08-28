@@ -88,6 +88,54 @@ public sealed class LinkProcessTests
     }
 
     [Test]
+    public async Task LocalLink_WhenInstallRemappingSaved_ReusesMappingOnFutureInstall()
+    {
+        using var workspace = new TestWorkspace();
+        var sourceDirectory = Directory.CreateDirectory(Path.Combine(workspace.Path, "source"));
+        Directory.CreateDirectory(Path.Combine(sourceDirectory.FullName, "agents"));
+        File.WriteAllText(
+            Path.Combine(sourceDirectory.FullName, "agents", "expert.agent.md"),
+            "agent content"
+        );
+        await InitializeLocalSourceAsync(workspace.Path);
+        await CliProcess.InvokeAsync(
+            workspace.Path,
+            "links",
+            "add",
+            "csharp-agent",
+            "--source",
+            "local",
+            "--include",
+            "agents/expert.agent.md"
+        );
+
+        var install = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "install",
+            "csharp-agent",
+            "--remap-directory",
+            "agents=.github/agents",
+            "--save-remap"
+        );
+        await Assert.That(install.ExitCode).IsEqualTo(0);
+        await Assert
+            .That(
+                (await CliProcess.InvokeAsync(workspace.Path, "uninstall", "csharp-agent")).ExitCode
+            )
+            .IsEqualTo(0);
+
+        var reinstall = await CliProcess.InvokeAsync(workspace.Path, "install", "csharp-agent");
+
+        await Assert.That(reinstall.ExitCode).IsEqualTo(0);
+        await Assert
+            .That(File.Exists(Path.Combine(workspace.Path, ".github", "agents", "expert.agent.md")))
+            .IsTrue();
+        await Assert
+            .That(File.ReadAllText(Path.Combine(workspace.Path, "lunapack.yml")))
+            .Contains("agents: .github/agents");
+    }
+
+    [Test]
     public async Task LocalLink_WhenSelectorsAndMappingsCombined_InstallsDeterministicSelection()
     {
         using var workspace = new TestWorkspace();

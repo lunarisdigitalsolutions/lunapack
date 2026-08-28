@@ -7,6 +7,21 @@ internal maintenance work, such as CI, build, or release-process changes.
 
 Update this section before creating a release tag.
 
+### Added
+
+- `luna mv` now moves managed directories as atomic batches while preserving
+  descendant paths. `--save-remap` records file or directory moves as reusable
+  project mappings for future installs.
+- `luna install --save-remap` now persists command-line file and directory
+  remappings after a successful pack or link installation.
+
+### Fixed
+
+- Managed files expanded from pack directory and glob selectors now honor exact
+  file remappings from project configuration and install command options.
+- Project remappings with trailing `/` or `\\` separators now match declared
+  targets and persist effective targets without trailing separators.
+
 ## Version 1.1.0 - 2026-08-27
 
 ### Luna Links

@@ -59,6 +59,9 @@ public sealed class CliHelpDocumentationTests
                 "-d",
                 "--adopt-existing",
                 "-a",
+                "--remap-directory",
+                "--remap-file",
+                "--save-remap",
                 "--parameter",
                 "-p",
                 "--no-variables",
@@ -76,7 +79,7 @@ public sealed class CliHelpDocumentationTests
             "[<pack-reference>...]",
             ["--dry-run", "-D", "--prompt", "-p", "--scripts", "--skip-instructions"]
         ),
-        new("mv", "<source> <target>"),
+        new("mv", "<source> <target>", ["--save-remap"]),
         new("audit"),
     ];
 

@@ -27,6 +27,8 @@ internal sealed record PackInstallationRequest(
 
     public bool SkipInstructions { get; init; }
 
+    public bool SaveRemapping { get; init; }
+
     public static ManifestOperationResult<PackInstallationRequest> Create(
         IFileSystem fileSystem,
         string projectDirectory,
@@ -39,7 +41,8 @@ internal sealed record PackInstallationRequest(
         IEnumerable<string>? directoryRemappings = null,
         IEnumerable<string>? fileRemappings = null,
         ScriptExecutionMode? scriptMode = null,
-        bool skipInstructions = false
+        bool skipInstructions = false,
+        bool saveRemapping = false
     )
     {
         var parsedPackReference = PackReference.Parse(packReferenceValue);
@@ -74,6 +77,13 @@ internal sealed record PackInstallationRequest(
             );
         }
 
+        if (saveRemapping && !parsedRemapping.HasMappings)
+        {
+            return ManifestOperationResult<PackInstallationRequest>.Failure(
+                "--save-remap requires --remap-directory or --remap-file."
+            );
+        }
+
         var destinationError = ValidateDestination(
             fileSystem,
             projectDirectory,
@@ -91,7 +101,8 @@ internal sealed record PackInstallationRequest(
                     parsedRemapping,
                     noVariables,
                     scriptMode ?? ScriptExecutionMode.Prompt,
-                    skipInstructions
+                    skipInstructions,
+                    saveRemapping
                 )
             );
     }
@@ -105,7 +116,8 @@ internal sealed record PackInstallationRequest(
         ManagedFileTargetRemapping targetRemapping,
         bool noVariables,
         ScriptExecutionMode scriptMode,
-        bool skipInstructions
+        bool skipInstructions,
+        bool saveRemapping
     ) =>
         new(packReference, destination, adoptExisting)
         {
@@ -115,6 +127,7 @@ internal sealed record PackInstallationRequest(
             UseProjectVariables = !noVariables,
             ScriptMode = scriptMode,
             SkipInstructions = skipInstructions,
+            SaveRemapping = saveRemapping,
         };
 
     private static string? NormalizeDestination(string? destination) =>

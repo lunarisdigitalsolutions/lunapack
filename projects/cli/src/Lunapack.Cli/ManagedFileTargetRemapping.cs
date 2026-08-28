@@ -4,6 +4,8 @@ namespace Lunapack.Cli;
 
 internal sealed class ManagedFileTargetRemapping
 {
+    public const string IgnoreTarget = "@ignore";
+
     private static readonly StringComparer _pathComparer = StringComparer.Ordinal;
     private readonly IReadOnlyDictionary<string, string> _directories;
     private readonly IReadOnlyDictionary<string, string> _files;
@@ -18,6 +20,26 @@ internal sealed class ManagedFileTargetRemapping
     }
 
     public bool HasMappings => _directories.Count > 0 || _files.Count > 0;
+
+    public ProjectConfiguration.Remapping MergeInto(ProjectConfiguration.Remapping? remapping)
+    {
+        var directories = new Dictionary<string, string>(
+            remapping?.Directories ?? [],
+            _pathComparer
+        );
+        var files = new Dictionary<string, string>(remapping?.Files ?? [], _pathComparer);
+        foreach (var (source, target) in _directories)
+        {
+            directories[source] = target;
+        }
+
+        foreach (var (source, target) in _files)
+        {
+            files[source] = target;
+        }
+
+        return new ProjectConfiguration.Remapping { Directories = directories, Files = files };
+    }
 
     public static ManagedFileTargetRemapping FromConfiguration(
         ProjectConfiguration.Remapping? remapping
@@ -64,9 +86,11 @@ internal sealed class ManagedFileTargetRemapping
 
     public string Resolve(string declaredTarget, ManagedFileTargetRemapping? fallback = null)
     {
-        var normalizedTarget = ProjectPath.Normalize(declaredTarget);
-        return TryResolve(normalizedTarget)
-            ?? fallback?.TryResolve(normalizedTarget)
+        var normalizedTarget = NormalizeMappingPath(declaredTarget);
+        return TryResolveFile(normalizedTarget)
+            ?? fallback?.TryResolveFile(normalizedTarget)
+            ?? TryResolveDirectory(normalizedTarget)
+            ?? fallback?.TryResolveDirectory(normalizedTarget)
             ?? normalizedTarget;
     }
 
@@ -130,19 +154,20 @@ internal sealed class ManagedFileTargetRemapping
         var normalizedMappings = new Dictionary<string, string>(_pathComparer);
         foreach (var (source, target) in mappings)
         {
-            normalizedMappings.Add(ProjectPath.Normalize(source), ProjectPath.Normalize(target));
+            normalizedMappings.Add(NormalizeMappingPath(source), NormalizeMappingPath(target));
         }
 
         return normalizedMappings;
     }
 
-    private string? TryResolve(string declaredTarget)
-    {
-        if (_files.TryGetValue(declaredTarget, out var fileTarget))
-        {
-            return fileTarget;
-        }
+    private static string NormalizeMappingPath(string path) =>
+        ProjectPath.Normalize(path).TrimEnd('/');
 
+    private string? TryResolveFile(string declaredTarget) =>
+        _files.TryGetValue(declaredTarget, out var fileTarget) ? fileTarget : null;
+
+    private string? TryResolveDirectory(string declaredTarget)
+    {
         foreach (
             var (sourceDirectory, targetDirectory) in _directories.OrderByDescending(mapping =>
                 mapping.Key.Length
@@ -157,7 +182,9 @@ internal sealed class ManagedFileTargetRemapping
             var directoryPrefix = $"{sourceDirectory}/";
             if (declaredTarget.StartsWith(directoryPrefix, StringComparison.Ordinal))
             {
-                return $"{targetDirectory}/{declaredTarget[directoryPrefix.Length..]}";
+                return string.Equals(targetDirectory, IgnoreTarget, StringComparison.Ordinal)
+                    ? IgnoreTarget
+                    : $"{targetDirectory}/{declaredTarget[directoryPrefix.Length..]}";
             }
         }
 

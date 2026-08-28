@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace Lunapack.Cli.IntegrationTests;
 
 [Property("FileSystem", "Real")]
@@ -912,6 +914,190 @@ public sealed class CliProcessTests
     }
 
     [Test]
+    public async Task PackLifecycle_WhenInstallRemapSaved_ReusesMappingOnFutureInstall()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreateRemapSelectorPackSource(workspace.Path, "directory");
+        await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
+
+        var install = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "install",
+            "example",
+            "--remap-directory",
+            "docs/development=docs/04-development",
+            "--save-remap"
+        );
+        await Assert.That(install.ExitCode).IsEqualTo(0);
+        var uninstall = await CliProcess.InvokeAsync(workspace.Path, "uninstall", "example");
+        await Assert
+            .That(uninstall.ExitCode)
+            .IsEqualTo(0)
+            .Because(uninstall.StandardOutput + uninstall.StandardError);
+
+        var reinstall = await CliProcess.InvokeAsync(workspace.Path, "install", "example");
+
+        await Assert.That(reinstall.ExitCode).IsEqualTo(0);
+        await Assert
+            .That(File.Exists(Path.Combine(workspace.Path, "docs", "04-development", "root.txt")))
+            .IsTrue();
+    }
+
+    [Test]
+    public async Task PackLifecycle_WhenDirectoryMoveRemapSaved_ReusesMappingOnFutureInstall()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreateRemapSelectorPackSource(workspace.Path, "directory");
+        await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
+        await Assert
+            .That((await CliProcess.InvokeAsync(workspace.Path, "install", "example")).ExitCode)
+            .IsEqualTo(0);
+
+        var move = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "mv",
+            "docs/development",
+            "docs/04-development",
+            "--save-remap"
+        );
+        await Assert.That(move.ExitCode).IsEqualTo(0);
+        var uninstall = await CliProcess.InvokeAsync(workspace.Path, "uninstall", "example");
+        await Assert
+            .That(uninstall.ExitCode)
+            .IsEqualTo(0)
+            .Because(uninstall.StandardOutput + uninstall.StandardError);
+
+        var reinstall = await CliProcess.InvokeAsync(workspace.Path, "install", "example");
+
+        await Assert.That(reinstall.ExitCode).IsEqualTo(0);
+        await Assert
+            .That(File.Exists(Path.Combine(workspace.Path, "docs", "04-development", "root.txt")))
+            .IsTrue();
+    }
+
+    [Test]
+    [Arguments(
+        "file",
+        "",
+        "",
+        "--remap-file",
+        "docs\\development\\root.txt=docs\\04-development\\root.txt",
+        "docs/04-development/root.txt"
+    )]
+    [Arguments(
+        "directory",
+        "",
+        "",
+        "--remap-directory",
+        "docs/development/=docs/04-development/",
+        "docs/04-development/nested/child.txt;docs/04-development/root.txt"
+    )]
+    [Arguments(
+        "glob",
+        "",
+        "",
+        "--remap-file",
+        "docs/development/nested/child.json=docs/special/child.json",
+        "docs/development/root.json;docs/special/child.json"
+    )]
+    [Arguments(
+        "directory",
+        "docs\\development\\=docs\\configured\\",
+        "",
+        "",
+        "",
+        "docs/configured/nested/child.txt;docs/configured/root.txt"
+    )]
+    [Arguments(
+        "glob",
+        "",
+        "docs/development/nested/child.json=docs/configured/child.json",
+        "",
+        "",
+        "docs/configured/child.json;docs/development/root.json"
+    )]
+    [Arguments(
+        "directory",
+        "docs/development=docs/configured",
+        "",
+        "--remap-directory",
+        "docs/development=docs/invocation",
+        "docs/invocation/nested/child.txt;docs/invocation/root.txt"
+    )]
+    [Arguments(
+        "directory",
+        "",
+        "docs/development/nested/child.txt=docs/configured/child.txt",
+        "--remap-file",
+        "docs/development/nested/child.txt=docs/invocation/child.txt",
+        "docs/development/root.txt;docs/invocation/child.txt"
+    )]
+    [Arguments(
+        "directory",
+        "docs/development=docs/configured",
+        "",
+        "--remap-file",
+        "docs/development/nested/child.txt=docs/invocation/child.txt",
+        "docs/configured/root.txt;docs/invocation/child.txt"
+    )]
+    [Arguments(
+        "directory",
+        "docs/development=docs/configured",
+        "docs/development/nested/child.txt=docs/special/child.txt",
+        "",
+        "",
+        "docs/configured/root.txt;docs/special/child.txt"
+    )]
+    [Arguments(
+        "directory",
+        "",
+        "docs/development/nested/child.txt=docs/configured/child.txt",
+        "--remap-directory",
+        "docs/development=docs/invocation",
+        "docs/configured/child.txt;docs/invocation/root.txt"
+    )]
+    public async Task PackLifecycle_WhenRemappingVaries_WritesExpectedConcreteTargets(
+        string selectorKind,
+        string configuredDirectoryMapping,
+        string configuredFileMapping,
+        string installOption,
+        string installMapping,
+        string expectedTargets
+    )
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreateRemapSelectorPackSource(workspace.Path, selectorKind);
+        await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
+        ConfigureRemapping(workspace.Path, configuredDirectoryMapping, configuredFileMapping);
+        var arguments = new List<string> { "install", "example" };
+        if (installOption.Length > 0)
+        {
+            arguments.Add(installOption);
+            arguments.Add(installMapping);
+        }
+
+        var install = await CliProcess.InvokeAsync(workspace.Path, [.. arguments]);
+        var targets = expectedTargets.Split(';', StringSplitOptions.RemoveEmptyEntries);
+        var lockFile = await File.ReadAllTextAsync(
+            Path.Combine(workspace.Path, "lunapack-lock.yml")
+        );
+        var recordedTargets = lockFile
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.Trim())
+            .Where(line => line.StartsWith("targetPath: ", StringComparison.Ordinal))
+            .Select(line => line["targetPath: ".Length..])
+            .OrderBy(target => target, StringComparer.Ordinal)
+            .ToList();
+
+        await Assert.That(install.ExitCode).IsEqualTo(0);
+        await Assert.That(recordedTargets).IsEquivalentTo(targets);
+        foreach (var target in targets)
+        {
+            await Assert.That(File.Exists(Path.Combine(workspace.Path, target))).IsTrue();
+        }
+    }
+
+    [Test]
     public async Task Scenario_DotnetProjectManagedContentUnchanged_InstallsAndUninstalls()
     {
         using var workspace = new TestWorkspace();
@@ -1644,6 +1830,97 @@ public sealed class CliProcessTests
 
         await Assert.That(init.ExitCode).IsEqualTo(0);
         await Assert.That(source.ExitCode).IsEqualTo(0);
+    }
+
+    private static void ConfigureRemapping(
+        string projectDirectory,
+        string directoryMapping,
+        string fileMapping
+    )
+    {
+        if (directoryMapping.Length == 0 && fileMapping.Length == 0)
+        {
+            return;
+        }
+
+        var configuration = new StringBuilder("\nremap:\n");
+        AppendMapping(configuration, "directories", directoryMapping);
+        AppendMapping(configuration, "files", fileMapping);
+        File.AppendAllText(
+            Path.Combine(projectDirectory, "lunapack.yml"),
+            configuration.ToString()
+        );
+    }
+
+    private static void AppendMapping(StringBuilder configuration, string name, string mapping)
+    {
+        configuration.Append("  ").Append(name).Append(':');
+        if (mapping.Length == 0)
+        {
+            configuration.Append(" {}\n");
+            return;
+        }
+
+        var separatorIndex = mapping.IndexOf('=', StringComparison.Ordinal);
+        configuration
+            .Append("\n    '")
+            .Append(mapping.AsSpan(0, separatorIndex))
+            .Append("': '")
+            .Append(mapping.AsSpan(separatorIndex + 1))
+            .Append("'\n");
+    }
+
+    private static string CreateRemapSelectorPackSource(
+        string projectDirectory,
+        string selectorKind
+    )
+    {
+        var sourcePath = Directory
+            .CreateDirectory(Path.Combine(projectDirectory, "source"))
+            .FullName;
+        var packDirectory = Directory.CreateDirectory(Path.Combine(sourcePath, "example")).FullName;
+        var templatesDirectory = Directory
+            .CreateDirectory(Path.Combine(packDirectory, "templates"))
+            .FullName;
+        var selector = selectorKind switch
+        {
+            "file" => "source: templates/root.txt",
+            "directory" => "directory: templates/directory",
+            _ => "glob: templates/glob/**/*.json",
+        };
+        var target = string.Equals(selectorKind, "file", StringComparison.Ordinal)
+            ? "docs/development/root.txt"
+            : "docs/development/";
+        File.WriteAllText(
+            Path.Combine(packDirectory, "pack.yml"),
+            $"id: example\nversion: 1.0.0\nlicense: MIT\nauthor: Lunaris Digital Solutions <info@lunaris.digital>\nmanagedFiles:\n  - {selector}\n    target: {target}\n"
+        );
+
+        if (string.Equals(selectorKind, "file", StringComparison.Ordinal))
+        {
+            File.WriteAllText(Path.Combine(templatesDirectory, "root.txt"), "root");
+            return "source";
+        }
+
+        var contentDirectory = Directory
+            .CreateDirectory(
+                Path.Combine(
+                    templatesDirectory,
+                    string.Equals(selectorKind, "directory", StringComparison.Ordinal)
+                        ? "directory"
+                        : "glob"
+                )
+            )
+            .FullName;
+        var extension = string.Equals(selectorKind, "directory", StringComparison.Ordinal)
+            ? "txt"
+            : "json";
+        var nestedDirectory = Directory
+            .CreateDirectory(Path.Combine(contentDirectory, "nested"))
+            .FullName;
+        File.WriteAllText(Path.Combine(contentDirectory, $"root.{extension}"), "root");
+        File.WriteAllText(Path.Combine(nestedDirectory, $"child.{extension}"), "child");
+        return "source";
     }
 
     private static string CreatePackSource(

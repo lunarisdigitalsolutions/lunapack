@@ -141,9 +141,96 @@ public sealed class LinkResolverTests
             .IsEquivalentTo(["agents/CSharpExpert.agent.md", "agents/ai-team.agent.md"]);
     }
 
+    [Test]
+    public async Task ResolveAsync_WhenProjectRemappingConfigured_MapsSelectedTargets()
+    {
+        var fileSystem = CreateFileSystem();
+        var configuration = CreateConfiguration();
+        configuration.Remap = new ProjectConfiguration.Remapping
+        {
+            Directories = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [".github/agents"] = ".config/agents",
+            },
+        };
+
+        using var resolution = (
+            await ResolveAsync(fileSystem, CreateLink(), configuration)
+        ).RequireValue();
+
+        await Assert
+            .That(resolution.Snapshot.Files.Select(file => file.TargetPath))
+            .IsEquivalentTo([
+                ".config/agents/CSharpExpert.agent.md",
+                ".config/agents/ai-team.agent.md",
+            ]);
+    }
+
+    [Test]
+    public async Task ResolveAsync_WhenInvocationAndProjectRemappingsOverlap_UsesInvocationMapping()
+    {
+        var fileSystem = CreateFileSystem();
+        var configuration = CreateConfiguration();
+        configuration.Remap = new ProjectConfiguration.Remapping
+        {
+            Directories = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [".github/agents"] = ".config/agents",
+            },
+        };
+        var invocationRemapping = ManagedFileTargetRemapping
+            .Create(fileSystem, ProjectDirectory, [".github/agents=.invocation/agents"], [])
+            .RequireValue();
+
+        using var resolution = (
+            await ResolveAsync(fileSystem, CreateLink(), configuration, invocationRemapping)
+        ).RequireValue();
+
+        await Assert
+            .That(resolution.Snapshot.Files.Select(file => file.TargetPath))
+            .IsEquivalentTo([
+                ".invocation/agents/CSharpExpert.agent.md",
+                ".invocation/agents/ai-team.agent.md",
+            ]);
+    }
+
+    [Test]
+    public async Task ResolveAsync_WhenProjectRemappingChanges_RetainsLockedTarget()
+    {
+        var fileSystem = CreateFileSystem();
+        var configuration = CreateConfiguration();
+        configuration.Remap = new ProjectConfiguration.Remapping
+        {
+            Directories = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [".github/agents"] = ".new/agents",
+            },
+        };
+        var retainedTargets = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["agents/CSharpExpert.agent.md"] = ".retained/expert.agent.md",
+        };
+
+        using var resolution = (
+            await ResolveAsync(
+                fileSystem,
+                CreateLink(),
+                configuration,
+                retainedTargets: retainedTargets
+            )
+        ).RequireValue();
+
+        await Assert
+            .That(resolution.Snapshot.Files.Select(file => file.TargetPath))
+            .IsEquivalentTo([".retained/expert.agent.md", ".new/agents/ai-team.agent.md"]);
+    }
+
     private static Task<ManifestOperationResult<LinkResolution>> ResolveAsync(
         MockFileSystem fileSystem,
-        ProjectConfiguration.Link link
+        ProjectConfiguration.Link link,
+        ProjectConfiguration? configuration = null,
+        ManagedFileTargetRemapping? targetRemapping = null,
+        IReadOnlyDictionary<string, string>? retainedTargets = null
     )
     {
         var resolver = new LinkResolver(
@@ -151,16 +238,24 @@ public sealed class LinkResolverTests
             new LinkTargetMapper(fileSystem),
             [new LocalLinkSourceProvider(fileSystem)]
         );
-        var configuration = new ProjectConfiguration
+        return resolver.ResolveAsync(
+            ProjectDirectory,
+            configuration ?? CreateConfiguration(),
+            "agents",
+            link,
+            targetRemapping: targetRemapping,
+            retainedTargets: retainedTargets
+        );
+    }
+
+    private static ProjectConfiguration CreateConfiguration() =>
+        new()
         {
             Sources =
             [
                 new ProjectConfiguration.LocalSource { Name = "upstream", Path = "upstream" },
             ],
         };
-
-        return resolver.ResolveAsync(ProjectDirectory, configuration, "agents", link);
-    }
 
     private static MockFileSystem CreateFileSystem()
     {

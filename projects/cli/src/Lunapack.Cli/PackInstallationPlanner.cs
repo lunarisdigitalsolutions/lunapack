@@ -20,6 +20,7 @@ internal sealed class PackInstallationPlanner(
         ExternalContentRoots? externalContentRoots = null
     )
     {
+        var ignoredDeclaredTargets = new HashSet<string>(StringComparer.Ordinal);
         var existingManagedTargets = CreateExistingManagedTargetMap(lockFile);
         if (existingManagedTargets.Value is not { } managedTargetMap)
         {
@@ -36,7 +37,8 @@ internal sealed class PackInstallationPlanner(
             configuration.Packs,
             installationRequest,
             parameters,
-            externalContentRoots ?? ExternalContentRoots.Empty
+            externalContentRoots ?? ExternalContentRoots.Empty,
+            ignoredDeclaredTargets
         );
         if (plannedManagedFiles.Value is not { } managedFiles)
         {
@@ -47,6 +49,9 @@ internal sealed class PackInstallationPlanner(
 
         return ManifestOperationResult<PackInstallationPlan>.Success(
             new PackInstallationPlan(managedFiles)
+            {
+                IgnoredDeclaredTargets = ignoredDeclaredTargets,
+            }
         );
     }
 
@@ -65,7 +70,8 @@ internal sealed class PackInstallationPlanner(
         IReadOnlyList<ProjectConfiguration.RequestedPack> requestedPacks,
         PackInstallationRequest installationRequest,
         ResolvedPackParameters parameters,
-        ExternalContentRoots externalContentRoots
+        ExternalContentRoots externalContentRoots,
+        ISet<string> ignoredDeclaredTargets
     )
     {
         var plannedTargets = new Dictionary<string, List<PlannedManagedFile>>(
@@ -89,25 +95,25 @@ internal sealed class PackInstallationPlanner(
                     continue;
                 }
 
-                var effectiveManagedFile = managedFile with
-                {
-                    Target = GetEffectiveTarget(
+                string ResolveTarget(string target) =>
+                    GetEffectiveTarget(
                         pack,
-                        managedFile.Target,
+                        target,
                         requestedPacks,
                         configuration,
                         installationRequest
-                    ),
-                };
+                    );
                 var plannedManagedFiles = CreateManagedFilePlans(
                     projectDirectory,
                     pack,
-                    effectiveManagedFile,
+                    managedFile,
                     managedFile.Target,
                     existingManagedTargets,
                     installationRequest,
                     parameters,
-                    externalContentRoots
+                    externalContentRoots,
+                    ResolveTarget,
+                    ignoredDeclaredTargets
                 );
                 if (plannedManagedFiles.Value is not { } managedFilePlans)
                 {
@@ -215,7 +221,9 @@ internal sealed class PackInstallationPlanner(
         Dictionary<string, List<ManagedRootOwner>> existingManagedTargets,
         PackInstallationRequest installationRequest,
         ResolvedPackParameters parameters,
-        ExternalContentRoots externalContentRoots
+        ExternalContentRoots externalContentRoots,
+        Func<string, string> resolveTarget,
+        ISet<string> ignoredDeclaredTargets
     )
     {
         var createdSelector = PackManagedFileSelector.Create(managedFile);
@@ -245,33 +253,37 @@ internal sealed class PackInstallationPlanner(
                 declaredTarget,
                 existingManagedTargets,
                 installationRequest,
-                parameters
+                parameters,
+                resolveTarget,
+                ignoredDeclaredTargets
             ),
             PackManagedFileSelectorKind.Directory => CreateDirectoryManagedFilePlans(
                 projectDirectory,
                 pack,
                 contentRoot,
                 selector,
-                managedFile.Target,
                 declaredTarget,
                 managedFile.Strategy,
                 managedFile.Template,
                 existingManagedTargets,
                 installationRequest,
-                parameters
+                parameters,
+                resolveTarget,
+                ignoredDeclaredTargets
             ),
             _ => CreateGlobManagedFilePlans(
                 projectDirectory,
                 pack,
                 contentRoot,
                 selector,
-                managedFile.Target,
                 declaredTarget,
                 managedFile.Strategy,
                 managedFile.Template,
                 existingManagedTargets,
                 installationRequest,
-                parameters
+                parameters,
+                resolveTarget,
+                ignoredDeclaredTargets
             ),
         };
     }
@@ -308,7 +320,9 @@ internal sealed class PackInstallationPlanner(
         string declaredTarget,
         Dictionary<string, List<ManagedRootOwner>> existingManagedTargets,
         PackInstallationRequest installationRequest,
-        ResolvedPackParameters parameters
+        ResolvedPackParameters parameters,
+        Func<string, string> resolveTarget,
+        ISet<string> ignoredDeclaredTargets
     )
     {
         var sourcePath = fileSystem.Path.Combine(contentRoot.Directory, selector.Value);
@@ -329,12 +343,21 @@ internal sealed class PackInstallationPlanner(
             );
         }
 
+        var target = resolveTarget(declaredTarget);
+        if (
+            string.Equals(target, ManagedFileTargetRemapping.IgnoreTarget, StringComparison.Ordinal)
+        )
+        {
+            ignoredDeclaredTargets.Add(NormalizePath(declaredTarget));
+            return ManifestOperationResult<List<PlannedManagedFile>>.Success([]);
+        }
+
         var managedFilePlan = CreateManagedFilePlan(
             projectDirectory,
             pack,
             contentRoot,
             sourcePath,
-            managedFile.Target,
+            target,
             declaredTarget,
             managedFile.Strategy,
             managedFile.Template,
@@ -354,13 +377,14 @@ internal sealed class PackInstallationPlanner(
         DiscoveredPack pack,
         ContentRoot contentRoot,
         PackManagedFileSelector selector,
-        string targetDirectory,
         string declaredTargetDirectory,
         PackManifest.PackManagedFileStrategy strategy,
         bool isTemplate,
         Dictionary<string, List<ManagedRootOwner>> existingManagedTargets,
         PackInstallationRequest installationRequest,
-        ResolvedPackParameters parameters
+        ResolvedPackParameters parameters,
+        Func<string, string> resolveTarget,
+        ISet<string> ignoredDeclaredTargets
     )
     {
         var directory = selector.Value;
@@ -397,7 +421,6 @@ internal sealed class PackInstallationPlanner(
                 projectDirectory,
                 pack,
                 contentRoot,
-                targetDirectory,
                 declaredTargetDirectory,
                 sourceDirectory,
                 retained,
@@ -406,7 +429,9 @@ internal sealed class PackInstallationPlanner(
                 isTemplate,
                 existingManagedTargets,
                 installationRequest,
-                parameters
+                parameters,
+                resolveTarget,
+                ignoredDeclaredTargets
             );
     }
 
@@ -415,13 +440,14 @@ internal sealed class PackInstallationPlanner(
         DiscoveredPack pack,
         ContentRoot contentRoot,
         PackManagedFileSelector selector,
-        string targetDirectory,
         string declaredTargetDirectory,
         PackManifest.PackManagedFileStrategy strategy,
         bool isTemplate,
         Dictionary<string, List<ManagedRootOwner>> existingManagedTargets,
         PackInstallationRequest installationRequest,
-        ResolvedPackParameters parameters
+        ResolvedPackParameters parameters,
+        Func<string, string> resolveTarget,
+        ISet<string> ignoredDeclaredTargets
     )
     {
         var glob = selector.Value;
@@ -454,7 +480,6 @@ internal sealed class PackInstallationPlanner(
                 projectDirectory,
                 pack,
                 contentRoot,
-                targetDirectory,
                 declaredTargetDirectory,
                 globBaseDirectory,
                 [
@@ -472,7 +497,9 @@ internal sealed class PackInstallationPlanner(
                 isTemplate,
                 existingManagedTargets,
                 installationRequest,
-                parameters
+                parameters,
+                resolveTarget,
+                ignoredDeclaredTargets
             );
     }
 
@@ -537,7 +564,6 @@ internal sealed class PackInstallationPlanner(
         string projectDirectory,
         DiscoveredPack pack,
         ContentRoot contentRoot,
-        string targetDirectory,
         string declaredTargetDirectory,
         string sourceDirectory,
         IReadOnlyList<SourceFile> sourceFiles,
@@ -546,7 +572,9 @@ internal sealed class PackInstallationPlanner(
         bool isTemplate,
         Dictionary<string, List<ManagedRootOwner>> existingManagedTargets,
         PackInstallationRequest installationRequest,
-        ResolvedPackParameters parameters
+        ResolvedPackParameters parameters,
+        Func<string, string> resolveTarget,
+        ISet<string> ignoredDeclaredTargets
     )
     {
         var managedFiles = new List<PlannedManagedFile>(sourceFiles.Count);
@@ -574,14 +602,23 @@ internal sealed class PackInstallationPlanner(
                 sourcePathRelativeToDirectory = fileName;
             }
 
-            var targetPath = fileSystem.Path.Combine(
-                targetDirectory,
-                sourcePathRelativeToDirectory
-            );
             var declaredTargetPath = fileSystem.Path.Combine(
                 declaredTargetDirectory,
                 sourcePathRelativeToDirectory
             );
+            var targetPath = resolveTarget(declaredTargetPath);
+            if (
+                string.Equals(
+                    targetPath,
+                    ManagedFileTargetRemapping.IgnoreTarget,
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                ignoredDeclaredTargets.Add(NormalizePath(declaredTargetPath));
+                continue;
+            }
+
             var managedFilePlan = CreateManagedFilePlan(
                 projectDirectory,
                 pack,

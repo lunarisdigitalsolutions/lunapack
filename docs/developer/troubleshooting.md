@@ -55,7 +55,8 @@ to make installation pass.
 
 Update and uninstall preserve content whose current digest differs from the
 recorded installed digest. Review and reconcile it manually. `luna audit` shows
-current ownership; `luna mv` relocates one uniquely owned managed file.
+current ownership; `luna mv` relocates a managed file or directory and can save
+the relocation as a reusable mapping with `--save-remap`.
 
 ## A lifecycle script is denied
 

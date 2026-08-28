@@ -20,6 +20,7 @@ internal sealed class LinkLifecycleService(
         bool allowReinstall = false,
         ProjectState? preparedState = null,
         ManagedFileTargetRemapping? targetRemapping = null,
+        bool saveRemapping = false,
         Action<TimeSpan>? onManagedFileChangesApplied = null,
         CancellationToken cancellationToken = default
     )
@@ -44,6 +45,17 @@ internal sealed class LinkLifecycleService(
         if (!allowReinstall && state.LockFile.Links.ContainsKey(linkName))
         {
             return console.Fail($"Link '{linkName}' is already installed.");
+        }
+
+        if (saveRemapping && targetRemapping is not null)
+        {
+            state = state with
+            {
+                Configuration = state.Configuration with
+                {
+                    Remap = targetRemapping.MergeInto(state.Configuration.Remap),
+                },
+            };
         }
 
         console.Info($"Installing link '{linkName}'.");
@@ -127,6 +139,7 @@ internal sealed class LinkLifecycleService(
                 name,
                 definition,
                 lockedLink.SourceIdentity,
+                retainedTargets: GetRetainedLinkTargets(lockedLink),
                 cancellationToken: cancellationToken
             );
             if (resolution.Value is not { } resolved)
@@ -261,6 +274,9 @@ internal sealed class LinkLifecycleService(
             definition,
             lockedIdentity,
             targetRemapping,
+            retainedTargets: useLockedIdentity && lockedLink is not null
+                ? GetRetainedLinkTargets(lockedLink)
+                : null,
             cancellationToken
         );
         if (resolution.Value is not { } resolved)
@@ -396,6 +412,15 @@ internal sealed class LinkLifecycleService(
 
     private static ManagedRootFile ToManagedRootFile(ProjectLockFile.LinkFile file) =>
         new(file.SourcePath, file.DeclaredTargetPath, file.TargetPath, file.Sha256);
+
+    private static IReadOnlyDictionary<string, string> GetRetainedLinkTargets(
+        ProjectLockFile.ResolvedLink link
+    ) =>
+        link.Files.ToDictionary(
+            file => file.SourcePath,
+            file => file.TargetPath,
+            StringComparer.Ordinal
+        );
 
     private static IEnumerable<KeyValuePair<string, ProjectConfiguration.Link>> OrderedLinks(
         ProjectConfiguration configuration

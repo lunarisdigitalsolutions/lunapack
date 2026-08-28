@@ -405,7 +405,7 @@ targets; the destination SHALL not relocate their managed files.
 
 ### Requirement: Remap managed-file targets during installation
 
-LunaPack SHALL resolve a managed file from its manifest-declared target to an effective project-relative target before preflight and mutation. `luna install` SHALL accept repeatable `--remap-directory <declared-directory>=<target-directory>` and `--remap-file <declared-file>=<target-file>` options. Global mappings in `lunapack.yml` SHALL apply to installations that do not have a higher-precedence command-line mapping. Exact file mappings SHALL take precedence over directory mappings; command-line mappings of the same kind SHALL take precedence over global mappings. A directory mapping SHALL retain the matched descendant suffix.
+LunaPack SHALL resolve a managed file from its manifest-declared target to an effective project-relative target before preflight and mutation. `luna install` SHALL accept repeatable `--remap-directory <declared-directory>=<target-directory>` and `--remap-file <declared-file>=<target-file>` options. Global mappings in `lunapack.yml` SHALL apply to installations that do not have a higher-precedence command-line mapping. Exact file mappings SHALL take precedence over directory mappings; command-line mappings of the same kind SHALL take precedence over global mappings. A directory mapping SHALL retain the matched descendant suffix. `luna install --save-remap` SHALL merge command-line mappings into project configuration only after a successful installation and SHALL require at least one command-line mapping.
 
 Every declared and effective target supplied by remapping SHALL be non-empty, project-relative, and contained within the project directory. LunaPack SHALL reject invalid mappings, duplicate mappings of the same scope and source, and target ownership or filesystem conflicts before changing project files, configuration, or lock state. `--destination` SHALL not be combined with either remapping option.
 
@@ -429,6 +429,16 @@ Every declared and effective target supplied by remapping SHALL be non-empty, pr
 - **WHEN** a consumer supplies `--destination` together with a remapping option
 - **THEN** LunaPack returns a non-success result without changing project files, configuration, or lock state
 
+#### Scenario: Save installation remapping for later installs
+
+- **WHEN** a consumer installs with a command-line mapping and `--save-remap`
+- **THEN** LunaPack installs at the effective target and persists the mapping in `lunapack.yml` for later installations
+
+#### Scenario: Preserve mappings after failed installation
+
+- **WHEN** an installation with `--save-remap` fails before state persistence
+- **THEN** LunaPack leaves the previous project mappings unchanged
+
 ### Requirement: Preserve effective ownership during lifecycle operations
 
 LunaPack SHALL use the effective managed-file targets recorded in `lunapack-lock.yml` for updates and uninstalls. An update SHALL apply retained managed files at their recorded effective targets and SHALL apply project-level remapping only to newly introduced declared targets. Changing global remapping after installation SHALL not relocate an already managed file; consumers SHALL use `luna mv` to relocate it explicitly.
@@ -448,9 +458,9 @@ LunaPack SHALL use the effective managed-file targets recorded in `lunapack-lock
 - **WHEN** a consumer changes a global remap after the matching managed file is already installed and then updates its pack
 - **THEN** LunaPack retains the existing recorded target instead of moving it
 
-### Requirement: Move a managed file while retaining pack ownership
+### Requirement: Move managed files while retaining pack ownership
 
-LunaPack SHALL provide `luna mv <source> <target>` to relocate exactly one lock-recorded managed file. Both paths SHALL be non-empty project-relative paths contained within the project directory. The command SHALL reject a source that is not a uniquely owned lock target, a target already owned by another managed file, or a state where both source and target files exist. When the source file exists and the target does not, LunaPack SHALL move the file and update its lock record atomically. When the source file does not exist but the target file exists, LunaPack SHALL update only the matching lock record to adopt the target path, retaining its recorded digest for later lifecycle protection.
+LunaPack SHALL provide `luna mv <source> <target>` to relocate one lock-recorded managed file or every managed file below a source directory. Both paths SHALL be non-empty project-relative paths contained within the project directory. A directory move SHALL preserve each managed file's descendant path and SHALL reject overlapping source and target directories. The command SHALL reject a source that identifies neither one uniquely owned lock target nor a directory containing managed files, a target already owned by another managed file, duplicate resulting targets, or a state where both source and target forms of any selected file exist. LunaPack SHALL validate the complete batch before mutation. When selected source files exist and targets do not, LunaPack SHALL move every file and update all lock records atomically. When selected source files do not exist but targets exist, LunaPack SHALL update only the matching lock records to adopt the target paths, retaining recorded digests for later lifecycle protection. `--save-remap` SHALL persist a reusable file or directory mapping derived from lock-recorded manifest-declared targets after the move succeeds.
 
 #### Scenario: Move an installed ADR template
 
@@ -461,6 +471,16 @@ LunaPack SHALL provide `luna mv <source> <target>` to relocate exactly one lock-
 
 - **WHEN** a lock-recorded source is absent, its requested target exists, and a user runs `luna mv` with those paths
 - **THEN** LunaPack leaves project files unchanged and updates the managed-file lock record to the target path
+
+#### Scenario: Move a managed directory
+
+- **WHEN** multiple managed files exist below `docs/adr` and a user runs `luna mv docs/adr docs/architecture/adr`
+- **THEN** LunaPack moves every managed descendant, preserves relative paths, and updates all matching lock records in one transaction
+
+#### Scenario: Save a managed directory move
+
+- **WHEN** a consumer moves a managed directory with `--save-remap`
+- **THEN** LunaPack persists one directory mapping from the common manifest-declared directory to the requested target for future installs
 
 #### Scenario: Refuse an ambiguous move
 

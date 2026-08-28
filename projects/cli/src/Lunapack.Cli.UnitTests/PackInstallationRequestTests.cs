@@ -172,4 +172,23 @@ public sealed class PackInstallationRequestTests
 
         await Assert.That(result.IsSuccess).IsFalse();
     }
+
+    [Test]
+    public async Task Create_WhenSaveRemapHasNoMappings_ReturnsFailure()
+    {
+        var result = PackInstallationRequest.Create(
+            new MockFileSystem(),
+            "C:\\project",
+            "madr-adr-template",
+            null,
+            false,
+            [],
+            false,
+            [],
+            saveRemapping: true
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("--save-remap requires");
+    }
 }
