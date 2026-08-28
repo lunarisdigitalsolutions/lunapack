@@ -93,10 +93,9 @@ public sealed class PackAuthoringCommandTests
 
         await Assert.That(exitCode).IsEqualTo(0);
         var contents = File.ReadAllText(Path.Combine(workspace.Path, PackManifestStore.FileName));
-        await Assert.That(contents).Contains("author: Example Author");
-        await Assert.That(contents).Contains("id: example");
-        await Assert.That(contents).Contains("license: MIT");
-        await Assert.That(contents).Contains("version: 1.2.3");
+        await Assert
+            .That(contents.ReplaceLineEndings("\n"))
+            .IsEqualTo("author: Example Author\nid: example\nlicense: MIT\nversion: 1.2.3\n");
         await Assert.That(ManifestModelValidator.Validate(await LoadAsync(workspace))).IsEmpty();
     }
 
@@ -190,7 +189,16 @@ public sealed class PackAuthoringCommandTests
         File.WriteAllText(path, original);
 
         var exitCode = await workspace.Application.RunAsync(
-            ["pack", "init", "--id", "replacement"],
+            [
+                "pack",
+                "init",
+                "--id",
+                "replacement",
+                "--author",
+                "Example Author",
+                "--license",
+                "MIT",
+            ],
             workspace.Path
         );
 

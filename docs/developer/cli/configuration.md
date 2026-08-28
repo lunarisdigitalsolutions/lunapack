@@ -4,6 +4,10 @@ Project state consists of portable configuration in `lunapack.yml` and generated
 resolved state in `lunapack-lock.yml`. Both documents use `schemaVersion: 1` and
 are created together by `luna init`.
 
+Initialization writes only required properties: project `schemaVersion`,
+`sources`, and `packs`, plus lock `schemaVersion` and `packs`. Later commands
+add and canonically serialize properties required by their changes.
+
 - `lunapack.yml`: Owned by the project team. It contains project-relative local
   and Git sources, requested root packs, project-owned links, and optional
   string and Boolean variables.
@@ -38,3 +42,10 @@ digests remain in lock state. See the [Luna Links reference](links.md).
 Project trust is stored in `lunapack.yml`. Local-user and global-user trust are
 stored outside the repository in user settings. Packs cannot grant themselves
 trust through `pack.yml`; consumers control every persisted trust entry.
+
+All three scopes support `deny.scripts`. Any active denial overrides grants and
+`--scripts run`. Project denial uses `trust.deny.scripts`; user settings use
+`deny.scripts` in the corresponding project or global record. Omission and
+explicit `false` mean no denial. `LUNAPACK_USER_PROFILE` can select an alternate
+profile root for isolated automation; Luna stores settings beneath that root's
+`.lunapack` directory.

@@ -49,6 +49,11 @@ invocation only. `skip` runs no hooks. A dry run prints planned hook order,
 suppression, consent mode, and locked sources without prompting or starting a
 process.
 
+Persisted script denial overrides these modes and all grants. A denied install
+warns for every skipped script before hook or file processing, keeps
+instructions, and continues installing managed files. Dry runs label those
+scripts `policy-denied` with all denying scopes.
+
 Grant persistent trust only after reviewing a source:
 
 ```powershell

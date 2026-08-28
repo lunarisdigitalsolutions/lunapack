@@ -10,6 +10,12 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content
+      Include="..\..\..\schema\lunapack-user-settings.schema.json"
+      Link="TestData\lunapack-user-settings.schema.json"
+    >
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content
       Include="..\..\..\schema\lunapack-lock.schema.json"
       Link="TestData\lunapack-lock.schema.json"
     >

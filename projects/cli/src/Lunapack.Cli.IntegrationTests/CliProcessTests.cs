@@ -137,6 +137,80 @@ public sealed class CliProcessTests
     }
 
     [Test]
+    [Arguments("local-user")]
+    [Arguments("project")]
+    [Arguments("global-user")]
+    public async Task PackLifecycle_WhenScriptsDenied_CannotBypassAndReportsScope(string scopeName)
+    {
+        using var workspace = new TestWorkspace();
+        var profilePath = Path.Combine(workspace.Path, "profile");
+        Directory.CreateDirectory(profilePath);
+        var environment = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["LUNAPACK_USER_PROFILE"] = profilePath,
+        };
+        await CliProcess.InvokeAsync(workspace.Path, environment, "init");
+        var sourcePath = CreateInstructionPackSource(
+            workspace.Path,
+            "example",
+            "id: example\nversion: 1.0.0\nhooks:\n  preInstall:\n    - type: script\n      command: dotnet\n      arguments:\n        - --version\nmanagedFiles:\n  - source: templates/content.txt\n    target: .pack\n",
+            new Dictionary<string, string>(StringComparer.Ordinal)
+        );
+        await CliProcess.InvokeAsync(
+            workspace.Path,
+            environment,
+            "sources",
+            "add",
+            "local",
+            "local",
+            sourcePath
+        );
+        var denyArguments = scopeName switch
+        {
+            "project" => new[] { "trust", "scripts", "deny", "--project" },
+            "global-user" => new[] { "trust", "scripts", "deny", "--global" },
+            _ => new[] { "trust", "scripts", "deny" },
+        };
+        var denied = await CliProcess.InvokeAsync(workspace.Path, environment, denyArguments);
+        var listArguments = scopeName switch
+        {
+            "project" => new[] { "trust", "list", "--project" },
+            "global-user" => new[] { "trust", "list", "--global" },
+            _ => new[] { "trust", "list" },
+        };
+        var listed = await CliProcess.InvokeAsync(workspace.Path, environment, listArguments);
+        var dryRun = await CliProcess.InvokeAsync(
+            workspace.Path,
+            environment,
+            "install",
+            "example",
+            "--dry-run",
+            "--scripts",
+            "run"
+        );
+        var install = await CliProcess.InvokeAsync(
+            workspace.Path,
+            environment,
+            "install",
+            "example",
+            "--scripts",
+            "run"
+        );
+        var dryRunOutput = dryRun.StandardOutput.ReplaceLineEndings(" ");
+        var installOutput = install.StandardOutput.ReplaceLineEndings(" ");
+
+        await Assert.That(denied.ExitCode).IsEqualTo(0);
+        await Assert.That(listed.StandardOutput).Contains($"{scopeName} script denial");
+        await Assert.That(dryRunOutput).Contains("policy-denied scopes:");
+        await Assert.That(dryRunOutput).Contains(scopeName);
+        await Assert.That(install.ExitCode).IsEqualTo(0);
+        await Assert.That(installOutput).Contains("Lifecycle script denied by policy:");
+        await Assert.That(installOutput).Contains(scopeName);
+        await Assert.That(installOutput).DoesNotContain("10.0.");
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, ".pack"))).IsTrue();
+    }
+
+    [Test]
     public async Task PackLifecycle_WhenInstructionsMixed_RendersOrderedNonInteractiveContent()
     {
         using var workspace = new TestWorkspace();

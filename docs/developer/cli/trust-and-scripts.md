@@ -16,8 +16,12 @@ process and do not use trust.
 | `run`    | Allows all non-suppressed hooks for this invocation only.        |
 | `skip`   | Runs no script hooks.                                            |
 
+Persisted script denial overrides all three modes and every source or pack
+grant. It is evaluated before command resolution or confirmation.
+
 Dry runs do not execute hooks or prompt. They show hook order, source, command or
-runner, arguments, suppression, and expected consent mode. Instruction rows show
+runner, arguments, suppression, and expected consent mode. Policy-denied rows
+show every denying scope. Instruction rows show
 their file, effective templating state, and step count.
 
 Use `--skip-instructions` to prevent instruction loading and display without
@@ -60,6 +64,44 @@ luna trust revoke source engineering
 luna trust revoke pack dotnet-project --source engineering
 luna trust list --global
 ```
+
+Set blanket denial with the same scope rules:
+
+```powershell
+luna trust scripts deny
+luna trust scripts deny --project
+luna trust scripts deny --global
+luna trust list --project
+```
+
+Omitting a scope targets project-local user settings. Project denial is stored
+under `trust.deny.scripts` in `lunapack.yml` and needs no acknowledgement.
+Local-user and global-user denial are stored under `deny.scripts` in user
+settings. Multiple denials compose; all applicable scopes must be reset before
+scripts can run.
+
+```powershell
+luna trust scripts reset
+luna trust scripts reset --project
+luna trust scripts reset --global
+```
+
+Reset warns and requires interactive confirmation because denial preserves
+positive grants and the last reset can reactivate them. Noninteractive reset
+fails without changing settings. During lifecycle work, Luna warns once per
+denied hook with pack, version, event, and all policy origins before processing
+instructions or managed files. The operation then continues without scripts.
+
+Project configuration example:
+
+```yaml
+trust:
+  deny:
+    scripts: true
+```
+
+Omission and explicit `false` both mean no denial. Existing version-1 files and
+explicit empty trust collections remain valid.
 
 Trust does not verify publisher identity, sign pack content, pin a registry, or
 restrict what a hook can do. Git lock provenance records a resolved commit for

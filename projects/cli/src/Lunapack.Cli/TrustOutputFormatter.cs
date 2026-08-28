@@ -6,6 +6,11 @@ internal static class TrustOutputFormatter
     {
         var lines = new List<string>();
         var scope = FormatScope(listing.Scope);
+        if (listing.ScriptsDenied)
+        {
+            lines.Add($"{scope} script denial - scripts: denied");
+        }
+
         lines.AddRange(listing.Sources.Select(source => $"{scope} source - {Format(source)}"));
         lines.AddRange(
             listing.Packs.Select(pack =>

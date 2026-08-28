@@ -4,9 +4,18 @@ internal sealed class LifecycleHookAuthorizer(
     UserSettingsStore userSettingsStore,
     TrustPolicy trustPolicy,
     LifecycleCommandResolver commandResolver,
-    ILifecycleHookConfirmer confirmer
+    ILifecycleHookConfirmer confirmer,
+    ScriptPolicyEvaluator? configuredPolicyEvaluator = null
 )
 {
+    private readonly ScriptPolicyEvaluator _policyEvaluator =
+        configuredPolicyEvaluator ?? new ScriptPolicyEvaluator(userSettingsStore);
+
+    public Task<ManifestOperationResult<ScriptPolicyEvaluation>> EvaluateScriptPolicyAsync(
+        string projectDirectory,
+        ProjectConfiguration configuration
+    ) => _policyEvaluator.EvaluateAsync(projectDirectory, configuration);
+
     public async Task<
         ManifestOperationResult<IReadOnlyList<AuthorizedLifecycleHook>>
     > AuthorizeAsync(
@@ -16,16 +25,70 @@ internal sealed class LifecycleHookAuthorizer(
         IReadOnlyList<LifecycleHookInvocation> invocations
     )
     {
-        var scripts = invocations.Where(static invocation => invocation.IsScript).ToArray();
-        var authorization = await AuthorizeScriptsAsync(
+        var authorization = await AuthorizeWithDiagnosticsAsync(
             projectDirectory,
             configuration,
             scriptMode,
-            scripts
+            invocations
         );
+        return authorization.Value is { } value
+            ? ManifestOperationResult<IReadOnlyList<AuthorizedLifecycleHook>>.Success(
+                value.AuthorizedHooks
+            )
+            : ManifestOperationResult<IReadOnlyList<AuthorizedLifecycleHook>>.Failure(
+                authorization.Error ?? "Unable to authorize lifecycle scripts."
+            );
+    }
+
+    public async Task<
+        ManifestOperationResult<LifecycleHookAuthorization>
+    > AuthorizeWithDiagnosticsAsync(
+        string projectDirectory,
+        ProjectConfiguration configuration,
+        ScriptExecutionMode scriptMode,
+        IReadOnlyList<LifecycleHookInvocation> invocations
+    )
+    {
+        var scripts = invocations.Where(static invocation => invocation.IsScript).ToArray();
+        ScriptPolicyEvaluation? evaluation = null;
+        if (scripts.Length > 0)
+        {
+            var policy = await _policyEvaluator.EvaluateAsync(projectDirectory, configuration);
+            if (policy.Value is not { } value)
+            {
+                return ManifestOperationResult<LifecycleHookAuthorization>.Failure(
+                    policy.Error ?? "Unable to evaluate lifecycle script policy."
+                );
+            }
+
+            evaluation = value;
+        }
+
+        IReadOnlyList<PolicyDeniedLifecycleHook> deniedScripts = [];
+        ManifestOperationResult<IReadOnlyList<ResolvedLifecycleHookInvocation>> authorization;
+        if (evaluation?.IsDenied == true)
+        {
+            authorization = ManifestOperationResult<
+                IReadOnlyList<ResolvedLifecycleHookInvocation>
+            >.Success([]);
+            deniedScripts = scripts
+                .Select(script => new PolicyDeniedLifecycleHook(script, evaluation.DenyingScopes))
+                .ToArray();
+        }
+        else
+        {
+            authorization = AuthorizeScripts(
+                projectDirectory,
+                configuration,
+                evaluation,
+                scriptMode,
+                scripts
+            );
+        }
+
         if (authorization.Value is not { } authorizedScripts)
         {
-            return ManifestOperationResult<IReadOnlyList<AuthorizedLifecycleHook>>.Failure(
+            return ManifestOperationResult<LifecycleHookAuthorization>.Failure(
                 authorization.Error ?? "Unable to authorize lifecycle scripts."
             );
         }
@@ -46,18 +109,28 @@ internal sealed class LifecycleHookAuthorizer(
             }
         }
 
-        return ManifestOperationResult<IReadOnlyList<AuthorizedLifecycleHook>>.Success(authorized);
+        return ManifestOperationResult<LifecycleHookAuthorization>.Success(
+            new LifecycleHookAuthorization(authorized, deniedScripts)
+        );
     }
 
-    private async Task<
-        ManifestOperationResult<IReadOnlyList<ResolvedLifecycleHookInvocation>>
-    > AuthorizeScriptsAsync(
+    private ManifestOperationResult<
+        IReadOnlyList<ResolvedLifecycleHookInvocation>
+    > AuthorizeScripts(
         string projectDirectory,
         ProjectConfiguration configuration,
+        ScriptPolicyEvaluation? evaluation,
         ScriptExecutionMode scriptMode,
-        IReadOnlyList<LifecycleHookInvocation> invocations
+        LifecycleHookInvocation[] invocations
     )
     {
+        if (invocations.Length == 0)
+        {
+            return ManifestOperationResult<
+                IReadOnlyList<ResolvedLifecycleHookInvocation>
+            >.Success([]);
+        }
+
         if (scriptMode == ScriptExecutionMode.Skip)
         {
             return ManifestOperationResult<
@@ -70,34 +143,30 @@ internal sealed class LifecycleHookAuthorizer(
             return ResolveAll(invocations);
         }
 
-        return await AuthorizePromptModeAsync(projectDirectory, configuration, invocations);
+        return AuthorizePromptMode(
+            projectDirectory,
+            configuration,
+            evaluation
+                ?? throw new InvalidOperationException("Script policy evaluation is required."),
+            invocations
+        );
     }
 
-    private async Task<
-        ManifestOperationResult<IReadOnlyList<ResolvedLifecycleHookInvocation>>
-    > AuthorizePromptModeAsync(
+    private ManifestOperationResult<
+        IReadOnlyList<ResolvedLifecycleHookInvocation>
+    > AuthorizePromptMode(
         string projectDirectory,
         ProjectConfiguration configuration,
+        ScriptPolicyEvaluation evaluation,
         IReadOnlyList<LifecycleHookInvocation> invocations
-    )
-    {
-        var context = await LoadPromptContextAsync(projectDirectory);
-        if (context.Value is not { } trustContext)
-        {
-            return ManifestOperationResult<IReadOnlyList<ResolvedLifecycleHookInvocation>>.Failure(
-                context.Error ?? "Unable to load lifecycle trust context."
-            );
-        }
-
-        return AuthorizeInvocations(projectDirectory, configuration, trustContext, invocations);
-    }
+    ) => AuthorizeInvocations(projectDirectory, configuration, evaluation, invocations);
 
     private ManifestOperationResult<
         IReadOnlyList<ResolvedLifecycleHookInvocation>
     > AuthorizeInvocations(
         string projectDirectory,
         ProjectConfiguration configuration,
-        TrustContext trustContext,
+        ScriptPolicyEvaluation evaluation,
         IReadOnlyList<LifecycleHookInvocation> invocations
     )
     {
@@ -107,7 +176,7 @@ internal sealed class LifecycleHookAuthorizer(
             var authorization = AuthorizeInvocation(
                 projectDirectory,
                 configuration,
-                trustContext,
+                evaluation,
                 invocation
             );
             if (authorization.Value is not { } decision)
@@ -131,7 +200,7 @@ internal sealed class LifecycleHookAuthorizer(
     private ManifestOperationResult<AuthorizationDecision> AuthorizeInvocation(
         string projectDirectory,
         ProjectConfiguration configuration,
-        TrustContext trustContext,
+        ScriptPolicyEvaluation evaluation,
         LifecycleHookInvocation invocation
     )
     {
@@ -146,9 +215,9 @@ internal sealed class LifecycleHookAuthorizer(
         return
             trustPolicy.IsTrusted(
                 projectDirectory,
-                trustContext.ProjectKey,
+                evaluation.ProjectKey,
                 configuration,
-                trustContext.Settings,
+                evaluation.Settings,
                 invocation.Pack.SourceName,
                 invocation.Pack.SourceIdentity,
                 invocation.Pack.Manifest.Id
@@ -157,31 +226,11 @@ internal sealed class LifecycleHookAuthorizer(
             : ManifestOperationResult<AuthorizationDecision>.Success(new(null));
     }
 
-    private async Task<ManifestOperationResult<TrustContext>> LoadPromptContextAsync(
-        string projectDirectory
-    )
-    {
-        var settings = await userSettingsStore.LoadAsync();
-        if (settings.Value is not { } userSettings)
-        {
-            return ManifestOperationResult<TrustContext>.Failure(
-                settings.Error ?? "Unable to load lifecycle trust settings."
-            );
-        }
-
-        var projectKey = userSettingsStore.GetProjectKey(projectDirectory);
-        return projectKey.Value is { } key
-            ? ManifestOperationResult<TrustContext>.Success(new TrustContext(userSettings, key))
-            : ManifestOperationResult<TrustContext>.Failure(
-                projectKey.Error ?? "Unable to resolve lifecycle trust project path."
-            );
-    }
-
     private ManifestOperationResult<IReadOnlyList<ResolvedLifecycleHookInvocation>> ResolveAll(
-        IReadOnlyList<LifecycleHookInvocation> invocations
+        LifecycleHookInvocation[] invocations
     )
     {
-        var resolvedInvocations = new List<ResolvedLifecycleHookInvocation>(invocations.Count);
+        var resolvedInvocations = new List<ResolvedLifecycleHookInvocation>(invocations.Length);
         foreach (var invocation in invocations)
         {
             var resolved = commandResolver.Resolve(invocation);
@@ -199,8 +248,6 @@ internal sealed class LifecycleHookAuthorizer(
             resolvedInvocations
         );
     }
-
-    private sealed record TrustContext(UserSettings Settings, string ProjectKey);
 
     private sealed record AuthorizationDecision(ResolvedLifecycleHookInvocation? Command);
 }

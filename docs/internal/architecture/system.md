@@ -12,6 +12,9 @@ targets, rendered-content digests, and resolved link selections.
 
 The CLI source groups behavior by project initialization, sources, local pack
 authoring, catalog, pack lifecycle, audit, and schema-backed persistence.
+Project and pack initialization serialize dedicated required-property
+projections, validate them, and create files atomically. Normal stores then load
+the minimal documents and retain their established full-model write behavior.
 `PackManifestStore` owns local `pack.yml` loading, typed mutation, complete-model
 validation, and same-directory atomic replacement. Authoring handlers parse
 intent and render results; they do not resolve catalogs, install packs, execute

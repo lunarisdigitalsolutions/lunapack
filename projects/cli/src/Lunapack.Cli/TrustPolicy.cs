@@ -67,7 +67,7 @@ internal sealed class TrustPolicy(IFileSystem fileSystem)
 
     private static bool IsAcknowledgedProjectTrust(
         ProjectConfiguration.ProjectTrust declarations,
-        UserTrust acknowledgements,
+        TrustAcknowledgements acknowledgements,
         string sourceName,
         ConfiguredSourceIdentity source,
         string packId

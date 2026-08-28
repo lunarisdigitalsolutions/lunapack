@@ -9,6 +9,14 @@ Update this section before creating a release tag.
 
 ### Added
 
+- Added persistent blanket lifecycle-script denial for portable project,
+  project-local user, and global-user scopes. Denial overrides `--scripts run`
+  and retained source or pack grants, reports every denying scope before
+  lifecycle work, and appears as `policy-denied` in dry runs. Trust commands can
+  list, set, and confirm reset of denial without deleting grants.
+- `luna init` and `luna pack init` now generate minimal schema-valid YAML with
+  only required properties and values.
+
 - `luna mv` now moves managed directories as atomic batches while preserving
   descendant paths. `--save-remap` records file or directory moves as reusable
   project mappings for future installs.

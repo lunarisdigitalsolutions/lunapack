@@ -6,6 +6,93 @@ namespace Lunapack.Cli.UnitTests;
 public sealed class UserSettingsStoreTests
 {
     [Test]
+    public async Task SaveAndLoad_WhenDenialConfigured_PreservesScopesAndGrants()
+    {
+        using var workspace = new TestWorkspace();
+        var projectDirectory = Directory
+            .CreateDirectory(Path.Combine(workspace.Path, "project"))
+            .FullName;
+        var projectKey = CanonicalProjectPath
+            .Resolve(new FileSystem(), projectDirectory)
+            .RequireValue();
+        var source = ConfiguredSourceIdentity.CreateLocal(projectDirectory);
+        var store = new UserSettingsStore(new FileSystem(), workspace.Path);
+        var settings = new UserSettings
+        {
+            Global = new UserTrust
+            {
+                Deny = new ScriptDenial { Scripts = true },
+                Sources = [source],
+            },
+            Projects =
+            {
+                [projectKey] = new LocalProjectTrust
+                {
+                    Deny = new ScriptDenial { Scripts = true },
+                    Packs = [new TrustedPackIdentity { Id = "example", Source = source }],
+                },
+            },
+        };
+
+        var saved = await store.SaveAsync(settings);
+        var loaded = await store.LoadAsync();
+
+        await Assert.That(saved.IsSuccess).IsTrue();
+        await Assert.That(loaded.RequireValue().Global.Deny?.Scripts).IsTrue();
+        await Assert.That(loaded.RequireValue().Global.Sources).Contains(source);
+        await Assert.That(loaded.RequireValue().Projects[projectKey].Deny?.Scripts).IsTrue();
+        await Assert
+            .That(loaded.RequireValue().Projects[projectKey].Packs.Single().Id)
+            .IsEqualTo("example");
+    }
+
+    [Test]
+    public async Task Load_WhenDenialOmitted_DefaultsToNotDenied()
+    {
+        using var workspace = new TestWorkspace();
+        var settingsDirectory = Directory
+            .CreateDirectory(Path.Combine(workspace.Path, UserSettingsStore.DirectoryName))
+            .FullName;
+        UserSettingsPathSecurity.Apply(settingsDirectory, directory: true);
+        var settingsPath = Path.Combine(settingsDirectory, UserSettingsStore.FileName);
+        File.WriteAllText(settingsPath, "global: {}\n");
+        UserSettingsPathSecurity.Apply(settingsPath, directory: false);
+        var store = new UserSettingsStore(new FileSystem(), workspace.Path);
+
+        var loaded = await store.LoadAsync();
+
+        await Assert.That(loaded.IsSuccess).IsTrue();
+        await Assert.That(loaded.RequireValue().Global.Deny?.Scripts == true).IsFalse();
+        await Assert.That(loaded.RequireValue().Global.Sources).IsEmpty();
+        await Assert.That(loaded.RequireValue().Global.Packs).IsEmpty();
+    }
+
+    [Test]
+    public async Task Load_WhenAcknowledgementsContainDenial_ReturnsFailure()
+    {
+        using var workspace = new TestWorkspace();
+        var projectDirectory = Directory
+            .CreateDirectory(Path.Combine(workspace.Path, "project"))
+            .FullName;
+        var projectKey = ProjectPath.Normalize(projectDirectory);
+        var settingsDirectory = Directory
+            .CreateDirectory(Path.Combine(workspace.Path, UserSettingsStore.DirectoryName))
+            .FullName;
+        UserSettingsPathSecurity.Apply(settingsDirectory, directory: true);
+        var settingsPath = Path.Combine(settingsDirectory, UserSettingsStore.FileName);
+        File.WriteAllText(
+            settingsPath,
+            $"projects:\n  '{projectKey}':\n    acknowledgements:\n      deny:\n        scripts: true\n"
+        );
+        UserSettingsPathSecurity.Apply(settingsPath, directory: false);
+        var store = new UserSettingsStore(new FileSystem(), workspace.Path);
+
+        var loaded = await store.LoadAsync();
+
+        await Assert.That(loaded.IsSuccess).IsFalse();
+    }
+
+    [Test]
     public async Task SaveAndLoad_WhenSettingsValid_UsesPrivateProfilePath()
     {
         using var workspace = new TestWorkspace();

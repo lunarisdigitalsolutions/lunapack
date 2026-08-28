@@ -76,6 +76,70 @@ internal sealed class ProjectStateStore : IProjectStateStore
         return ManifestOperationResult<ProjectState>.Success(normalizedState);
     }
 
+    public async Task<ManifestOperationResult<bool>> InitializeAsync(string projectDirectory)
+    {
+        var configuration = new ProjectConfiguration { SchemaVersion = 1 };
+        var lockFile = new ProjectLockFile { SchemaVersion = 1 };
+        if (
+            !await IsValidAsync(configuration, ManifestModelValidator.Validate)
+            || !await IsValidAsync(lockFile, ManifestModelValidator.Validate)
+        )
+        {
+            return ManifestOperationResult<bool>.Failure(
+                "Refusing to initialize project state that does not match the schemas."
+            );
+        }
+
+        var configurationPath = GetDocumentPath(projectDirectory, ConfigurationFileName);
+        var lockFilePath = GetDocumentPath(projectDirectory, LockFileName);
+        if (_fileSystem.File.Exists(configurationPath) || _fileSystem.File.Exists(lockFilePath))
+        {
+            return ManifestOperationResult<bool>.Failure("Project state already exists.");
+        }
+
+        var temporaryConfigurationPath = CreateTemporaryPath(configurationPath);
+        var temporaryLockFilePath = CreateTemporaryPath(lockFilePath);
+        try
+        {
+            _fileSystem.File.WriteAllText(
+                temporaryConfigurationPath,
+                _serializer.Serialize(
+                    new InitialProjectConfiguration { SchemaVersion = configuration.SchemaVersion }
+                )
+            );
+            _fileSystem.File.WriteAllText(
+                temporaryLockFilePath,
+                _serializer.Serialize(
+                    new InitialProjectLockFile { SchemaVersion = lockFile.SchemaVersion }
+                )
+            );
+            _fileSystem.File.Move(temporaryConfigurationPath, configurationPath);
+            _fileSystem.File.Move(temporaryLockFilePath, lockFilePath);
+            return ManifestOperationResult<bool>.Success(true);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            if (_fileSystem.File.Exists(configurationPath))
+            {
+                _fileSystem.File.Delete(configurationPath);
+            }
+
+            if (_fileSystem.File.Exists(lockFilePath))
+            {
+                _fileSystem.File.Delete(lockFilePath);
+            }
+
+            return ManifestOperationResult<bool>.Failure(
+                $"Unable to initialize project state: {exception.Message}"
+            );
+        }
+        finally
+        {
+            DeleteTemporaryFile(temporaryConfigurationPath);
+            DeleteTemporaryFile(temporaryLockFilePath);
+        }
+    }
+
     public async Task<ManifestOperationResult<bool>> SaveAsync(
         string projectDirectory,
         ProjectState state

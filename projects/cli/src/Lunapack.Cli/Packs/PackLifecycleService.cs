@@ -127,8 +127,10 @@ internal sealed class PackLifecycleService(
         await using (preparedInstallation.Materialization)
         await using (preparedInstallation.ExternalMaterialization)
         {
-            var lifecycle = CreateDryRunLifecyclePlan(
+            var lifecycle = await CreateDryRunLifecyclePlanAsync(
+                projectDirectory,
                 preparedInstallation.State,
+                preparedInstallation.Configuration,
                 preparedInstallation.Graph,
                 preparedInstallation.Parameters,
                 installationRequest.ScriptMode,
@@ -790,8 +792,10 @@ internal sealed class PackLifecycleService(
         await using (preparedUpdate.Materialization)
         await using (preparedUpdate.ExternalMaterialization)
         {
-            var lifecycle = CreateDryRunLifecyclePlan(
+            var lifecycle = await CreateDryRunLifecyclePlanAsync(
+                projectDirectory,
                 preparedUpdate.State,
+                preparedUpdate.Configuration,
                 preparedUpdate.Graph,
                 preparedUpdate.Parameters,
                 updateRequest.ScriptMode,
@@ -1727,18 +1731,25 @@ internal sealed class PackLifecycleService(
             );
         }
 
-        var authorized = await _hookAuthorizer.AuthorizeAsync(
+        var authorized = await _hookAuthorizer.AuthorizeWithDiagnosticsAsync(
             projectDirectory,
             configuration,
             scriptMode,
             [.. plannedPreHooks, .. plannedPostHooks]
         );
-        if (authorized.Value is not { } hooks)
+        if (authorized.Value is not { } authorization)
         {
             return ManifestOperationResult<AuthorizedLifecycleHooks>.Failure(
                 authorized.Error ?? "Unable to authorize lifecycle hooks."
             );
         }
+
+        foreach (var deniedScript in authorization.DeniedScripts)
+        {
+            _console.Warning(LifecycleScriptDenialFormatter.Format(deniedScript));
+        }
+
+        var hooks = authorization.AuthorizedHooks;
 
         return ManifestOperationResult<AuthorizedLifecycleHooks>.Success(
             new AuthorizedLifecycleHooks(
@@ -1762,8 +1773,10 @@ internal sealed class PackLifecycleService(
         );
     }
 
-    private ManifestOperationResult<LifecycleDryRunPlan> CreateDryRunLifecyclePlan(
+    private async Task<ManifestOperationResult<LifecycleDryRunPlan>> CreateDryRunLifecyclePlanAsync(
+        string projectDirectory,
         ProjectState state,
+        ProjectConfiguration configuration,
         ResolvedPackGraph graph,
         ResolvedPackParameters parameters,
         ScriptExecutionMode scriptMode,
@@ -1773,18 +1786,42 @@ internal sealed class PackLifecycleService(
         var lifecyclePlan = PackLifecyclePlanner.Plan(graph, state.LockFile);
         var preHooks = _hookPlanner.PlanPreMutation(lifecyclePlan, parameters, skipInstructions);
         var postHooks = _hookPlanner.PlanPostMutation(lifecyclePlan, parameters, skipInstructions);
-        return preHooks.Value is { } plannedPreHooks && postHooks.Value is { } plannedPostHooks
-            ? ManifestOperationResult<LifecycleDryRunPlan>.Success(
-                new LifecycleDryRunPlan(
-                    scriptMode,
-                    plannedPreHooks,
-                    plannedPostHooks,
-                    lifecyclePlan.Changes
-                )
-            )
-            : ManifestOperationResult<LifecycleDryRunPlan>.Failure(
+        if (
+            preHooks.Value is not { } plannedPreHooks
+            || postHooks.Value is not { } plannedPostHooks
+        )
+        {
+            return ManifestOperationResult<LifecycleDryRunPlan>.Failure(
                 preHooks.Error ?? postHooks.Error ?? "Unable to plan lifecycle hooks."
             );
+        }
+
+        IReadOnlyList<ScriptDenialOrigin> denyingScopes = [];
+        if (plannedPreHooks.Concat(plannedPostHooks).Any(static hook => hook.IsScript))
+        {
+            var policy = await _hookAuthorizer.EvaluateScriptPolicyAsync(
+                projectDirectory,
+                configuration
+            );
+            if (policy.Value is not { } evaluation)
+            {
+                return ManifestOperationResult<LifecycleDryRunPlan>.Failure(
+                    policy.Error ?? "Unable to evaluate lifecycle script policy."
+                );
+            }
+
+            denyingScopes = evaluation.DenyingScopes;
+        }
+
+        return ManifestOperationResult<LifecycleDryRunPlan>.Success(
+            new LifecycleDryRunPlan(
+                scriptMode,
+                plannedPreHooks,
+                plannedPostHooks,
+                lifecyclePlan.Changes,
+                denyingScopes
+            )
+        );
     }
 
     private async Task<ManifestOperationResult<bool>> ExecuteHooksAsync(

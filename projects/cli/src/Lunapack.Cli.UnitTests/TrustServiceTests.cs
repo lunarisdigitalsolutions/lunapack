@@ -6,6 +6,169 @@ namespace Lunapack.Cli.UnitTests;
 public sealed class TrustServiceTests
 {
     [Test]
+    public async Task DenyScripts_WhenProject_WritesOnlyPortableDenialWithoutConfirmation()
+    {
+        using var workspace = new TestWorkspace();
+        Directory.CreateDirectory(Path.Combine(workspace.Path, "source"));
+        var confirmer = new AcceptingTrustConfirmer();
+        var service = await CreateServiceAsync(workspace, confirmer);
+
+        var denied = await service.DenyScriptsAsync(workspace.Path, TrustScope.Project);
+        var state = await workspace.StateStore.LoadAsync(workspace.Path);
+
+        await Assert.That(denied.IsSuccess).IsTrue();
+        await Assert.That(state.RequireValue().Configuration.Trust.Deny?.Scripts).IsTrue();
+        await Assert.That(confirmer.Warning).IsNull();
+        await Assert.That(File.Exists(CreateSettingsStore(workspace).SettingsPath)).IsFalse();
+    }
+
+    [Test]
+    [Arguments((int)TrustScope.LocalUser)]
+    [Arguments((int)TrustScope.GlobalUser)]
+    public async Task DenyScripts_WhenUserScope_SetsDenialIdempotentlyWithoutConfirmation(
+        int scopeValue
+    )
+    {
+        var scope = (TrustScope)scopeValue;
+        using var workspace = new TestWorkspace();
+        Directory.CreateDirectory(Path.Combine(workspace.Path, "source"));
+        var confirmer = new AcceptingTrustConfirmer();
+        var service = await CreateServiceAsync(workspace, confirmer);
+
+        var first = await service.DenyScriptsAsync(workspace.Path, scope);
+        var second = await service.DenyScriptsAsync(workspace.Path, scope);
+        var listing = await service.ListAsync(workspace.Path, scope);
+
+        await Assert.That(first.IsSuccess).IsTrue();
+        await Assert.That(second.IsSuccess).IsTrue();
+        await Assert.That(listing.RequireValue().ScriptsDenied).IsTrue();
+        await Assert.That(confirmer.Warning).IsNull();
+    }
+
+    [Test]
+    public async Task ResetScriptDenial_WhenConfirmed_PreservesRetainedGrants()
+    {
+        using var workspace = new TestWorkspace();
+        Directory.CreateDirectory(Path.Combine(workspace.Path, "source"));
+        var confirmer = new AcceptingTrustConfirmer();
+        var service = await CreateServiceAsync(workspace, confirmer);
+        await service.TrustSourcesAsync(workspace.Path, ["local"], TrustScope.LocalUser);
+        await service.DenyScriptsAsync(workspace.Path, TrustScope.LocalUser);
+
+        var reset = await service.ResetScriptDenialAsync(workspace.Path, TrustScope.LocalUser);
+        var listing = await service.ListAsync(workspace.Path, TrustScope.LocalUser);
+
+        await Assert.That(reset.IsSuccess).IsTrue();
+        await Assert.That(listing.RequireValue().ScriptsDenied).IsFalse();
+        await Assert.That(listing.RequireValue().Sources).Count().IsEqualTo(1);
+        await Assert
+            .That(confirmer.Warning)
+            .Contains("reactivate retained source and pack trust grants");
+        await Assert.That(confirmer.Warning).Contains("Scope: local user");
+    }
+
+    [Test]
+    [Arguments((int)TrustScope.LocalUser)]
+    [Arguments((int)TrustScope.Project)]
+    [Arguments((int)TrustScope.GlobalUser)]
+    public async Task ResetScriptDenial_WhenConfirmed_RemovesOnlySelectedScope(int scopeValue)
+    {
+        var scope = (TrustScope)scopeValue;
+        using var workspace = new TestWorkspace();
+        Directory.CreateDirectory(Path.Combine(workspace.Path, "source"));
+        var service = await CreateServiceAsync(workspace, new AcceptingTrustConfirmer());
+        await service.TrustSourcesAsync(workspace.Path, ["local"], scope);
+        await service.DenyScriptsAsync(workspace.Path, scope);
+
+        var reset = await service.ResetScriptDenialAsync(workspace.Path, scope);
+        var listing = await service.ListAsync(workspace.Path, scope);
+
+        await Assert.That(reset.IsSuccess).IsTrue();
+        await Assert.That(listing.RequireValue().ScriptsDenied).IsFalse();
+        var retainedGrantCount =
+            scope is TrustScope.Project
+                ? listing.RequireValue().ProjectSourceDeclarations.Count
+                : listing.RequireValue().Sources.Count;
+        await Assert.That(retainedGrantCount).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task ResetScriptDenial_WhenDeclined_PreservesDenial()
+    {
+        using var workspace = new TestWorkspace();
+        Directory.CreateDirectory(Path.Combine(workspace.Path, "source"));
+        var acceptingService = await CreateServiceAsync(workspace, new AcceptingTrustConfirmer());
+        await acceptingService.DenyScriptsAsync(workspace.Path, TrustScope.GlobalUser);
+        var service = new TrustService(
+            workspace.FileSystem,
+            workspace.StateStore,
+            CreateSettingsStore(workspace),
+            new RejectingTrustConfirmer()
+        );
+
+        var reset = await service.ResetScriptDenialAsync(workspace.Path, TrustScope.GlobalUser);
+        var listing = await service.ListAsync(workspace.Path, TrustScope.GlobalUser);
+
+        await Assert.That(reset.IsSuccess).IsFalse();
+        await Assert.That(listing.RequireValue().ScriptsDenied).IsTrue();
+    }
+
+    [Test]
+    public async Task Command_List_WhenDeniedWithRetainedGrant_ReportsBothEntries()
+    {
+        using var workspace = new TestWorkspace();
+        Directory.CreateDirectory(Path.Combine(workspace.Path, "source"));
+        var output = new StringWriter();
+        var ansiConsole = AnsiConsole.Create(
+            new AnsiConsoleSettings
+            {
+                Ansi = AnsiSupport.No,
+                ColorSystem = ColorSystemSupport.NoColors,
+                Out = new AnsiConsoleOutput(output),
+            }
+        );
+        var application = new CliApplication(
+            workspace.FileSystem,
+            ansiConsole,
+            trustConfirmer: new AcceptingTrustConfirmer(),
+            userSettingsStore: CreateSettingsStore(workspace)
+        );
+        await application.RunAsync(["init"], workspace.Path);
+        await application.RunAsync(["sources", "add", "local", "local", "source"], workspace.Path);
+        await application.RunAsync(["trust", "source", "local"], workspace.Path);
+        await application.RunAsync(["trust", "scripts", "deny"], workspace.Path);
+
+        var exitCode = await application.RunAsync(["trust", "list"], workspace.Path);
+        var text = output.ToString().ReplaceLineEndings(string.Empty);
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(text).Contains("local-user script denial - scripts: denied");
+        await Assert.That(text).Contains("local-user source - identity: local");
+    }
+
+    [Test]
+    [Arguments("deny")]
+    [Arguments("reset")]
+    public async Task ScriptsCommand_WhenProjectAndGlobalCombined_Fails(string operation)
+    {
+        using var workspace = new TestWorkspace();
+        var application = new CliApplication(
+            workspace.FileSystem,
+            TestConsole.CreateAnsiConsole(),
+            trustConfirmer: new AcceptingTrustConfirmer(),
+            userSettingsStore: CreateSettingsStore(workspace)
+        );
+        await application.RunAsync(["init"], workspace.Path);
+
+        var exitCode = await application.RunAsync(
+            ["trust", "scripts", operation, "--project", "--global"],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(1);
+    }
+
+    [Test]
     public async Task TrustSources_WhenConfirmed_AddsExactLocalUserIdentitiesOnce()
     {
         using var workspace = new TestWorkspace();
@@ -355,6 +518,28 @@ public sealed class TrustServiceTests
         await Assert.That(listing.RequireValue().Sources).Count().IsEqualTo(1);
     }
 
+    [Test]
+    public async Task TrustSources_WhenProjectSettingsSaveFails_RollsBackProjectDeclaration()
+    {
+        using var workspace = new TestWorkspace();
+        Directory.CreateDirectory(Path.Combine(workspace.Path, "source"));
+        var settingsStore = CreateSettingsStore(workspace);
+        var confirmer = new CallbackTrustConfirmer(() =>
+            Directory.CreateDirectory(settingsStore.SettingsPath)
+        );
+        var service = await CreateServiceAsync(workspace, confirmer);
+
+        var trusted = await service.TrustSourcesAsync(
+            workspace.Path,
+            ["local"],
+            TrustScope.Project
+        );
+        var state = await workspace.StateStore.LoadAsync(workspace.Path);
+
+        await Assert.That(trusted.IsSuccess).IsFalse();
+        await Assert.That(state.RequireValue().Configuration.Trust.Sources).IsEmpty();
+    }
+
     private static async Task<TrustService> CreateServiceAsync(
         TestWorkspace workspace,
         ITrustConfirmer confirmer
@@ -405,6 +590,15 @@ public sealed class TrustServiceTests
         {
             Warning = warning;
             return false;
+        }
+    }
+
+    private sealed class CallbackTrustConfirmer(Action callback) : ITrustConfirmer
+    {
+        public bool Confirm(string warning)
+        {
+            callback();
+            return true;
         }
     }
 }

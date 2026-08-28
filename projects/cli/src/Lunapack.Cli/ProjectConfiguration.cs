@@ -69,6 +69,8 @@ internal sealed record ProjectConfiguration
 
     internal sealed record ProjectTrust
     {
+        public ScriptDenial? Deny { get; set; }
+
         public List<TrustedPack> Packs { get; set; } = [];
 
         public List<string> Sources { get; set; } = [];
