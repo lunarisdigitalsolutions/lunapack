@@ -39,4 +39,4 @@
 - [x] 5.3 Update internal runtime, lifecycle-script safety, schema, and initialization guidance with data shapes, authorization order, reset risk, compatibility, and testing expectations.
 - [x] 5.4 Update developer CLI commands, configuration, trust-and-scripts, lifecycle-hooks, installation, update, uninstall, troubleshooting, and pack-authoring guidance with commands, YAML examples, defaults, warnings, dry-run behavior, and minimal init output.
 - [x] 5.5 Add an externally observable entry to `CHANGELOG.md` covering persistent script denial, non-bypass semantics, warning origins, and minimal generated YAML.
-- [ ] 5.6 Run focused schema, trust, lifecycle authorization, initialization, and CLI process tests; then run the complete CLI test suite, Native AOT publish validation, OpenSpec strict validation, and Markdown/link checks.
+- [x] 5.6 Run focused schema, trust, lifecycle authorization, initialization, and CLI process tests; then run the complete CLI test suite, Native AOT publish validation, OpenSpec strict validation, and Markdown/link checks.

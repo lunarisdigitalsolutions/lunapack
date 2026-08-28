@@ -121,10 +121,10 @@ internal sealed class LifecycleHookAuthorizer(
         ProjectConfiguration configuration,
         ScriptPolicyEvaluation? evaluation,
         ScriptExecutionMode scriptMode,
-        IReadOnlyList<LifecycleHookInvocation> invocations
+        LifecycleHookInvocation[] invocations
     )
     {
-        if (invocations.Count == 0)
+        if (invocations.Length == 0)
         {
             return ManifestOperationResult<
                 IReadOnlyList<ResolvedLifecycleHookInvocation>
@@ -227,10 +227,10 @@ internal sealed class LifecycleHookAuthorizer(
     }
 
     private ManifestOperationResult<IReadOnlyList<ResolvedLifecycleHookInvocation>> ResolveAll(
-        IReadOnlyList<LifecycleHookInvocation> invocations
+        LifecycleHookInvocation[] invocations
     )
     {
-        var resolvedInvocations = new List<ResolvedLifecycleHookInvocation>(invocations.Count);
+        var resolvedInvocations = new List<ResolvedLifecycleHookInvocation>(invocations.Length);
         foreach (var invocation in invocations)
         {
             var resolved = commandResolver.Resolve(invocation);

@@ -23,7 +23,10 @@ internal sealed class TestWorkspace : IDisposable
             ansiConsole ?? TestConsole.CreateAnsiConsole(),
             packUpdatePrompter,
             gitProcessRunner: gitProcessRunner ?? new StubGitProcessRunner(),
-            userSettingsStore: new UserSettingsStore(FileSystem, Path)
+            userSettingsStore: new UserSettingsStore(
+                FileSystem,
+                System.IO.Path.Combine(Path, "profile")
+            )
         );
         ManifestStore = new ProjectManifestStore(FileSystem);
         StateStore = new ProjectStateStore(FileSystem);
