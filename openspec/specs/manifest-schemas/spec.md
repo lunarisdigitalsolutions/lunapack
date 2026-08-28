@@ -42,7 +42,7 @@ The repository SHALL publish a JSON Schema under `projects/schema/` for `lunapac
 
 ### Requirement: Publish project lock-file schema
 
-The repository SHALL publish a JSON Schema under `projects/schema/` for `lunapack-lock.yml`. The schema SHALL require its explicit schema version and a resolved pack graph with exact pack identity and version, source provenance, composite references, and managed target-path SHA-256 records. Git-sourced pack provenance SHALL record the repository URL, requested ref when configured, configured repository path when configured, and the resolved commit SHA. It SHALL reject unknown lock schema versions and incomplete resolved pack records. Existing valid local-source lock records SHALL remain valid.
+The repository SHALL publish a JSON Schema under `projects/schema/` for `lunapack-lock.yml`. The schema SHALL require its explicit schema version and a resolved pack graph with exact pack identity and version, source provenance, composite references, and managed target-path SHA-256 records. Git-sourced pack provenance SHALL record the repository URL, requested ref when configured, configured repository path when configured, and the resolved commit SHA. A pack that uses an external source SHALL record each used pack-local source alias, its authoritative workspace source identifier, normalized fingerprint, canonical requested ref, and resolved commit. Each externally sourced managed-file record SHALL identify its owning pack, pack version, pack-local source alias, workspace source identifier, fingerprint, source-relative path, effective target, and installed content hash. The schema SHALL reject unknown lock schema versions and incomplete resolved pack or external-source records. Existing valid local-source and Git-source lock records that contain no external-source provenance SHALL remain valid.
 
 #### Scenario: Validate resolved composite lock state
 
@@ -54,6 +54,11 @@ The repository SHALL publish a JSON Schema under `projects/schema/` for `lunapac
 - **WHEN** the lock schema validates a Git-sourced pack record with its repository URL and resolved commit SHA
 - **THEN** validation succeeds
 
+#### Scenario: Validate external-source provenance
+
+- **WHEN** the lock schema validates an externally sourced file and its pack alias mapping with all required identity, revision, path, ownership, and hash fields
+- **THEN** validation succeeds
+
 #### Scenario: Reject incomplete resolved state
 
 - **WHEN** the lock schema validates a resolved pack record without source provenance, an exact version, or a required managed-file digest
@@ -61,24 +66,14 @@ The repository SHALL publish a JSON Schema under `projects/schema/` for `lunapac
 
 #### Scenario: Reject Git provenance without a resolved commit
 
-- **WHEN** the lock schema validates a Git-sourced pack record without a resolved commit SHA
+- **WHEN** the lock schema validates a Git-sourced pack or external-source record without a resolved commit SHA
 - **THEN** validation fails
 
 ### Requirement: Publish local pack-manifest schema
 
-The repository SHALL publish a JSON Schema under `projects/schema/` for
-`pack.yml`. The schema SHALL require a pack identity, semantic version,
-non-empty author, and non-empty license. It SHALL allow empty managed-file,
-composite-pack, and lifecycle-hook collections for incremental authoring. It
-SHALL allow optional
-non-empty name and homepage metadata, an optional human-readable package
-description, and up to 15 unique, non-empty tags. A complete distributable pack
-MAY declare managed-file entries, composite pack references, lifecycle hooks,
-or any combination of them. Each
-composite reference SHALL contain a pack ID and an exact Semantic Version and
-MAY bind identifier-named string or boolean parameters for its referenced pack.
-Managed-file selectors MAY set `template` to opt into Scriban parsing; it
-defaults to false. Pack manifests SHALL not contain source configuration.
+The repository SHALL publish a JSON Schema under `projects/schema/` for `pack.yml`. The schema SHALL require a pack identity, semantic version, non-empty author, and non-empty license. It SHALL allow empty managed-file and composite-pack collections for incremental authoring. It SHALL allow optional non-empty name and homepage metadata, an optional human-readable package description, and up to 15 unique, non-empty tags. A complete distributable pack MAY declare managed-file entries, composite pack references, or both. Each composite reference SHALL contain a pack ID and an exact Semantic Version and MAY bind identifier-named string or boolean parameters for its referenced pack. Managed-file selectors MAY set `template` to opt into Scriban parsing; it defaults to false.
+
+The schema SHALL allow an optional `sources` mapping whose keys are pack-local aliases and whose values are Git source declarations. Each declaration SHALL require `type: git`, a credential-free repository URL, and an explicit ref, and MAY contain a safe repository-relative base `path` and non-empty `description`. Pack-defined local sources and credential placeholders SHALL be invalid. Managed-file selectors MAY name a declared source alias and MAY select a file, recursive directory, or glob with repeatable exclusion patterns and optional flattening. Source and exclusion paths SHALL be relative and SHALL not escape the resolved source root. A selector without a source alias SHALL continue to resolve from the pack source. Lifecycle scripts SHALL resolve only from the pack source and SHALL not reference an external source.
 
 #### Scenario: Reject a manifest without required attribution
 
@@ -125,7 +120,7 @@ defaults to false. Pack manifests SHALL not contain source configuration.
 
 #### Scenario: Validate a manifest with a description
 
-- **WHEN** the schema validates a pack manifest with a description and a managed-file declaration, composite pack reference, or lifecycle hook
+- **WHEN** the schema validates a pack manifest with a description and a managed-file declaration or composite pack reference
 - **THEN** validation succeeds
 
 #### Scenario: Validate bounded pack tags
@@ -140,22 +135,17 @@ defaults to false. Pack manifests SHALL not contain source configuration.
 
 #### Scenario: Preserve file-only manifests
 
-- **WHEN** the schema validates an existing complete pack manifest that declares managed files but no composite references or lifecycle hooks
+- **WHEN** the schema validates an existing complete pack manifest that declares managed files but no composite references or external sources
 - **THEN** validation succeeds
 
 #### Scenario: Validate a contentless composite manifest
 
-- **WHEN** the schema validates a pack manifest with one or more composite references and no managed files or lifecycle hooks
-- **THEN** validation succeeds
-
-#### Scenario: Validate an instruction-only manifest
-
-- **WHEN** the schema validates a pack manifest with one or more lifecycle hooks and no managed files or composite references
+- **WHEN** the schema validates a pack manifest with one or more composite references and no managed files
 - **THEN** validation succeeds
 
 #### Scenario: Reject an incomplete or unpinned composite reference
 
-- **WHEN** the schema validates a pack manifest without a managed-file, composite, or lifecycle-hook declaration, or with a composite reference lacking an exact version
+- **WHEN** the schema validates a pack manifest without a managed-file or composite declaration, or with a composite reference lacking an exact version
 - **THEN** validation fails
 
 #### Scenario: Validate composite reference parameter bindings
@@ -165,7 +155,32 @@ defaults to false. Pack manifests SHALL not contain source configuration.
 
 #### Scenario: Reject a source declaration in a pack manifest
 
-- **WHEN** the schema validates a pack manifest containing source configuration
+- **WHEN** a pack manifest declares a source that is local, lacks an explicit ref, contains credentials, or otherwise violates the pack-defined Git source contract
+- **THEN** validation fails
+
+#### Scenario: Validate a pack-defined Git source
+
+- **WHEN** a pack manifest declares a credential-free Git source with an explicit ref and a managed file references its alias
+- **THEN** validation succeeds
+
+#### Scenario: Reject a pack-defined local source
+
+- **WHEN** a pack manifest declares a source with `type: local`
+- **THEN** validation fails
+
+#### Scenario: Reject an unpinned pack-defined source
+
+- **WHEN** a pack manifest declares a Git source without a ref
+- **THEN** validation fails
+
+#### Scenario: Reject an unknown source alias
+
+- **WHEN** a managed-file selector names an alias absent from the pack's `sources` mapping
+- **THEN** validation fails
+
+#### Scenario: Reject an external lifecycle script
+
+- **WHEN** a lifecycle script attempts to select its file from a pack-defined external source
 - **THEN** validation fails
 
 #### Scenario: Preserve a managed file without template parsing

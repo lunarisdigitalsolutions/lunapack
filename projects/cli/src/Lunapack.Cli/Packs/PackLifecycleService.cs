@@ -72,6 +72,8 @@ internal sealed class PackLifecycleService(
             return _console.Fail(preparation.Error);
         }
 
+        WriteManagedFileTemplateDiagnostics(preparedInstallation.InstallationPlan);
+
         await using (preparedInstallation.Materialization)
         await using (preparedInstallation.ExternalMaterialization)
         {
@@ -119,6 +121,8 @@ internal sealed class PackLifecycleService(
                 preparation.Error ?? "Unable to plan pack installation."
             );
         }
+
+        WriteManagedFileTemplateDiagnostics(preparedInstallation.InstallationPlan);
 
         await using (preparedInstallation.Materialization)
         await using (preparedInstallation.ExternalMaterialization)
@@ -469,6 +473,8 @@ internal sealed class PackLifecycleService(
             return _console.Fail(preparation.Error);
         }
 
+        WriteManagedFileTemplateDiagnostics(preparedUpdate.InstallationPlan);
+
         await using (preparedUpdate.Materialization)
         await using (preparedUpdate.ExternalMaterialization)
         {
@@ -515,6 +521,8 @@ internal sealed class PackLifecycleService(
                 preparation.Error ?? "Unable to plan pack update."
             );
         }
+
+        WriteManagedFileTemplateDiagnostics(preparedUpdate.InstallationPlan);
 
         await using (preparedUpdate.Materialization)
         await using (preparedUpdate.ExternalMaterialization)
@@ -735,6 +743,16 @@ internal sealed class PackLifecycleService(
             {
                 await materialization.DisposeAsync();
             }
+        }
+    }
+
+    private void WriteManagedFileTemplateDiagnostics(PackInstallationPlan installationPlan)
+    {
+        foreach (var diagnostic in installationPlan.Diagnostics)
+        {
+            _console.Warning(
+                $"Managed file target '{diagnostic.ReferencedDeclaredTarget}' could not be resolved while rendering '{diagnostic.CurrentEffectiveTarget}'."
+            );
         }
     }
 

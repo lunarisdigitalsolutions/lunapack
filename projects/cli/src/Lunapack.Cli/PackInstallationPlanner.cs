@@ -38,16 +38,14 @@ internal sealed class PackInstallationPlanner(
             parameters,
             externalContentRoots ?? ExternalContentRoots.Empty
         );
-        if (plannedManagedFiles.Value is not { } managedFiles)
+        if (plannedManagedFiles.Value is not { } plan)
         {
             return ManifestOperationResult<PackInstallationPlan>.Failure(
                 plannedManagedFiles.Error ?? "Unable to plan managed files."
             );
         }
 
-        return ManifestOperationResult<PackInstallationPlan>.Success(
-            new PackInstallationPlan(managedFiles)
-        );
+        return ManifestOperationResult<PackInstallationPlan>.Success(plan);
     }
 
     private static ManifestOperationResult<
@@ -57,7 +55,7 @@ internal sealed class PackInstallationPlanner(
             ManagedRootInventory.CreateOwnershipMap(lockFile)
         );
 
-    private ManifestOperationResult<List<PlannedManagedFile>> PlanManagedFiles(
+    private ManifestOperationResult<PackInstallationPlan> PlanManagedFiles(
         string projectDirectory,
         ResolvedPackGraph graph,
         Dictionary<string, List<ManagedRootOwner>> existingManagedTargets,
@@ -68,10 +66,97 @@ internal sealed class PackInstallationPlanner(
         ExternalContentRoots externalContentRoots
     )
     {
+        var expandedCandidates = CreateManagedFileCandidates(
+            graph,
+            configuration,
+            requestedPacks,
+            installationRequest,
+            parameters,
+            externalContentRoots
+        );
+        if (expandedCandidates.Value is not { } candidates)
+        {
+            return ManifestOperationResult<PackInstallationPlan>.Failure(
+                expandedCandidates.Error ?? "Unable to expand managed files."
+            );
+        }
+        var effectiveTargets = candidates
+            .GroupBy(candidate => NormalizePath(candidate.DeclaredTarget), StringComparer.Ordinal)
+            .Where(group => group.Count() == 1)
+            .ToDictionary(
+                group => group.Key,
+                group => NormalizePath(group.Single().Target),
+                StringComparer.Ordinal
+            );
+        var diagnostics = new List<ManagedFileTemplateDiagnostic>();
         var plannedTargets = new Dictionary<string, List<PlannedManagedFile>>(
             StringComparer.Ordinal
         );
+        foreach (var candidate in candidates)
+        {
+            var managedFilePlan = CreateManagedFilePlan(
+                projectDirectory,
+                candidate.Pack,
+                candidate.ContentRoot,
+                candidate.SourcePath,
+                candidate.Target,
+                candidate.DeclaredTarget,
+                candidate.Strategy,
+                candidate.IsTemplate,
+                existingManagedTargets,
+                installationRequest,
+                parameters,
+                new ManagedFileTemplateContext(candidate.Target, effectiveTargets),
+                diagnostics
+            );
+            if (managedFilePlan.Value is not { } plan)
+            {
+                return ManifestOperationResult<PackInstallationPlan>.Failure(
+                    managedFilePlan.Error ?? "Unable to plan managed file."
+                );
+            }
 
+            if (
+                plannedTargets.TryGetValue(
+                    plan.TargetPathRelativeToProject,
+                    out var existingTargets
+                )
+            )
+            {
+                if (!CanShareTarget(existingTargets, plan))
+                {
+                    return ManifestOperationResult<PackInstallationPlan>.Failure(
+                        $"Target '{plan.TargetPathRelativeToProject}' is claimed by both '{existingTargets[0].Pack.Manifest.Id}' and '{candidate.Pack.Manifest.Id}'."
+                    );
+                }
+
+                existingTargets.Add(plan);
+                continue;
+            }
+
+            plannedTargets.Add(plan.TargetPathRelativeToProject, [plan]);
+        }
+
+        return ManifestOperationResult<PackInstallationPlan>.Success(
+            new PackInstallationPlan(
+                plannedTargets.Values.SelectMany(managedFiles => managedFiles).ToList()
+            )
+            {
+                Diagnostics = diagnostics,
+            }
+        );
+    }
+
+    private ManifestOperationResult<List<ManagedFilePlanCandidate>> CreateManagedFileCandidates(
+        ResolvedPackGraph graph,
+        ProjectConfiguration configuration,
+        IReadOnlyList<ProjectConfiguration.RequestedPack> requestedPacks,
+        PackInstallationRequest installationRequest,
+        ResolvedPackParameters parameters,
+        ExternalContentRoots externalContentRoots
+    )
+    {
+        var candidates = new List<ManagedFilePlanCandidate>();
         foreach (var pack in graph.Packs)
         {
             foreach (var managedFile in pack.Manifest.ManagedFiles)
@@ -79,7 +164,7 @@ internal sealed class PackInstallationPlanner(
                 var selected = ShouldSelectManagedFile(managedFile, parameters);
                 if (!selected.IsSuccess)
                 {
-                    return ManifestOperationResult<List<PlannedManagedFile>>.Failure(
+                    return ManifestOperationResult<List<ManagedFilePlanCandidate>>.Failure(
                         selected.Error ?? "Unable to evaluate managed-file condition."
                     );
                 }
@@ -89,64 +174,37 @@ internal sealed class PackInstallationPlanner(
                     continue;
                 }
 
-                var effectiveManagedFile = managedFile with
-                {
-                    Target = GetEffectiveTarget(
-                        pack,
-                        managedFile.Target,
-                        requestedPacks,
-                        configuration,
-                        installationRequest
-                    ),
-                };
-                var plannedManagedFiles = CreateManagedFilePlans(
-                    projectDirectory,
+                var createdCandidates = CreateManagedFileCandidates(
                     pack,
-                    effectiveManagedFile,
+                    managedFile,
                     managedFile.Target,
-                    existingManagedTargets,
-                    installationRequest,
-                    parameters,
                     externalContentRoots
                 );
-                if (plannedManagedFiles.Value is not { } managedFilePlans)
+                if (createdCandidates.Value is not { } managedFileCandidates)
                 {
-                    return ManifestOperationResult<List<PlannedManagedFile>>.Failure(
-                        plannedManagedFiles.Error ?? "Unable to plan managed files."
+                    return ManifestOperationResult<List<ManagedFilePlanCandidate>>.Failure(
+                        createdCandidates.Error ?? "Unable to expand managed files."
                     );
                 }
 
-                foreach (var managedFilePlan in managedFilePlans)
-                {
-                    if (
-                        plannedTargets.TryGetValue(
-                            managedFilePlan.TargetPathRelativeToProject,
-                            out var existingTargets
-                        )
-                    )
-                    {
-                        if (!CanShareTarget(existingTargets, managedFilePlan))
+                candidates.AddRange(
+                    managedFileCandidates.Select(candidate =>
+                        candidate with
                         {
-                            return ManifestOperationResult<List<PlannedManagedFile>>.Failure(
-                                $"Target '{managedFilePlan.TargetPathRelativeToProject}' is claimed by both '{existingTargets[0].Pack.Manifest.Id}' and '{pack.Manifest.Id}'."
-                            );
+                            Target = GetEffectiveTarget(
+                                pack,
+                                candidate.DeclaredTarget,
+                                requestedPacks,
+                                configuration,
+                                installationRequest
+                            ),
                         }
-
-                        existingTargets.Add(managedFilePlan);
-                        continue;
-                    }
-
-                    plannedTargets.Add(
-                        managedFilePlan.TargetPathRelativeToProject,
-                        [managedFilePlan]
-                    );
-                }
+                    )
+                );
             }
         }
 
-        return ManifestOperationResult<List<PlannedManagedFile>>.Success(
-            plannedTargets.Values.SelectMany(managedFiles => managedFiles).ToList()
-        );
+        return ManifestOperationResult<List<ManagedFilePlanCandidate>>.Success(candidates);
     }
 
     private static bool CanShareTarget(
@@ -207,21 +265,17 @@ internal sealed class PackInstallationPlanner(
         return destination is null ? target : fileSystem.Path.Combine(destination, target);
     }
 
-    private ManifestOperationResult<List<PlannedManagedFile>> CreateManagedFilePlans(
-        string projectDirectory,
+    private ManifestOperationResult<List<ManagedFilePlanCandidate>> CreateManagedFileCandidates(
         DiscoveredPack pack,
         PackManifest.PackManagedFile managedFile,
         string declaredTarget,
-        Dictionary<string, List<ManagedRootOwner>> existingManagedTargets,
-        PackInstallationRequest installationRequest,
-        ResolvedPackParameters parameters,
         ExternalContentRoots externalContentRoots
     )
     {
         var createdSelector = PackManagedFileSelector.Create(managedFile);
         if (createdSelector.Value is not { } selector)
         {
-            return ManifestOperationResult<List<PlannedManagedFile>>.Failure(
+            return ManifestOperationResult<List<ManagedFilePlanCandidate>>.Failure(
                 $"Pack '{pack.Manifest.Id}': {createdSelector.Error ?? "managed-file mapping has no selector."}"
             );
         }
@@ -229,54 +283,42 @@ internal sealed class PackInstallationPlanner(
         var resolvedRoot = ResolveContentRoot(pack, selector, externalContentRoots);
         if (resolvedRoot.Value is not { } contentRoot)
         {
-            return ManifestOperationResult<List<PlannedManagedFile>>.Failure(
+            return ManifestOperationResult<List<ManagedFilePlanCandidate>>.Failure(
                 resolvedRoot.Error ?? "Unable to resolve managed-file content root."
             );
         }
 
         return selector.Kind switch
         {
-            PackManagedFileSelectorKind.File => CreateFileManagedFilePlan(
-                projectDirectory,
+            PackManagedFileSelectorKind.File => CreateFileManagedFileCandidate(
                 pack,
                 contentRoot,
                 selector,
                 managedFile,
-                declaredTarget,
-                existingManagedTargets,
-                installationRequest,
-                parameters
+                declaredTarget
             ),
-            PackManagedFileSelectorKind.Directory => CreateDirectoryManagedFilePlans(
-                projectDirectory,
+            PackManagedFileSelectorKind.Directory => CreateDirectoryManagedFileCandidates(
                 pack,
                 contentRoot,
                 selector,
                 managedFile.Target,
                 declaredTarget,
                 managedFile.Strategy,
-                managedFile.Template,
-                existingManagedTargets,
-                installationRequest,
-                parameters
+                managedFile.Template
             ),
-            _ => CreateGlobManagedFilePlans(
-                projectDirectory,
+            _ => CreateGlobManagedFileCandidates(
                 pack,
                 contentRoot,
                 selector,
                 managedFile.Target,
                 declaredTarget,
                 managedFile.Strategy,
-                managedFile.Template,
-                existingManagedTargets,
-                installationRequest,
-                parameters
+                managedFile.Template
             ),
         };
     }
 
-    private static ManifestOperationResult<ContentRoot> ResolveContentRoot(
+    private static ManifestOperationResult<ManagedFileContentRoot> ResolveContentRoot(
         DiscoveredPack pack,
         PackManagedFileSelector selector,
         ExternalContentRoots externalContentRoots
@@ -284,83 +326,70 @@ internal sealed class PackInstallationPlanner(
     {
         if (selector.SourceAlias is not { } alias)
         {
-            return ManifestOperationResult<ContentRoot>.Success(
-                new ContentRoot(pack.PackDirectory, null)
+            return ManifestOperationResult<ManagedFileContentRoot>.Success(
+                new ManagedFileContentRoot(pack.PackDirectory, null)
             );
         }
 
         var externalRoot = externalContentRoots.Find(pack.Manifest.Id, alias);
         return externalRoot is null
-            ? ManifestOperationResult<ContentRoot>.Failure(
+            ? ManifestOperationResult<ManagedFileContentRoot>.Failure(
                 $"Pack '{pack.Manifest.Id}' references source '{alias}' that has not been materialized."
             )
-            : ManifestOperationResult<ContentRoot>.Success(
-                new ContentRoot(externalRoot.Directory, externalRoot)
+            : ManifestOperationResult<ManagedFileContentRoot>.Success(
+                new ManagedFileContentRoot(externalRoot.Directory, externalRoot)
             );
     }
 
-    private ManifestOperationResult<List<PlannedManagedFile>> CreateFileManagedFilePlan(
-        string projectDirectory,
+    private ManifestOperationResult<List<ManagedFilePlanCandidate>> CreateFileManagedFileCandidate(
         DiscoveredPack pack,
-        ContentRoot contentRoot,
+        ManagedFileContentRoot contentRoot,
         PackManagedFileSelector selector,
         PackManifest.PackManagedFile managedFile,
-        string declaredTarget,
-        Dictionary<string, List<ManagedRootOwner>> existingManagedTargets,
-        PackInstallationRequest installationRequest,
-        ResolvedPackParameters parameters
+        string declaredTarget
     )
     {
         var sourcePath = fileSystem.Path.Combine(contentRoot.Directory, selector.Value);
         var contained = EnsureWithinContentRoot(pack, contentRoot, sourcePath, selector.Value);
         if (!contained.IsSuccess)
         {
-            return ManifestOperationResult<List<PlannedManagedFile>>.Failure(
+            return ManifestOperationResult<List<ManagedFilePlanCandidate>>.Failure(
                 contained.Error ?? "Managed-file selector escapes its content root."
             );
         }
 
         if (!fileSystem.File.Exists(sourcePath))
         {
-            return ManifestOperationResult<List<PlannedManagedFile>>.Failure(
+            return ManifestOperationResult<List<ManagedFilePlanCandidate>>.Failure(
                 contentRoot.External is { } external
                     ? $"Pack '{pack.Manifest.Id}' source '{external.Alias}' file '{selector.Value}' is unavailable."
                     : $"Pack '{pack.Manifest.Id}' source file '{selector.Value}' is unavailable."
             );
         }
 
-        var managedFilePlan = CreateManagedFilePlan(
-            projectDirectory,
-            pack,
-            contentRoot,
-            sourcePath,
-            managedFile.Target,
-            declaredTarget,
-            managedFile.Strategy,
-            managedFile.Template,
-            existingManagedTargets,
-            installationRequest,
-            parameters
-        );
-        return managedFilePlan.Value is { } plan
-            ? ManifestOperationResult<List<PlannedManagedFile>>.Success([plan])
-            : ManifestOperationResult<List<PlannedManagedFile>>.Failure(
-                managedFilePlan.Error ?? "Unable to plan managed file."
-            );
+        return ManifestOperationResult<List<ManagedFilePlanCandidate>>.Success([
+            new ManagedFilePlanCandidate(
+                pack,
+                contentRoot,
+                sourcePath,
+                managedFile.Target,
+                declaredTarget,
+                managedFile.Strategy,
+                managedFile.Template
+            ),
+        ]);
     }
 
-    private ManifestOperationResult<List<PlannedManagedFile>> CreateDirectoryManagedFilePlans(
-        string projectDirectory,
+    private ManifestOperationResult<
+        List<ManagedFilePlanCandidate>
+    > CreateDirectoryManagedFileCandidates(
         DiscoveredPack pack,
-        ContentRoot contentRoot,
+        ManagedFileContentRoot contentRoot,
         PackManagedFileSelector selector,
         string targetDirectory,
         string declaredTargetDirectory,
         PackManifest.PackManagedFileStrategy strategy,
-        bool isTemplate,
-        Dictionary<string, List<ManagedRootOwner>> existingManagedTargets,
-        PackInstallationRequest installationRequest,
-        ResolvedPackParameters parameters
+        bool isTemplate
     )
     {
         var directory = selector.Value;
@@ -368,14 +397,14 @@ internal sealed class PackInstallationPlanner(
         var contained = EnsureWithinContentRoot(pack, contentRoot, sourceDirectory, directory);
         if (!contained.IsSuccess)
         {
-            return ManifestOperationResult<List<PlannedManagedFile>>.Failure(
+            return ManifestOperationResult<List<ManagedFilePlanCandidate>>.Failure(
                 contained.Error ?? "Managed-file selector escapes its content root."
             );
         }
 
         if (!fileSystem.Directory.Exists(sourceDirectory))
         {
-            return ManifestOperationResult<List<PlannedManagedFile>>.Failure(
+            return ManifestOperationResult<List<ManagedFilePlanCandidate>>.Failure(
                 $"Pack '{pack.Manifest.Id}' source directory '{directory}' is unavailable."
             );
         }
@@ -390,11 +419,10 @@ internal sealed class PackInstallationPlanner(
             .ToList();
         var retained = ApplyExclusions(sourceFiles, selector.Exclusions);
         return retained.Count == 0
-            ? ManifestOperationResult<List<PlannedManagedFile>>.Failure(
+            ? ManifestOperationResult<List<ManagedFilePlanCandidate>>.Failure(
                 $"Pack '{pack.Manifest.Id}' source directory '{directory}' contains no files."
             )
-            : CreateManagedFilePlans(
-                projectDirectory,
+            : CreateManagedFileCandidates(
                 pack,
                 contentRoot,
                 targetDirectory,
@@ -403,25 +431,18 @@ internal sealed class PackInstallationPlanner(
                 retained,
                 selector.Flatten,
                 strategy,
-                isTemplate,
-                existingManagedTargets,
-                installationRequest,
-                parameters
+                isTemplate
             );
     }
 
-    private ManifestOperationResult<List<PlannedManagedFile>> CreateGlobManagedFilePlans(
-        string projectDirectory,
+    private ManifestOperationResult<List<ManagedFilePlanCandidate>> CreateGlobManagedFileCandidates(
         DiscoveredPack pack,
-        ContentRoot contentRoot,
+        ManagedFileContentRoot contentRoot,
         PackManagedFileSelector selector,
         string targetDirectory,
         string declaredTargetDirectory,
         PackManifest.PackManagedFileStrategy strategy,
-        bool isTemplate,
-        Dictionary<string, List<ManagedRootOwner>> existingManagedTargets,
-        PackInstallationRequest installationRequest,
-        ResolvedPackParameters parameters
+        bool isTemplate
     )
     {
         var glob = selector.Value;
@@ -447,11 +468,10 @@ internal sealed class PackInstallationPlanner(
 
         var globBaseDirectory = GetGlobBaseDirectory(contentRoot.Directory, glob);
         return retained.Count == 0
-            ? ManifestOperationResult<List<PlannedManagedFile>>.Failure(
+            ? ManifestOperationResult<List<ManagedFilePlanCandidate>>.Failure(
                 $"Pack '{pack.Manifest.Id}' glob '{glob}' matches no files."
             )
-            : CreateManagedFilePlans(
-                projectDirectory,
+            : CreateManagedFileCandidates(
                 pack,
                 contentRoot,
                 targetDirectory,
@@ -469,10 +489,7 @@ internal sealed class PackInstallationPlanner(
                 ],
                 selector.Flatten,
                 strategy,
-                isTemplate,
-                existingManagedTargets,
-                installationRequest,
-                parameters
+                isTemplate
             );
     }
 
@@ -505,7 +522,7 @@ internal sealed class PackInstallationPlanner(
 
     private ManifestOperationResult<bool> EnsureWithinContentRoot(
         DiscoveredPack pack,
-        ContentRoot contentRoot,
+        ManagedFileContentRoot contentRoot,
         string candidatePath,
         string declaredPath
     )
@@ -531,25 +548,19 @@ internal sealed class PackInstallationPlanner(
             );
     }
 
-    private sealed record ContentRoot(string Directory, ExternalContentRoot? External);
-
-    private ManifestOperationResult<List<PlannedManagedFile>> CreateManagedFilePlans(
-        string projectDirectory,
+    private ManifestOperationResult<List<ManagedFilePlanCandidate>> CreateManagedFileCandidates(
         DiscoveredPack pack,
-        ContentRoot contentRoot,
+        ManagedFileContentRoot contentRoot,
         string targetDirectory,
         string declaredTargetDirectory,
         string sourceDirectory,
         IReadOnlyList<SourceFile> sourceFiles,
         bool flatten,
         PackManifest.PackManagedFileStrategy strategy,
-        bool isTemplate,
-        Dictionary<string, List<ManagedRootOwner>> existingManagedTargets,
-        PackInstallationRequest installationRequest,
-        ResolvedPackParameters parameters
+        bool isTemplate
     )
     {
-        var managedFiles = new List<PlannedManagedFile>(sourceFiles.Count);
+        var candidates = new List<ManagedFilePlanCandidate>(sourceFiles.Count);
         var flattenedNames = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var sourceFile in sourceFiles)
         {
@@ -565,7 +576,7 @@ internal sealed class PackInstallationPlanner(
                     && !string.Equals(conflictingPath, sourceFile.Path, StringComparison.Ordinal)
                 )
                 {
-                    return ManifestOperationResult<List<PlannedManagedFile>>.Failure(
+                    return ManifestOperationResult<List<ManagedFilePlanCandidate>>.Failure(
                         $"Pack '{pack.Manifest.Id}' cannot flatten '{NormalizePath(sourcePathRelativeToDirectory)}' because file name '{fileName}' is already claimed."
                     );
                 }
@@ -582,36 +593,26 @@ internal sealed class PackInstallationPlanner(
                 declaredTargetDirectory,
                 sourcePathRelativeToDirectory
             );
-            var managedFilePlan = CreateManagedFilePlan(
-                projectDirectory,
-                pack,
-                contentRoot,
-                sourceFile.Path,
-                targetPath,
-                declaredTargetPath,
-                strategy,
-                isTemplate,
-                existingManagedTargets,
-                installationRequest,
-                parameters
+            candidates.Add(
+                new ManagedFilePlanCandidate(
+                    pack,
+                    contentRoot,
+                    sourceFile.Path,
+                    targetPath,
+                    declaredTargetPath,
+                    strategy,
+                    isTemplate
+                )
             );
-            if (managedFilePlan.Value is not { } plan)
-            {
-                return ManifestOperationResult<List<PlannedManagedFile>>.Failure(
-                    managedFilePlan.Error ?? "Unable to plan managed file."
-                );
-            }
-
-            managedFiles.Add(plan);
         }
 
-        return ManifestOperationResult<List<PlannedManagedFile>>.Success(managedFiles);
+        return ManifestOperationResult<List<ManagedFilePlanCandidate>>.Success(candidates);
     }
 
     private ManifestOperationResult<PlannedManagedFile> CreateManagedFilePlan(
         string projectDirectory,
         DiscoveredPack pack,
-        ContentRoot contentRoot,
+        ManagedFileContentRoot contentRoot,
         string sourcePath,
         string target,
         string declaredTarget,
@@ -619,17 +620,26 @@ internal sealed class PackInstallationPlanner(
         bool isTemplate,
         Dictionary<string, List<ManagedRootOwner>> existingManagedTargets,
         PackInstallationRequest installationRequest,
-        ResolvedPackParameters parameters
+        ResolvedPackParameters parameters,
+        ManagedFileTemplateContext templateContext,
+        List<ManagedFileTemplateDiagnostic> diagnostics
     )
     {
-        var renderedContent = templateRenderer.Render(sourcePath, isTemplate, parameters);
-        if (renderedContent.Value is not { } content)
+        var renderedContent = templateRenderer.RenderManagedFile(
+            sourcePath,
+            isTemplate,
+            parameters,
+            templateContext
+        );
+        if (renderedContent.Value is not { } rendered)
         {
             return ManifestOperationResult<PlannedManagedFile>.Failure(
                 renderedContent.Error ?? "Unable to render managed file."
             );
         }
 
+        var content = rendered.Contents;
+        diagnostics.AddRange(rendered.Diagnostics);
         var targetPath = fileSystem.Path.GetFullPath(target, projectDirectory);
         var targetPathRelativeToProject = NormalizePath(
             fileSystem.Path.GetRelativePath(projectDirectory, targetPath)
@@ -697,7 +707,7 @@ internal sealed class PackInstallationPlanner(
     }
 
     private PlannedExternalSource? CreateExternalProvenance(
-        ContentRoot contentRoot,
+        ManagedFileContentRoot contentRoot,
         string sourcePath
     ) =>
         contentRoot.External is not { } external

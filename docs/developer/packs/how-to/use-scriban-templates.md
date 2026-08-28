@@ -62,7 +62,37 @@ Project type: {{ projectType }}
 
 Template parsing is strict. An unknown variable, invalid expression, or invalid
 UTF-8 input fails planning before project files or state change. Templates do
-not receive filesystem, host-service, include, or custom-function access.
+not receive filesystem, host-service, or include access.
+
+## Resolve managed-file paths
+
+Reference another managed file by its declared `target`. LunaPack resolves the
+consumer's effective target after remapping:
+
+```scriban
+See {{ files.path "docs/development/code-review.md" }}.
+```
+
+For a reference relative to the current template's effective target directory,
+use `files.relative_path`:
+
+```scriban
+See {{ files.relative_path "docs/development/code-review.md" }}.
+```
+
+Both functions use the complete condition-selected installation plan. Directory
+and glob selectors resolve by their expanded concrete declared targets. Returned
+paths always use `/`, including on Windows. Install, update, and dry-run use the
+same resolution behavior.
+
+If the declared target is missing, excluded by a condition, or ambiguous,
+LunaPack warns and returns the supplied target unchanged. This fallback does not
+fail the operation. The `files` object exposes no filesystem discovery, content,
+or existence checks.
+
+These functions are available only to template-enabled managed files.
+Instruction and lifecycle script argument templates continue to expose resolved
+parameters and Scriban date functions, but not `files`.
 
 ## Render lifecycle hooks
 

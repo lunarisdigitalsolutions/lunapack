@@ -67,6 +67,26 @@ When a caller needs additional semantics such as trimming a repository-relative
 Git path, apply that operation after `ProjectPath` normalization. Do not create
 a second separator-normalization implementation.
 
+## Template Path Resolution
+
+Managed-file planning expands condition-selected file, directory, and glob
+selectors and resolves every concrete declared/effective target pair before
+rendering template content. This complete plan map makes template references
+independent of selector and graph order.
+
+The managed-file Scriban `files` object receives only the current effective
+target and this immutable map. `files.path` returns the referenced effective
+project-relative target. `files.relative_path` uses lexical path operations from
+the current effective target's directory, then passes the result through
+`ProjectPath.Normalize`. Neither function receives a project root or filesystem
+service, and neither checks whether a path exists.
+
+Only uniquely selected declared targets enter the lookup. Missing,
+conditionally excluded, and ambiguous targets produce recoverable planning
+diagnostics. Lifecycle orchestration renders those diagnostics as warnings after
+a successful plan; installation, update, and dry-run use the same planner path.
+See [ADR-0057](../architecture/adr/0057-resolve-template-paths-from-installation-plans.md).
+
 ## Verification
 
 Add focused tests for each new path boundary. Cover Windows-style input,

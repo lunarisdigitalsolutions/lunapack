@@ -44,4 +44,5 @@ luna variables rm companyName
 Variables are project configuration, while explicit installation inputs are
 not persisted as variables. Pack authors define `string`, `bool`, and `enum`
 parameters. See [Use Scriban templates](packs/how-to/use-scriban-templates.md)
-for declarations, template rendering, and conditions.
+for declarations, template rendering, conditions, and the managed-file
+`files.path` and `files.relative_path` functions.
