@@ -161,7 +161,21 @@ internal sealed class PackTemplateRenderer(IFileSystem fileSystem)
         var globals = new ScriptObject(StringComparer.Ordinal);
         foreach (var (name, value) in parameters.Values)
         {
-            globals.SetValue(name, value.Value, readOnly: true);
+            globals.SetValue(
+                name,
+                value.StringValues is { } stringValues
+                    ? new ScribanMultiSelectArray(stringValues)
+                    : value.Value,
+                readOnly: true
+            );
+        }
+
+        if (
+            parameters.Values.Values.Any(value => value.StringValues is not null)
+            && !parameters.Values.ContainsKey("contains")
+        )
+        {
+            globals.SetValue("contains", true, readOnly: true);
         }
 
         if (managedFileContext is not null && diagnostics is not null)

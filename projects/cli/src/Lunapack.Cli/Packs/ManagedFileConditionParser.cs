@@ -49,7 +49,16 @@ internal sealed class ManagedFileConditionParser
                     index++;
                 }
 
-                tokens.Add(new Token(TokenKind.Identifier, condition[position..index], position));
+                var identifier = condition[position..index];
+                tokens.Add(
+                    new Token(
+                        string.Equals(identifier, "in", StringComparison.Ordinal)
+                            ? TokenKind.In
+                            : TokenKind.Identifier,
+                        identifier,
+                        position
+                    )
+                );
                 continue;
             }
 
@@ -202,6 +211,11 @@ internal sealed class ManagedFileConditionParser
                 return expression;
             }
 
+            if (Current.Kind == TokenKind.StringLiteral)
+            {
+                return ParseMembership();
+            }
+
             var negated = Match(TokenKind.Not);
             if (Current.Kind != TokenKind.Identifier)
             {
@@ -223,6 +237,38 @@ internal sealed class ManagedFileConditionParser
             }
 
             return ParseBooleanParameter(parameter, negated);
+        }
+
+        private ManagedFileCondition? ParseMembership()
+        {
+            var literal = Current.Text;
+            _position++;
+            if (!Match(TokenKind.In) || Current.Kind != TokenKind.Identifier)
+            {
+                _error =
+                    $"Condition requires 'in' followed by a parameter name at position {Current.Position}.";
+                return null;
+            }
+
+            var parameter = Current;
+            _position++;
+            if (!TryGetDeclaration(parameter, PackParameterType.Enum, out var declaration))
+            {
+                return null;
+            }
+
+            if (!declaration.Multiple)
+            {
+                _error =
+                    $"Condition membership requires a multi-select enum parameter but '{parameter.Text}' is scalar.";
+                return null;
+            }
+
+            return new ManagedFileCondition(values =>
+                values.TryGetValue(parameter.Text, out var value)
+                && value.StringValues is { } selections
+                && selections.Contains(literal, StringComparer.Ordinal)
+            );
         }
 
         private ManagedFileCondition? ParseBooleanParameter(Token parameter, bool negated)
@@ -260,6 +306,13 @@ internal sealed class ManagedFileConditionParser
             {
                 _error =
                     $"Condition cannot compare boolean parameter '{parameter.Text}' to a string literal.";
+                return null;
+            }
+
+            if (declaration.Multiple)
+            {
+                _error =
+                    $"Condition cannot compare multi-select parameter '{parameter.Text}' to a string literal.";
                 return null;
             }
 
@@ -328,6 +381,7 @@ internal sealed class ManagedFileConditionParser
         Not,
         Equal,
         NotEqual,
+        In,
         OpenParenthesis,
         CloseParenthesis,
         End,

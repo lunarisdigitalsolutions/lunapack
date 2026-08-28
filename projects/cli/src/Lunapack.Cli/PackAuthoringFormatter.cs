@@ -31,7 +31,25 @@ internal static class PackAuthoringFormatter
             hooks.AddRow(Markup.Escape(eventName));
         }
 
-        return [files, references, hooks];
+        var parameters = CreateTable("Parameters", "ID", "Type", "Values", "Default");
+        foreach (
+            var (name, parameter) in manifest.Parameters.OrderBy(
+                item => item.Key,
+                StringComparer.Ordinal
+            )
+        )
+        {
+            parameters.AddRow(
+                Markup.Escape(name),
+                Markup.Escape(parameter.Multiple == true ? $"{parameter.Type}[]" : parameter.Type),
+                Markup.Escape(
+                    parameter.Values is { Count: > 0 } ? string.Join(", ", parameter.Values) : "-"
+                ),
+                Markup.Escape(FormatParameterDefault(parameter.Default))
+            );
+        }
+
+        return [files, references, hooks, parameters];
     }
 
     public static IReadOnlyList<IRenderable> FormatHooks(PackManifest manifest)
@@ -203,6 +221,14 @@ internal static class PackAuthoringFormatter
             : new[] { script.File }.Concat(script.Arguments);
         return string.Join(" ", new[] { executable }.Concat(arguments.Select(EscapeArgument)));
     }
+
+    private static string FormatParameterDefault(object? value) =>
+        value switch
+        {
+            null => "-",
+            IEnumerable<object> values => $"[{string.Join(", ", values)}]",
+            _ => value.ToString() ?? "-",
+        };
 
     private static string EscapeArgument(string argument) =>
         argument.Any(char.IsWhiteSpace) || argument.Contains('"')

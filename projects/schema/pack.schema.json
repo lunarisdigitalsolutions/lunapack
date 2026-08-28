@@ -299,7 +299,11 @@
       "required": ["type"],
       "properties": {
         "default": {
-          "type": ["string", "boolean"]
+          "oneOf": [
+            { "type": "string" },
+            { "type": "boolean" },
+            { "$ref": "#/definitions/stringArray" }
+          ]
         },
         "description": {
           "type": "string",
@@ -308,6 +312,10 @@
         "displayName": {
           "type": "string",
           "minLength": 1
+        },
+        "multiple": {
+          "type": "boolean",
+          "default": false
         },
         "required": {
           "type": "boolean",
@@ -333,9 +341,26 @@
             },
             "type": {
               "enum": ["enum"]
+            },
+            "multiple": {
+              "enum": [false]
             }
           },
           "required": ["values"]
+        },
+        {
+          "properties": {
+            "default": {
+              "$ref": "#/definitions/stringArray"
+            },
+            "type": {
+              "enum": ["enum"]
+            },
+            "multiple": {
+              "enum": [true]
+            }
+          },
+          "required": ["values", "multiple"]
         },
         {
           "properties": {
@@ -347,7 +372,7 @@
             }
           },
           "not": {
-            "required": ["values"]
+            "anyOf": [{ "required": ["values"] }, { "required": ["multiple"] }]
           }
         },
         {
@@ -360,7 +385,7 @@
             }
           },
           "not": {
-            "required": ["values"]
+            "anyOf": [{ "required": ["values"] }, { "required": ["multiple"] }]
           }
         }
       ]
@@ -394,13 +419,24 @@
             "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
           },
           "additionalProperties": {
-            "type": ["string", "boolean"]
+            "oneOf": [
+              { "type": "string" },
+              { "type": "boolean" },
+              { "$ref": "#/definitions/stringArray" }
+            ]
           }
         },
         "version": {
           "type": "string",
           "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
         }
+      }
+    },
+    "stringArray": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string"
       }
     },
     "scriptHook": {

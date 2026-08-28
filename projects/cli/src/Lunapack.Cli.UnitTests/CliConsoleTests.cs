@@ -47,6 +47,32 @@ public sealed class CliConsoleTests
     }
 
     [Test]
+    public async Task PromptValues_WhenMultiSelectEnumRequired_ReturnsSelectedValues()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        ansiConsole.Profile.Capabilities.Interactive = true;
+        ansiConsole.Input.PushKey(ConsoleKey.Spacebar);
+        ansiConsole.Input.PushKey(ConsoleKey.DownArrow);
+        ansiConsole.Input.PushKey(ConsoleKey.Spacebar);
+        ansiConsole.Input.PushKey(ConsoleKey.Enter);
+        var console = new CliConsole(ansiConsole, CliLogLevel.Info);
+
+        var values = console.PromptValues(
+            new PackParameterPrompt(
+                "features",
+                new PackParameterDefinition(
+                    PackParameterType.Enum,
+                    true,
+                    ["api", "docker"],
+                    Multiple: true
+                )
+            )
+        );
+
+        await Assert.That(values).IsEquivalentTo(["api", "docker"]);
+    }
+
+    [Test]
     public async Task SemanticInfo_WhenMinimumLevelIsWarning_IsSuppressed()
     {
         var ansiConsole = new SpectreTestConsole();

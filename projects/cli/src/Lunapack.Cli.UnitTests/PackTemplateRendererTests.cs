@@ -16,10 +16,44 @@ public sealed class PackTemplateRendererTests
             CreateParameters("Lunaris Digital Solutions")
         );
 
-        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert.That(result.IsSuccess).IsTrue().Because(result.Error ?? string.Empty);
         await Assert
             .That(Encoding.UTF8.GetString(result.RequireValue()))
             .IsEqualTo("Copyright Lunaris Digital Solutions");
+    }
+
+    [Test]
+    public async Task Render_WhenMultiSelectContainsValue_UsesScribanMembership()
+    {
+        var fileSystem = CreateFileSystem(
+            "{{ if features contains \"docker\" }}Docker is enabled.{{ end }}"
+        );
+        var result = new PackTemplateRenderer(fileSystem).Render(
+            TemplatePath,
+            true,
+            CreateMultiSelectParameters(["api", "docker"])
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue().Because(result.Error ?? string.Empty);
+        await Assert
+            .That(Encoding.UTF8.GetString(result.RequireValue()))
+            .IsEqualTo("Docker is enabled.");
+    }
+
+    [Test]
+    public async Task Render_WhenMultiSelectDoesNotContainValue_OmitsBranch()
+    {
+        var fileSystem = CreateFileSystem(
+            "{{ if features contains \"docker\" }}Docker is enabled.{{ end }}"
+        );
+        var result = new PackTemplateRenderer(fileSystem).Render(
+            TemplatePath,
+            true,
+            CreateMultiSelectParameters([])
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert.That(Encoding.UTF8.GetString(result.RequireValue())).IsEmpty();
     }
 
     [Test]
@@ -202,6 +236,25 @@ public sealed class PackTemplateRendererTests
             new Dictionary<string, ResolvedPackParameterValue>(StringComparer.Ordinal)
             {
                 ["companyName"] = new(PackParameterType.String, companyName, false),
+            }
+        );
+
+    private static ResolvedPackParameters CreateMultiSelectParameters(
+        IReadOnlyList<string> features
+    ) =>
+        new(
+            new Dictionary<string, PackParameterDefinition>(StringComparer.Ordinal)
+            {
+                ["features"] = new(
+                    PackParameterType.Enum,
+                    false,
+                    ["api", "docker"],
+                    Multiple: true
+                ),
+            },
+            new Dictionary<string, ResolvedPackParameterValue>(StringComparer.Ordinal)
+            {
+                ["features"] = new(PackParameterType.Enum, string.Empty, false, features),
             }
         );
 

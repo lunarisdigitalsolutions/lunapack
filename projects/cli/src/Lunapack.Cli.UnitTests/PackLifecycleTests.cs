@@ -377,6 +377,27 @@ public sealed class PackLifecycleTests
     }
 
     [Test]
+    public async Task Install_WhenMultiSelectParameterContainsDuplicate_LeavesProjectStateUnchanged()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreatePackSource(
+            workspace.Path,
+            "id: dotnet-gitignore\nversion: 1.0.0\nparameters:\n  features:\n    type: enum\n    multiple: true\n    values: [api, docker]\nmanagedFiles:\n  - source: templates/dotnet.gitignore\n    target: .gitignore\n"
+        );
+        await ConfigureSourceAsync(workspace, sourcePath);
+        var initialState = await ReadStateAsync(workspace.Path);
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["install", "dotnet-gitignore", "-p", "features=api", "-p", "features=api"],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(await ReadStateAsync(workspace.Path)).IsEqualTo(initialState);
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, ".gitignore"))).IsFalse();
+    }
+
+    [Test]
     public async Task Install_WhenTemplateRendered_WritesRenderedContentAndDigest()
     {
         using var workspace = new TestWorkspace();
@@ -592,6 +613,27 @@ public sealed class PackLifecycleTests
 
         var exitCode = await workspace.Application.RunAsync(
             ["install", "dotnet-gitignore"],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(await ReadStateAsync(workspace.Path)).IsEqualTo(initialState);
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, ".gitignore"))).IsFalse();
+    }
+
+    [Test]
+    public async Task Install_WhenMultiSelectUsesScalarCondition_LeavesProjectStateUnchanged()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreatePackSource(
+            workspace.Path,
+            "id: dotnet-gitignore\nversion: 1.0.0\nparameters:\n  features:\n    type: enum\n    multiple: true\n    values: [api, docker]\nmanagedFiles:\n  - source: templates/dotnet.gitignore\n    target: .gitignore\n    condition: 'features == \"docker\"'\n"
+        );
+        await ConfigureSourceAsync(workspace, sourcePath);
+        var initialState = await ReadStateAsync(workspace.Path);
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["install", "dotnet-gitignore", "-p", "features=docker"],
             workspace.Path
         );
 

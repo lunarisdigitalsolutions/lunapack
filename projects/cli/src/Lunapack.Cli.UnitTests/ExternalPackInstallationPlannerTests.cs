@@ -137,6 +137,58 @@ public sealed class ExternalPackInstallationPlannerTests
             .IsEqualTo("Hello Luna");
     }
 
+    [Test]
+    public async Task Plan_WhenMultiSelectMembershipMatches_SelectsAndRendersTemplate()
+    {
+        using var workspace = new TestWorkspace();
+        var contentRoot = CreateContentRoot(workspace.Path);
+        File.WriteAllText(
+            Path.Combine(contentRoot, "template.md"),
+            "{{ if features contains \"docker\" }}Docker{{ end }}"
+        );
+        var pack = CreatePack(
+            new PackManifest.PackManagedFile
+            {
+                Source = "upstream",
+                Path = "template.md",
+                Target = "README.md",
+                Template = true,
+                Condition = "\"docker\" in features",
+            }
+        );
+        var parameters = new ResolvedPackParameters(
+            new Dictionary<string, PackParameterDefinition>(StringComparer.Ordinal)
+            {
+                ["features"] = new(
+                    PackParameterType.Enum,
+                    false,
+                    ["api", "docker"],
+                    Multiple: true
+                ),
+            },
+            new Dictionary<string, ResolvedPackParameterValue>(StringComparer.Ordinal)
+            {
+                ["features"] = new(PackParameterType.Enum, string.Empty, false, ["api", "docker"]),
+            }
+        );
+
+        var result = CreatePlanner(workspace)
+            .Plan(
+                workspace.Path,
+                new ResolvedPackGraph([pack]),
+                new ProjectLockFile { SchemaVersion = 1 },
+                CreateConfiguration(),
+                CreateRequest(),
+                parameters,
+                CreateRoots(pack, contentRoot)
+            );
+
+        await Assert.That(result.IsSuccess).IsTrue().Because(result.Error ?? string.Empty);
+        await Assert
+            .That(Encoding.UTF8.GetString(result.RequireValue().ManagedFiles.Single().Contents))
+            .IsEqualTo("Docker");
+    }
+
     private static string CreateContentRoot(string workspace)
     {
         var root = Path.Combine(workspace, "external");

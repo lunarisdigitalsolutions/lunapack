@@ -56,8 +56,15 @@ Install and update resolve the full graph, bind parameters, evaluate managed
 file conditions, render managed files only when their manifest selector opts
 into UTF-8 Scriban templates, and preflight target actions.
 Root-nearest parameter declarations control requiredness and enum values; all
-same-name declarations retain their type. Composite bindings set hidden
-transient values unless a root declares the parameter.
+same-name declarations retain their type and scalar-or-multi-select shape.
+Multi-select enums resolve as ordered unique string arrays from repeated CLI
+input, project variables, composite bindings, defaults, or prompts. Composite
+bindings set hidden transient values unless a root declares the parameter.
+
+The restricted condition parser handles literal-left membership independently
+from Scriban. The shared strict renderer adapts resolved arrays once for
+`features contains "docker"` across managed files, instructions, and script
+arguments. Binding, condition, and rendering failures remain preflight errors.
 
 The planner supports copy, backup, skip, and merge actions. Shared targets
 require merge strategies for every owner. The lock document records final

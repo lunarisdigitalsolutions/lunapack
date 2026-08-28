@@ -21,23 +21,23 @@ managedFiles:
     target: docs/standard.md
 ```
 
-| Field                  | Rules                                                                                                                                  |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                   | Required stable identifier: alphanumeric segments joined by single hyphens.                                                            |
-| `version`              | Required Semantic Version.                                                                                                             |
-| `name`                 | Optional non-empty human-readable name.                                                                                                |
-| `author`               | Required non-empty author or maintainer attribution.                                                                                   |
-| `homepage`             | Optional absolute HTTP or HTTPS URI.                                                                                                   |
-| `license`              | Required non-empty license identifier or expression.                                                                                   |
-| `managedFiles`         | Each entry has one `source`, `directory`, or `glob` selector and a project-relative `target`.                                          |
-| `packs`                | Each composite reference has a hyphen-separated alphanumeric ID and an exact version.                                                  |
-| `parameters`           | Identifier-named `string`, `bool`, or `enum` declarations. Optional display metadata labels prompts; enums require unique values.      |
-| Reference `parameters` | String or Boolean bindings for a referenced pack.                                                                                      |
-| `condition`            | A Boolean name or negation, or a quoted string or enum equality comparison joined with logical AND, logical OR, and parentheses.       |
-| `strategy`             | `copy` with `overwrite`, `fail-if-exists`, `skip-if-exists`, or `backup-and-overwrite`; or `merge` with `lines`, `section`, or `json`. |
-| `tags`                 | Optional list of up to 15 unique, non-empty tags. Search matches tags; discover lists them, and inspect previews the first five.       |
-| `template`             | Enables Scriban parsing. Defaults to `false`; set `true` only when this source uses parameters or Scriban functions.                   |
-| `hooks`                | Ordered `script` or `instruction` declarations grouped by lifecycle event.                                                             |
+| Field                  | Rules                                                                                                                                                                           |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                   | Required stable identifier: alphanumeric segments joined by single hyphens.                                                                                                     |
+| `version`              | Required Semantic Version.                                                                                                                                                      |
+| `name`                 | Optional non-empty human-readable name.                                                                                                                                         |
+| `author`               | Required non-empty author or maintainer attribution.                                                                                                                            |
+| `homepage`             | Optional absolute HTTP or HTTPS URI.                                                                                                                                            |
+| `license`              | Required non-empty license identifier or expression.                                                                                                                            |
+| `managedFiles`         | Each entry has one `source`, `directory`, or `glob` selector and a project-relative `target`.                                                                                   |
+| `packs`                | Each composite reference has a hyphen-separated alphanumeric ID and an exact version.                                                                                           |
+| `parameters`           | Identifier-named `string`, `bool`, or `enum` declarations. Enums require unique values and may set `multiple: true`; multi-select defaults are unique arrays of allowed values. |
+| Reference `parameters` | String, Boolean, or unique string-array bindings for a referenced pack. Runtime validation checks arrays against the target multi-select enum.                                  |
+| `condition`            | A Boolean name or negation, a scalar string or enum equality comparison, or `"literal" in identifier` membership joined with logical AND, logical OR, and parentheses.          |
+| `strategy`             | `copy` with `overwrite`, `fail-if-exists`, `skip-if-exists`, or `backup-and-overwrite`; or `merge` with `lines`, `section`, or `json`.                                          |
+| `tags`                 | Optional list of up to 15 unique, non-empty tags. Search matches tags; discover lists them, and inspect previews the first five.                                                |
+| `template`             | Enables Scriban parsing. Defaults to `false`; set `true` only when this source uses parameters or Scriban functions.                                                            |
+| `hooks`                | Ordered `script` or `instruction` declarations grouped by lifecycle event.                                                                                                      |
 
 ## Lifecycle hooks
 

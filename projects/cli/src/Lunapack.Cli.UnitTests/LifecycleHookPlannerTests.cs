@@ -72,6 +72,57 @@ public sealed class LifecycleHookPlannerTests
     }
 
     [Test]
+    public async Task Plan_WhenScriptArgumentUsesMultiSelectMembership_RendersArgument()
+    {
+        using var workspace = new TestWorkspace();
+        var pack = CreatePack(
+            workspace.Path,
+            "example",
+            new PackManifest.PackHooks
+            {
+                PreInstall =
+                [
+                    new PackManifest.PackHook
+                    {
+                        Type = "script",
+                        Command = "tool",
+                        Arguments =
+                        [
+                            "{{ if features contains \"docker\" }}--docker{{ else }}--other{{ end }}",
+                        ],
+                    },
+                ],
+            }
+        );
+        var entry = CreateEntry(PackLifecyclePlan.ChangeKind.Install, pack);
+        var parameters = new ResolvedPackParameters(
+            new Dictionary<string, PackParameterDefinition>(StringComparer.Ordinal)
+            {
+                ["features"] = new(
+                    PackParameterType.Enum,
+                    false,
+                    ["api", "docker"],
+                    Multiple: true
+                ),
+            },
+            new Dictionary<string, ResolvedPackParameterValue>(StringComparer.Ordinal)
+            {
+                ["features"] = new(PackParameterType.Enum, string.Empty, false, ["docker"]),
+            }
+        );
+
+        var result = new LifecycleHookPlanner(new FileSystem()).PlanPreMutation(
+            new PackLifecyclePlan([entry], [entry], []),
+            parameters
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue().Because(result.Error ?? string.Empty);
+        await Assert
+            .That(result.RequireValue().Single().Script.Arguments.Single())
+            .IsEqualTo("--docker");
+    }
+
+    [Test]
     public async Task Plan_WhenEventDisabled_SuppressesAllTypedHooks()
     {
         using var workspace = new TestWorkspace();
