@@ -17,6 +17,14 @@ Update this section before creating a release tag.
 "docker"`. Invalid, duplicate, or incompatible selections fail before
   project mutation.
 
+### Pack Templates
+
+- Managed-file Scriban templates can use `files.path` to resolve a declared
+  managed target after consumer remapping and `files.relative_path` to render a
+  path relative to the current effective target. Paths use `/` on every platform.
+- Missing, conditionally excluded, or ambiguous managed-file references warn and
+  preserve the supplied declared target during install, update, and dry-run.
+
 ## Version 1.1.0 - 2026-08-27
 
 ### Luna Links

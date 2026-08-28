@@ -4,7 +4,7 @@ date: 2026-08-28
 decision-makers: LunaPack maintainers
 ---
 
-# ADR-0057: Represent Multi-Select Enums As Ordered Arrays
+# ADR-0058: Represent Multi-Select Enums As Ordered Arrays
 
 ## Context and Problem Statement
 

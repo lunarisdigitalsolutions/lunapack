@@ -129,6 +129,94 @@ public sealed class PackTemplateRendererTests
         await Assert.That(result.IsSuccess).IsFalse();
     }
 
+    [Test]
+    public async Task RenderManagedFile_WhenTargetRemapped_RendersEffectivePath()
+    {
+        var fileSystem = CreateFileSystem("{{ files.path 'docs/development/code-review.md' }}");
+        var result = new PackTemplateRenderer(fileSystem).RenderManagedFile(
+            TemplatePath,
+            true,
+            CreateParameters("Lunaris Digital Solutions"),
+            CreateManagedFileContext("docs/index.md")
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert
+            .That(Encoding.UTF8.GetString(result.RequireValue().Contents))
+            .IsEqualTo("docs/04-development/process/code-review.md");
+        await Assert.That(result.RequireValue().Diagnostics).IsEmpty();
+    }
+
+    [Test]
+    public async Task RenderManagedFile_WhenCurrentAndTargetRemapped_RendersPortableRelativePath()
+    {
+        var fileSystem = CreateFileSystem(
+            "{{ files.relative_path 'docs/development/code-review.md' }}"
+        );
+        var result = new PackTemplateRenderer(fileSystem).RenderManagedFile(
+            TemplatePath,
+            true,
+            CreateParameters("Lunaris Digital Solutions"),
+            CreateManagedFileContext(".github/agents/review/core.agent.md")
+        );
+
+        await Assert
+            .That(Encoding.UTF8.GetString(result.RequireValue().Contents))
+            .IsEqualTo("../../../docs/04-development/process/code-review.md");
+    }
+
+    [Test]
+    public async Task RenderManagedFile_WhenCurrentTargetAtRoot_RendersRelativeTarget()
+    {
+        var fileSystem = CreateFileSystem(
+            "{{ files.relative_path 'docs/development/code-review.md' }}"
+        );
+        var result = new PackTemplateRenderer(fileSystem).RenderManagedFile(
+            TemplatePath,
+            true,
+            CreateParameters("Lunaris Digital Solutions"),
+            CreateManagedFileContext("README.md")
+        );
+
+        await Assert
+            .That(Encoding.UTF8.GetString(result.RequireValue().Contents))
+            .IsEqualTo("docs/04-development/process/code-review.md");
+    }
+
+    [Test]
+    public async Task RenderManagedFile_WhenTargetMissing_PreservesTargetAndRecordsDiagnostic()
+    {
+        var fileSystem = CreateFileSystem("{{ files.path 'docs/missing.md' }}");
+        var result = new PackTemplateRenderer(fileSystem).RenderManagedFile(
+            TemplatePath,
+            true,
+            CreateParameters("Lunaris Digital Solutions"),
+            CreateManagedFileContext("docs/index.md")
+        );
+
+        await Assert
+            .That(Encoding.UTF8.GetString(result.RequireValue().Contents))
+            .IsEqualTo("docs/missing.md");
+        await Assert
+            .That(result.RequireValue().Diagnostics)
+            .IsEquivalentTo([
+                new ManagedFileTemplateDiagnostic("docs/missing.md", "docs/index.md"),
+            ]);
+    }
+
+    [Test]
+    public async Task Render_WhenManagedFileContextAbsent_RejectsFilesObject()
+    {
+        var fileSystem = CreateFileSystem("{{ files.path 'docs/index.md' }}");
+        var result = new PackTemplateRenderer(fileSystem).Render(
+            TemplatePath,
+            true,
+            CreateParameters("Lunaris Digital Solutions")
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+    }
+
     private const string TemplatePath = "C:\\pack\\template.txt";
 
     private static MockFileSystem CreateFileSystem(string content)
@@ -167,6 +255,17 @@ public sealed class PackTemplateRendererTests
             new Dictionary<string, ResolvedPackParameterValue>(StringComparer.Ordinal)
             {
                 ["features"] = new(PackParameterType.Enum, string.Empty, false, features),
+            }
+        );
+
+    private static ManagedFileTemplateContext CreateManagedFileContext(
+        string currentEffectiveTarget
+    ) =>
+        new(
+            currentEffectiveTarget,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["docs/development/code-review.md"] = "docs/04-development/process/code-review.md",
             }
         );
 }

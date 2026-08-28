@@ -32,6 +32,13 @@ retain the recorded effective target; changing configuration never relocates
 existing files implicitly. Consumers use `luna mv <source> <target>` to move one
 uniquely owned file, including rebinding ownership after a manual move.
 
+Managed-file templates can resolve a selected file by its declared target and
+render either its effective project-relative target or a path relative to the
+current template's effective directory. Resolution uses the complete planned
+target set, returns slash-only paths, and exposes no filesystem access. Missing,
+conditionally excluded, or ambiguous references warn and preserve the declared
+target. Install, update, and dry-run share this behavior.
+
 Installation and update preflight the full plan; dry runs do not change project
 files or state. Transactions restore files when a write or state save fails.
 Uninstall preserves changed or still-owned targets.
