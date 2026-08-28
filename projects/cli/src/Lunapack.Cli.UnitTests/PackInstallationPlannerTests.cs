@@ -221,6 +221,279 @@ public sealed class PackInstallationPlannerTests
             .IsEqualTo("docs/adr/_template.md");
     }
 
+    [Test]
+    public async Task Plan_WhenTemplateReferencesLaterRemappedFile_ResolvesEffectiveTarget()
+    {
+        var fileSystem = CreateFileSystem(
+            (PacksPath("one", "index.md"), "{{ files.path 'docs/development/code-review.md' }}"),
+            (PacksPath("one", "code-review.md"), "review")
+        );
+        var planner = CreatePlanner(fileSystem);
+        var pack = new DiscoveredPack(
+            _packsDirectory,
+            PacksPath("one"),
+            new PackManifest
+            {
+                Id = "one",
+                Version = "1.0.0",
+                ManagedFiles =
+                [
+                    new PackManifest.PackManagedFile
+                    {
+                        Source = "index.md",
+                        Target = "docs/index.md",
+                        Template = true,
+                    },
+                    new PackManifest.PackManagedFile
+                    {
+                        Source = "code-review.md",
+                        Target = "docs/development/code-review.md",
+                    },
+                ],
+            }
+        );
+
+        var result = planner.Plan(
+            _projectDirectory,
+            new ResolvedPackGraph([pack]),
+            new ProjectLockFile { SchemaVersion = 1 },
+            new ProjectConfiguration
+            {
+                SchemaVersion = 1,
+                Remap = new ProjectConfiguration.Remapping
+                {
+                    Files =
+                    {
+                        ["docs/development/code-review.md"] =
+                            "docs/04-development/process/code-review.md",
+                    },
+                },
+            },
+            new PackInstallationRequest(new PackReference("one", null), null, false),
+            _emptyParameters
+        );
+
+        var rendered = result
+            .RequireValue()
+            .ManagedFiles.Single(file =>
+                string.Equals(file.DeclaredTargetPath, "docs/index.md", StringComparison.Ordinal)
+            );
+        await Assert
+            .That(System.Text.Encoding.UTF8.GetString(rendered.Contents))
+            .IsEqualTo("docs/04-development/process/code-review.md");
+    }
+
+    [Test]
+    public async Task Plan_WhenDirectoryTemplateReferencesDerivedTarget_ResolvesEffectiveTarget()
+    {
+        var fileSystem = CreateFileSystem(
+            (PacksPath("one", "templates", "index.md"), "{{ files.path 'docs/nested/review.md' }}"),
+            (PacksPath("one", "templates", "nested", "review.md"), "review")
+        );
+        var pack = CreateSelectorPack(
+            new PackManifest.PackManagedFile
+            {
+                Directory = "templates",
+                Target = "docs",
+                Template = true,
+            }
+        );
+
+        var result = CreatePlanner(fileSystem)
+            .Plan(
+                _projectDirectory,
+                new ResolvedPackGraph([pack]),
+                new ProjectLockFile { SchemaVersion = 1 },
+                CreateDirectoryRemappingConfiguration(),
+                new PackInstallationRequest(new PackReference("one", null), null, false),
+                _emptyParameters
+            );
+
+        await Assert
+            .That(GetRenderedContents(result.RequireValue(), "docs/index.md"))
+            .IsEqualTo("handbook/nested/review.md");
+    }
+
+    [Test]
+    public async Task Plan_WhenDirectoryDerivedTargetHasFileRemapping_ResolvesEffectiveTarget()
+    {
+        var fileSystem = CreateFileSystem(
+            (PacksPath("one", "templates", "index.md"), "{{ files.path 'docs/nested/review.md' }}"),
+            (PacksPath("one", "templates", "nested", "review.md"), "review")
+        );
+        var pack = CreateSelectorPack(
+            new PackManifest.PackManagedFile
+            {
+                Directory = "templates",
+                Target = "docs",
+                Template = true,
+            }
+        );
+        var configuration = new ProjectConfiguration
+        {
+            SchemaVersion = 1,
+            Remap = new ProjectConfiguration.Remapping
+            {
+                Files = { ["docs/nested/review.md"] = "handbook/review.md" },
+            },
+        };
+
+        var result = CreatePlanner(fileSystem)
+            .Plan(
+                _projectDirectory,
+                new ResolvedPackGraph([pack]),
+                new ProjectLockFile { SchemaVersion = 1 },
+                configuration,
+                new PackInstallationRequest(new PackReference("one", null), null, false),
+                _emptyParameters
+            );
+
+        await Assert
+            .That(GetRenderedContents(result.RequireValue(), "docs/index.md"))
+            .IsEqualTo("handbook/review.md");
+    }
+
+    [Test]
+    public async Task Plan_WhenGlobTemplateReferencesDerivedTarget_ResolvesEffectiveTarget()
+    {
+        var fileSystem = CreateFileSystem(
+            (PacksPath("one", "templates", "index.md"), "{{ files.path 'docs/nested/review.md' }}"),
+            (PacksPath("one", "templates", "nested", "review.md"), "review")
+        );
+        var pack = CreateSelectorPack(
+            new PackManifest.PackManagedFile
+            {
+                Glob = "templates/**/*.md",
+                Target = "docs",
+                Template = true,
+            }
+        );
+
+        var result = CreatePlanner(fileSystem)
+            .Plan(
+                _projectDirectory,
+                new ResolvedPackGraph([pack]),
+                new ProjectLockFile { SchemaVersion = 1 },
+                CreateDirectoryRemappingConfiguration(),
+                new PackInstallationRequest(new PackReference("one", null), null, false),
+                _emptyParameters
+            );
+
+        await Assert
+            .That(GetRenderedContents(result.RequireValue(), "docs/index.md"))
+            .IsEqualTo("handbook/nested/review.md");
+    }
+
+    [Test]
+    public async Task Plan_WhenReferencedTargetExcludedByCondition_PreservesTargetAndDiagnostic()
+    {
+        var fileSystem = CreateFileSystem(
+            (PacksPath("one", "index.md"), "{{ files.path 'docs/optional.md' }}")
+        );
+        var parameters = new ResolvedPackParameters(
+            new Dictionary<string, PackParameterDefinition>(StringComparer.Ordinal)
+            {
+                ["includeOptional"] = new(PackParameterType.Bool, false, []),
+            },
+            new Dictionary<string, ResolvedPackParameterValue>(StringComparer.Ordinal)
+            {
+                ["includeOptional"] = new(PackParameterType.Bool, string.Empty, false),
+            }
+        );
+        var pack = CreateSelectorPack(
+            new PackManifest.PackManagedFile
+            {
+                Source = "index.md",
+                Target = "docs/index.md",
+                Template = true,
+            },
+            new PackManifest.PackManagedFile
+            {
+                Source = "missing.md",
+                Target = "docs/optional.md",
+                Condition = "includeOptional",
+            }
+        );
+
+        var result = CreatePlanner(fileSystem)
+            .Plan(
+                _projectDirectory,
+                new ResolvedPackGraph([pack]),
+                new ProjectLockFile { SchemaVersion = 1 },
+                new ProjectConfiguration { SchemaVersion = 1 },
+                new PackInstallationRequest(new PackReference("one", null), null, false),
+                parameters
+            );
+
+        await Assert
+            .That(GetRenderedContents(result.RequireValue(), "docs/index.md"))
+            .IsEqualTo("docs/optional.md");
+        await Assert
+            .That(result.RequireValue().Diagnostics)
+            .IsEquivalentTo([
+                new ManagedFileTemplateDiagnostic("docs/optional.md", "docs/index.md"),
+            ]);
+    }
+
+    [Test]
+    public async Task Plan_WhenDeclaredTargetAmbiguous_PreservesTargetAndDiagnostic()
+    {
+        var fileSystem = CreateFileSystem(
+            (PacksPath("current", "index.md"), "{{ files.path 'docs/shared.md' }}"),
+            (PacksPath("one", "source.txt"), "one"),
+            (PacksPath("two", "source.txt"), "two")
+        );
+        var mergeStrategy = new PackManifest.PackManagedFileStrategy
+        {
+            Type = "merge",
+            Method = "lines",
+        };
+        var current = CreateSelectorPack(
+            "current",
+            new PackManifest.PackManagedFile
+            {
+                Source = "index.md",
+                Target = "docs/index.md",
+                Template = true,
+            }
+        );
+        var one = CreateSelectorPack(
+            "one",
+            new PackManifest.PackManagedFile
+            {
+                Source = "source.txt",
+                Target = "docs/shared.md",
+                Strategy = mergeStrategy,
+            }
+        );
+        var two = CreateSelectorPack(
+            "two",
+            new PackManifest.PackManagedFile
+            {
+                Source = "source.txt",
+                Target = "docs/shared.md",
+                Strategy = mergeStrategy,
+            }
+        );
+
+        var result = CreatePlanner(fileSystem)
+            .Plan(
+                _projectDirectory,
+                new ResolvedPackGraph([current, one, two]),
+                new ProjectLockFile { SchemaVersion = 1 },
+                new ProjectConfiguration { SchemaVersion = 1 },
+                new PackInstallationRequest(new PackReference("current", null), null, false),
+                _emptyParameters
+            );
+
+        await Assert
+            .That(GetRenderedContents(result.RequireValue(), "docs/index.md"))
+            .IsEqualTo("docs/shared.md");
+        await Assert
+            .That(result.RequireValue().Diagnostics)
+            .IsEquivalentTo([new ManagedFileTemplateDiagnostic("docs/shared.md", "docs/index.md")]);
+    }
+
     private static DiscoveredPack CreatePack(
         string id,
         string packDirectory,
@@ -245,6 +518,39 @@ public sealed class PackInstallationPlannerTests
                     },
                 ],
             }
+        );
+
+    private static DiscoveredPack CreateSelectorPack(
+        params PackManifest.PackManagedFile[] managedFiles
+    ) => CreateSelectorPack("one", managedFiles);
+
+    private static DiscoveredPack CreateSelectorPack(
+        string id,
+        params PackManifest.PackManagedFile[] managedFiles
+    ) =>
+        new(
+            _packsDirectory,
+            PacksPath(id),
+            new PackManifest
+            {
+                Id = id,
+                Version = "1.0.0",
+                ManagedFiles = [.. managedFiles],
+            }
+        );
+
+    private static ProjectConfiguration CreateDirectoryRemappingConfiguration() =>
+        new()
+        {
+            SchemaVersion = 1,
+            Remap = new ProjectConfiguration.Remapping { Directories = { ["docs"] = "handbook" } },
+        };
+
+    private static string GetRenderedContents(PackInstallationPlan plan, string declaredTarget) =>
+        System.Text.Encoding.UTF8.GetString(
+            plan.ManagedFiles.Single(file =>
+                string.Equals(file.DeclaredTargetPath, declaredTarget, StringComparison.Ordinal)
+            ).Contents
         );
 
     private static MockFileSystem CreateFileSystem(params (string Path, string Contents)[] files)
