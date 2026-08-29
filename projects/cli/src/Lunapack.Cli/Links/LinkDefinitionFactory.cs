@@ -1,6 +1,10 @@
 using System.IO.Abstractions;
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Paths;
+using Lunapack.Cli.Packs.Manifest;
+using Lunapack.Cli.Project;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Links;
 
 internal sealed class LinkDefinitionFactory(IFileSystem fileSystem)
 {
@@ -22,6 +26,13 @@ internal sealed class LinkDefinitionFactory(IFileSystem fileSystem)
             return ManifestOperationResult<ProjectConfiguration.Link>.Failure(requestError);
         }
 
+        if (request.Source is not { Length: > 0 } source)
+        {
+            return ManifestOperationResult<ProjectConfiguration.Link>.Failure(
+                "A source name is required. Use --source <name>."
+            );
+        }
+
         var basePath = NormalizeSourcePath(request.Path, "--path");
         var stripPrefix = NormalizeSourcePath(request.StripPrefix, "--strip-prefix");
         var target = NormalizeTarget(projectDirectory, request.Target);
@@ -30,13 +41,15 @@ internal sealed class LinkDefinitionFactory(IFileSystem fileSystem)
             { } failure
         )
         {
-            return ManifestOperationResult<ProjectConfiguration.Link>.Failure(failure.Error!);
+            return ManifestOperationResult<ProjectConfiguration.Link>.Failure(
+                failure.Error ?? "Unable to normalize the link definition paths."
+            );
         }
 
         return ManifestOperationResult<ProjectConfiguration.Link>.Success(
             new ProjectConfiguration.Link
             {
-                Source = request.Source!,
+                Source = source,
                 Includes = [.. includes],
                 Excludes = [.. excludes],
                 Path = basePath.Value,

@@ -1,4 +1,11 @@
-namespace Lunapack.Cli;
+using Lunapack.Cli.Packs.ExternalSources;
+using Lunapack.Cli.Packs.Lifecycle;
+using Lunapack.Cli.Packs.ManagedFiles;
+using Lunapack.Cli.Packs.Planning;
+using Lunapack.Cli.Sources;
+using Lunapack.Cli.Trust;
+
+namespace Lunapack.Cli.Packs.Commands;
 
 internal static class PackDryRunFormatter
 {
@@ -102,20 +109,32 @@ internal static class PackDryRunFormatter
         lines.AddRange(
             lifecycle.PostMutation.Select(hook => FormatHook("post-hook", hook, lifecycle))
         );
-        lines.AddRange(
-            lifecycle
-                .Changes.Where(change => change.DisabledHooks.Count > 0)
-                .Select(change =>
-                    $"suppressed: {change.IncomingPack!.Manifest.Id}@{change.IncomingPack.Manifest.Version} {string.Join(", ", change.DisabledHooks.OrderBy(value => value, StringComparer.Ordinal))}"
-                )
-        );
-        lines.AddRange(
-            lifecycle
-                .Changes.Where(change => change.PreviousPack?.SourceIdentity is not null)
-                .Select(change =>
-                    $"locked source: {change.PreviousPack!.Id} {SourceOutputFormatter.FormatIdentity(change.PreviousPack.SourceIdentity!)}"
-                )
-        );
+        foreach (var change in lifecycle.Changes)
+        {
+            if (change.DisabledHooks.Count > 0)
+            {
+                var incomingPack =
+                    change.IncomingPack
+                    ?? throw new InvalidOperationException(
+                        "A lifecycle change with disabled hooks must include an incoming pack."
+                    );
+                var disabledHooks = string.Join(
+                    ", ",
+                    change.DisabledHooks.OrderBy(value => value, StringComparer.Ordinal)
+                );
+                lines.Add(
+                    $"suppressed: {incomingPack.Manifest.Id}@{incomingPack.Manifest.Version} {disabledHooks}"
+                );
+            }
+
+            if (change.PreviousPack is { SourceIdentity: { } sourceIdentity } previousPack)
+            {
+                lines.Add(
+                    $"locked source: {previousPack.Id} {SourceOutputFormatter.FormatIdentity(sourceIdentity)}"
+                );
+            }
+        }
+
         return lines;
     }
 

@@ -1,6 +1,10 @@
 using System.IO.Abstractions;
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Catalog;
+using Lunapack.Cli.Packs.Planning;
+using Lunapack.Cli.Project;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Sources.Git;
 
 internal sealed class GitPackMaterializer(
     IFileSystem fileSystem,
@@ -12,11 +16,6 @@ internal sealed class GitPackMaterializer(
     private readonly IOperationSnapshotSecurity _snapshotSecurity =
         snapshotSecurity ?? new OperationSnapshotSecurity();
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Maintainability",
-        "MA0051:Method is too long",
-        Justification = "Materialization owns the workspace lifecycle and snapshot cleanup boundary."
-    )]
     public async Task<ManifestOperationResult<GitPackMaterialization>> MaterializeAsync(
         ResolvedPackGraph graph,
         ProjectConfiguration configuration,
@@ -31,75 +30,8 @@ internal sealed class GitPackMaterializer(
         );
         try
         {
-            fileSystem.Directory.CreateDirectory(workspace);
-            _snapshotSecurity.ApplyDirectory(workspace);
-            var snapshotter = new OperationPackSnapshotter(fileSystem, _snapshotSecurity);
-            var materializedPacks = new List<DiscoveredPack>(graph.Packs.Count);
-            foreach (var pack in graph.Packs)
-            {
-                var sourcePack = pack;
-                if (pack.GitSource is { } gitSource)
-                {
-                    var configuredSource = FindConfiguredSource(configuration, gitSource);
-                    if (configuredSource is null)
-                    {
-                        return Failure(
-                            workspace,
-                            $"Git source '{gitSource.Url}' is not configured for pack '{pack.Manifest.Id}'."
-                        );
-                    }
-
-                    var gitWorkspace = fileSystem.Path.Combine(
-                        workspace,
-                        "git",
-                        materializedPacks.Count.ToString(
-                            System.Globalization.CultureInfo.InvariantCulture
-                        )
-                    );
-                    var materialized = await MaterializePackAsync(
-                        pack,
-                        configuredSource,
-                        gitWorkspace,
-                        cancellationToken
-                    );
-                    if (materialized.Value is not { } materializedPack)
-                    {
-                        return Failure(
-                            workspace,
-                            materialized.Error ?? "Unable to materialize Git pack."
-                        );
-                    }
-
-                    sourcePack = materializedPack;
-                }
-
-                var snapshotRoot = fileSystem.Path.Combine(
-                    workspace,
-                    "snapshots",
-                    materializedPacks.Count.ToString(
-                        System.Globalization.CultureInfo.InvariantCulture
-                    )
-                );
-                var snapshot = snapshotter.Snapshot(sourcePack, snapshotRoot);
-                if (snapshot.Value is not { } snapshottedPack)
-                {
-                    return Failure(
-                        workspace,
-                        snapshot.Error ?? "Unable to snapshot resolved pack."
-                    );
-                }
-
-                materializedPacks.Add(snapshottedPack);
-            }
-
-            return ManifestOperationResult<GitPackMaterialization>.Success(
-                new GitPackMaterialization(
-                    fileSystem,
-                    new ResolvedPackGraph(materializedPacks, graph.RootPackIds),
-                    workspace,
-                    _snapshotSecurity
-                )
-            );
+            PrepareWorkspace(workspace);
+            return await MaterializeGraphAsync(graph, configuration, workspace, cancellationToken);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
@@ -110,14 +42,105 @@ internal sealed class GitPackMaterializer(
         }
     }
 
+    private void PrepareWorkspace(string workspace)
+    {
+        fileSystem.Directory.CreateDirectory(workspace);
+        _snapshotSecurity.ApplyDirectory(workspace);
+    }
+
+    private async Task<ManifestOperationResult<GitPackMaterialization>> MaterializeGraphAsync(
+        ResolvedPackGraph graph,
+        ProjectConfiguration configuration,
+        string workspace,
+        CancellationToken cancellationToken
+    )
+    {
+        var snapshotter = new OperationPackSnapshotter(fileSystem, _snapshotSecurity);
+        var materializedPacks = new List<DiscoveredPack>(graph.Packs.Count);
+        foreach (var pack in graph.Packs)
+        {
+            var sourcePackResult = await MaterializeSourcePackAsync(
+                pack,
+                configuration,
+                workspace,
+                materializedPacks.Count,
+                cancellationToken
+            );
+            if (sourcePackResult.Value is not { } sourcePack)
+            {
+                return Failure(
+                    workspace,
+                    sourcePackResult.Error ?? "Unable to materialize Git pack."
+                );
+            }
+
+            var snapshotRoot = fileSystem.Path.Combine(
+                workspace,
+                "snapshots",
+                materializedPacks.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            );
+            var snapshot = snapshotter.Snapshot(sourcePack, snapshotRoot);
+            if (snapshot.Value is not { } snapshottedPack)
+            {
+                return Failure(workspace, snapshot.Error ?? "Unable to snapshot resolved pack.");
+            }
+
+            materializedPacks.Add(snapshottedPack);
+        }
+
+        return ManifestOperationResult<GitPackMaterialization>.Success(
+            new GitPackMaterialization(
+                fileSystem,
+                new ResolvedPackGraph(materializedPacks, graph.RootPackIds),
+                workspace,
+                _snapshotSecurity
+            )
+        );
+    }
+
+    private async Task<ManifestOperationResult<DiscoveredPack>> MaterializeSourcePackAsync(
+        DiscoveredPack pack,
+        ProjectConfiguration configuration,
+        string workspace,
+        int packIndex,
+        CancellationToken cancellationToken
+    )
+    {
+        if (pack.GitSource is not { } gitSource)
+        {
+            return ManifestOperationResult<DiscoveredPack>.Success(pack);
+        }
+
+        var configuredSource = FindConfiguredSource(configuration, gitSource);
+        if (configuredSource is null)
+        {
+            return ManifestOperationResult<DiscoveredPack>.Failure(
+                $"Git source '{gitSource.Url}' is not configured for pack '{pack.Manifest.Id}'."
+            );
+        }
+
+        var gitWorkspace = fileSystem.Path.Combine(
+            workspace,
+            "git",
+            packIndex.ToString(System.Globalization.CultureInfo.InvariantCulture)
+        );
+        return await MaterializePackAsync(
+            pack,
+            gitSource,
+            configuredSource,
+            gitWorkspace,
+            cancellationToken
+        );
+    }
+
     private async Task<ManifestOperationResult<DiscoveredPack>> MaterializePackAsync(
         DiscoveredPack pack,
+        GitSourceProvenance gitSource,
         ProjectConfiguration.GitSource source,
         string workspace,
         CancellationToken cancellationToken
     )
     {
-        var gitSource = pack.GitSource!;
         var timeout = TimeSpan.FromSeconds(source.TimeoutSeconds ?? DefaultTimeoutSeconds);
         fileSystem.Directory.CreateDirectory(workspace);
         foreach (

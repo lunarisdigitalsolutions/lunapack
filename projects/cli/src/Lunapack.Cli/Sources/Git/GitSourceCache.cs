@@ -3,8 +3,12 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Serialization;
+using Lunapack.Cli.Project;
+using NuGet.Versioning;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Sources.Git;
 
 internal sealed class GitSourceCache(IFileSystem fileSystem)
 {
@@ -38,6 +42,7 @@ internal sealed class GitSourceCache(IFileSystem fileSystem)
             return
                 entry is null
                 || entry.Version != CacheVersion
+                || entry.Packs.Any(pack => !NuGetVersion.TryParse(pack.Version, out _))
                 || !string.Equals(
                     entry.Source.Fingerprint,
                     identity.Fingerprint,
@@ -55,11 +60,12 @@ internal sealed class GitSourceCache(IFileSystem fileSystem)
 
     public ManifestOperationResult<bool> Save(string projectDirectory, GitSourceCacheEntry entry)
     {
+        var cacheDirectory = GetCacheDirectory(projectDirectory);
         var cachePath = GetCachePath(projectDirectory, entry.Source);
         var temporaryPath = $"{cachePath}.{Guid.NewGuid():N}.tmp";
         try
         {
-            fileSystem.Directory.CreateDirectory(fileSystem.Path.GetDirectoryName(cachePath)!);
+            fileSystem.Directory.CreateDirectory(cacheDirectory);
             fileSystem.File.WriteAllText(
                 temporaryPath,
                 JsonSerializer.Serialize(entry, LunapackJsonContext.Default.GitSourceCacheEntry)
@@ -82,11 +88,12 @@ internal sealed class GitSourceCache(IFileSystem fileSystem)
         }
     }
 
+    private string GetCacheDirectory(string projectDirectory) =>
+        fileSystem.Path.Combine(projectDirectory, ".lunapack", "git-sources");
+
     private string GetCachePath(string projectDirectory, GitSourceCacheIdentity identity) =>
         fileSystem.Path.Combine(
-            projectDirectory,
-            ".lunapack",
-            "git-sources",
+            GetCacheDirectory(projectDirectory),
             $"{GetFileName(identity)}.json"
         );
 

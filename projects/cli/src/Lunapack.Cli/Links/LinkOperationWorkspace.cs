@@ -1,6 +1,8 @@
 using System.IO.Abstractions;
+using Lunapack.Cli.Application.Paths;
+using Lunapack.Cli.Sources.Git;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Links;
 
 internal sealed class LinkOperationWorkspace : IDisposable
 {

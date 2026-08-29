@@ -1,4 +1,9 @@
-namespace Lunapack.Cli;
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Packs.Manifest;
+using Lunapack.Cli.Packs.Planning;
+using Lunapack.Cli.Project;
+
+namespace Lunapack.Cli.Packs;
 
 internal static class PackParameterResolver
 {
@@ -157,11 +162,6 @@ internal static class PackParameterResolver
         );
     }
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Maintainability",
-        "MA0051:Method is too long",
-        Justification = "Parameter precedence remains explicit in one ordered resolution workflow."
-    )]
     private static ManifestOperationResult<ResolvedPackParameters> BindValues(
         IReadOnlyDictionary<string, PackParameterDefinition> declarations,
         IReadOnlyDictionary<string, object> compositeValues,
@@ -169,66 +169,132 @@ internal static class PackParameterResolver
         PackInstallationRequest installationRequest
     )
     {
-        foreach (var skippedVariable in installationRequest.SkippedVariables)
+        var skippedVariableError = ValidateSkippedVariables(
+            declarations,
+            compositeValues,
+            installationRequest
+        );
+        if (skippedVariableError is not null)
         {
-            if (compositeValues.ContainsKey(skippedVariable))
-            {
-                return ManifestOperationResult<ResolvedPackParameters>.Failure(
-                    $"Parameter '{skippedVariable}' is fixed by a composite pack."
-                );
-            }
-
-            if (!declarations.ContainsKey(skippedVariable))
-            {
-                return ManifestOperationResult<ResolvedPackParameters>.Failure(
-                    $"Project variable '{skippedVariable}' is not declared by the resolved pack graph."
-                );
-            }
+            return ManifestOperationResult<ResolvedPackParameters>.Failure(skippedVariableError);
         }
 
         var resolvedValues = new Dictionary<string, ResolvedPackParameterValue>(
             StringComparer.Ordinal
         );
+        var compositeValueError = AddCompositeValues(declarations, compositeValues, resolvedValues);
+        if (compositeValueError is not null)
+        {
+            return ManifestOperationResult<ResolvedPackParameters>.Failure(compositeValueError);
+        }
+
+        var providedValueError = AddProvidedParameterValues(
+            declarations,
+            compositeValues,
+            installationRequest,
+            resolvedValues
+        );
+        if (providedValueError is not null)
+        {
+            return ManifestOperationResult<ResolvedPackParameters>.Failure(providedValueError);
+        }
+
+        var fallbackValueError = AddProjectVariableOrDefaultValues(
+            declarations,
+            configuration,
+            installationRequest,
+            resolvedValues
+        );
+        if (fallbackValueError is not null)
+        {
+            return ManifestOperationResult<ResolvedPackParameters>.Failure(fallbackValueError);
+        }
+
+        return ManifestOperationResult<ResolvedPackParameters>.Success(
+            new ResolvedPackParameters(declarations, resolvedValues)
+        );
+    }
+
+    private static string? ValidateSkippedVariables(
+        IReadOnlyDictionary<string, PackParameterDefinition> declarations,
+        IReadOnlyDictionary<string, object> compositeValues,
+        PackInstallationRequest installationRequest
+    )
+    {
+        foreach (var skippedVariable in installationRequest.SkippedVariables)
+        {
+            if (compositeValues.ContainsKey(skippedVariable))
+            {
+                return $"Parameter '{skippedVariable}' is fixed by a composite pack.";
+            }
+
+            if (!declarations.ContainsKey(skippedVariable))
+            {
+                return $"Project variable '{skippedVariable}' is not declared by the resolved pack graph.";
+            }
+        }
+
+        return null;
+    }
+
+    private static string? AddCompositeValues(
+        IReadOnlyDictionary<string, PackParameterDefinition> declarations,
+        IReadOnlyDictionary<string, object> compositeValues,
+        Dictionary<string, ResolvedPackParameterValue> resolvedValues
+    )
+    {
         foreach (var (name, value) in compositeValues)
         {
             var compositeValue = ParseCompositeValue(name, declarations[name], value);
             if (compositeValue.Value is not { } resolvedValue)
             {
-                return ManifestOperationResult<ResolvedPackParameters>.Failure(
-                    compositeValue.Error ?? $"Invalid composite value for parameter '{name}'."
-                );
+                return compositeValue.Error ?? $"Invalid composite value for parameter '{name}'.";
             }
 
             resolvedValues.Add(name, resolvedValue);
         }
 
+        return null;
+    }
+
+    private static string? AddProvidedParameterValues(
+        IReadOnlyDictionary<string, PackParameterDefinition> declarations,
+        IReadOnlyDictionary<string, object> compositeValues,
+        PackInstallationRequest installationRequest,
+        Dictionary<string, ResolvedPackParameterValue> resolvedValues
+    )
+    {
         foreach (var (name, values) in installationRequest.GetParameterValues())
         {
             if (!declarations.TryGetValue(name, out var declaration))
             {
-                return ManifestOperationResult<ResolvedPackParameters>.Failure(
-                    $"Parameter '{name}' is not declared by the resolved pack graph."
-                );
+                return $"Parameter '{name}' is not declared by the resolved pack graph.";
             }
 
             if (compositeValues.ContainsKey(name))
             {
-                return ManifestOperationResult<ResolvedPackParameters>.Failure(
-                    $"Parameter '{name}' is fixed by a composite pack."
-                );
+                return $"Parameter '{name}' is fixed by a composite pack.";
             }
 
             var commandLineValue = ParseCommandLineValue(name, declaration, values);
             if (commandLineValue.Value is not { } resolvedValue)
             {
-                return ManifestOperationResult<ResolvedPackParameters>.Failure(
-                    commandLineValue.Error ?? $"Invalid value for parameter '{name}'."
-                );
+                return commandLineValue.Error ?? $"Invalid value for parameter '{name}'.";
             }
 
             resolvedValues.Add(name, resolvedValue);
         }
 
+        return null;
+    }
+
+    private static string? AddProjectVariableOrDefaultValues(
+        IReadOnlyDictionary<string, PackParameterDefinition> declarations,
+        ProjectConfiguration configuration,
+        PackInstallationRequest installationRequest,
+        Dictionary<string, ResolvedPackParameterValue> resolvedValues
+    )
+    {
         foreach (var (name, declaration) in declarations)
         {
             if (resolvedValues.ContainsKey(name))
@@ -245,9 +311,7 @@ internal static class PackParameterResolver
                 var projectValue = ParseProjectVariableValue(name, declaration, variable);
                 if (projectValue.Value is not { } resolvedValue)
                 {
-                    return ManifestOperationResult<ResolvedPackParameters>.Failure(
-                        projectValue.Error ?? $"Invalid project variable '{name}'."
-                    );
+                    return projectValue.Error ?? $"Invalid project variable '{name}'.";
                 }
 
                 resolvedValues.Add(name, resolvedValue);
@@ -256,25 +320,19 @@ internal static class PackParameterResolver
 
             if (declaration.Required)
             {
-                return ManifestOperationResult<ResolvedPackParameters>.Failure(
-                    $"Required parameter '{name}' has no resolved value."
-                );
+                return $"Required parameter '{name}' has no resolved value.";
             }
 
             var defaultValue = ParseDefaultValue(name, declaration);
             if (defaultValue.Value is not { } resolvedDefault)
             {
-                return ManifestOperationResult<ResolvedPackParameters>.Failure(
-                    defaultValue.Error ?? $"Invalid default value for parameter '{name}'."
-                );
+                return defaultValue.Error ?? $"Invalid default value for parameter '{name}'.";
             }
 
             resolvedValues.Add(name, resolvedDefault);
         }
 
-        return ManifestOperationResult<ResolvedPackParameters>.Success(
-            new ResolvedPackParameters(declarations, resolvedValues)
-        );
+        return null;
     }
 
     private static ManifestOperationResult<PackParameterDefinition> ParseDeclaration(

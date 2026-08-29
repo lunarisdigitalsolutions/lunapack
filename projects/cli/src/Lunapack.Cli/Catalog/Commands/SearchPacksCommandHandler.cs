@@ -1,14 +1,18 @@
 using System.CommandLine;
 using System.Diagnostics;
+using Lunapack.Cli.Application;
+using Lunapack.Cli.Application.Guidance;
+using Lunapack.Cli.Links;
+using Lunapack.Cli.Project;
 using Spectre.Console;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Catalog.Commands;
 
 internal sealed class SearchPacksCommandHandler(
     CatalogService catalogService,
     LinkInspectionService linkInspectionService,
     WorkspaceDirectoryResolver workspaceDirectoryResolver,
-    INextStepAdvisor nextStepAdvisor,
+    NextStepAdvisor nextStepAdvisor,
     NextStepRenderer nextStepRenderer,
     WorkflowPrerequisiteGuard prerequisiteGuard,
     CliConsole console

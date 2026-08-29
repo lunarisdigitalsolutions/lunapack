@@ -1,7 +1,9 @@
 using System.Security.Cryptography;
 using System.Text;
+using Lunapack.Cli.Application.Paths;
+using Lunapack.Cli.Project;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Links;
 
 internal static class LinkDefinitionHasher
 {

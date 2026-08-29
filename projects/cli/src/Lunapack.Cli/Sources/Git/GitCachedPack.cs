@@ -1,4 +1,6 @@
-namespace Lunapack.Cli;
+using Lunapack.Cli.Packs.Manifest;
+
+namespace Lunapack.Cli.Sources.Git;
 
 internal sealed record GitCachedPack
 {

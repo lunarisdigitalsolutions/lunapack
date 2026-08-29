@@ -1,6 +1,6 @@
 using System.IO.Abstractions;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Links;
 
 internal static class LinkSourceCacheRoot
 {

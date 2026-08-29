@@ -1,7 +1,12 @@
 using System.Globalization;
 using System.IO.Abstractions;
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Paths;
+using Lunapack.Cli.Project;
+using Lunapack.Cli.Sources;
+using Lunapack.Cli.Sources.Git;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Links;
 
 internal sealed class GitLinkSourceProvider(
     IFileSystem fileSystem,
@@ -77,7 +82,14 @@ internal sealed class GitLinkSourceProvider(
         ArgumentNullException.ThrowIfNull(selectedPaths);
         ArgumentNullException.ThrowIfNull(workspace);
 
-        var commit = listing.GitSource!.ResolvedCommit;
+        if (listing.GitSource is not { } gitSource)
+        {
+            return ManifestOperationResult<IReadOnlyDictionary<string, string>>.Failure(
+                "Git link materialization requires Git source provenance."
+            );
+        }
+
+        var commit = gitSource.ResolvedCommit;
         var contents = new Dictionary<string, byte[]>(StringComparer.Ordinal);
         var missingPaths = new List<string>();
         foreach (var selectedPath in selectedPaths)
@@ -99,7 +111,13 @@ internal sealed class GitLinkSourceProvider(
 
         if (missingPaths.Count > 0)
         {
-            var checkout = await CheckoutAsync(listing, missingPaths, contents, cancellationToken);
+            var checkout = await CheckoutAsync(
+                listing,
+                gitSource,
+                missingPaths,
+                contents,
+                cancellationToken
+            );
             if (!checkout.IsSuccess)
             {
                 return ManifestOperationResult<IReadOnlyDictionary<string, string>>.Failure(
@@ -214,6 +232,7 @@ internal sealed class GitLinkSourceProvider(
 
     private async Task<ManifestOperationResult<bool>> CheckoutAsync(
         LinkSourceListing listing,
+        GitSourceProvenance gitSource,
         IReadOnlyList<string> missingPaths,
         Dictionary<string, byte[]> contents,
         CancellationToken cancellationToken
@@ -226,7 +245,7 @@ internal sealed class GitLinkSourceProvider(
             );
         }
 
-        var basePath = listing.GitSource!.Path;
+        var basePath = gitSource.Path;
         var repositoryPaths = missingPaths.Select(path =>
             string.IsNullOrEmpty(basePath) ? path : $"{basePath}/{path}"
         );
@@ -273,16 +292,17 @@ internal sealed class GitLinkSourceProvider(
             }
         }
 
-        return ReadCheckedOutFiles(listing, missingPaths, contents);
+        return ReadCheckedOutFiles(listing, gitSource, missingPaths, contents);
     }
 
     private ManifestOperationResult<bool> ReadCheckedOutFiles(
         LinkSourceListing listing,
+        GitSourceProvenance gitSource,
         IReadOnlyList<string> missingPaths,
         Dictionary<string, byte[]> contents
     )
     {
-        var basePath = listing.GitSource!.Path;
+        var basePath = gitSource.Path;
         foreach (var missingPath in missingPaths)
         {
             var repositoryPath = string.IsNullOrEmpty(basePath)
@@ -309,12 +329,7 @@ internal sealed class GitLinkSourceProvider(
             }
 
             contents.Add(missingPath, fileContents);
-            cache.SaveBlob(
-                listing.Identity,
-                listing.GitSource.ResolvedCommit,
-                blobId,
-                fileContents
-            );
+            cache.SaveBlob(listing.Identity, gitSource.ResolvedCommit, blobId, fileContents);
         }
 
         return ManifestOperationResult<bool>.Success(true);

@@ -1,0 +1,51 @@
+using Lunapack.Cli.Packs.Authoring;
+using Lunapack.Cli.Packs.Manifest;
+using Lunapack.Cli.Project;
+using Lunapack.Cli.Sources;
+using Lunapack.Cli.Trust;
+using YamlDotNet.Serialization;
+
+namespace Lunapack.Cli.Application.Serialization;
+
+[YamlStaticContext]
+[YamlSerializable(typeof(ProjectManifest))]
+[YamlSerializable(typeof(ProjectManifest.LocalSource))]
+[YamlSerializable(typeof(ProjectManifest.InstalledPack))]
+[YamlSerializable(typeof(ProjectManifest.ManagedFile))]
+[YamlSerializable(typeof(PackManifest))]
+[YamlSerializable(typeof(PackManifest.PackManagedFile))]
+[YamlSerializable(typeof(PackManifest.PackManagedFileStrategy))]
+[YamlSerializable(typeof(PackManifest.PackSource))]
+[YamlSerializable(typeof(PackManifest.PackParameter))]
+[YamlSerializable(typeof(PackManifest.PackHooks))]
+[YamlSerializable(typeof(PackManifest.PackHook))]
+[YamlSerializable(typeof(PackManifest.PackReference))]
+[YamlSerializable(typeof(InitialPackManifest))]
+[YamlSerializable(typeof(ProjectConfiguration))]
+[YamlSerializable(typeof(ProjectConfiguration.Link))]
+[YamlSerializable(typeof(ProjectConfiguration.Source))]
+[YamlSerializable(typeof(ProjectConfiguration.GitSource))]
+[YamlSerializable(typeof(ProjectConfiguration.LocalSource))]
+[YamlSerializable(typeof(ProjectConfiguration.ProjectTrust))]
+[YamlSerializable(typeof(ProjectConfiguration.Remapping))]
+[YamlSerializable(typeof(ProjectConfiguration.RequestedPack))]
+[YamlSerializable(typeof(ProjectConfiguration.TrustedPack))]
+[YamlSerializable(typeof(InitialProjectConfiguration))]
+[YamlSerializable(typeof(InitialProjectLockFile))]
+[YamlSerializable(typeof(ProjectLockFile))]
+[YamlSerializable(typeof(ProjectLockFile.LinkFile))]
+[YamlSerializable(typeof(ProjectLockFile.ManagedFile))]
+[YamlSerializable(typeof(ProjectLockFile.ManagedFileStrategy))]
+[YamlSerializable(typeof(ProjectLockFile.PackReference))]
+[YamlSerializable(typeof(ProjectLockFile.ResolvedLink))]
+[YamlSerializable(typeof(ProjectLockFile.ResolvedPack))]
+[YamlSerializable(typeof(GitSourceProvenance))]
+[YamlSerializable(typeof(ProjectLockFile.ExternalSourceLock))]
+[YamlSerializable(typeof(ConfiguredSourceIdentity))]
+[YamlSerializable(typeof(LocalProjectTrust))]
+[YamlSerializable(typeof(ScriptDenial))]
+[YamlSerializable(typeof(TrustAcknowledgements))]
+[YamlSerializable(typeof(TrustedPackIdentity))]
+[YamlSerializable(typeof(UserSettings))]
+[YamlSerializable(typeof(UserTrust))]
+public partial class LunapackYamlContext : StaticContext { }

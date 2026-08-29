@@ -1,7 +1,9 @@
 using System.IO.Abstractions;
 using System.Security.Cryptography;
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Project;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Links;
 
 internal sealed class LinkInspectionService(
     IFileSystem fileSystem,

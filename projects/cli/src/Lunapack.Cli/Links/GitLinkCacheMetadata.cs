@@ -1,4 +1,6 @@
-namespace Lunapack.Cli;
+using Lunapack.Cli.Sources;
+
+namespace Lunapack.Cli.Links;
 
 internal sealed record GitLinkCacheMetadata
 {

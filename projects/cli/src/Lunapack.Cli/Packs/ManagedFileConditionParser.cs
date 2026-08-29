@@ -1,13 +1,10 @@
-namespace Lunapack.Cli;
+using Lunapack.Cli.Application.CommandExecution;
 
-internal sealed class ManagedFileConditionParser
+namespace Lunapack.Cli.Packs;
+
+internal static class ManagedFileConditionParser
 {
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Performance",
-        "CA1822:Mark members as static",
-        Justification = "Parser remains injectable by the installation planner."
-    )]
-    public ManifestOperationResult<ManagedFileCondition> Parse(
+    public static ManifestOperationResult<ManagedFileCondition> Parse(
         string condition,
         IReadOnlyDictionary<string, PackParameterDefinition> declarations
     )
@@ -23,11 +20,6 @@ internal sealed class ManagedFileConditionParser
         return new Parser(parsedTokens, declarations).Parse();
     }
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Maintainability",
-        "MA0051:Method is too long",
-        Justification = "Token recognition order is a single parser invariant."
-    )]
     private static ManifestOperationResult<IReadOnlyList<Token>> Tokenize(string condition)
     {
         var tokens = new List<Token>();
@@ -43,71 +35,26 @@ internal sealed class ManagedFileConditionParser
             var position = index;
             if (IsIdentifierStart(condition[index]))
             {
-                index++;
-                while (index < condition.Length && IsIdentifierPart(condition[index]))
-                {
-                    index++;
-                }
-
-                var identifier = condition[position..index];
-                tokens.Add(
-                    new Token(
-                        string.Equals(identifier, "in", StringComparison.Ordinal)
-                            ? TokenKind.In
-                            : TokenKind.Identifier,
-                        identifier,
-                        position
-                    )
-                );
+                tokens.Add(ReadIdentifier(condition, ref index));
                 continue;
             }
 
             if (condition[index] == '"')
             {
-                index++;
-                var valueStart = index;
-                while (index < condition.Length && condition[index] != '"')
-                {
-                    index++;
-                }
-
-                if (index == condition.Length)
+                var literal = ReadStringLiteral(condition, ref index);
+                if (literal.Value is not { } literalToken)
                 {
                     return ManifestOperationResult<IReadOnlyList<Token>>.Failure(
-                        $"Condition contains an unterminated string literal at position {position}."
+                        literal.Error
+                            ?? $"Condition contains an unterminated string literal at position {position}."
                     );
                 }
 
-                tokens.Add(
-                    new Token(TokenKind.StringLiteral, condition[valueStart..index], position)
-                );
-                index++;
+                tokens.Add(literalToken);
                 continue;
             }
 
-            var token = condition[index..] switch
-            {
-                var remaining when remaining.StartsWith("&&", StringComparison.Ordinal) =>
-                    new Token(TokenKind.And, "&&", position),
-                var remaining when remaining.StartsWith("||", StringComparison.Ordinal) =>
-                    new Token(TokenKind.Or, "||", position),
-                var remaining when remaining.StartsWith("==", StringComparison.Ordinal) =>
-                    new Token(TokenKind.Equal, "==", position),
-                var remaining when remaining.StartsWith("!=", StringComparison.Ordinal) =>
-                    new Token(TokenKind.NotEqual, "!=", position),
-                var remaining when remaining[0] == '!' => new Token(TokenKind.Not, "!", position),
-                var remaining when remaining[0] == '(' => new Token(
-                    TokenKind.OpenParenthesis,
-                    "(",
-                    position
-                ),
-                var remaining when remaining[0] == ')' => new Token(
-                    TokenKind.CloseParenthesis,
-                    ")",
-                    position
-                ),
-                _ => new Token(TokenKind.Invalid, condition[index].ToString(), position),
-            };
+            var token = ReadSymbolicToken(condition, index);
             if (token.Kind == TokenKind.Invalid)
             {
                 return ManifestOperationResult<IReadOnlyList<Token>>.Failure(
@@ -122,6 +69,84 @@ internal sealed class ManagedFileConditionParser
         tokens.Add(new Token(TokenKind.End, string.Empty, condition.Length));
         return ManifestOperationResult<IReadOnlyList<Token>>.Success(tokens);
     }
+
+    private static Token ReadIdentifier(string condition, ref int index)
+    {
+        var position = index;
+        index++;
+        while (index < condition.Length && IsIdentifierPart(condition[index]))
+        {
+            index++;
+        }
+
+        var identifier = condition[position..index];
+        return new Token(
+            string.Equals(identifier, "in", StringComparison.Ordinal)
+                ? TokenKind.In
+                : TokenKind.Identifier,
+            identifier,
+            position
+        );
+    }
+
+    private static ManifestOperationResult<Token> ReadStringLiteral(string condition, ref int index)
+    {
+        var position = index;
+        index++;
+        var valueStart = index;
+        while (index < condition.Length && condition[index] != '"')
+        {
+            index++;
+        }
+
+        if (index == condition.Length)
+        {
+            return ManifestOperationResult<Token>.Failure(
+                $"Condition contains an unterminated string literal at position {position}."
+            );
+        }
+
+        var token = new Token(TokenKind.StringLiteral, condition[valueStart..index], position);
+        index++;
+        return ManifestOperationResult<Token>.Success(token);
+    }
+
+    private static Token ReadSymbolicToken(string condition, int position) =>
+        condition[position..] switch
+        {
+            var remaining when remaining.StartsWith("&&", StringComparison.Ordinal) => new Token(
+                TokenKind.And,
+                "&&",
+                position
+            ),
+            var remaining when remaining.StartsWith("||", StringComparison.Ordinal) => new Token(
+                TokenKind.Or,
+                "||",
+                position
+            ),
+            var remaining when remaining.StartsWith("==", StringComparison.Ordinal) => new Token(
+                TokenKind.Equal,
+                "==",
+                position
+            ),
+            var remaining when remaining.StartsWith("!=", StringComparison.Ordinal) => new Token(
+                TokenKind.NotEqual,
+                "!=",
+                position
+            ),
+            var remaining when remaining[0] == '!' => new Token(TokenKind.Not, "!", position),
+            var remaining when remaining[0] == '(' => new Token(
+                TokenKind.OpenParenthesis,
+                "(",
+                position
+            ),
+            var remaining when remaining[0] == ')' => new Token(
+                TokenKind.CloseParenthesis,
+                ")",
+                position
+            ),
+            _ => new Token(TokenKind.Invalid, condition[position].ToString(), position),
+        };
 
     private static bool IsIdentifierPart(char character) =>
         IsIdentifierStart(character) || character is >= '0' and <= '9';
@@ -329,10 +354,11 @@ internal sealed class ManagedFileConditionParser
         private bool TryGetDeclaration(
             Token parameter,
             PackParameterType? expectedType,
-            out PackParameterDefinition declaration
+            [System.Diagnostics.CodeAnalysis.NotNullWhen(true)]
+                out PackParameterDefinition? declaration
         )
         {
-            if (!declarations.TryGetValue(parameter.Text, out declaration!))
+            if (!declarations.TryGetValue(parameter.Text, out declaration))
             {
                 _error = $"Condition references undeclared parameter '{parameter.Text}'.";
                 return false;

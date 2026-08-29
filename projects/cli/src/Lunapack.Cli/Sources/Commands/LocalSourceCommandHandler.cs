@@ -1,29 +1,76 @@
 using System.CommandLine;
 using System.IO.Abstractions;
+using Lunapack.Cli.Application;
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Guidance;
+using Lunapack.Cli.Application.Paths;
+using Lunapack.Cli.Project;
+using Lunapack.Cli.Sources.Git;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Sources.Commands;
 
 internal sealed class LocalSourceCommandHandler(
     IFileSystem fileSystem,
     IProjectStateStore projectStateStore,
     WorkspaceDirectoryResolver workspaceDirectoryResolver,
-    INextStepAdvisor nextStepAdvisor,
+    NextStepAdvisor nextStepAdvisor,
     NextStepRenderer nextStepRenderer,
     CliConsole console,
     GitRefResolver? gitRefResolver = null
 )
 {
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Maintainability",
-        "MA0051:Method is too long",
-        Justification = "CLI option definitions remain collocated with their command actions."
-    )]
     public Command CreateCommand(string projectDirectory, Option<string?> workspaceOption)
+    {
+        return new Command("sources", "Manage pack sources.")
+        {
+            CreateAddCommand(projectDirectory, workspaceOption),
+            CreateListCommand(projectDirectory, workspaceOption),
+            CreateRemoveCommand(projectDirectory, workspaceOption),
+            CreateRenameCommand(projectDirectory, workspaceOption),
+        };
+    }
+
+    private Command CreateAddCommand(string projectDirectory, Option<string?> workspaceOption)
     {
         var sourceNameArgument = new Argument<string>("name")
         {
             Description = "Unique name for the pack source.",
         };
+        var gitRefOption = new Option<string?>("--ref", "-r")
+        {
+            Description = "Branch or commit SHA to resolve.",
+        };
+        var gitPathOption = new Option<string?>("--path", "-p")
+        {
+            Description = "Repository-relative path to search for packs.",
+        };
+
+        return new Command("add", "Add a pack source.")
+        {
+            CreateAddLocalCommand(projectDirectory, workspaceOption, sourceNameArgument),
+            CreateAddGitCommand(
+                projectDirectory,
+                workspaceOption,
+                sourceNameArgument,
+                gitRefOption,
+                gitPathOption
+            ),
+            CreateAddGitHubCommand(
+                projectDirectory,
+                workspaceOption,
+                sourceNameArgument,
+                gitRefOption,
+                gitPathOption
+            ),
+        };
+    }
+
+    private Command CreateAddLocalCommand(
+        string projectDirectory,
+        Option<string?> workspaceOption,
+        Argument<string> sourceNameArgument
+    )
+    {
         var sourcePathArgument = new Argument<string>("path")
         {
             Description = "Path to a local pack source.",
@@ -49,17 +96,20 @@ internal sealed class LocalSourceCommandHandler(
                 );
         });
 
+        return addLocalSourceCommand;
+    }
+
+    private Command CreateAddGitCommand(
+        string projectDirectory,
+        Option<string?> workspaceOption,
+        Argument<string> sourceNameArgument,
+        Option<string?> gitRefOption,
+        Option<string?> gitPathOption
+    )
+    {
         var repositoryUrlArgument = new Argument<string>("repository-url")
         {
             Description = "URL of a Git repository containing pack manifests.",
-        };
-        var gitRefOption = new Option<string?>("--ref", "-r")
-        {
-            Description = "Branch or commit SHA to resolve.",
-        };
-        var gitPathOption = new Option<string?>("--path", "-p")
-        {
-            Description = "Repository-relative path to search for packs.",
         };
         var addGitSourceCommand = new Command("git", "Add a Git pack source.")
         {
@@ -86,6 +136,17 @@ internal sealed class LocalSourceCommandHandler(
                 );
         });
 
+        return addGitSourceCommand;
+    }
+
+    private Command CreateAddGitHubCommand(
+        string projectDirectory,
+        Option<string?> workspaceOption,
+        Argument<string> sourceNameArgument,
+        Option<string?> gitRefOption,
+        Option<string?> gitPathOption
+    )
+    {
         var githubRepositoryArgument = new Argument<string>("organization/repository")
         {
             Description = "GitHub repository coordinate containing pack manifests.",
@@ -129,12 +190,11 @@ internal sealed class LocalSourceCommandHandler(
             );
         });
 
-        var addSourceCommand = new Command("add", "Add a pack source.")
-        {
-            addLocalSourceCommand,
-            addGitSourceCommand,
-            addGitHubSourceCommand,
-        };
+        return addGitHubSourceCommand;
+    }
+
+    private Command CreateListCommand(string projectDirectory, Option<string?> workspaceOption)
+    {
         var listSourcesCommand = new Command("list", "List configured pack sources.");
         listSourcesCommand.SetAction(async parseResult =>
             await ListAsync(
@@ -144,6 +204,12 @@ internal sealed class LocalSourceCommandHandler(
                 )
             )
         );
+
+        return listSourcesCommand;
+    }
+
+    private Command CreateRemoveCommand(string projectDirectory, Option<string?> workspaceOption)
+    {
         var removeSourceNameArgument = new Argument<string>("name")
         {
             Description = "Name of the configured source to remove.",
@@ -167,6 +233,11 @@ internal sealed class LocalSourceCommandHandler(
                 );
         });
 
+        return removeSourceCommand;
+    }
+
+    private Command CreateRenameCommand(string projectDirectory, Option<string?> workspaceOption)
+    {
         var currentSourceNameArgument = new Argument<string>("current-id")
         {
             Description = "Name of the configured source to rename.",
@@ -196,13 +267,7 @@ internal sealed class LocalSourceCommandHandler(
                 );
         });
 
-        return new Command("sources", "Manage pack sources.")
-        {
-            addSourceCommand,
-            listSourcesCommand,
-            removeSourceCommand,
-            renameSourceCommand,
-        };
+        return renameSourceCommand;
     }
 
     public async Task<int> ListAsync(string projectDirectory)

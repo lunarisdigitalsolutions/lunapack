@@ -1,4 +1,6 @@
-namespace Lunapack.Cli;
+using Lunapack.Cli.Application.CommandExecution;
+
+namespace Lunapack.Cli.Sources.Git;
 
 internal interface IGitProcessRunner
 {

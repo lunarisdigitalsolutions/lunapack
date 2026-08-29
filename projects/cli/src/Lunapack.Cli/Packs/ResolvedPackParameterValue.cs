@@ -1,4 +1,4 @@
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Packs;
 
 internal sealed record ResolvedPackParameterValue(
     PackParameterType Type,

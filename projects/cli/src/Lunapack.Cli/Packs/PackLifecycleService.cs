@@ -1,9 +1,21 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO.Abstractions;
 using System.Security.Cryptography;
 using System.Text;
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Paths;
+using Lunapack.Cli.Catalog;
+using Lunapack.Cli.Packs.ExternalSources;
+using Lunapack.Cli.Packs.Instructions;
+using Lunapack.Cli.Packs.Lifecycle;
+using Lunapack.Cli.Packs.ManagedFiles;
+using Lunapack.Cli.Packs.Manifest;
+using Lunapack.Cli.Packs.Planning;
+using Lunapack.Cli.Project;
+using Lunapack.Cli.Sources.Git;
+using Lunapack.Cli.Trust;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Packs;
 
 internal sealed class PackLifecycleService(
     IFileSystem fileSystem,
@@ -44,7 +56,7 @@ internal sealed class PackLifecycleService(
         configuredHookExecutor ?? new(fileSystem, console);
     private readonly ExternalSourceRequirementPlanner _externalSourceRequirementPlanner =
         configuredExternalSourceRequirementPlanner
-        ?? new(new GitRefResolver(new GitProcessRunner()), new ManagedFileConditionParser());
+        ?? new(new GitRefResolver(new GitProcessRunner()));
     private readonly ExternalSourceMaterializer _externalSourceMaterializer =
         configuredExternalSourceMaterializer
         ?? new(fileSystem, new GitProcessRunner(), new GitRefResolver(new GitProcessRunner()));
@@ -298,7 +310,7 @@ internal sealed class PackLifecycleService(
         var exactOwners = managedFiles
             .Where(file =>
                 string.Equals(
-                    NormalizePath(file.TargetPath),
+                    ProjectPath.Normalize(file.TargetPath),
                     request.SourcePath,
                     StringComparison.Ordinal
                 )
@@ -320,11 +332,13 @@ internal sealed class PackLifecycleService(
         var sourcePrefix = $"{request.SourcePath}/";
         var directoryMoves = managedFiles
             .Where(file =>
-                NormalizePath(file.TargetPath).StartsWith(sourcePrefix, StringComparison.Ordinal)
+                ProjectPath
+                    .Normalize(file.TargetPath)
+                    .StartsWith(sourcePrefix, StringComparison.Ordinal)
             )
             .Select(file =>
             {
-                var normalizedTarget = NormalizePath(file.TargetPath);
+                var normalizedTarget = ProjectPath.Normalize(file.TargetPath);
                 return new ManagedFileMove(
                     file,
                     normalizedTarget,
@@ -373,7 +387,7 @@ internal sealed class PackLifecycleService(
             .ToHashSet(ReferenceEqualityComparer.Instance);
         var ownedTargets = managedFiles
             .Where(file => !selectedFiles.Contains(file))
-            .Select(file => NormalizePath(file.TargetPath))
+            .Select(file => ProjectPath.Normalize(file.TargetPath))
             .ToHashSet(StringComparer.Ordinal);
         var conflict = moves.FirstOrDefault(move => ownedTargets.Contains(move.TargetPath));
         return conflict is null
@@ -515,7 +529,7 @@ internal sealed class PackLifecycleService(
         if (!selection.IsDirectory)
         {
             var declaredTarget = selection.Moves[0].ManagedFile.DeclaredTargetPath;
-            files[NormalizePath(declaredTarget ?? request.SourcePath)] = request.TargetPath;
+            files[ProjectPath.Normalize(declaredTarget ?? request.SourcePath)] = request.TargetPath;
         }
         else
         {
@@ -551,7 +565,7 @@ internal sealed class PackLifecycleService(
         var declaredDirectories = moves
             .Select(move =>
             {
-                var declaredTarget = NormalizePath(
+                var declaredTarget = ProjectPath.Normalize(
                     move.ManagedFile.DeclaredTargetPath ?? string.Empty
                 );
                 var relativePath = move.SourcePath[sourcePrefix.Length..];
@@ -815,21 +829,67 @@ internal sealed class PackLifecycleService(
         }
     }
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Maintainability",
-        "MA0051:Method is too long",
-        Justification = "Installation preparation coordinates state, graph, materialization, parameters, and plans."
-    )]
     private async Task<ManifestOperationResult<PreparedPackInstallation>> PrepareInstallationAsync(
         string projectDirectory,
         PackInstallationRequest installationRequest,
         bool previewSources = false
     )
     {
+        var graphPreparation = await PrepareInstallationGraphAsync(
+            projectDirectory,
+            installationRequest
+        );
+        if (graphPreparation.Value is not { } preparedGraph)
+        {
+            return ManifestOperationResult<PreparedPackInstallation>.Failure(
+                graphPreparation.Error ?? "Unable to materialize Git packs."
+            );
+        }
+
+        await using (preparedGraph)
+        {
+            var updatePlanningRequest = installationRequest with
+            {
+                PlanningMode = PackManagedFilePlanningMode.Update,
+            };
+            var sourcePreparation = await PrepareExternalSourceMaterializationAsync(
+                preparedGraph.Materialization.Graph,
+                preparedGraph.Configuration,
+                updatePlanningRequest,
+                installationRequest.AcceptSources,
+                previewSources
+            );
+            if (sourcePreparation.Value is not { } preparedSources)
+            {
+                return ManifestOperationResult<PreparedPackInstallation>.Failure(
+                    sourcePreparation.Error ?? "Unable to materialize external sources."
+                );
+            }
+
+            await using (preparedSources)
+            {
+                return CreatePreparedInstallation(
+                    projectDirectory,
+                    installationRequest.PackReference,
+                    updatePlanningRequest,
+                    preparedGraph,
+                    preparedSources
+                );
+            }
+        }
+    }
+
+    private async Task<
+        ManifestOperationResult<PreparedPackGraphMaterialization>
+    > PrepareInstallationGraphAsync(
+        string projectDirectory,
+        PackInstallationRequest installationRequest
+    )
+    {
         var loadedState = await projectStateStore.LoadAsync(projectDirectory);
         if (loadedState.Value is not { } state)
         {
-            return ManifestOperationResult<PreparedPackInstallation>.Failure(
+            return ManifestOperationResult<PreparedPackGraphMaterialization>.Failure(
                 loadedState.Error ?? "An error occurred"
             );
         }
@@ -841,7 +901,7 @@ internal sealed class PackLifecycleService(
             )
         )
         {
-            return ManifestOperationResult<PreparedPackInstallation>.Failure(
+            return ManifestOperationResult<PreparedPackGraphMaterialization>.Failure(
                 $"Pack '{packReference.Id}' is already installed."
             );
         }
@@ -870,7 +930,7 @@ internal sealed class PackLifecycleService(
         );
         if (graph.Value is not { } resolvedGraph)
         {
-            return ManifestOperationResult<PreparedPackInstallation>.Failure(
+            return ManifestOperationResult<PreparedPackGraphMaterialization>.Failure(
                 graph.Error ?? "Unable to resolve pack graph."
             );
         }
@@ -881,139 +941,163 @@ internal sealed class PackLifecycleService(
         );
         if (materializationResult.Value is not { } materialization)
         {
-            return ManifestOperationResult<PreparedPackInstallation>.Failure(
+            return ManifestOperationResult<PreparedPackGraphMaterialization>.Failure(
                 materializationResult.Error ?? "Unable to materialize Git packs."
             );
         }
 
-        var retainMaterialization = false;
-        try
-        {
-            var updatePlanningRequest = installationRequest with
-            {
-                PlanningMode = PackManagedFilePlanningMode.Update,
-            };
-            var parameterResolution = PackParameterResolver.Resolve(
-                materialization.Graph,
-                nextConfiguration,
-                updatePlanningRequest
-            );
-            if (parameterResolution.Value is not { } resolvedParameters)
-            {
-                return ManifestOperationResult<PreparedPackInstallation>.Failure(
-                    parameterResolution.Error ?? "Unable to resolve pack parameters."
-                );
-            }
+        return ManifestOperationResult<PreparedPackGraphMaterialization>.Success(
+            new PreparedPackGraphMaterialization(state, nextConfiguration, materialization)
+        );
+    }
 
-            var externalSources = await PrepareExternalSourcesAsync(
-                materialization.Graph,
-                nextConfiguration,
+    private async Task<
+        ManifestOperationResult<PreparedExternalSourceMaterialization>
+    > PrepareExternalSourceMaterializationAsync(
+        ResolvedPackGraph graph,
+        ProjectConfiguration configuration,
+        PackInstallationRequest planningRequest,
+        bool acceptSources,
+        bool previewSources
+    )
+    {
+        var parameterResolution = PackParameterResolver.Resolve(
+            graph,
+            configuration,
+            planningRequest
+        );
+        if (parameterResolution.Value is not { } resolvedParameters)
+        {
+            return ManifestOperationResult<PreparedExternalSourceMaterialization>.Failure(
+                parameterResolution.Error ?? "Unable to resolve pack parameters."
+            );
+        }
+
+        var externalSources = await PrepareExternalSourcesAsync(
+            graph,
+            configuration,
+            resolvedParameters,
+            acceptSources,
+            previewSources
+        );
+        if (externalSources.Value is not { } preparedSources)
+        {
+            return ManifestOperationResult<PreparedExternalSourceMaterialization>.Failure(
+                externalSources.Error ?? "Unable to prepare external sources."
+            );
+        }
+
+        var externalMaterialization = await _externalSourceMaterializer.MaterializeAsync(
+            preparedSources.Requirements
+        );
+        if (externalMaterialization.Value is not { } materialization)
+        {
+            return ManifestOperationResult<PreparedExternalSourceMaterialization>.Failure(
+                externalMaterialization.Error ?? "Unable to materialize external sources."
+            );
+        }
+
+        return ManifestOperationResult<PreparedExternalSourceMaterialization>.Success(
+            new PreparedExternalSourceMaterialization(
                 resolvedParameters,
-                installationRequest.AcceptSources,
-                previewSources
-            );
-            if (externalSources.Value is not { } preparedSources)
-            {
-                return ManifestOperationResult<PreparedPackInstallation>.Failure(
-                    externalSources.Error ?? "Unable to prepare external sources."
-                );
-            }
+                preparedSources,
+                materialization
+            )
+        );
+    }
 
-            var externalMaterialization = await _externalSourceMaterializer.MaterializeAsync(
-                preparedSources.Requirements
-            );
-            if (externalMaterialization.Value is not { } materializedSources)
-            {
-                return ManifestOperationResult<PreparedPackInstallation>.Failure(
-                    externalMaterialization.Error ?? "Unable to materialize external sources."
-                );
-            }
-
-            var retainExternalMaterialization = false;
-            try
-            {
-                var installationPlan = installationPlanner.Plan(
-                    projectDirectory,
-                    materialization.Graph,
-                    state.LockFile,
-                    preparedSources.CandidateConfiguration,
-                    updatePlanningRequest,
-                    resolvedParameters,
-                    materializedSources.Roots
-                );
-                if (installationPlan.Value is not { } plan)
-                {
-                    return ManifestOperationResult<PreparedPackInstallation>.Failure(
-                        installationPlan.Error ?? "Unable to plan pack installation."
-                    );
-                }
-
-                if (
-                    ManagedRootInventory.FindCrossRootCollision(
-                        ManagedRootInventory.FromInstallationPlan(materialization.Graph, plan),
-                        state.LockFile
-                    ) is
-                    { } collision
-                )
-                {
-                    return ManifestOperationResult<PreparedPackInstallation>.Failure(collision);
-                }
-
-                var updatePlan = updatePlanner.Plan(
-                    projectDirectory,
-                    state.LockFile,
-                    plan,
-                    removeUnplannedManagedFiles: false
-                );
-                if (updatePlan.Value is not { } plannedUpdate)
-                {
-                    return ManifestOperationResult<PreparedPackInstallation>.Failure(
-                        updatePlan.Error ?? "Unable to plan managed-file update."
-                    );
-                }
-
-                var selectedPack = materialization.Graph.Packs.SingleOrDefault(pack =>
-                    string.Equals(pack.Manifest.Id, packReference.Id, StringComparison.Ordinal)
-                );
-                if (selectedPack is null)
-                {
-                    return ManifestOperationResult<PreparedPackInstallation>.Failure(
-                        $"Resolved graph does not contain requested pack '{packReference.Id}'."
-                    );
-                }
-
-                retainMaterialization = true;
-                retainExternalMaterialization = true;
-                return ManifestOperationResult<PreparedPackInstallation>.Success(
-                    new PreparedPackInstallation(
-                        state,
-                        preparedSources.CandidateConfiguration,
-                        materialization.Graph,
-                        plan,
-                        plannedUpdate,
-                        resolvedParameters,
-                        new PackReference(selectedPack.Manifest.Id, selectedPack.Manifest.Version),
-                        materialization,
-                        materializedSources,
-                        preparedSources.Requirements
-                    )
-                );
-            }
-            finally
-            {
-                if (!retainExternalMaterialization)
-                {
-                    await materializedSources.DisposeAsync();
-                }
-            }
-        }
-        finally
+    private ManifestOperationResult<PreparedPackInstallation> CreatePreparedInstallation(
+        string projectDirectory,
+        PackReference packReference,
+        PackInstallationRequest planningRequest,
+        PreparedPackGraphMaterialization preparedGraph,
+        PreparedExternalSourceMaterialization preparedSources
+    )
+    {
+        var installationPlan = PlanNewPackInstallation(
+            projectDirectory,
+            planningRequest,
+            preparedGraph,
+            preparedSources
+        );
+        if (installationPlan.Value is not { } plan)
         {
-            if (!retainMaterialization)
-            {
-                await materialization.DisposeAsync();
-            }
+            return ManifestOperationResult<PreparedPackInstallation>.Failure(
+                installationPlan.Error ?? "Unable to plan pack installation."
+            );
         }
+
+        var updatePlan = updatePlanner.Plan(
+            projectDirectory,
+            preparedGraph.State.LockFile,
+            plan,
+            removeUnplannedManagedFiles: false
+        );
+        if (updatePlan.Value is not { } plannedUpdate)
+        {
+            return ManifestOperationResult<PreparedPackInstallation>.Failure(
+                updatePlan.Error ?? "Unable to plan managed-file update."
+            );
+        }
+
+        var selectedPack = preparedGraph.Materialization.Graph.Packs.SingleOrDefault(pack =>
+            string.Equals(pack.Manifest.Id, packReference.Id, StringComparison.Ordinal)
+        );
+        if (selectedPack is null)
+        {
+            return ManifestOperationResult<PreparedPackInstallation>.Failure(
+                $"Resolved graph does not contain requested pack '{packReference.Id}'."
+            );
+        }
+
+        var materialization = preparedGraph.TransferMaterialization();
+        var externalMaterialization = preparedSources.TransferMaterialization();
+        return ManifestOperationResult<PreparedPackInstallation>.Success(
+            new PreparedPackInstallation(
+                preparedGraph.State,
+                preparedSources.Plan.CandidateConfiguration,
+                materialization.Graph,
+                plan,
+                plannedUpdate,
+                preparedSources.Parameters,
+                new PackReference(selectedPack.Manifest.Id, selectedPack.Manifest.Version),
+                materialization,
+                externalMaterialization,
+                preparedSources.Plan.Requirements
+            )
+        );
+    }
+
+    private ManifestOperationResult<PackInstallationPlan> PlanNewPackInstallation(
+        string projectDirectory,
+        PackInstallationRequest planningRequest,
+        PreparedPackGraphMaterialization preparedGraph,
+        PreparedExternalSourceMaterialization preparedSources
+    )
+    {
+        var installationPlan = installationPlanner.Plan(
+            projectDirectory,
+            preparedGraph.Materialization.Graph,
+            preparedGraph.State.LockFile,
+            preparedSources.Plan.CandidateConfiguration,
+            planningRequest,
+            preparedSources.Parameters,
+            preparedSources.Materialization.Roots
+        );
+        if (installationPlan.Value is not { } plan)
+        {
+            return ManifestOperationResult<PackInstallationPlan>.Failure(
+                installationPlan.Error ?? "Unable to plan pack installation."
+            );
+        }
+
+        var collision = ManagedRootInventory.FindCrossRootCollision(
+            ManagedRootInventory.FromInstallationPlan(preparedGraph.Materialization.Graph, plan),
+            preparedGraph.State.LockFile
+        );
+        return collision is null
+            ? ManifestOperationResult<PackInstallationPlan>.Success(plan)
+            : ManifestOperationResult<PackInstallationPlan>.Failure(collision);
     }
 
     private void WriteManagedFileTemplateDiagnostics(PackInstallationPlan installationPlan)
@@ -1026,11 +1110,6 @@ internal sealed class PackLifecycleService(
         }
     }
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Maintainability",
-        "MA0051:Method is too long",
-        Justification = "Update preparation coordinates state, graph, materialization, parameters, and plans."
-    )]
     private async Task<ManifestOperationResult<PreparedPackUpdate>> PrepareUpdateAsync(
         string projectDirectory,
         IReadOnlyList<ProjectConfiguration.RequestedPack> selectedRequestedRoots,
@@ -1038,10 +1117,60 @@ internal sealed class PackLifecycleService(
         bool previewSources = false
     )
     {
+        var graphPreparation = await PrepareUpdateGraphAsync(
+            projectDirectory,
+            selectedRequestedRoots
+        );
+        if (graphPreparation.Value is not { } preparedGraph)
+        {
+            return ManifestOperationResult<PreparedPackUpdate>.Failure(
+                graphPreparation.Error ?? "Unable to materialize Git packs."
+            );
+        }
+
+        await using (preparedGraph)
+        {
+            var updatePlanningRequest = updateRequest with
+            {
+                PlanningMode = PackManagedFilePlanningMode.Update,
+            };
+            var sourcePreparation = await PrepareExternalSourceMaterializationAsync(
+                preparedGraph.Materialization.Graph,
+                preparedGraph.Configuration,
+                updatePlanningRequest,
+                updateRequest.AcceptSources,
+                previewSources
+            );
+            if (sourcePreparation.Value is not { } preparedSources)
+            {
+                return ManifestOperationResult<PreparedPackUpdate>.Failure(
+                    sourcePreparation.Error ?? "Unable to materialize external sources."
+                );
+            }
+
+            await using (preparedSources)
+            {
+                return CreatePreparedUpdate(
+                    projectDirectory,
+                    updatePlanningRequest,
+                    preparedGraph,
+                    preparedSources
+                );
+            }
+        }
+    }
+
+    private async Task<
+        ManifestOperationResult<PreparedPackGraphMaterialization>
+    > PrepareUpdateGraphAsync(
+        string projectDirectory,
+        IReadOnlyList<ProjectConfiguration.RequestedPack> selectedRequestedRoots
+    )
+    {
         var loadedState = await projectStateStore.LoadAsync(projectDirectory);
         if (loadedState.Value is not { } state)
         {
-            return ManifestOperationResult<PreparedPackUpdate>.Failure(
+            return ManifestOperationResult<PreparedPackGraphMaterialization>.Failure(
                 loadedState.Error ?? "Unable to load project state."
             );
         }
@@ -1049,7 +1178,7 @@ internal sealed class PackLifecycleService(
         var driftValidation = ExternalSourceDriftValidator.Validate(state);
         if (!driftValidation.IsSuccess)
         {
-            return ManifestOperationResult<PreparedPackUpdate>.Failure(
+            return ManifestOperationResult<PreparedPackGraphMaterialization>.Failure(
                 driftValidation.Error ?? "External source configuration drift was detected."
             );
         }
@@ -1062,7 +1191,7 @@ internal sealed class PackLifecycleService(
         );
         if (graph.Value is not { } resolvedGraph)
         {
-            return ManifestOperationResult<PreparedPackUpdate>.Failure(
+            return ManifestOperationResult<PreparedPackGraphMaterialization>.Failure(
                 graph.Error ?? "Unable to resolve pack graph."
             );
         }
@@ -1073,112 +1202,62 @@ internal sealed class PackLifecycleService(
         );
         if (materializationResult.Value is not { } materialization)
         {
-            return ManifestOperationResult<PreparedPackUpdate>.Failure(
+            return ManifestOperationResult<PreparedPackGraphMaterialization>.Failure(
                 materializationResult.Error ?? "Unable to materialize Git packs."
             );
         }
 
-        var retainMaterialization = false;
-        try
+        return ManifestOperationResult<PreparedPackGraphMaterialization>.Success(
+            new PreparedPackGraphMaterialization(state, nextConfiguration, materialization)
+        );
+    }
+
+    private ManifestOperationResult<PreparedPackUpdate> CreatePreparedUpdate(
+        string projectDirectory,
+        PackInstallationRequest planningRequest,
+        PreparedPackGraphMaterialization preparedGraph,
+        PreparedExternalSourceMaterialization preparedSources
+    )
+    {
+        var installationPlan = installationPlanner.Plan(
+            projectDirectory,
+            preparedGraph.Materialization.Graph,
+            preparedGraph.State.LockFile,
+            preparedSources.Plan.CandidateConfiguration,
+            planningRequest,
+            preparedSources.Parameters,
+            preparedSources.Materialization.Roots
+        );
+        if (installationPlan.Value is not { } plan)
         {
-            var updatePlanningRequest = updateRequest with
-            {
-                PlanningMode = PackManagedFilePlanningMode.Update,
-            };
-            var parameterResolution = PackParameterResolver.Resolve(
-                materialization.Graph,
-                nextConfiguration,
-                updatePlanningRequest
+            return ManifestOperationResult<PreparedPackUpdate>.Failure(
+                installationPlan.Error ?? "Unable to plan pack installation."
             );
-            if (parameterResolution.Value is not { } resolvedParameters)
-            {
-                return ManifestOperationResult<PreparedPackUpdate>.Failure(
-                    parameterResolution.Error ?? "Unable to resolve pack parameters."
-                );
-            }
-
-            var externalSources = await PrepareExternalSourcesAsync(
-                materialization.Graph,
-                nextConfiguration,
-                resolvedParameters,
-                updateRequest.AcceptSources,
-                previewSources
-            );
-            if (externalSources.Value is not { } preparedSources)
-            {
-                return ManifestOperationResult<PreparedPackUpdate>.Failure(
-                    externalSources.Error ?? "Unable to prepare external sources."
-                );
-            }
-
-            var externalMaterialization = await _externalSourceMaterializer.MaterializeAsync(
-                preparedSources.Requirements
-            );
-            if (externalMaterialization.Value is not { } materializedSources)
-            {
-                return ManifestOperationResult<PreparedPackUpdate>.Failure(
-                    externalMaterialization.Error ?? "Unable to materialize external sources."
-                );
-            }
-
-            var retainExternalMaterialization = false;
-            try
-            {
-                var installationPlan = installationPlanner.Plan(
-                    projectDirectory,
-                    materialization.Graph,
-                    state.LockFile,
-                    preparedSources.CandidateConfiguration,
-                    updatePlanningRequest,
-                    resolvedParameters,
-                    materializedSources.Roots
-                );
-                if (installationPlan.Value is not { } plan)
-                {
-                    return ManifestOperationResult<PreparedPackUpdate>.Failure(
-                        installationPlan.Error ?? "Unable to plan pack installation."
-                    );
-                }
-
-                var updatePlan = updatePlanner.Plan(projectDirectory, state.LockFile, plan);
-                if (updatePlan.Value is not { } plannedUpdate)
-                {
-                    return ManifestOperationResult<PreparedPackUpdate>.Failure(
-                        updatePlan.Error ?? "Unable to plan managed-file update."
-                    );
-                }
-
-                retainMaterialization = true;
-                retainExternalMaterialization = true;
-                return ManifestOperationResult<PreparedPackUpdate>.Success(
-                    new PreparedPackUpdate(
-                        state,
-                        preparedSources.CandidateConfiguration,
-                        materialization.Graph,
-                        plan,
-                        plannedUpdate,
-                        resolvedParameters,
-                        materialization,
-                        materializedSources,
-                        preparedSources.Requirements
-                    )
-                );
-            }
-            finally
-            {
-                if (!retainExternalMaterialization)
-                {
-                    await materializedSources.DisposeAsync();
-                }
-            }
         }
-        finally
+
+        var updatePlan = updatePlanner.Plan(projectDirectory, preparedGraph.State.LockFile, plan);
+        if (updatePlan.Value is not { } plannedUpdate)
         {
-            if (!retainMaterialization)
-            {
-                await materialization.DisposeAsync();
-            }
+            return ManifestOperationResult<PreparedPackUpdate>.Failure(
+                updatePlan.Error ?? "Unable to plan managed-file update."
+            );
         }
+
+        var materialization = preparedGraph.TransferMaterialization();
+        var externalMaterialization = preparedSources.TransferMaterialization();
+        return ManifestOperationResult<PreparedPackUpdate>.Success(
+            new PreparedPackUpdate(
+                preparedGraph.State,
+                preparedSources.Plan.CandidateConfiguration,
+                materialization.Graph,
+                plan,
+                plannedUpdate,
+                preparedSources.Parameters,
+                materialization,
+                externalMaterialization,
+                preparedSources.Plan.Requirements
+            )
+        );
     }
 
     private async Task<
@@ -1460,8 +1539,7 @@ internal sealed class PackLifecycleService(
         var requiresParameters = plan.Changes.Any(change =>
             change.IncomingPack?.Manifest.Hooks is { } hooks
             && new[] { hooks.PreUninstall, hooks.PostUninstall }
-                .Where(declarations => declarations is not null)
-                .SelectMany(declarations => declarations!)
+                .SelectMany(declarations => declarations ?? [])
                 .Any(hook =>
                     hook.Templating == true
                     || hook.Arguments.Any(argument =>
@@ -2177,7 +2255,7 @@ internal sealed class PackLifecycleService(
                     SourcePath = gitSource is null ? pack.SourceIdentity.Path : null,
                     ExternalSources = externalSources,
                     PackPath = gitSource is null
-                        ? NormalizePath(
+                        ? ProjectPath.Normalize(
                             fileSystem.Path.GetRelativePath(pack.SourcePath, pack.PackDirectory)
                         )
                         : pack.RepositoryPath
@@ -2375,7 +2453,7 @@ internal sealed class PackLifecycleService(
     {
         var remainingTargets = remainingLockFile
             .Packs.SelectMany(pack => pack.ManagedFiles)
-            .Select(managedFile => NormalizePath(managedFile.TargetPath))
+            .Select(managedFile => ProjectPath.Normalize(managedFile.TargetPath))
             .ToHashSet(StringComparer.Ordinal);
         var removals = new List<ManagedFileRemoval>();
         foreach (var managedFile in removedPacks.SelectMany(pack => pack.ManagedFiles))
@@ -2385,7 +2463,7 @@ internal sealed class PackLifecycleService(
                 removalKind is not null
                 && (
                     removalKind == ManagedFileRemovalKind.RemoveSection
-                    || !remainingTargets.Contains(NormalizePath(managedFile.TargetPath))
+                    || !remainingTargets.Contains(ProjectPath.Normalize(managedFile.TargetPath))
                 )
             )
             {
@@ -2523,12 +2601,12 @@ internal sealed class PackLifecycleService(
         byte[] contents
     )
     {
-        var normalizedTargetPath = NormalizePath(targetPath);
+        var normalizedTargetPath = ProjectPath.Normalize(targetPath);
         foreach (var managedFile in lockFile.Packs.SelectMany(pack => pack.ManagedFiles))
         {
             if (
                 string.Equals(
-                    NormalizePath(managedFile.TargetPath),
+                    ProjectPath.Normalize(managedFile.TargetPath),
                     normalizedTargetPath,
                     StringComparison.Ordinal
                 )
@@ -2609,7 +2687,53 @@ internal sealed class PackLifecycleService(
         string.Equals(first.Manifest.Id, second.Manifest.Id, StringComparison.Ordinal)
         && string.Equals(first.Manifest.Version, second.Manifest.Version, StringComparison.Ordinal);
 
-    private static string NormalizePath(string path) => ProjectPath.Normalize(path);
+    private sealed class PreparedPackGraphMaterialization(
+        ProjectState state,
+        ProjectConfiguration configuration,
+        GitPackMaterialization materialization
+    ) : IAsyncDisposable
+    {
+        private bool _isOwnershipTransferred;
+
+        public ProjectState State { get; } = state;
+
+        public ProjectConfiguration Configuration { get; } = configuration;
+
+        public GitPackMaterialization Materialization { get; } = materialization;
+
+        public GitPackMaterialization TransferMaterialization()
+        {
+            _isOwnershipTransferred = true;
+            return Materialization;
+        }
+
+        public ValueTask DisposeAsync() =>
+            _isOwnershipTransferred ? ValueTask.CompletedTask : Materialization.DisposeAsync();
+    }
+
+    private sealed class PreparedExternalSourceMaterialization(
+        ResolvedPackParameters parameters,
+        ApprovedExternalSourcePlan plan,
+        ExternalSourceMaterialization materialization
+    ) : IAsyncDisposable
+    {
+        private bool _isOwnershipTransferred;
+
+        public ResolvedPackParameters Parameters { get; } = parameters;
+
+        public ApprovedExternalSourcePlan Plan { get; } = plan;
+
+        public ExternalSourceMaterialization Materialization { get; } = materialization;
+
+        public ExternalSourceMaterialization TransferMaterialization()
+        {
+            _isOwnershipTransferred = true;
+            return Materialization;
+        }
+
+        public ValueTask DisposeAsync() =>
+            _isOwnershipTransferred ? ValueTask.CompletedTask : Materialization.DisposeAsync();
+    }
 
     private sealed record ManagedFileMoveRequest(string SourcePath, string TargetPath);
 

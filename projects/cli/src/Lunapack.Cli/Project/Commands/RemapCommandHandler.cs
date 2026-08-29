@@ -1,8 +1,11 @@
 using System.CommandLine;
 using System.IO.Abstractions;
+using Lunapack.Cli.Application;
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Paths;
 using Spectre.Console;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Project.Commands;
 
 internal sealed class RemapCommandHandler(
     IFileSystem fileSystem,
@@ -136,6 +139,9 @@ internal sealed class RemapCommandHandler(
             return console.Fail(state.Error);
         }
 
+        var normalizedNewTarget =
+            normalizedPaths.NewTarget
+            ?? throw new InvalidOperationException("Setting a remapping requires a new target.");
         var remapping = projectState.Configuration.Remap ?? new ProjectConfiguration.Remapping();
         var updatedRemapping = string.Equals(
             normalizedPaths.Kind,
@@ -147,16 +153,12 @@ internal sealed class RemapCommandHandler(
                 Directories = SetMapping(
                     remapping.Directories,
                     normalizedPaths.Target,
-                    normalizedPaths.NewTarget!
+                    normalizedNewTarget
                 ),
             }
             : remapping with
             {
-                Files = SetMapping(
-                    remapping.Files,
-                    normalizedPaths.Target,
-                    normalizedPaths.NewTarget!
-                ),
+                Files = SetMapping(remapping.Files, normalizedPaths.Target, normalizedNewTarget),
             };
         return await SaveAsync(projectDirectory, projectState, updatedRemapping);
     }

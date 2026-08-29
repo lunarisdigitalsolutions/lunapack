@@ -1,6 +1,8 @@
 using System.Text.RegularExpressions;
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Project;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Sources.Git;
 
 internal sealed partial class GitRefResolver(IGitProcessRunner processRunner)
 {

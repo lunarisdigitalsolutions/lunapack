@@ -1,4 +1,5 @@
 using System.IO.Abstractions.TestingHelpers;
+using Lunapack.Cli.Project;
 using SpectreTestConsole = Spectre.Console.Testing.TestConsole;
 
 namespace Lunapack.Cli.UnitTests;
@@ -310,7 +311,7 @@ public sealed class CliApplicationTests
 
         await Assert.That(exitCode).IsEqualTo(0);
         await Assert
-            .That(state.RequireValue().Configuration.Remap!.Directories["docs/adr"])
+            .That(state.RequireValue().Configuration.Remap.RequireNotNull().Directories["docs/adr"])
             .IsEqualTo("docs/internal/decisions");
         await Assert
             .That(
@@ -336,7 +337,7 @@ public sealed class CliApplicationTests
             workspace.Path
         );
         var state = await workspace.StateStore.LoadAsync(workspace.Path);
-        var remapping = state.RequireValue().Configuration.Remap!;
+        var remapping = state.RequireValue().Configuration.Remap.RequireNotNull();
 
         await Assert.That(exitCode).IsEqualTo(0);
         await Assert.That(remapping.Directories["docs/adr"]).IsEqualTo("docs/internal/decisions");
@@ -385,7 +386,7 @@ public sealed class CliApplicationTests
             workspace.Path
         );
         var state = await workspace.StateStore.LoadAsync(workspace.Path);
-        var mappings = state.RequireValue().Configuration.Remap!.Directories;
+        var mappings = state.RequireValue().Configuration.Remap.RequireNotNull().Directories;
 
         await Assert.That(exitCode).IsEqualTo(0);
         await Assert.That(mappings).Count().IsEqualTo(1);

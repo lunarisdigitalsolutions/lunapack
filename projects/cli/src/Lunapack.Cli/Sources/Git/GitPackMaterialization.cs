@@ -1,6 +1,7 @@
 using System.IO.Abstractions;
+using Lunapack.Cli.Packs.Planning;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Sources.Git;
 
 internal sealed class GitPackMaterialization(
     IFileSystem fileSystem,

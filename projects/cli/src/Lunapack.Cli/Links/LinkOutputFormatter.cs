@@ -1,7 +1,7 @@
 using System.Globalization;
 using Spectre.Console;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Links;
 
 internal static class LinkOutputFormatter
 {
