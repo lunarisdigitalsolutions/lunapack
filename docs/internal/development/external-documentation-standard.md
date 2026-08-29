@@ -45,6 +45,28 @@ Every page has one dominant purpose:
 Index pages orient and route readers; keep them short. Split a page when its
 audience, prerequisites, or dominant purpose changes.
 
+## Sequence expertise
+
+Diataxis purpose and reader expertise are separate dimensions. A how-to guide
+can be basic or expert; placing every how-to in one flat list does not create a
+learning journey.
+
+Organize external documentation in this progression:
+
+1. **Get started:** installation, first source, evaluation, preview, and first
+   successful install.
+2. **Everyday use:** common updates and customization after initial success.
+3. **Advanced use:** ownership recovery, source approval, automation,
+   multi-root behavior, and specialized file acquisition.
+4. **Authoring:** tutorials first, then core declarations, advanced composition
+   or execution, and release work.
+5. **Reference and help:** exhaustive lookup, security boundaries, and recovery.
+
+Do not require beginners to understand lock internals, source fingerprints,
+dependency graphs, trust scope precedence, or merge algorithms before the first
+successful workflow. Link to those details at the decision point. Advanced and
+expert pages must state prerequisites and recovery consequences explicitly.
+
 ## Organize for discovery
 
 Prefer no more than seven top-level navigation entries and seven direct

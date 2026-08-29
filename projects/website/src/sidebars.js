@@ -10,18 +10,28 @@ const sidebars = {
       type: 'category',
       label: 'Get started',
       collapsed: false,
-      items: ['installation', 'sources', 'install-packs']
+      items: ['installation', 'sources', 'evaluate-packs', 'install-packs']
     },
     {
       type: 'category',
-      label: 'Use packs',
+      label: 'Everyday use',
       items: [
         'update-packs',
-        'copy-files-from-git',
         'parameters-and-variables',
         'remap-targets',
+        'lifecycle-hooks'
+      ]
+    },
+    {
+      type: 'category',
+      label: 'Advanced use',
+      items: [
+        'copy-files-from-git',
         'manage-links',
-        'lifecycle-hooks',
+        'advanced/approve-external-sources',
+        'advanced/adopt-existing-files',
+        'advanced/install-multiple-packs',
+        'advanced/audit-and-recover',
         'automation'
       ]
     },
@@ -40,15 +50,22 @@ const sidebars = {
         },
         {
           type: 'category',
-          label: 'How-to guides',
+          label: 'Core authoring',
           items: [
             'packs/how-to/add-managed-content',
             'packs/how-to/add-conditional-files',
+            'packs/how-to/release-a-pack'
+          ]
+        },
+        {
+          type: 'category',
+          label: 'Advanced authoring',
+          items: [
+            'packs/how-to/merge-managed-content',
             'packs/how-to/compose-packs',
             'packs/how-to/use-external-pack-sources',
             'packs/how-to/use-scriban-templates',
-            'packs/how-to/use-pack-scripts',
-            'packs/how-to/release-a-pack'
+            'packs/how-to/use-pack-scripts'
           ]
         },
         {
@@ -91,14 +108,9 @@ const sidebars = {
       ]
     },
     {
-      type: 'doc',
-      id: 'threat-model',
-      label: 'Security model'
-    },
-    {
-      type: 'doc',
-      id: 'troubleshooting',
-      label: 'Troubleshooting'
+      type: 'category',
+      label: 'Help and security',
+      items: ['troubleshooting', 'threat-model']
     }
   ]
 }
