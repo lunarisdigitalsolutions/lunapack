@@ -5,6 +5,10 @@ import { extractReleaseNotes } from '../extract-release-notes.mjs'
 
 const workflow = readFileSync('.github/workflows/cli.yml', 'utf8')
 const buildAction = readFileSync('.github/actions/cli/build/action.yml', 'utf8')
+const dotnetBuildAction = readFileSync(
+  '.github/actions/build-dotnet/action.yml',
+  'utf8'
+)
 const releaseAction = readFileSync(
   '.github/actions/cli/release/action.yml',
   'utf8'
@@ -178,6 +182,37 @@ test('Scenario_ReleaseWorkflow_RunsAreBoundedAndSerialized', () => {
     buildAction,
     /retention-days: \$\{\{ inputs\.artifact-retention-days \}\}/
   )
+})
+
+test('Scenario_CliBuild_CoverageIsInstrumentedAndPublishedToSummary', () => {
+  for (const project of [
+    'Lunapack.Cli.UnitTests',
+    'Lunapack.Cli.IntegrationTests',
+    'Lunapack.Cli.SecurityTests'
+  ]) {
+    assert.match(buildAction, new RegExp(`${project}/${project}\\.csproj`))
+  }
+
+  assert.match(
+    buildAction,
+    /coverage-settings-path: projects\/cli\/src\/coverage\.settings\.xml/
+  )
+  assert.match(
+    dotnetBuildAction,
+    /test-build-configuration:[\s\S]*default: Debug/
+  )
+  assert.match(dotnetBuildAction, /--coverage-settings/)
+  assert.match(
+    dotnetBuildAction,
+    /Coverage report .* contains no instrumented code/
+  )
+  assert.match(
+    dotnetBuildAction,
+    /Expected exactly one canonical coverage report per configured project/
+  )
+  assert.match(dotnetBuildAction, /dotnet-test-results\/\*\/\*\.cobertura\.xml/)
+  assert.match(dotnetBuildAction, /GITHUB_STEP_SUMMARY/)
+  assert.match(dotnetBuildAction, /Line coverage \| Branch coverage/)
 })
 
 test('Scenario_ReleaseAction_ThirdPartyActionsUseCommitPins', () => {
