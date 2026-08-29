@@ -1,4 +1,11 @@
 using System.IO.Abstractions;
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Catalog;
+using Lunapack.Cli.Packs;
+using Lunapack.Cli.Packs.Lifecycle;
+using Lunapack.Cli.Packs.Manifest;
+using Lunapack.Cli.Packs.Planning;
+using Lunapack.Cli.Sources;
 
 namespace Lunapack.Cli.UnitTests;
 

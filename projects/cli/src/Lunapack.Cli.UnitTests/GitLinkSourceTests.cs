@@ -1,5 +1,10 @@
 using System.IO.Abstractions.TestingHelpers;
 using System.Text;
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Links;
+using Lunapack.Cli.Project;
+using Lunapack.Cli.Sources;
+using Lunapack.Cli.Sources.Git;
 
 namespace Lunapack.Cli.UnitTests;
 

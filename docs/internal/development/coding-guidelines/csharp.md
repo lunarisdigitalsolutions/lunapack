@@ -5,10 +5,10 @@ C#-specific rules.
 
 ## Language And Dependencies
 
-- Use file-scoped namespaces, nullable reference types, implicit usings, and
-  the current supported C# language version. Add explicit `using` directives
-  for external package namespaces used by a file; do not rely on undeclared
-  imports.
+- Use file-scoped namespaces, nullable reference types, .NET implicit usings,
+  and the current supported C# language version. Add file-local `using`
+  directives for other namespaces; do not add repository-defined global
+  usings.
 - Name public and internal APIs for domain intent. Prefer precise immutable
   records or sealed types where mutation or inheritance is not required.
 - Name methods and properties with PascalCase. Name private fields with an
@@ -17,9 +17,14 @@ C#-specific rules.
 
 ## Structure And Layout
 
+- Place each type under its narrowest owning feature and make its namespace
+  match its directory, as established by
+  [ADR-0061](../../architecture/adr/0061-organize-cli-source-by-feature.md).
+  Avoid catch-all `Interfaces`, `Models`, and `Helpers` directories.
 - Keep methods focused and short enough to expose their workflow. Extract a
   private method for a distinct decision, validation, or side effect rather
-  than hiding it in a long method.
+  than hiding it in a long method. Keep enforceable size limits in analyzer
+  configuration rather than duplicating numeric limits in guidance.
 - Place fields first, then the public workflow, and then its private detail.
   Keep callers above their dependent private methods where practical.
 - Use `StringComparison.Ordinal` or `OrdinalIgnoreCase` for identifiers,
@@ -68,8 +73,15 @@ C#-specific rules.
 
 - Validate external input at the boundary. Represent expected operation failures
   explicitly; add context when propagating unexpected exceptions.
-- Do not use the null-forgiving operator to consume result values. Check for a
-  null value and handle the corresponding failure before continuing.
+- Model optional values with nullable types and narrow them through pattern
+  matching or guard clauses. Use nullable flow attributes such as
+  `NotNullWhen` when a Boolean result establishes a contract. Do not use the
+  null-forgiving operator to consume result values or hide an unproven
+  invariant.
+- Use `ProjectPath.Normalize` for stored project-relative values and
+  `NormalizeProjectRelativePath` for external filesystem locations, following
+  [ADR-0037](../../architecture/adr/0037-canonicalize-persisted-project-paths.md).
+  Do not normalize URLs or opaque identifiers as paths.
 - Define shared `JsonSerializerOptions` once at the narrowest common boundary;
   do not create divergent defaults in each serializer user.
 - Choose a package when it is demonstrably safer or clearer than bespoke code;
@@ -78,9 +90,12 @@ C#-specific rules.
 ## Quality
 
 - Keep target-framework, compiler, analyzer, formatter, and warning policy in
-  shared build configuration. Treat warnings as errors and suppress a
-  diagnostic only with a narrow, documented justification.
-- Do NOT just suppress a warning. Fix the underlying issue or add a justification comment with a link to an issue or ADR.
+  shared build configuration. Treat warnings as errors.
+- Fix a diagnostic when code can express the intended contract. When an
+  external compatibility constraint requires suppression, use the narrowest
+  `SuppressMessage` scope and include a justification that references an issue
+  or ADR. Do not use `NoWarn`, warning pragmas, or analyzer severity reductions
+  for source exceptions.
 - Centralize dependency versions where the build system supports it. Commit
   dependency locks when reproducible restore matters, and restore in locked
   mode in continuous integration.

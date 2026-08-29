@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.IO.Abstractions.TestingHelpers;
 using System.Text;
+using Lunapack.Cli.Packs;
+using Lunapack.Cli.Packs.ManagedFiles;
 
 namespace Lunapack.Cli.UnitTests;
 

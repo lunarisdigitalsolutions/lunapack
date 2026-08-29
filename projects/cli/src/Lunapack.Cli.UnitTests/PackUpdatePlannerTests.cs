@@ -2,6 +2,12 @@ using System.IO.Abstractions.TestingHelpers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Catalog;
+using Lunapack.Cli.Packs.ManagedFiles;
+using Lunapack.Cli.Packs.Manifest;
+using Lunapack.Cli.Packs.Planning;
+using Lunapack.Cli.Project;
 
 namespace Lunapack.Cli.UnitTests;
 
@@ -370,7 +376,9 @@ public sealed class PackUpdatePlannerTests
         var fileSystem = new MockFileSystem();
         foreach (var file in files)
         {
-            fileSystem.Directory.CreateDirectory(fileSystem.Path.GetDirectoryName(file.Path)!);
+            fileSystem.Directory.CreateDirectory(
+                fileSystem.Path.GetDirectoryName(file.Path).RequireNotNull()
+            );
             fileSystem.File.WriteAllText(file.Path, file.Contents);
         }
 

@@ -1,3 +1,6 @@
+using Lunapack.Cli.Project;
+using Lunapack.Cli.Sources;
+
 namespace Lunapack.Cli.UnitTests;
 
 public sealed class SourceOutputFormatterTests

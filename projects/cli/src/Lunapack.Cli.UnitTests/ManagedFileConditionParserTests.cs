@@ -1,3 +1,5 @@
+using Lunapack.Cli.Packs;
+
 namespace Lunapack.Cli.UnitTests;
 
 public sealed class ManagedFileConditionParserTests
@@ -5,7 +7,7 @@ public sealed class ManagedFileConditionParserTests
     [Test]
     public async Task Parse_WhenBooleanOperatorsAndNegationUsed_EvaluatesCondition()
     {
-        var result = new ManagedFileConditionParser().Parse(
+        var result = ManagedFileConditionParser.Parse(
             "includeCi && !includeSecurity",
             CreateDeclarations()
         );
@@ -23,7 +25,7 @@ public sealed class ManagedFileConditionParserTests
     [Test]
     public async Task Parse_WhenStringEnumComparisonAndParenthesesUsed_EvaluatesCondition()
     {
-        var result = new ManagedFileConditionParser().Parse(
+        var result = ManagedFileConditionParser.Parse(
             "(licenseKind == \"mit\" || environment != \"production\") && includeCi",
             CreateDeclarations()
         );
@@ -41,7 +43,7 @@ public sealed class ManagedFileConditionParserTests
     [Test]
     public async Task Parse_WhenMembershipCombined_EvaluatesSelectedValues()
     {
-        var result = new ManagedFileConditionParser().Parse(
+        var result = ManagedFileConditionParser.Parse(
             "\"api\" in features && (\"docker\" in features || includeCi)",
             CreateDeclarations()
         );
@@ -59,7 +61,7 @@ public sealed class ManagedFileConditionParserTests
     [Test]
     public async Task Parse_WhenMembershipValueAbsent_EvaluatesFalse()
     {
-        var result = new ManagedFileConditionParser().Parse(
+        var result = ManagedFileConditionParser.Parse(
             "\"docker\" in features",
             CreateDeclarations()
         );
@@ -73,7 +75,7 @@ public sealed class ManagedFileConditionParserTests
     [Test]
     public async Task Parse_WhenMembershipUsesScalarEnum_ReturnsFailure()
     {
-        var result = new ManagedFileConditionParser().Parse(
+        var result = ManagedFileConditionParser.Parse(
             "\"mit\" in licenseKind",
             CreateDeclarations()
         );
@@ -84,10 +86,7 @@ public sealed class ManagedFileConditionParserTests
     [Test]
     public async Task Parse_WhenMultiSelectUsesEquality_ReturnsFailure()
     {
-        var result = new ManagedFileConditionParser().Parse(
-            "features == \"api\"",
-            CreateDeclarations()
-        );
+        var result = ManagedFileConditionParser.Parse("features == \"api\"", CreateDeclarations());
 
         await Assert.That(result.IsSuccess).IsFalse();
     }
@@ -95,7 +94,7 @@ public sealed class ManagedFileConditionParserTests
     [Test]
     public async Task Parse_WhenParameterUndeclared_ReturnsFailure()
     {
-        var result = new ManagedFileConditionParser().Parse("unknown", CreateDeclarations());
+        var result = ManagedFileConditionParser.Parse("unknown", CreateDeclarations());
 
         await Assert.That(result.IsSuccess).IsFalse();
     }
@@ -103,7 +102,7 @@ public sealed class ManagedFileConditionParserTests
     [Test]
     public async Task Parse_WhenBooleanComparedToString_ReturnsFailure()
     {
-        var result = new ManagedFileConditionParser().Parse(
+        var result = ManagedFileConditionParser.Parse(
             "includeCi == \"true\"",
             CreateDeclarations()
         );
@@ -114,7 +113,7 @@ public sealed class ManagedFileConditionParserTests
     [Test]
     public async Task Parse_WhenStringUsedAsBoolean_ReturnsFailure()
     {
-        var result = new ManagedFileConditionParser().Parse("environment", CreateDeclarations());
+        var result = ManagedFileConditionParser.Parse("environment", CreateDeclarations());
 
         await Assert.That(result.IsSuccess).IsFalse();
     }
@@ -122,7 +121,7 @@ public sealed class ManagedFileConditionParserTests
     [Test]
     public async Task Parse_WhenSyntaxInvalid_ReturnsFailure()
     {
-        var result = new ManagedFileConditionParser().Parse("includeCi &&", CreateDeclarations());
+        var result = ManagedFileConditionParser.Parse("includeCi &&", CreateDeclarations());
 
         await Assert.That(result.IsSuccess).IsFalse();
     }

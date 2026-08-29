@@ -1,4 +1,14 @@
 using System.IO.Abstractions;
+using Lunapack.Cli.Application.Paths;
+using Lunapack.Cli.Catalog;
+using Lunapack.Cli.Packs;
+using Lunapack.Cli.Packs.Instructions;
+using Lunapack.Cli.Packs.Lifecycle;
+using Lunapack.Cli.Packs.Manifest;
+using Lunapack.Cli.Packs.Planning;
+using Lunapack.Cli.Project;
+using Lunapack.Cli.Sources;
+using Lunapack.Cli.Trust;
 
 namespace Lunapack.Cli.UnitTests;
 
@@ -139,7 +149,7 @@ public sealed class LifecycleHookAuthorizationTests
             new LifecycleCommandResolver(fileSystem),
             confirmer
         );
-        var invocation = CreateInvocation(workspace.Path, Environment.ProcessPath!);
+        var invocation = CreateInvocation(workspace.Path, Environment.ProcessPath.RequireNotNull());
         var configuration = CreateConfiguration();
 
         var skipped = await authorizer.AuthorizeAsync(
@@ -304,7 +314,7 @@ public sealed class LifecycleHookAuthorizationTests
             new LifecycleCommandResolver(fileSystem),
             confirmer
         );
-        var script = CreateInvocation(workspace.Path, Environment.ProcessPath!) with
+        var script = CreateInvocation(workspace.Path, Environment.ProcessPath.RequireNotNull()) with
         {
             Position = 2,
         };
@@ -354,7 +364,7 @@ public sealed class LifecycleHookAuthorizationTests
             workspace.Path,
             CreateConfiguration(),
             ScriptExecutionMode.Prompt,
-            [CreateInvocation(workspace.Path, Environment.ProcessPath!)]
+            [CreateInvocation(workspace.Path, Environment.ProcessPath.RequireNotNull())]
         );
 
         await Assert.That(result.RequireValue()).IsEmpty();
@@ -380,7 +390,7 @@ public sealed class LifecycleHookAuthorizationTests
             ScriptExecutionMode.Prompt,
             [
                 CreateInstructionInvocation(workspace.Path, 1),
-                CreateInvocation(workspace.Path, Environment.ProcessPath!) with
+                CreateInvocation(workspace.Path, Environment.ProcessPath.RequireNotNull()) with
                 {
                     Position = 2,
                 },
@@ -402,8 +412,8 @@ public sealed class LifecycleHookAuthorizationTests
             new CliConsole(ansiConsole, CliLogLevel.Info)
         );
         var invocation = new ResolvedLifecycleHookInvocation(
-            CreateInvocation(workspace.Path, Environment.ProcessPath!),
-            Environment.ProcessPath!
+            CreateInvocation(workspace.Path, Environment.ProcessPath.RequireNotNull()),
+            Environment.ProcessPath.RequireNotNull()
         );
 
         var confirmed = confirmer.Confirm(invocation);
@@ -423,8 +433,8 @@ public sealed class LifecycleHookAuthorizationTests
             new CliConsole(ansiConsole, CliLogLevel.Info)
         );
         var invocation = new ResolvedLifecycleHookInvocation(
-            CreateInvocation(workspace.Path, Environment.ProcessPath!),
-            Environment.ProcessPath!
+            CreateInvocation(workspace.Path, Environment.ProcessPath.RequireNotNull()),
+            Environment.ProcessPath.RequireNotNull()
         );
 
         var confirmed = confirmer.Confirm(invocation);
@@ -444,8 +454,8 @@ public sealed class LifecycleHookAuthorizationTests
             new CliConsole(ansiConsole, CliLogLevel.Info)
         );
         var invocation = new ResolvedLifecycleHookInvocation(
-            CreateInvocation(workspace.Path, Environment.ProcessPath!),
-            Environment.ProcessPath!
+            CreateInvocation(workspace.Path, Environment.ProcessPath.RequireNotNull()),
+            Environment.ProcessPath.RequireNotNull()
         );
 
         var confirmed = confirmer.Confirm(invocation);
@@ -460,7 +470,7 @@ public sealed class LifecycleHookAuthorizationTests
         var fileSystem = new FileSystem();
         var confirmer = new RecordingConfirmer();
         var userSettingsStore = new UserSettingsStore(fileSystem, workspace.Path);
-        var invocation = CreateInvocation(workspace.Path, Environment.ProcessPath!);
+        var invocation = CreateInvocation(workspace.Path, Environment.ProcessPath.RequireNotNull());
         var saved = await userSettingsStore.SaveAsync(
             new UserSettings
             {
@@ -492,7 +502,7 @@ public sealed class LifecycleHookAuthorizationTests
         using var workspace = new TestWorkspace();
         var pack = CreatePack(null, workspace.Path);
         var hookPath = Path.Combine(pack.PackDirectory, "scripts", "setup.ps1");
-        Directory.CreateDirectory(Path.GetDirectoryName(hookPath)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(hookPath).RequireNotNull());
         File.WriteAllText(hookPath, "Write-Output setup");
         var script = new PackManifest.PackHook
         {
@@ -504,7 +514,7 @@ public sealed class LifecycleHookAuthorizationTests
         var packedFile = PackedHookFile.Resolve(new FileSystem(), pack, script.File).RequireValue();
         var resolved = new ResolvedLifecycleHookInvocation(
             new LifecycleHookInvocation(pack, LifecycleHook.PreInstall, script, packedFile),
-            Environment.ProcessPath!
+            Environment.ProcessPath.RequireNotNull()
         );
 
         var formatted = LifecycleHookConfirmationFormatter.Format(resolved);

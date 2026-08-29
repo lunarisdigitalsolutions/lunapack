@@ -1,5 +1,11 @@
 using System.Globalization;
 using System.IO.Abstractions.TestingHelpers;
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Catalog;
+using Lunapack.Cli.Packs;
+using Lunapack.Cli.Packs.Instructions;
+using Lunapack.Cli.Packs.Manifest;
+using Lunapack.Cli.Sources;
 
 namespace Lunapack.Cli.UnitTests;
 

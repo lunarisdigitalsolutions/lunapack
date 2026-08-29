@@ -1,3 +1,6 @@
+using Lunapack.Cli.Catalog;
+using Lunapack.Cli.Packs.Validation;
+
 namespace Lunapack.Cli.UnitTests;
 
 public sealed class PackValidationServiceTests
@@ -24,7 +27,7 @@ public sealed class PackValidationServiceTests
 
         await Assert.That(result.IsSuccess).IsTrue();
         var validation = result.RequireValue();
-        await Assert.That(validation.Manifest!.Version).IsEqualTo("2.0.0");
+        await Assert.That(validation.Manifest.RequireNotNull().Version).IsEqualTo("2.0.0");
         await Assert.That(validation.IsValid).IsFalse();
         await Assert
             .That(validation.Issues)

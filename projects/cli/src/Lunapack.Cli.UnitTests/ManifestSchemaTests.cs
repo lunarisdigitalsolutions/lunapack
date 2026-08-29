@@ -1,5 +1,10 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Lunapack.Cli.Application.Paths;
+using Lunapack.Cli.Packs.Manifest;
+using Lunapack.Cli.Project;
+using Lunapack.Cli.Sources;
+using Lunapack.Cli.Trust;
 
 namespace Lunapack.Cli.UnitTests;
 
@@ -602,9 +607,10 @@ public sealed class ManifestSchemaTests
 
         await Assert
             .That(
-                normalized.Hooks!.PreInstall!.Select(hook =>
-                    hook.File ?? throw new InvalidOperationException()
-                )
+                normalized
+                    .Hooks.RequireNotNull()
+                    .PreInstall.RequireNotNull()
+                    .Select(hook => hook.File ?? throw new InvalidOperationException())
             )
             .IsEquivalentTo(["scripts/setup.ps1", "instructions/setup.md"]);
     }

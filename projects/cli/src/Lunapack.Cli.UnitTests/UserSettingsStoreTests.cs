@@ -1,5 +1,8 @@
 using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
+using Lunapack.Cli.Application.Paths;
+using Lunapack.Cli.Sources;
+using Lunapack.Cli.Trust;
 
 namespace Lunapack.Cli.UnitTests;
 
@@ -128,7 +131,7 @@ public sealed class UserSettingsStoreTests
             .That(
                 UserSettingsPathSecurity.ValidateExisting(
                     new FileSystem(),
-                    Path.GetDirectoryName(store.SettingsPath)!,
+                    Path.GetDirectoryName(store.SettingsPath).RequireNotNull(),
                     directory: true
                 )
             )
@@ -241,7 +244,12 @@ public sealed class UserSettingsStoreTests
         await Assert.That(saved.IsSuccess).IsFalse();
         await Assert.That(File.ReadAllText(store.SettingsPath)).IsEqualTo(initialContents);
         await Assert
-            .That(Directory.GetFiles(Path.GetDirectoryName(store.SettingsPath)!, "*.tmp"))
+            .That(
+                Directory.GetFiles(
+                    Path.GetDirectoryName(store.SettingsPath).RequireNotNull(),
+                    "*.tmp"
+                )
+            )
             .IsEmpty();
     }
 

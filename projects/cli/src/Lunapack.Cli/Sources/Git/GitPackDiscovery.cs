@@ -1,9 +1,14 @@
 using System.IO.Abstractions;
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Serialization;
+using Lunapack.Cli.Catalog;
+using Lunapack.Cli.Packs.Manifest;
+using Lunapack.Cli.Project;
 using NuGet.Versioning;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Sources.Git;
 
 internal sealed class GitPackDiscovery(
     IFileSystem fileSystem,
@@ -94,11 +99,6 @@ internal sealed class GitPackDiscovery(
             );
     }
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Maintainability",
-        "MA0051:Method is too long",
-        Justification = "Discovery coordinates one cache refresh transaction and its cleanup."
-    )]
     private async Task<ManifestOperationResult<List<GitCachedPack>>> DiscoverAsync(
         ProjectConfiguration.GitSource source,
         string resolvedCommit,
@@ -115,83 +115,41 @@ internal sealed class GitPackDiscovery(
         var timeout = TimeSpan.FromSeconds(source.TimeoutSeconds ?? DefaultTimeoutSeconds);
         try
         {
-            fileSystem.Directory.CreateDirectory(workspace);
-            foreach (
-                var command in new[]
-                {
-                    new[] { "init", "--quiet", workspace },
-                    ["-C", workspace, "remote", "add", "origin", source.Url],
-                    [
-                        "-C",
-                        workspace,
-                        "fetch",
-                        "--depth=1",
-                        "--filter=blob:none",
-                        "origin",
-                        resolvedCommit,
-                    ],
-                }
-            )
+            var preparationFailure = await PrepareWorkspaceAsync(
+                source,
+                resolvedCommit,
+                workspace,
+                timeout,
+                cancellationToken
+            );
+            if (preparationFailure is not null)
             {
-                var result = await processRunner.RunAsync(command, timeout, cancellationToken);
-                if (!result.IsSuccess)
-                {
-                    return ManifestOperationResult<List<GitCachedPack>>.Failure(result.Error!);
-                }
+                return preparationFailure;
             }
 
-            var listed = await processRunner.RunAsync(
-                [
-                    "-C",
-                    workspace,
-                    "ls-tree",
-                    "-r",
-                    "--name-only",
-                    resolvedCommit,
-                    "--",
-                    source.Path ?? ".",
-                ],
+            var listed = await ListRepositoryPathsAsync(
+                source,
+                resolvedCommit,
+                workspace,
                 timeout,
                 cancellationToken
             );
             if (listed.Value is not { } paths)
             {
-                return ManifestOperationResult<List<GitCachedPack>>.Failure(listed.Error!);
+                return ManifestOperationResult<List<GitCachedPack>>.Failure(
+                    listed.Error ?? "Unable to list Git repository paths."
+                );
             }
 
-            var repositoryPaths = paths.StandardOutput.Split(
-                '\n',
-                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+            var repositoryPaths = ParseRepositoryPaths(paths);
+            var packs = await DiscoverPacksAsync(
+                source,
+                resolvedCommit,
+                workspace,
+                timeout,
+                repositoryPaths,
+                cancellationToken
             );
-            var packs = new List<GitCachedPack>();
-            foreach (var path in repositoryPaths.Where(IsManifestPath))
-            {
-                var manifestResult = await processRunner.RunAsync(
-                    ["-C", workspace, "show", $"{resolvedCommit}:{path}"],
-                    timeout,
-                    cancellationToken
-                );
-                if (manifestResult.Value is not { } manifestOutput)
-                {
-                    continue;
-                }
-
-                var manifest = await TryParseAsync(
-                    manifestOutput.StandardOutput,
-                    GetPackSourceFiles(repositoryPaths, GetPackPath(path))
-                );
-                if (manifest is null)
-                {
-                    _console.Debug(
-                        $"Ignoring invalid pack manifest '{path}' from Git source '{source.Url}'."
-                    );
-                }
-                else
-                {
-                    packs.Add(manifest with { PackPath = GetPackPath(path) });
-                }
-            }
-
             return ManifestOperationResult<List<GitCachedPack>>.Success(packs);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
@@ -204,6 +162,113 @@ internal sealed class GitPackDiscovery(
         }
     }
 
+    private async Task<ManifestOperationResult<List<GitCachedPack>>?> PrepareWorkspaceAsync(
+        ProjectConfiguration.GitSource source,
+        string resolvedCommit,
+        string workspace,
+        TimeSpan timeout,
+        CancellationToken cancellationToken
+    )
+    {
+        fileSystem.Directory.CreateDirectory(workspace);
+        foreach (
+            var command in new[]
+            {
+                new[] { "init", "--quiet", workspace },
+                ["-C", workspace, "remote", "add", "origin", source.Url],
+                [
+                    "-C",
+                    workspace,
+                    "fetch",
+                    "--depth=1",
+                    "--filter=blob:none",
+                    "origin",
+                    resolvedCommit,
+                ],
+            }
+        )
+        {
+            var result = await processRunner.RunAsync(command, timeout, cancellationToken);
+            if (!result.IsSuccess)
+            {
+                return ManifestOperationResult<List<GitCachedPack>>.Failure(
+                    result.Error ?? "Unable to prepare the Git discovery workspace."
+                );
+            }
+        }
+
+        return null;
+    }
+
+    private Task<ManifestOperationResult<GitProcessOutput>> ListRepositoryPathsAsync(
+        ProjectConfiguration.GitSource source,
+        string resolvedCommit,
+        string workspace,
+        TimeSpan timeout,
+        CancellationToken cancellationToken
+    ) =>
+        processRunner.RunAsync(
+            [
+                "-C",
+                workspace,
+                "ls-tree",
+                "-r",
+                "--name-only",
+                resolvedCommit,
+                "--",
+                source.Path ?? ".",
+            ],
+            timeout,
+            cancellationToken
+        );
+
+    private static string[] ParseRepositoryPaths(GitProcessOutput paths) =>
+        paths.StandardOutput.Split(
+            '\n',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+        );
+
+    private async Task<List<GitCachedPack>> DiscoverPacksAsync(
+        ProjectConfiguration.GitSource source,
+        string resolvedCommit,
+        string workspace,
+        TimeSpan timeout,
+        IReadOnlyList<string> repositoryPaths,
+        CancellationToken cancellationToken
+    )
+    {
+        var packs = new List<GitCachedPack>();
+        foreach (var path in repositoryPaths.Where(IsManifestPath))
+        {
+            var manifestResult = await processRunner.RunAsync(
+                ["-C", workspace, "show", $"{resolvedCommit}:{path}"],
+                timeout,
+                cancellationToken
+            );
+            if (manifestResult.Value is not { } manifestOutput)
+            {
+                continue;
+            }
+
+            var manifest = await TryParseAsync(
+                manifestOutput.StandardOutput,
+                GetPackSourceFiles(repositoryPaths, GetPackPath(path))
+            );
+            if (manifest is null)
+            {
+                _console.Debug(
+                    $"Ignoring invalid pack manifest '{path}' from Git source '{source.Url}'."
+                );
+            }
+            else
+            {
+                packs.Add(manifest with { PackPath = GetPackPath(path) });
+            }
+        }
+
+        return packs;
+    }
+
     private static List<CatalogPack> CreateCatalog(
         ProjectConfiguration.GitSource source,
         int sourceOrder,
@@ -213,13 +278,19 @@ internal sealed class GitPackDiscovery(
         packs
             .Select(pack =>
             {
-                _ = NuGetVersion.TryParse(pack.Version, out var version);
+                if (!NuGetVersion.TryParse(pack.Version, out var version))
+                {
+                    throw new InvalidOperationException(
+                        $"Git pack '{pack.Id}' has an invalid cached version '{pack.Version}'."
+                    );
+                }
+
                 return new CatalogPack(
                     source.Url,
                     pack.PackPath,
                     sourceOrder,
                     pack.Manifest,
-                    version!,
+                    version,
                     source.Name,
                     ConfiguredSourceIdentity.Create(source),
                     new GitSourceProvenance

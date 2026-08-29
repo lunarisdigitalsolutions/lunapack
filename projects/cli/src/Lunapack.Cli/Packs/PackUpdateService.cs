@@ -1,4 +1,10 @@
-namespace Lunapack.Cli;
+﻿using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Catalog;
+using Lunapack.Cli.Packs.Planning;
+using Lunapack.Cli.Project;
+using Lunapack.Cli.Trust;
+
+namespace Lunapack.Cli.Packs;
 
 internal sealed class PackUpdateService(
     PackCatalog packCatalog,

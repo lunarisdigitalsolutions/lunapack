@@ -1,6 +1,9 @@
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Paths;
+using Lunapack.Cli.Project;
 using Microsoft.Extensions.FileSystemGlobbing;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Links;
 
 internal static class LinkSelectionService
 {

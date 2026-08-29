@@ -1,6 +1,9 @@
 using System.CommandLine;
+using Lunapack.Cli.Application;
+using Lunapack.Cli.Application.Guidance;
+using Lunapack.Cli.Project;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Links.Commands;
 
 internal sealed class LinksCommandHandler(
     IProjectStateStore projectStateStore,
@@ -8,16 +11,11 @@ internal sealed class LinksCommandHandler(
     LinkLifecycleService linkLifecycleService,
     LinkInspectionService linkInspectionService,
     WorkspaceDirectoryResolver workspaceDirectoryResolver,
-    INextStepAdvisor nextStepAdvisor,
+    NextStepAdvisor nextStepAdvisor,
     NextStepRenderer nextStepRenderer,
     CliConsole console
 )
 {
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Maintainability",
-        "MA0051:Method is too long",
-        Justification = "Links command composition keeps related subcommands collocated."
-    )]
     public Command CreateCommand(string projectDirectory, Option<string?> workspaceOption)
     {
         return new Command("links", "Manage project-owned file links.")
@@ -29,57 +27,19 @@ internal sealed class LinksCommandHandler(
         };
     }
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Maintainability",
-        "MA0051:Method is too long",
-        Justification = "Link definition options remain collocated with their command action."
-    )]
     private Command CreateAddCommand(string projectDirectory, Option<string?> workspaceOption)
     {
-        var nameArgument = new Argument<string>("name")
-        {
-            Description = "Unique link name using pack-ID syntax.",
-        };
-        var sourceOption = new Option<string?>("--source", "-s")
-        {
-            Description = "Configured source name to select files from.",
-        };
-        var includeOption = new Option<string[]>("--include", "-i")
-        {
-            Description = "File, directory, or glob selector to include.",
-        };
-        var excludeOption = new Option<string[]>("--exclude", "-e")
-        {
-            Description = "Glob pattern to exclude from the selection.",
-        };
-        var pathOption = new Option<string?>("--path")
-        {
-            Description = "Source-relative base path for selectors.",
-        };
-        var targetOption = new Option<string?>("--target", "-t")
-        {
-            Description = "Workspace-relative directory for selected files.",
-        };
-        var refOption = new Option<string?>("--ref")
-        {
-            Description = "Git ref that overrides the configured source ref.",
-        };
-        var stripPrefixOption = new Option<string?>("--strip-prefix")
-        {
-            Description = "Path prefix removed from every selected file.",
-        };
-        var flattenOption = new Option<bool>("--flatten")
-        {
-            Description = "Map every selected file directly beneath the target.",
-        };
-        var installOption = new Option<bool>("--install")
-        {
-            Description = "Install the link after persisting its definition.",
-        };
-        var forceOption = new Option<bool>("--force")
-        {
-            Description = "Replace an existing link definition.",
-        };
+        var nameArgument = CreateLinkNameArgument();
+        var sourceOption = CreateSourceOption();
+        var includeOption = CreateIncludeOption();
+        var excludeOption = CreateExcludeOption();
+        var pathOption = CreatePathOption();
+        var targetOption = CreateTargetOption();
+        var refOption = CreateRefOption();
+        var stripPrefixOption = CreateStripPrefixOption();
+        var flattenOption = CreateFlattenOption();
+        var installOption = CreateInstallOption();
+        var forceOption = CreateForceOption();
         var command = new Command("add", "Add a project-owned link.")
         {
             nameArgument,
@@ -118,6 +78,39 @@ internal sealed class LinksCommandHandler(
 
         return command;
     }
+
+    private static Argument<string> CreateLinkNameArgument() =>
+        new("name") { Description = "Unique link name using pack-ID syntax." };
+
+    private static Option<string?> CreateSourceOption() =>
+        new("--source", "-s") { Description = "Configured source name to select files from." };
+
+    private static Option<string[]> CreateIncludeOption() =>
+        new("--include", "-i") { Description = "File, directory, or glob selector to include." };
+
+    private static Option<string[]> CreateExcludeOption() =>
+        new("--exclude", "-e") { Description = "Glob pattern to exclude from the selection." };
+
+    private static Option<string?> CreatePathOption() =>
+        new("--path") { Description = "Source-relative base path for selectors." };
+
+    private static Option<string?> CreateTargetOption() =>
+        new("--target", "-t") { Description = "Workspace-relative directory for selected files." };
+
+    private static Option<string?> CreateRefOption() =>
+        new("--ref") { Description = "Git ref that overrides the configured source ref." };
+
+    private static Option<string?> CreateStripPrefixOption() =>
+        new("--strip-prefix") { Description = "Path prefix removed from every selected file." };
+
+    private static Option<bool> CreateFlattenOption() =>
+        new("--flatten") { Description = "Map every selected file directly beneath the target." };
+
+    private static Option<bool> CreateInstallOption() =>
+        new("--install") { Description = "Install the link after persisting its definition." };
+
+    private static Option<bool> CreateForceOption() =>
+        new("--force") { Description = "Replace an existing link definition." };
 
     private Command CreateListCommand(string projectDirectory, Option<string?> workspaceOption)
     {

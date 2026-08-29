@@ -1,3 +1,9 @@
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Packs.ExternalSources;
+using Lunapack.Cli.Project;
+using Lunapack.Cli.Sources;
+using Lunapack.Cli.Sources.Git;
+
 namespace Lunapack.Cli.UnitTests;
 
 public sealed class ExternalSourceMaterializerTests
@@ -55,7 +61,7 @@ public sealed class ExternalSourceMaterializerTests
             Ref = "refs/heads/main",
             Path = "docs",
         };
-        var fingerprint = SourceIdentityNormalizer.Create(source).Value!;
+        var fingerprint = SourceIdentityNormalizer.Create(source).RequireValue();
         var group = new ExternalSourceRequirementGroup(
             fingerprint,
             source,

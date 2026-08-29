@@ -1,4 +1,6 @@
 using System.IO.Abstractions.TestingHelpers;
+using Lunapack.Cli.Catalog;
+using Lunapack.Cli.Project;
 
 namespace Lunapack.Cli.UnitTests;
 
@@ -338,7 +340,9 @@ public sealed class PackCatalogTests
         var fileSystem = new MockFileSystem();
         foreach (var file in files)
         {
-            fileSystem.Directory.CreateDirectory(fileSystem.Path.GetDirectoryName(file.Path)!);
+            fileSystem.Directory.CreateDirectory(
+                fileSystem.Path.GetDirectoryName(file.Path).RequireNotNull()
+            );
             fileSystem.File.WriteAllText(file.Path, file.Contents);
             var sourceLine = file
                 .Contents.Split('\n')
@@ -348,10 +352,12 @@ public sealed class PackCatalogTests
             if (source is not null)
             {
                 var sourcePath = fileSystem.Path.Combine(
-                    fileSystem.Path.GetDirectoryName(file.Path)!,
+                    fileSystem.Path.GetDirectoryName(file.Path).RequireNotNull(),
                     source
                 );
-                fileSystem.Directory.CreateDirectory(fileSystem.Path.GetDirectoryName(sourcePath)!);
+                fileSystem.Directory.CreateDirectory(
+                    fileSystem.Path.GetDirectoryName(sourcePath).RequireNotNull()
+                );
                 fileSystem.File.WriteAllText(sourcePath, "source");
             }
         }

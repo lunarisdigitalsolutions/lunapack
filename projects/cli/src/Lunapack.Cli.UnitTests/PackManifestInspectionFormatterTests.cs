@@ -1,3 +1,5 @@
+using Lunapack.Cli.Packs.Manifest;
+using Lunapack.Cli.Project;
 using SpectreTestConsole = Spectre.Console.Testing.TestConsole;
 
 namespace Lunapack.Cli.UnitTests;

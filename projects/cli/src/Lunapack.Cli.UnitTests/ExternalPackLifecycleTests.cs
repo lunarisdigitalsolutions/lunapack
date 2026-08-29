@@ -1,3 +1,12 @@
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Catalog;
+using Lunapack.Cli.Packs;
+using Lunapack.Cli.Packs.ExternalSources;
+using Lunapack.Cli.Packs.Manifest;
+using Lunapack.Cli.Packs.Planning;
+using Lunapack.Cli.Project;
+using Lunapack.Cli.Sources.Git;
+
 namespace Lunapack.Cli.UnitTests;
 
 public sealed class ExternalPackLifecycleTests
@@ -535,15 +544,13 @@ public sealed class ExternalPackLifecycleTests
     {
         var console = configuredConsole ?? TestConsole.Create();
         var refResolver = new GitRefResolver(runner);
-        var conditionParser = new ManagedFileConditionParser();
         var packCatalog = new PackCatalog(workspace.FileSystem, console, runner);
         return new PackLifecycleService(
             workspace.FileSystem,
             new CompositePackGraphResolver(packCatalog),
             new PackInstallationPlanner(
                 workspace.FileSystem,
-                new PackTemplateRenderer(workspace.FileSystem),
-                conditionParser
+                new PackTemplateRenderer(workspace.FileSystem)
             ),
             new PackUpdatePlanner(workspace.FileSystem),
             new PackUpdateTransaction(workspace.FileSystem, console),
@@ -551,8 +558,7 @@ public sealed class ExternalPackLifecycleTests
             console,
             configuredGitPackMaterializer: new GitPackMaterializer(workspace.FileSystem, runner),
             configuredExternalSourceRequirementPlanner: new ExternalSourceRequirementPlanner(
-                refResolver,
-                conditionParser
+                refResolver
             ),
             configuredExternalSourceMaterializer: new ExternalSourceMaterializer(
                 workspace.FileSystem,

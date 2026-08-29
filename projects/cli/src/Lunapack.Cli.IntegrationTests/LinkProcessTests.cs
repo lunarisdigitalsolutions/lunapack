@@ -373,7 +373,8 @@ public sealed class LinkProcessTests
         await Assert.That(updated.ExitCode).IsEqualTo(0);
 
         var sourceCacheDirectory = Directory
-            .GetParent(Directory.GetParent(cacheMetadata)!.FullName)!
+            .GetParent(Directory.GetParent(cacheMetadata).RequireNotNull().FullName)
+            .RequireNotNull()
             .FullName;
         Directory.Delete(sourceCacheDirectory, recursive: true);
     }

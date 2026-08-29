@@ -1,3 +1,5 @@
+using Lunapack.Cli.Packs.Manifest;
+
 namespace Lunapack.Cli.UnitTests;
 
 public sealed class PackManifestStoreTests
@@ -170,7 +172,7 @@ public sealed class PackManifestStoreTests
         var result = await store.LoadAsync(workspace.Path);
 
         await Assert.That(result.IsSuccess).IsTrue();
-        var hooks = result.RequireValue().Hooks!.PreInstall!;
+        var hooks = result.RequireValue().Hooks.RequireNotNull().PreInstall.RequireNotNull();
         await Assert
             .That(string.Join(",", hooks.Select(hook => hook.Type)))
             .IsEqualTo("instruction,script,script");
@@ -257,10 +259,11 @@ public sealed class PackManifestStoreTests
             }
         );
         var loaded = await store.LoadAsync(workspace.Path);
+        var loadedManifest = loaded.RequireValue();
 
         await Assert.That(result.IsSuccess).IsTrue();
-        await Assert.That(loaded.Value!.Name).IsEqualTo("Example");
-        await Assert.That(loaded.Value.Parameters).ContainsKey("enabled");
-        await Assert.That(loaded.Value.ManagedFiles.Single().Target).IsEqualTo("README.md");
+        await Assert.That(loadedManifest.Name).IsEqualTo("Example");
+        await Assert.That(loadedManifest.Parameters).ContainsKey("enabled");
+        await Assert.That(loadedManifest.ManagedFiles.Single().Target).IsEqualTo("README.md");
     }
 }

@@ -1,5 +1,9 @@
 using System.IO.Abstractions;
 using System.Security.Cryptography;
+using Lunapack.Cli.Catalog;
+using Lunapack.Cli.Packs.Lifecycle;
+using Lunapack.Cli.Packs.Manifest;
+using Lunapack.Cli.Sources;
 
 namespace Lunapack.Cli.UnitTests;
 
@@ -11,7 +15,7 @@ public sealed class PackedHookFileTests
         using var workspace = new TestWorkspace();
         var pack = CreatePack(workspace.Path);
         var hookFile = Path.Combine(pack.PackDirectory, "scripts", "setup.ps1");
-        Directory.CreateDirectory(Path.GetDirectoryName(hookFile)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(hookFile).RequireNotNull());
         File.WriteAllText(hookFile, "Write-Output setup");
 
         var result = PackedHookFile.Resolve(new FileSystem(), pack, "scripts/setup.ps1");

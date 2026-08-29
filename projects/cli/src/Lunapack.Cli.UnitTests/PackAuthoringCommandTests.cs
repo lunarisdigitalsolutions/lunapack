@@ -1,3 +1,6 @@
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Packs.Manifest;
+using Lunapack.Cli.Sources.Git;
 using SpectreTestConsole = Spectre.Console.Testing.TestConsole;
 
 namespace Lunapack.Cli.UnitTests;
@@ -908,7 +911,7 @@ public sealed class PackAuthoringCommandTests
         await Assert.That(fileExit).IsEqualTo(0);
         await Assert.That(scriptExit).IsEqualTo(0);
         await Assert.That(manifest.ManagedFiles).IsEmpty();
-        await Assert.That(manifest.Hooks!.PostInstall).IsNull();
+        await Assert.That(manifest.Hooks.RequireNotNull().PostInstall).IsNull();
     }
 
     [Test]

@@ -1,19 +1,16 @@
 using System.Diagnostics;
 using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Catalog;
+using Lunapack.Cli.Packs.Manifest;
+using Lunapack.Cli.Packs.Planning;
+using Lunapack.Cli.Project;
+using Lunapack.Cli.Sources;
+using Lunapack.Cli.Sources.Git;
 
 namespace Lunapack.Cli.UnitTests;
 
-[System.Diagnostics.CodeAnalysis.SuppressMessage(
-    "Design",
-    "MA0002:Use an overload that has a IEqualityComparer<string> or IComparer<string> parameter",
-    Justification = "Fixture assertions use TUnit's collection comparison API."
-)]
-[System.Diagnostics.CodeAnalysis.SuppressMessage(
-    "Design",
-    "MA0006:Use string.Equals instead of Equals operator",
-    Justification = "Fixture assertions use TUnit's equality API."
-)]
 public sealed class GitSourceTransportTests
 {
     [Test]
@@ -269,18 +266,18 @@ public sealed class GitSourceTransportTests
         await Assert
             .That(
                 processRunner.Arguments.Any(arguments =>
-                    arguments.Contains("fetch")
-                    && arguments.Contains("--depth=1")
-                    && arguments.Contains("--filter=blob:none")
+                    arguments.Contains("fetch", StringComparer.Ordinal)
+                    && arguments.Contains("--depth=1", StringComparer.Ordinal)
+                    && arguments.Contains("--filter=blob:none", StringComparer.Ordinal)
                 )
             )
             .IsTrue();
         await Assert
             .That(
                 processRunner.Arguments.Any(arguments =>
-                    arguments.Contains("sparse-checkout")
-                    && arguments.Contains("set")
-                    && arguments.Contains("/packs/example/**")
+                    arguments.Contains("sparse-checkout", StringComparer.Ordinal)
+                    && arguments.Contains("set", StringComparer.Ordinal)
+                    && arguments.Contains("/packs/example/**", StringComparer.Ordinal)
                 )
             )
             .IsTrue();
@@ -365,7 +362,7 @@ public sealed class GitSourceTransportTests
         {
             CancellationTokens.Add(cancellationToken);
             return Task.FromResult(
-                arguments[0] == "ls-remote"
+                string.Equals(arguments[0], "ls-remote", StringComparison.Ordinal)
                     ? ManifestOperationResult<GitProcessOutput>.Success(
                         new GitProcessOutput(
                             $"ref: refs/heads/main\tHEAD\n{Commit}\tHEAD\n",
@@ -388,7 +385,7 @@ public sealed class GitSourceTransportTests
         )
         {
             Arguments.Add(arguments);
-            if (arguments.Contains("checkout"))
+            if (arguments.Contains("checkout", StringComparer.Ordinal))
             {
                 var packDirectory = fileSystem.Path.Combine(arguments[1], "packs", "example");
                 fileSystem.AddDirectory(packDirectory);

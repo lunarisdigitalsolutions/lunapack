@@ -1,3 +1,8 @@
+using Lunapack.Cli.Packs.Manifest;
+using Lunapack.Cli.Project;
+using Lunapack.Cli.Sources;
+using Lunapack.Cli.Sources.Git;
+
 namespace Lunapack.Cli.UnitTests;
 
 public sealed class ExternalSourceIdentityTests

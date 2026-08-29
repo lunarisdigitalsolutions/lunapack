@@ -1,4 +1,8 @@
 using System.IO.Abstractions;
+using Lunapack.Cli.Packs;
+using Lunapack.Cli.Project;
+using Lunapack.Cli.Sources.Git;
+using Lunapack.Cli.Trust;
 using Spectre.Console;
 
 namespace Lunapack.Cli.UnitTests;

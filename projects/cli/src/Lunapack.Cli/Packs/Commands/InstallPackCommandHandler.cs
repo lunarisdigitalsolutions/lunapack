@@ -1,79 +1,41 @@
-using System.CommandLine;
+﻿using System.CommandLine;
 using System.IO.Abstractions;
+using Lunapack.Cli.Application;
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Guidance;
+using Lunapack.Cli.Links;
+using Lunapack.Cli.Packs.ManagedFiles;
+using Lunapack.Cli.Project;
+using Lunapack.Cli.Trust;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Packs.Commands;
 
 internal sealed class InstallPackCommandHandler(
     IFileSystem fileSystem,
     PackLifecycleService packLifecycleService,
     LinkCommandDispatcher linkCommandDispatcher,
     WorkspaceDirectoryResolver workspaceDirectoryResolver,
-    INextStepAdvisor nextStepAdvisor,
+    NextStepAdvisor nextStepAdvisor,
     NextStepRenderer nextStepRenderer,
     WorkflowPrerequisiteGuard prerequisiteGuard,
     CliConsole console
 )
 {
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Maintainability",
-        "MA0051:Method is too long",
-        Justification = "CLI option definitions remain collocated with their command action."
-    )]
     public Command CreateCommand(string projectDirectory, Option<string?> workspaceOption)
     {
-        var packReferenceArgument = new Argument<string[]>("pack-reference")
-        {
-            Arity = ArgumentArity.OneOrMore,
-            Description = "Pack IDs, optionally followed by @version.",
-        };
-        var destinationOption = new Option<string?>("--destination", "-d")
-        {
-            Description = "Directory where the requested pack's files are installed.",
-        };
-        var remapDirectoryOption = new Option<string[]>("--remap-directory")
-        {
-            Description = "Remap a declared target directory with <source>=<target>.",
-        };
-        var remapFileOption = new Option<string[]>("--remap-file")
-        {
-            Description = "Remap a declared target file with <source>=<target>.",
-        };
-        var saveRemapOption = new Option<bool>("--save-remap")
-        {
-            Description = "Save provided target remappings to lunapack.yml.",
-        };
-        var adoptExistingOption = new Option<bool>("--adopt-existing", "-a")
-        {
-            Description = "Adopt matching existing files for the requested pack.",
-        };
-        var dryRunOption = new Option<bool>("--dry-run", "-D")
-        {
-            Description = "Plan the installation without modifying files or state.",
-        };
-        var acceptSourcesOption = new Option<bool>("--accept-sources")
-        {
-            Description = "Approve conflict-free external source additions.",
-        };
-        var parameterOption = new Option<string[]>("--parameter", "-p")
-        {
-            Description = "Template parameter in <name>=<value> form.",
-        };
-        var noVariablesOption = new Option<bool>("--no-variables", "-nv")
-        {
-            Description = "Do not bind matching project variables.",
-        };
-        var skipVariableOption = new Option<string[]>("--skip-variable", "-sv")
-        {
-            Description = "Project variable name to skip during parameter binding.",
-        };
-        var scriptsOption = new Option<string?>("--scripts")
-        {
-            Description = "Lifecycle script mode: prompt, run, or skip.",
-        };
-        var skipInstructionsOption = new Option<bool>("--skip-instructions")
-        {
-            Description = "Skip lifecycle instructions.",
-        };
+        var packReferenceArgument = CreatePackReferenceArgument();
+        var destinationOption = CreateDestinationOption();
+        var remapDirectoryOption = CreateRemapDirectoryOption();
+        var remapFileOption = CreateRemapFileOption();
+        var saveRemapOption = CreateSaveRemapOption();
+        var adoptExistingOption = CreateAdoptExistingOption();
+        var dryRunOption = CreateDryRunOption();
+        var acceptSourcesOption = CreateAcceptSourcesOption();
+        var parameterOption = CreateParameterOption();
+        var noVariablesOption = CreateNoVariablesOption();
+        var skipVariableOption = CreateSkipVariableOption();
+        var scriptsOption = CreateScriptsOption();
+        var skipInstructionsOption = CreateSkipInstructionsOption();
         var command = new Command("install", "Install a pack.")
         {
             packReferenceArgument,
@@ -90,62 +52,159 @@ internal sealed class InstallPackCommandHandler(
             scriptsOption,
             skipInstructionsOption,
         };
-        command.SetAction(async parseResult =>
-        {
-            var packReferences = parseResult.GetValue(packReferenceArgument) ?? [];
-            if (packReferences.Length == 0)
-            {
-                return console.Fail("A pack ID is required.");
-            }
-
-            var scriptMode = ScriptExecutionMode.Parse(
-                parseResult.GetValue(scriptsOption) ?? ScriptExecutionMode.Prompt.Value
-            );
-            if (scriptMode.Value is not { } parsedScriptMode)
-            {
-                return console.Fail(scriptMode.Error);
-            }
-
-            var workspaceDirectory = workspaceDirectoryResolver.Resolve(
+        command.SetAction(parseResult =>
+            ExecuteCommandAsync(
                 projectDirectory,
-                parseResult.GetValue(workspaceOption)
-            );
-            foreach (var packReference in packReferences)
-            {
-                var exitCode = await InstallAsync(
-                    workspaceDirectory,
-                    packReference,
-                    parseResult.GetValue(destinationOption),
-                    parseResult.GetValue(remapDirectoryOption) ?? [],
-                    parseResult.GetValue(remapFileOption) ?? [],
-                    parseResult.GetValue(saveRemapOption),
-                    parseResult.GetValue(adoptExistingOption),
-                    parseResult.GetValue(parameterOption) ?? [],
-                    parseResult.GetValue(noVariablesOption),
-                    parseResult.GetValue(skipVariableOption) ?? [],
-                    parsedScriptMode,
-                    parseResult.GetValue(skipInstructionsOption),
-                    parseResult.GetValue(dryRunOption),
-                    parseResult.GetValue(acceptSourcesOption),
-                    skipInstalledRoots: packReferences.Length > 1
-                );
-                if (exitCode != 0)
-                {
-                    return exitCode;
-                }
-            }
-
-            return 0;
-        });
+                workspaceOption,
+                parseResult,
+                packReferenceArgument,
+                destinationOption,
+                remapDirectoryOption,
+                remapFileOption,
+                saveRemapOption,
+                adoptExistingOption,
+                dryRunOption,
+                acceptSourcesOption,
+                parameterOption,
+                noVariablesOption,
+                skipVariableOption,
+                scriptsOption,
+                skipInstructionsOption
+            )
+        );
 
         return command;
     }
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Maintainability",
-        "MA0051:Method is too long",
-        Justification = "Installation workflow preserves ordered validation, prompting, and execution."
-    )]
+    private async Task<int> ExecuteCommandAsync(
+        string projectDirectory,
+        Option<string?> workspaceOption,
+        ParseResult parseResult,
+        Argument<string[]> packReferenceArgument,
+        Option<string?> destinationOption,
+        Option<string[]> remapDirectoryOption,
+        Option<string[]> remapFileOption,
+        Option<bool> saveRemapOption,
+        Option<bool> adoptExistingOption,
+        Option<bool> dryRunOption,
+        Option<bool> acceptSourcesOption,
+        Option<string[]> parameterOption,
+        Option<bool> noVariablesOption,
+        Option<string[]> skipVariableOption,
+        Option<string?> scriptsOption,
+        Option<bool> skipInstructionsOption
+    )
+    {
+        var packReferences = parseResult.GetValue(packReferenceArgument) ?? [];
+        if (packReferences.Length == 0)
+        {
+            return console.Fail("A pack ID is required.");
+        }
+
+        var scriptMode = ScriptExecutionMode.Parse(
+            parseResult.GetValue(scriptsOption) ?? ScriptExecutionMode.Prompt.Value
+        );
+        if (scriptMode.Value is not { } parsedScriptMode)
+        {
+            return console.Fail(scriptMode.Error);
+        }
+
+        var workspaceDirectory = workspaceDirectoryResolver.Resolve(
+            projectDirectory,
+            parseResult.GetValue(workspaceOption)
+        );
+        foreach (var packReference in packReferences)
+        {
+            var exitCode = await InstallAsync(
+                workspaceDirectory,
+                packReference,
+                parseResult.GetValue(destinationOption),
+                parseResult.GetValue(remapDirectoryOption) ?? [],
+                parseResult.GetValue(remapFileOption) ?? [],
+                parseResult.GetValue(saveRemapOption),
+                parseResult.GetValue(adoptExistingOption),
+                parseResult.GetValue(parameterOption) ?? [],
+                parseResult.GetValue(noVariablesOption),
+                parseResult.GetValue(skipVariableOption) ?? [],
+                parsedScriptMode,
+                parseResult.GetValue(skipInstructionsOption),
+                parseResult.GetValue(dryRunOption),
+                parseResult.GetValue(acceptSourcesOption),
+                skipInstalledRoots: packReferences.Length > 1
+            );
+            if (exitCode != 0)
+            {
+                return exitCode;
+            }
+        }
+
+        return 0;
+    }
+
+    private static Argument<string[]> CreatePackReferenceArgument() =>
+        new("pack-reference")
+        {
+            Arity = ArgumentArity.OneOrMore,
+            Description = "Pack IDs, optionally followed by @version.",
+        };
+
+    private static Option<string?> CreateDestinationOption() =>
+        new("--destination", "-d")
+        {
+            Description = "Directory where the requested pack's files are installed.",
+        };
+
+    private static Option<string[]> CreateRemapDirectoryOption() =>
+        new("--remap-directory")
+        {
+            Description = "Remap a declared target directory with <source>=<target>.",
+        };
+
+    private static Option<string[]> CreateRemapFileOption() =>
+        new("--remap-file")
+        {
+            Description = "Remap a declared target file with <source>=<target>.",
+        };
+
+    private static Option<bool> CreateSaveRemapOption() =>
+        new("--save-remap") { Description = "Save provided target remappings to lunapack.yml." };
+
+    private static Option<bool> CreateAdoptExistingOption() =>
+        new("--adopt-existing", "-a")
+        {
+            Description = "Adopt matching existing files for the requested pack.",
+        };
+
+    private static Option<bool> CreateDryRunOption() =>
+        new("--dry-run", "-D")
+        {
+            Description = "Plan the installation without modifying files or state.",
+        };
+
+    private static Option<bool> CreateAcceptSourcesOption() =>
+        new("--accept-sources")
+        {
+            Description = "Approve conflict-free external source additions.",
+        };
+
+    private static Option<string[]> CreateParameterOption() =>
+        new("--parameter", "-p") { Description = "Template parameter in <name>=<value> form." };
+
+    private static Option<bool> CreateNoVariablesOption() =>
+        new("--no-variables", "-nv") { Description = "Do not bind matching project variables." };
+
+    private static Option<string[]> CreateSkipVariableOption() =>
+        new("--skip-variable", "-sv")
+        {
+            Description = "Project variable name to skip during parameter binding.",
+        };
+
+    private static Option<string?> CreateScriptsOption() =>
+        new("--scripts") { Description = "Lifecycle script mode: prompt, run, or skip." };
+
+    private static Option<bool> CreateSkipInstructionsOption() =>
+        new("--skip-instructions") { Description = "Skip lifecycle instructions." };
+
     private async Task<int> InstallAsync(
         string workspaceDirectory,
         string packReference,
@@ -170,20 +229,15 @@ internal sealed class InstallPackCommandHandler(
             return prerequisiteFailure.Value;
         }
 
-        var remapping = ManagedFileTargetRemapping.Create(
-            fileSystem,
+        var remapping = CreateTargetRemapping(
             workspaceDirectory,
             directoryRemappings,
-            fileRemappings
+            fileRemappings,
+            saveRemapping
         );
         if (remapping.Value is not { } targetRemapping)
         {
             return console.Fail(remapping.Error);
-        }
-
-        if (saveRemapping && !targetRemapping.HasMappings)
-        {
-            return console.Fail("--save-remap requires --remap-directory or --remap-file.");
         }
 
         var linkExitCode = await linkCommandDispatcher.TryInstallAsync(
@@ -198,6 +252,71 @@ internal sealed class InstallPackCommandHandler(
             return linkExitCode.Value;
         }
 
+        return await PrepareAndInstallPackAsync(
+            workspaceDirectory,
+            packReference,
+            destination,
+            directoryRemappings,
+            fileRemappings,
+            saveRemapping,
+            adoptExisting,
+            parameters,
+            noVariables,
+            skippedVariables,
+            scriptMode,
+            skipInstructions,
+            dryRun,
+            acceptSources,
+            skipInstalledRoots
+        );
+    }
+
+    private ManifestOperationResult<ManagedFileTargetRemapping> CreateTargetRemapping(
+        string workspaceDirectory,
+        string[] directoryRemappings,
+        string[] fileRemappings,
+        bool saveRemapping
+    )
+    {
+        var remapping = ManagedFileTargetRemapping.Create(
+            fileSystem,
+            workspaceDirectory,
+            directoryRemappings,
+            fileRemappings
+        );
+        if (remapping.Value is not { } targetRemapping)
+        {
+            return remapping;
+        }
+
+        if (saveRemapping && !targetRemapping.HasMappings)
+        {
+            return ManifestOperationResult<ManagedFileTargetRemapping>.Failure(
+                "--save-remap requires --remap-directory or --remap-file."
+            );
+        }
+
+        return remapping;
+    }
+
+    private async Task<int> PrepareAndInstallPackAsync(
+        string workspaceDirectory,
+        string packReference,
+        string? destination,
+        string[] directoryRemappings,
+        string[] fileRemappings,
+        bool saveRemapping,
+        bool adoptExisting,
+        string[] parameters,
+        bool noVariables,
+        string[] skippedVariables,
+        ScriptExecutionMode scriptMode,
+        bool skipInstructions,
+        bool dryRun,
+        bool acceptSources,
+        bool skipInstalledRoots
+    )
+    {
         var installationRequest = CreateInstallationRequest(
             workspaceDirectory,
             packReference,
@@ -218,7 +337,21 @@ internal sealed class InstallPackCommandHandler(
         }
 
         request = request with { AcceptSources = acceptSources };
+        return await RunPreparedInstallAsync(
+            workspaceDirectory,
+            request,
+            dryRun,
+            skipInstalledRoots
+        );
+    }
 
+    private async Task<int> RunPreparedInstallAsync(
+        string workspaceDirectory,
+        PackInstallationRequest request,
+        bool dryRun,
+        bool skipInstalledRoots
+    )
+    {
         var skippedInstall = await WarnWhenRootAlreadyInstalledAsync(
             workspaceDirectory,
             request.PackReference,
@@ -251,51 +384,61 @@ internal sealed class InstallPackCommandHandler(
         }
 
         request = PromptForRequiredParameters(request, prompts);
-        if (!dryRun)
-        {
-            TimeSpan? managedFileChangesDuration = null;
-            var exitCode =
-                request.ScriptMode == ScriptExecutionMode.Prompt
-                    ? await packLifecycleService.InstallAsync(
-                        workspaceDirectory,
-                        request,
-                        duration => managedFileChangesDuration = duration
-                    )
-                    : await console.RunWithStatusAsync(
-                        $"Installing {request.PackReference.Id}...",
-                        () =>
-                            packLifecycleService.InstallAsync(
-                                workspaceDirectory,
-                                request,
-                                duration => managedFileChangesDuration = duration
-                            )
-                    );
-            if (exitCode == 0)
-            {
-                var installedVersion = await packLifecycleService.GetInstalledVersionAsync(
-                    workspaceDirectory,
-                    request.PackReference.Id
-                );
-                if (installedVersion.Value is not { } version)
-                {
-                    return console.Fail(installedVersion.Error);
-                }
+        return dryRun
+            ? await PreviewInstallAsync(workspaceDirectory, request)
+            : await ExecuteInstallAsync(workspaceDirectory, request);
+    }
 
-                console.Info(string.Empty);
-                console.Success(
-                    $"✓ Installed '{request.PackReference.Id}' (version '{version}') in {CliDuration.Format(managedFileChangesDuration ?? TimeSpan.Zero)}"
+    private async Task<int> ExecuteInstallAsync(
+        string workspaceDirectory,
+        PackInstallationRequest request
+    )
+    {
+        TimeSpan? managedFileChangesDuration = null;
+        var exitCode =
+            request.ScriptMode == ScriptExecutionMode.Prompt
+                ? await packLifecycleService.InstallAsync(
+                    workspaceDirectory,
+                    request,
+                    duration => managedFileChangesDuration = duration
+                )
+                : await console.RunWithStatusAsync(
+                    $"Installing {request.PackReference.Id}...",
+                    () =>
+                        packLifecycleService.InstallAsync(
+                            workspaceDirectory,
+                            request,
+                            duration => managedFileChangesDuration = duration
+                        )
                 );
-                nextStepRenderer.Render(
-                    nextStepAdvisor.Recommend(
-                        NextStepContext.PackInstalled,
-                        request.PackReference.Id
-                    )
-                );
+        if (exitCode == 0)
+        {
+            var installedVersion = await packLifecycleService.GetInstalledVersionAsync(
+                workspaceDirectory,
+                request.PackReference.Id
+            );
+            if (installedVersion.Value is not { } version)
+            {
+                return console.Fail(installedVersion.Error);
             }
 
-            return exitCode;
+            console.Info(string.Empty);
+            console.Success(
+                $"✓ Installed '{request.PackReference.Id}' (version '{version}') in {CliDuration.Format(managedFileChangesDuration ?? TimeSpan.Zero)}"
+            );
+            nextStepRenderer.Render(
+                nextStepAdvisor.Recommend(NextStepContext.PackInstalled, request.PackReference.Id)
+            );
         }
 
+        return exitCode;
+    }
+
+    private async Task<int> PreviewInstallAsync(
+        string workspaceDirectory,
+        PackInstallationRequest request
+    )
+    {
         var plannedInstall = await packLifecycleService.DryRunInstallAsync(
             workspaceDirectory,
             request

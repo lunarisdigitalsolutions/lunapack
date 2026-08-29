@@ -1,4 +1,10 @@
 using System.Text;
+using Lunapack.Cli.Catalog;
+using Lunapack.Cli.Packs;
+using Lunapack.Cli.Packs.ExternalSources;
+using Lunapack.Cli.Packs.Manifest;
+using Lunapack.Cli.Packs.Planning;
+using Lunapack.Cli.Project;
 
 namespace Lunapack.Cli.UnitTests;
 
@@ -218,11 +224,7 @@ public sealed class ExternalPackInstallationPlannerTests
     }
 
     private static PackInstallationPlanner CreatePlanner(TestWorkspace workspace) =>
-        new(
-            workspace.FileSystem,
-            new PackTemplateRenderer(workspace.FileSystem),
-            new ManagedFileConditionParser()
-        );
+        new(workspace.FileSystem, new PackTemplateRenderer(workspace.FileSystem));
 
     private static ProjectConfiguration CreateConfiguration() =>
         new()

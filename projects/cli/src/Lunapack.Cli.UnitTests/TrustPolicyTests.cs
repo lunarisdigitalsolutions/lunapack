@@ -1,4 +1,8 @@
 using System.IO.Abstractions;
+using Lunapack.Cli.Application.Paths;
+using Lunapack.Cli.Project;
+using Lunapack.Cli.Sources;
+using Lunapack.Cli.Trust;
 
 namespace Lunapack.Cli.UnitTests;
 

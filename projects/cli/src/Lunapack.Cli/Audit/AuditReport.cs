@@ -1,4 +1,6 @@
-namespace Lunapack.Cli;
+using Lunapack.Cli.Project;
+
+namespace Lunapack.Cli.Audit;
 
 internal sealed record AuditReport(
     IReadOnlyList<ProjectLockFile.ResolvedPack> Packs,

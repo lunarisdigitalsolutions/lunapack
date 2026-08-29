@@ -1,4 +1,6 @@
-namespace Lunapack.Cli;
+﻿using Lunapack.Cli.Packs.Planning;
+
+namespace Lunapack.Cli.Packs;
 
 internal sealed class ConsoleSourceSwitchConfirmer(CliConsole console) : ISourceSwitchConfirmer
 {

@@ -1,3 +1,6 @@
+using Lunapack.Cli.Audit;
+using Lunapack.Cli.Project;
+
 namespace Lunapack.Cli.UnitTests;
 
 public sealed class AuditOutputFormatterTests

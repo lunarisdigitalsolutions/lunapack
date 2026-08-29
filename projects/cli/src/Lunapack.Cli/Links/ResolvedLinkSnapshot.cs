@@ -1,4 +1,8 @@
-namespace Lunapack.Cli;
+﻿using Lunapack.Cli.Packs.ManagedFiles;
+using Lunapack.Cli.Project;
+using Lunapack.Cli.Sources;
+
+namespace Lunapack.Cli.Links;
 
 internal sealed record ResolvedLinkSnapshot(
     string Name,

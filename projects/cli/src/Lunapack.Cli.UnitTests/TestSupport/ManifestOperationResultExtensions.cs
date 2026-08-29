@@ -1,3 +1,5 @@
+using Lunapack.Cli.Application.CommandExecution;
+
 namespace Lunapack.Cli.UnitTests;
 
 internal static class ManifestOperationResultExtensions

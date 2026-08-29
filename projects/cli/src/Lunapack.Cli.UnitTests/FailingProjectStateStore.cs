@@ -1,3 +1,6 @@
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Project;
+
 namespace Lunapack.Cli.UnitTests;
 
 internal sealed class FailingProjectStateStore(IProjectStateStore inner) : IProjectStateStore

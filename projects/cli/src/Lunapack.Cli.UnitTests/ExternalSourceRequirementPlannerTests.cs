@@ -1,3 +1,11 @@
+using Lunapack.Cli.Catalog;
+using Lunapack.Cli.Packs;
+using Lunapack.Cli.Packs.ExternalSources;
+using Lunapack.Cli.Packs.Manifest;
+using Lunapack.Cli.Packs.Planning;
+using Lunapack.Cli.Project;
+using Lunapack.Cli.Sources.Git;
+
 namespace Lunapack.Cli.UnitTests;
 
 public sealed class ExternalSourceRequirementPlannerTests
@@ -121,7 +129,7 @@ public sealed class ExternalSourceRequirementPlannerTests
     }
 
     private static ExternalSourceRequirementPlanner CreatePlanner() =>
-        new(new GitRefResolver(new StubGitProcessRunner()), new ManagedFileConditionParser());
+        new(new GitRefResolver(new StubGitProcessRunner()));
 
     private static ResolvedPackParameters EmptyParameters() =>
         new(

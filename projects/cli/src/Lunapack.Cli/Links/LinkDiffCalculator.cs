@@ -1,4 +1,7 @@
-namespace Lunapack.Cli;
+using Lunapack.Cli.Packs.ManagedFiles;
+using Lunapack.Cli.Project;
+
+namespace Lunapack.Cli.Links;
 
 internal static class LinkDiffCalculator
 {
@@ -108,12 +111,16 @@ internal static class LinkDiffCalculator
         var added = changes.FindAll(change => change.Kind is LinkFileChangeKind.Added);
         foreach (var addedChange in added)
         {
-            var digest = addedChange.CurrentFile!.Sha256;
+            var digest = RequireAddedFile(addedChange).Sha256;
             var addedMatches = added.Count(candidate =>
-                string.Equals(candidate.CurrentFile!.Sha256, digest, StringComparison.Ordinal)
+                string.Equals(RequireAddedFile(candidate).Sha256, digest, StringComparison.Ordinal)
             );
             var removedMatches = removed.FindAll(candidate =>
-                string.Equals(candidate.PreviousFile!.Sha256, digest, StringComparison.Ordinal)
+                string.Equals(
+                    RequireRemovedFile(candidate).Sha256,
+                    digest,
+                    StringComparison.Ordinal
+                )
             );
             if (addedMatches != 1 || removedMatches.Count != 1)
             {
@@ -133,4 +140,18 @@ internal static class LinkDiffCalculator
 
         return [.. changes, .. moves];
     }
+
+    private static ResolvedLinkFile RequireAddedFile(LinkFileChange change) =>
+        change is { Kind: LinkFileChangeKind.Added, CurrentFile: { } currentFile }
+            ? currentFile
+            : throw new InvalidOperationException(
+                "An added link file change must include the current file."
+            );
+
+    private static ManagedRootFile RequireRemovedFile(LinkFileChange change) =>
+        change is { Kind: LinkFileChangeKind.Removed, PreviousFile: { } previousFile }
+            ? previousFile
+            : throw new InvalidOperationException(
+                "A removed link file change must include the previous file."
+            );
 }

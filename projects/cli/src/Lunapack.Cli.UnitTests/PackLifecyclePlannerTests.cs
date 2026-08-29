@@ -1,3 +1,9 @@
+using Lunapack.Cli.Catalog;
+using Lunapack.Cli.Packs.Manifest;
+using Lunapack.Cli.Packs.Planning;
+using Lunapack.Cli.Project;
+using Lunapack.Cli.Sources;
+
 namespace Lunapack.Cli.UnitTests;
 
 public sealed class PackLifecyclePlannerTests
@@ -24,10 +30,18 @@ public sealed class PackLifecyclePlannerTests
             ]);
         await Assert.That(plan.Changes[0].IsDirectRoot).IsFalse();
         await Assert.That(plan.Changes[1].IsDirectRoot).IsTrue();
-        await Assert.That(plan.PreMutation[0].IncomingPack!.Manifest.Id).IsEqualTo("dependency");
-        await Assert.That(plan.PreMutation[1].IncomingPack!.Manifest.Id).IsEqualTo("root");
-        await Assert.That(plan.PostMutation[0].IncomingPack!.Manifest.Id).IsEqualTo("dependency");
-        await Assert.That(plan.PostMutation[1].IncomingPack!.Manifest.Id).IsEqualTo("root");
+        await Assert
+            .That(plan.PreMutation[0].IncomingPack.RequireNotNull().Manifest.Id)
+            .IsEqualTo("dependency");
+        await Assert
+            .That(plan.PreMutation[1].IncomingPack.RequireNotNull().Manifest.Id)
+            .IsEqualTo("root");
+        await Assert
+            .That(plan.PostMutation[0].IncomingPack.RequireNotNull().Manifest.Id)
+            .IsEqualTo("dependency");
+        await Assert
+            .That(plan.PostMutation[1].IncomingPack.RequireNotNull().Manifest.Id)
+            .IsEqualTo("root");
     }
 
     [Test]
@@ -68,7 +82,9 @@ public sealed class PackLifecyclePlannerTests
         await Assert
             .That(plan.Changes.Single().Kind)
             .IsEqualTo(PackLifecyclePlan.ChangeKind.Removed);
-        await Assert.That(plan.Changes.Single().PreviousPack!.Id).IsEqualTo("removed");
+        await Assert
+            .That(plan.Changes.Single().PreviousPack.RequireNotNull().Id)
+            .IsEqualTo("removed");
     }
 
     [Test]

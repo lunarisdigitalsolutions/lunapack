@@ -1,4 +1,6 @@
-namespace Lunapack.Cli;
+using Lunapack.Cli.Project;
+
+namespace Lunapack.Cli.Sources.Git;
 
 internal sealed record GitSourceCacheIdentity(
     string Fingerprint,
@@ -11,9 +13,10 @@ internal sealed record GitSourceCacheIdentity(
     {
         var identity = ConfiguredSourceIdentity.Create(source);
         var fingerprint = SourceIdentityNormalizer.Create(source);
+        var url = identity.Url ?? throw new InvalidOperationException("Git identity has no URL.");
         return new GitSourceCacheIdentity(
-            fingerprint.Value?.Value ?? $"{SourceFingerprint.GitType}:{identity.Url}",
-            identity.Url!,
+            fingerprint.Value?.Value ?? $"{SourceFingerprint.GitType}:{url}",
+            url,
             identity.Ref,
             identity.Path
         );

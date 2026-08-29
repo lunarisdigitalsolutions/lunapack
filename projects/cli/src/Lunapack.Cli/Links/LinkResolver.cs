@@ -1,7 +1,11 @@
-using System.IO.Abstractions;
+﻿using System.IO.Abstractions;
 using System.Security.Cryptography;
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Packs.ManagedFiles;
+using Lunapack.Cli.Project;
+using Lunapack.Cli.Sources;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Links;
 
 internal sealed class LinkResolver(
     IFileSystem fileSystem,

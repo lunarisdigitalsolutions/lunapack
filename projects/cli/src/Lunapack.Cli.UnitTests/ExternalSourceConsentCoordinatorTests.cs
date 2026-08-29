@@ -1,3 +1,7 @@
+using Lunapack.Cli.Packs.ExternalSources;
+using Lunapack.Cli.Project;
+using Lunapack.Cli.Sources;
+
 namespace Lunapack.Cli.UnitTests;
 
 public sealed class ExternalSourceConsentCoordinatorTests
@@ -82,7 +86,7 @@ public sealed class ExternalSourceConsentCoordinatorTests
     {
         var fingerprint = SourceIdentityNormalizer
             .CreateGit("https://github.com/example/standards.git", "refs/heads/main", null)
-            .Value!;
+            .RequireValue();
         var group = new ExternalSourceRequirementGroup(
             fingerprint,
             new ProjectConfiguration.GitSource

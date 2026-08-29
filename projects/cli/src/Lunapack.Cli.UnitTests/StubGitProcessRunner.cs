@@ -1,3 +1,6 @@
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Sources.Git;
+
 namespace Lunapack.Cli.UnitTests;
 
 internal sealed class StubGitProcessRunner(string? lsRemoteOutput = null) : IGitProcessRunner

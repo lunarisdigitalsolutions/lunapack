@@ -1,3 +1,6 @@
+using Lunapack.Cli.Application.Guidance;
+using Lunapack.Cli.Project;
+
 namespace Lunapack.Cli.UnitTests;
 
 public sealed class NextStepAdvisorTests

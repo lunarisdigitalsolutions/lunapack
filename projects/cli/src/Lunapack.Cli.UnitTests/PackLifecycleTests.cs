@@ -1,5 +1,11 @@
 using System.Security.Cryptography;
 using System.Text;
+using Lunapack.Cli.Catalog;
+using Lunapack.Cli.Packs;
+using Lunapack.Cli.Packs.ManagedFiles;
+using Lunapack.Cli.Packs.Planning;
+using Lunapack.Cli.Project;
+using Lunapack.Cli.Sources;
 using SpectreTestConsole = Spectre.Console.Testing.TestConsole;
 
 namespace Lunapack.Cli.UnitTests;
@@ -283,10 +289,18 @@ public sealed class PackLifecycleTests
             .That(state.RequireValue().LockFile.Packs.Select(pack => pack.Id))
             .IsEquivalentTo(["root-one", "root-two", "shared"]);
         await Assert
-            .That(state.RequireValue().LockFile.Packs.Select(pack => pack.SourceName!))
+            .That(
+                state.RequireValue().LockFile.Packs.Select(pack => pack.SourceName.RequireNotNull())
+            )
             .IsEquivalentTo(["local", "local", "local"]);
         await Assert
-            .That(state.RequireValue().LockFile.Packs.Select(pack => pack.SourceIdentity!.Path!))
+            .That(
+                state
+                    .RequireValue()
+                    .LockFile.Packs.Select(pack =>
+                        pack.SourceIdentity.RequireNotNull().Path.RequireNotNull()
+                    )
+            )
             .IsEquivalentTo(["source", "source", "source"]);
         await Assert
             .That(File.ReadAllText(Path.Combine(workspace.Path, "shared.txt")))
@@ -1274,7 +1288,7 @@ public sealed class PackLifecycleTests
         );
         var remapping = (await workspace.StateStore.LoadAsync(workspace.Path))
             .RequireValue()
-            .Configuration.Remap!;
+            .Configuration.Remap.RequireNotNull();
 
         await Assert.That(exitCode).IsEqualTo(0);
         await Assert
@@ -1302,7 +1316,7 @@ public sealed class PackLifecycleTests
         await Assert.That(File.Exists(Path.Combine(workspace.Path, ".gitignore"))).IsFalse();
         await Assert.That(state.LockFile.Packs.Single().ManagedFiles).IsEmpty();
         await Assert
-            .That(state.Configuration.Remap!.Files[".gitignore"])
+            .That(state.Configuration.Remap.RequireNotNull().Files[".gitignore"])
             .IsEqualTo(ManagedFileTargetRemapping.IgnoreTarget);
     }
 
@@ -1393,7 +1407,7 @@ public sealed class PackLifecycleTests
         };
         await workspace.StateStore.SaveAsync(workspace.Path, state);
         var sourceFile = Path.Combine(workspace.Path, ".github", "agents", "expert.agent.md");
-        Directory.CreateDirectory(Path.GetDirectoryName(sourceFile)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(sourceFile).RequireNotNull());
         File.WriteAllText(sourceFile, "expert");
 
         var exitCode = await CreatePackLifecycleService(workspace)
@@ -1484,7 +1498,7 @@ public sealed class PackLifecycleTests
         );
         var remapping = (await workspace.StateStore.LoadAsync(workspace.Path))
             .RequireValue()
-            .Configuration.Remap!;
+            .Configuration.Remap.RequireNotNull();
 
         await Assert.That(exitCode).IsEqualTo(0);
         await Assert
@@ -1506,7 +1520,7 @@ public sealed class PackLifecycleTests
         );
         var remapping = (await workspace.StateStore.LoadAsync(workspace.Path))
             .RequireValue()
-            .Configuration.Remap!;
+            .Configuration.Remap.RequireNotNull();
 
         await Assert.That(exitCode).IsEqualTo(0);
         await Assert.That(remapping.Files[".gitignore"]).IsEqualTo("docs/managed/.gitignore");
@@ -1521,7 +1535,7 @@ public sealed class PackLifecycleTests
         await workspace.Application.RunAsync(["install", "dotnet-gitignore"], workspace.Path);
         var originalFile = Path.Combine(workspace.Path, ".gitignore");
         var relocatedFile = Path.Combine(workspace.Path, "docs", "managed", ".gitignore");
-        Directory.CreateDirectory(Path.GetDirectoryName(relocatedFile)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(relocatedFile).RequireNotNull());
         File.Move(originalFile, relocatedFile);
 
         var exitCode = await workspace.Application.RunAsync(
@@ -1545,7 +1559,7 @@ public sealed class PackLifecycleTests
         await ConfigureSourceAsync(workspace, sourcePath);
         await workspace.Application.RunAsync(["install", "dotnet-gitignore"], workspace.Path);
         var relocatedFile = Path.Combine(workspace.Path, "docs", "managed", ".gitignore");
-        Directory.CreateDirectory(Path.GetDirectoryName(relocatedFile)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(relocatedFile).RequireNotNull());
         File.WriteAllText(relocatedFile, "existing target");
 
         var exitCode = await workspace.Application.RunAsync(
@@ -2325,8 +2339,7 @@ public sealed class PackLifecycleTests
             new CompositePackGraphResolver(packCatalog),
             new PackInstallationPlanner(
                 workspace.FileSystem,
-                new PackTemplateRenderer(workspace.FileSystem),
-                new ManagedFileConditionParser()
+                new PackTemplateRenderer(workspace.FileSystem)
             ),
             new PackUpdatePlanner(workspace.FileSystem),
             new PackUpdateTransaction(workspace.FileSystem, TestConsole.Create()),

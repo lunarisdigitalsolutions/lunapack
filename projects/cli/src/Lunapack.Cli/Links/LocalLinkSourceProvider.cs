@@ -1,6 +1,10 @@
 using System.IO.Abstractions;
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Paths;
+using Lunapack.Cli.Project;
+using Lunapack.Cli.Sources;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Links;
 
 internal sealed class LocalLinkSourceProvider(IFileSystem fileSystem) : ILinkSourceProvider
 {

@@ -1,3 +1,7 @@
+using Lunapack.Cli.Packs.ManagedFiles;
+using Lunapack.Cli.Project;
+using Lunapack.Cli.Sources;
+
 namespace Lunapack.Cli.UnitTests;
 
 public sealed class ManagedRootInventoryTests

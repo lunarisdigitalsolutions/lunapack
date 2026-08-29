@@ -1,4 +1,6 @@
 using System.IO.Abstractions.TestingHelpers;
+using Lunapack.Cli.Project;
+using Lunapack.Cli.Sources;
 
 namespace Lunapack.Cli.UnitTests;
 
@@ -87,7 +89,7 @@ public sealed class ProjectStateStoreTests
         var remapping = loaded.RequireValue().Configuration.Remap;
         await Assert.That(remapping).IsNotNull();
         await Assert
-            .That(remapping!.Directories["docs/adr"])
+            .That(remapping.RequireNotNull().Directories["docs/adr"])
             .IsEqualTo("docs/internal/01-architecture/decisions");
         await Assert
             .That(remapping.Files["docs/adr/template.md"])
@@ -148,7 +150,9 @@ public sealed class ProjectStateStoreTests
             .That(loaded.RequireValue().Configuration.Packs.Single().Destination)
             .IsEqualTo("docs/generated");
         await Assert
-            .That(loaded.RequireValue().Configuration.Remap!.Directories["docs/adr"])
+            .That(
+                loaded.RequireValue().Configuration.Remap.RequireNotNull().Directories["docs/adr"]
+            )
             .IsEqualTo("docs/architecture/adr");
         await Assert
             .That(loaded.RequireValue().LockFile.Packs.Single().ManagedFiles.Single().TargetPath)

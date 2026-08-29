@@ -1,3 +1,8 @@
+using Lunapack.Cli.Catalog;
+using Lunapack.Cli.Packs.Manifest;
+using Lunapack.Cli.Packs.Planning;
+using Lunapack.Cli.Project;
+using Lunapack.Cli.Sources;
 using NuGet.Versioning;
 
 namespace Lunapack.Cli.UnitTests;
@@ -80,10 +85,10 @@ public sealed class PackUpdateSelectionServiceTests
         await Assert.That(result.RequireValue().Candidate.Manifest.Version).IsEqualTo("2.0.0");
         await Assert.That(result.RequireValue().SourceSwitch).IsNotNull();
         await Assert
-            .That(result.RequireValue().SourceSwitch!.CurrentSource.Path)
+            .That(result.RequireValue().SourceSwitch.RequireNotNull().CurrentSource.Path)
             .IsEqualTo("first");
         await Assert
-            .That(result.RequireValue().SourceSwitch!.SelectedSource.Path)
+            .That(result.RequireValue().SourceSwitch.RequireNotNull().SelectedSource.Path)
             .IsEqualTo("second");
     }
 

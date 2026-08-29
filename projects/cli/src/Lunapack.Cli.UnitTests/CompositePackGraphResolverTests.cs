@@ -1,4 +1,6 @@
 using System.IO.Abstractions.TestingHelpers;
+using Lunapack.Cli.Catalog;
+using Lunapack.Cli.Project;
 
 namespace Lunapack.Cli.UnitTests;
 
@@ -207,7 +209,7 @@ public sealed class CompositePackGraphResolverTests
 
         foreach (var file in files)
         {
-            var packDirectory = fileSystem.Path.GetDirectoryName(file.Path)!;
+            var packDirectory = fileSystem.Path.GetDirectoryName(file.Path).RequireNotNull();
             fileSystem.Directory.CreateDirectory(packDirectory);
             fileSystem.File.WriteAllText(file.Path, file.Contents);
             if (file.Contents.Contains("- source: source.txt", StringComparison.Ordinal))

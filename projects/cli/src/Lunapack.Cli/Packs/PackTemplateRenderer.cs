@@ -1,10 +1,13 @@
 using System.IO.Abstractions;
 using System.Text;
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Paths;
+using Lunapack.Cli.Packs.ManagedFiles;
 using Scriban;
 using Scriban.Runtime;
 using Scriban.Syntax;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Packs;
 
 internal sealed class PackTemplateRenderer(IFileSystem fileSystem)
 {

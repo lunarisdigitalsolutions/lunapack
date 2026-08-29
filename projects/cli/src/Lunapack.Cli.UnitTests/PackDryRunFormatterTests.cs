@@ -1,3 +1,15 @@
+using Lunapack.Cli.Catalog;
+using Lunapack.Cli.Packs;
+using Lunapack.Cli.Packs.Commands;
+using Lunapack.Cli.Packs.Instructions;
+using Lunapack.Cli.Packs.Lifecycle;
+using Lunapack.Cli.Packs.ManagedFiles;
+using Lunapack.Cli.Packs.Manifest;
+using Lunapack.Cli.Packs.Planning;
+using Lunapack.Cli.Project;
+using Lunapack.Cli.Sources;
+using Lunapack.Cli.Trust;
+
 namespace Lunapack.Cli.UnitTests;
 
 public sealed class PackDryRunFormatterTests

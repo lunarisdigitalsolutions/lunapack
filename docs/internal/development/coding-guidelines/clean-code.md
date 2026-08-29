@@ -30,6 +30,11 @@ is useful only when it makes the code clearer than the simpler alternative.
 - Give compound conditions a named local or predicate when it makes the business
   decision easier to read and test. Do not bury several unrelated checks in one
   conditional expression.
+- Use guard clauses for invalid input and failed prerequisites when they keep
+  the main workflow direct. Preserve one validation block when readers need to
+  understand related failures together.
+- Keep LINQ for simple transformations and queries. Use a loop when control
+  flow, mutable state, early exit, or error context is clearer when explicit.
 
 ## Public Contracts
 
@@ -48,6 +53,9 @@ is useful only when it makes the code clearer than the simpler alternative.
 - Implement the smallest design that satisfies the current requirement. Do not
   add configuration, extension points, abstractions, or generality without a
   demonstrated need.
+- Introduce an interface when alternate implementations exist or it isolates an
+  external effect such as filesystem, process, clock, or user interaction. Use
+  the concrete type for deterministic behavior with one implementation.
 - Eliminate duplicated knowledge, not merely repeated text. Share a concept
   only when its meaning and rate of change are genuinely the same.
 - Keep modules cohesive. A type or file should have one reason to change and
@@ -57,6 +65,9 @@ is useful only when it makes the code clearer than the simpler alternative.
   enums, or models.
 - Make invalid states difficult to represent. Validate external input at
   boundaries and preserve invariants within the domain.
+- Prefer immutable values and read-only collection contracts when they preserve
+  required serialization, ordering, and update workflows. Do not copy
+  collections merely to claim immutability.
 
 ## Design Boundaries
 
@@ -84,7 +95,8 @@ is useful only when it makes the code clearer than the simpler alternative.
   the value represents a domain rule rather than an obvious local literal.
 - Keep functions focused on one outcome and one abstraction level. Prefer a
   small number of descriptive arguments; group related values in a dedicated
-  value object when it expresses an invariant.
+  value object when they travel together and express an invariant. Do not group
+  unrelated parameters only to shorten a signature.
 
 ## Function Shape
 

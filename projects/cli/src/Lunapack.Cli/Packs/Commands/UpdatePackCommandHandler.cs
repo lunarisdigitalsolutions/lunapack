@@ -1,6 +1,13 @@
-using System.CommandLine;
+﻿using System.CommandLine;
+using Lunapack.Cli.Application;
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Guidance;
+using Lunapack.Cli.Links;
+using Lunapack.Cli.Packs.Planning;
+using Lunapack.Cli.Project;
+using Lunapack.Cli.Trust;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Packs.Commands;
 
 internal sealed class UpdatePackCommandHandler(
     PackUpdateService packUpdateService,
@@ -8,44 +15,20 @@ internal sealed class UpdatePackCommandHandler(
     PackUpdateSelectionService updateSelectionService,
     IPackUpdatePrompter packUpdatePrompter,
     WorkspaceDirectoryResolver workspaceDirectoryResolver,
-    INextStepAdvisor nextStepAdvisor,
+    NextStepAdvisor nextStepAdvisor,
     NextStepRenderer nextStepRenderer,
     WorkflowPrerequisiteGuard prerequisiteGuard,
     CliConsole console
 )
 {
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Maintainability",
-        "MA0051:Method is too long",
-        Justification = "CLI option definitions remain collocated with their command action."
-    )]
     public Command CreateCommand(string projectDirectory, Option<string?> workspaceOption)
     {
-        var packReferenceArgument = new Argument<string[]>("pack-reference")
-        {
-            Arity = ArgumentArity.ZeroOrMore,
-            Description = "Pack IDs, optionally followed by @version.",
-        };
-        var promptOption = new Option<bool>("--prompt", "-p")
-        {
-            Description = "Confirm each available update before applying it.",
-        };
-        var dryRunOption = new Option<bool>("--dry-run", "-D")
-        {
-            Description = "Plan updates without modifying files or state.",
-        };
-        var acceptSourcesOption = new Option<bool>("--accept-sources")
-        {
-            Description = "Approve conflict-free external source additions.",
-        };
-        var scriptsOption = new Option<string?>("--scripts")
-        {
-            Description = "Lifecycle script mode: prompt, run, or skip.",
-        };
-        var skipInstructionsOption = new Option<bool>("--skip-instructions")
-        {
-            Description = "Skip lifecycle instructions.",
-        };
+        var packReferenceArgument = CreatePackReferenceArgument();
+        var promptOption = CreatePromptOption();
+        var dryRunOption = CreateDryRunOption();
+        var acceptSourcesOption = CreateAcceptSourcesOption();
+        var scriptsOption = CreateScriptsOption();
+        var skipInstructionsOption = CreateSkipInstructionsOption();
         var command = new Command("update", "Update installed packs.")
         {
             packReferenceArgument,
@@ -55,113 +38,183 @@ internal sealed class UpdatePackCommandHandler(
             scriptsOption,
             skipInstructionsOption,
         };
-        command.SetAction(async parseResult =>
-        {
-            var referenceValues = parseResult.GetValue(packReferenceArgument) ?? [];
-            var parsedReferences = ParseReferences(referenceValues);
-            if (parsedReferences.Value is not { } references)
-            {
-                return console.Fail(parsedReferences.Error);
-            }
-
-            var workspaceDirectory = workspaceDirectoryResolver.Resolve(
+        command.SetAction(parseResult =>
+            ExecuteCommandAsync(
                 projectDirectory,
-                parseResult.GetValue(workspaceOption)
-            );
-            var prerequisiteFailure = await prerequisiteGuard.RequireSourcesAsync(
-                workspaceDirectory
-            );
-            if (prerequisiteFailure is not null)
-            {
-                return prerequisiteFailure.Value;
-            }
-
-            var dryRun = parseResult.GetValue(dryRunOption);
-            var acceptSources = parseResult.GetValue(acceptSourcesOption);
-            var scriptMode = ScriptExecutionMode.Parse(
-                parseResult.GetValue(scriptsOption) ?? ScriptExecutionMode.Prompt.Value
-            );
-            if (scriptMode.Value is not { } parsedScriptMode)
-            {
-                return console.Fail(scriptMode.Error);
-            }
-            if (parseResult.GetValue(promptOption) && references.Count > 0)
-            {
-                return console.Fail(
-                    "The --prompt option is only available when updating all packs."
-                );
-            }
-
-            if (parseResult.GetValue(promptOption))
-            {
-                return await HandleResultAsync(
-                    await PromptAndUpdateAsync(
-                        workspaceDirectory,
-                        dryRun,
-                        parsedScriptMode,
-                        parseResult.GetValue(skipInstructionsOption),
-                        acceptSources
-                    ),
-                    dryRun
-                );
-            }
-
-            if (references.Count == 0)
-            {
-                return await HandleResultAsync(
-                    await UpdateAsync(
-                        workspaceDirectory,
-                        null,
-                        dryRun,
-                        parsedScriptMode,
-                        parseResult.GetValue(skipInstructionsOption),
-                        "Updating packs...",
-                        acceptSources
-                    ),
-                    dryRun
-                );
-            }
-
-            foreach (var referenceValue in referenceValues)
-            {
-                var linkExitCode = await linkCommandDispatcher.TryUpdateAsync(
-                    workspaceDirectory,
-                    referenceValue
-                );
-                if (linkExitCode is not null)
-                {
-                    if (linkExitCode.Value != 0)
-                    {
-                        return linkExitCode.Value;
-                    }
-
-                    continue;
-                }
-
-                var reference = PackReference.Parse(referenceValue).Value!;
-                var exitCode = await HandleResultAsync(
-                    await UpdateAsync(
-                        workspaceDirectory,
-                        reference,
-                        dryRun,
-                        parsedScriptMode,
-                        parseResult.GetValue(skipInstructionsOption),
-                        $"Updating {reference.Id}...",
-                        acceptSources
-                    ),
-                    dryRun
-                );
-                if (exitCode != 0)
-                {
-                    return exitCode;
-                }
-            }
-
-            return 0;
-        });
+                workspaceOption,
+                parseResult,
+                packReferenceArgument,
+                promptOption,
+                dryRunOption,
+                acceptSourcesOption,
+                scriptsOption,
+                skipInstructionsOption
+            )
+        );
 
         return command;
     }
+
+    private async Task<int> ExecuteCommandAsync(
+        string projectDirectory,
+        Option<string?> workspaceOption,
+        ParseResult parseResult,
+        Argument<string[]> packReferenceArgument,
+        Option<bool> promptOption,
+        Option<bool> dryRunOption,
+        Option<bool> acceptSourcesOption,
+        Option<string?> scriptsOption,
+        Option<bool> skipInstructionsOption
+    )
+    {
+        var referenceValues = parseResult.GetValue(packReferenceArgument) ?? [];
+        var parsedReferences = ParseReferences(referenceValues);
+        if (parsedReferences.Value is not { } references)
+        {
+            return console.Fail(parsedReferences.Error);
+        }
+
+        var workspaceDirectory = workspaceDirectoryResolver.Resolve(
+            projectDirectory,
+            parseResult.GetValue(workspaceOption)
+        );
+        var prerequisiteFailure = await prerequisiteGuard.RequireSourcesAsync(workspaceDirectory);
+        if (prerequisiteFailure is not null)
+        {
+            return prerequisiteFailure.Value;
+        }
+
+        var dryRun = parseResult.GetValue(dryRunOption);
+        var acceptSources = parseResult.GetValue(acceptSourcesOption);
+        var scriptMode = ScriptExecutionMode.Parse(
+            parseResult.GetValue(scriptsOption) ?? ScriptExecutionMode.Prompt.Value
+        );
+        if (scriptMode.Value is not { } parsedScriptMode)
+        {
+            return console.Fail(scriptMode.Error);
+        }
+
+        var prompt = parseResult.GetValue(promptOption);
+        if (prompt && references.Count > 0)
+        {
+            return console.Fail("The --prompt option is only available when updating all packs.");
+        }
+
+        var skipInstructions = parseResult.GetValue(skipInstructionsOption);
+        if (prompt)
+        {
+            return await HandleResultAsync(
+                await PromptAndUpdateAsync(
+                    workspaceDirectory,
+                    dryRun,
+                    parsedScriptMode,
+                    skipInstructions,
+                    acceptSources
+                ),
+                dryRun
+            );
+        }
+
+        if (references.Count == 0)
+        {
+            return await HandleResultAsync(
+                await UpdateAsync(
+                    workspaceDirectory,
+                    null,
+                    dryRun,
+                    parsedScriptMode,
+                    skipInstructions,
+                    "Updating packs...",
+                    acceptSources
+                ),
+                dryRun
+            );
+        }
+
+        return await UpdateRequestedPacksAsync(
+            workspaceDirectory,
+            referenceValues,
+            references,
+            dryRun,
+            parsedScriptMode,
+            skipInstructions,
+            acceptSources
+        );
+    }
+
+    private async Task<int> UpdateRequestedPacksAsync(
+        string workspaceDirectory,
+        string[] referenceValues,
+        IReadOnlyList<PackReference> references,
+        bool dryRun,
+        ScriptExecutionMode scriptMode,
+        bool skipInstructions,
+        bool acceptSources
+    )
+    {
+        for (var index = 0; index < referenceValues.Length; index++)
+        {
+            var referenceValue = referenceValues[index];
+            var linkExitCode = await linkCommandDispatcher.TryUpdateAsync(
+                workspaceDirectory,
+                referenceValue
+            );
+            if (linkExitCode is not null)
+            {
+                if (linkExitCode.Value != 0)
+                {
+                    return linkExitCode.Value;
+                }
+
+                continue;
+            }
+
+            var reference = references[index];
+            var exitCode = await HandleResultAsync(
+                await UpdateAsync(
+                    workspaceDirectory,
+                    reference,
+                    dryRun,
+                    scriptMode,
+                    skipInstructions,
+                    $"Updating {reference.Id}...",
+                    acceptSources
+                ),
+                dryRun
+            );
+            if (exitCode != 0)
+            {
+                return exitCode;
+            }
+        }
+
+        return 0;
+    }
+
+    private static Argument<string[]> CreatePackReferenceArgument() =>
+        new("pack-reference")
+        {
+            Arity = ArgumentArity.ZeroOrMore,
+            Description = "Pack IDs, optionally followed by @version.",
+        };
+
+    private static Option<bool> CreatePromptOption() =>
+        new("--prompt", "-p") { Description = "Confirm each available update before applying it." };
+
+    private static Option<bool> CreateDryRunOption() =>
+        new("--dry-run", "-D") { Description = "Plan updates without modifying files or state." };
+
+    private static Option<bool> CreateAcceptSourcesOption() =>
+        new("--accept-sources")
+        {
+            Description = "Approve conflict-free external source additions.",
+        };
+
+    private static Option<string?> CreateScriptsOption() =>
+        new("--scripts") { Description = "Lifecycle script mode: prompt, run, or skip." };
+
+    private static Option<bool> CreateSkipInstructionsOption() =>
+        new("--skip-instructions") { Description = "Skip lifecycle instructions." };
 
     private Task<PackUpdateService.UpdateResult> UpdateAsync(
         string projectDirectory,

@@ -1,4 +1,6 @@
 using System.IO.Abstractions.TestingHelpers;
+using Lunapack.Cli.Packs;
+using Lunapack.Cli.Trust;
 
 namespace Lunapack.Cli.UnitTests;
 

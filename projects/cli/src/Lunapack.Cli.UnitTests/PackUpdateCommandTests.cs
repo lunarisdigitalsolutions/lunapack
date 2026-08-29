@@ -1,3 +1,7 @@
+using Lunapack.Cli.Packs;
+using Lunapack.Cli.Packs.Planning;
+using Lunapack.Cli.Project;
+
 namespace Lunapack.Cli.UnitTests;
 
 public sealed class PackUpdateCommandTests

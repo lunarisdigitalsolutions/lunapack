@@ -2,7 +2,7 @@ using Scriban;
 using Scriban.Runtime;
 using Scriban.Syntax;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Packs;
 
 internal sealed class ScribanMultiSelectArray(IEnumerable<string> values)
     : ScriptArray(values.Cast<object?>()),

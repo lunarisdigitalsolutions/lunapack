@@ -2,8 +2,11 @@ using System.IO.Abstractions;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Serialization;
+using Lunapack.Cli.Sources;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Links;
 
 internal sealed class GitLinkCache(IFileSystem fileSystem, string cacheRoot)
 {
@@ -87,7 +90,14 @@ internal sealed class GitLinkCache(IFileSystem fileSystem, string cacheRoot)
         var temporaryPath = $"{path}.{Guid.NewGuid():N}.tmp";
         try
         {
-            fileSystem.Directory.CreateDirectory(fileSystem.Path.GetDirectoryName(path)!);
+            if (fileSystem.Path.GetDirectoryName(path) is not { Length: > 0 } directory)
+            {
+                throw new InvalidOperationException(
+                    $"Git link cache path '{path}' does not have a directory."
+                );
+            }
+
+            fileSystem.Directory.CreateDirectory(directory);
             fileSystem.File.WriteAllBytes(temporaryPath, contents);
             fileSystem.File.Move(temporaryPath, path, overwrite: true);
             return ManifestOperationResult<bool>.Success(true);

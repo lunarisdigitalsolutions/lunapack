@@ -1,4 +1,6 @@
 using System.Text.Json;
+using Lunapack.Cli.Packs.ManagedFiles;
+using Lunapack.Cli.Packs.Manifest;
 
 namespace Lunapack.Cli.UnitTests;
 

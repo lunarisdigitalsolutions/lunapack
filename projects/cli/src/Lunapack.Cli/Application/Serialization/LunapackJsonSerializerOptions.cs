@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Application.Serialization;
 
 internal static class LunapackJsonSerializerOptions
 {

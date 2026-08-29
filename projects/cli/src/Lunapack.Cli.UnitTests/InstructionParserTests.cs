@@ -1,3 +1,5 @@
+using Lunapack.Cli.Packs.Instructions;
+
 namespace Lunapack.Cli.UnitTests;
 
 public sealed class InstructionParserTests

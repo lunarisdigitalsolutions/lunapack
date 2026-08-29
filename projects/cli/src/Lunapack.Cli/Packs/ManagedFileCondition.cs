@@ -1,4 +1,4 @@
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Packs;
 
 internal sealed class ManagedFileCondition(
     Func<IReadOnlyDictionary<string, ResolvedPackParameterValue>, bool> evaluator

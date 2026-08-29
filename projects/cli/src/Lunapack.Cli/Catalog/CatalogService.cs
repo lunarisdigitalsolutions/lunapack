@@ -1,4 +1,7 @@
-namespace Lunapack.Cli;
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Project;
+
+namespace Lunapack.Cli.Catalog;
 
 internal sealed class CatalogService(PackCatalog packCatalog, ProjectStateStore projectStateStore)
 {

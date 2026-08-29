@@ -1,11 +1,15 @@
-using System.IO.Abstractions.TestingHelpers;
+using Lunapack.Cli.Catalog;
+using Lunapack.Cli.Packs;
+using Lunapack.Cli.Packs.Manifest;
+using Lunapack.Cli.Packs.Planning;
+using Lunapack.Cli.Project;
 
 namespace Lunapack.Cli.UnitTests;
 
 [System.Diagnostics.CodeAnalysis.SuppressMessage(
     "Design",
     "MA0002:Use an overload that has a IEqualityComparer<string> or IComparer<string> parameter",
-    Justification = "Fixture assertions use TUnit's collection comparison API."
+    Justification = "TUnit generic assertions expose no comparer overload for these values; retained under the warning policy established by ADR-0006."
 )]
 public sealed class PackParameterResolverTests
 {

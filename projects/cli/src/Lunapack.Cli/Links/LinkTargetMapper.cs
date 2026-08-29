@@ -1,6 +1,10 @@
-using System.IO.Abstractions;
+﻿using System.IO.Abstractions;
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Paths;
+using Lunapack.Cli.Packs.ManagedFiles;
+using Lunapack.Cli.Project;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Links;
 
 internal sealed class LinkTargetMapper(IFileSystem fileSystem)
 {

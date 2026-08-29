@@ -1,5 +1,9 @@
 using System.IO.Abstractions.TestingHelpers;
 using System.Text.Json;
+using Lunapack.Cli.Links;
+using Lunapack.Cli.Packs.Manifest;
+using Lunapack.Cli.Project;
+using Lunapack.Cli.Sources;
 
 namespace Lunapack.Cli.UnitTests;
 

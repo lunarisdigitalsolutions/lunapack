@@ -698,7 +698,7 @@ public sealed class CliProcessTests
             Path.Combine(repository.Path, "packs", "example-2", "templates")
         );
         File.WriteAllText(
-            Path.Combine(updatedPackDirectory.Parent!.FullName, "pack.yml"),
+            Path.Combine(updatedPackDirectory.Parent.RequireNotNull().FullName, "pack.yml"),
             "id: example\nversion: 2.0.0\nlicense: MIT\nauthor: Lunaris Digital Solutions <info@lunaris.digital>\nmanagedFiles:\n  - source: templates/content.txt\n    target: .pack\n"
         );
         File.WriteAllText(
@@ -970,7 +970,7 @@ public sealed class CliProcessTests
         await Assert.That(File.ReadAllText(movedTarget)).IsEqualTo("version two");
 
         var reboundTarget = Path.Combine(workspace.Path, "docs", "rebinding", "template.md");
-        Directory.CreateDirectory(Path.GetDirectoryName(reboundTarget)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(reboundTarget).RequireNotNull());
         File.Move(movedTarget, reboundTarget);
         var rebind = await CliProcess.InvokeAsync(
             workspace.Path,

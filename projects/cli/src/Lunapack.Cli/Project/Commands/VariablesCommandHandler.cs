@@ -1,7 +1,8 @@
 using System.CommandLine;
+using Lunapack.Cli.Application;
 using Spectre.Console;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Project.Commands;
 
 internal sealed class VariablesCommandHandler(
     ProjectStateStore projectStateStore,
