@@ -7,6 +7,8 @@ internal maintenance work, such as CI, build, or release-process changes.
 
 Update this section before creating a release tag.
 
+## Version 1.2.0 - 2026-08-29
+
 ### Added
 
 - Added persistent blanket lifecycle-script denial for portable project,
