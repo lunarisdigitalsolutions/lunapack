@@ -12,7 +12,7 @@ copying an entire repository and losing ownership history.
 - Get selected files from Git without a pack.
 - Create a pack once and make it available to other projects.
 
-## Start in five minutes
+## Get started
 
 1. [Install Luna](installation.md).
 2. [Add a pack source](sources.md).
@@ -36,6 +36,6 @@ records its requested packs and resolved state so the next change is clear.
 - [CLI reference](cli/index.md) for the supported command surface and project
   documents.
 - [Pack guide](packs/index.md) to create, release, and understand packs.
+- [Automation guide](automation.md) for noninteractive validation and installs.
 - [Troubleshooting](troubleshooting.md) for common failures and recovery.
 - [Threat model](threat-model.md) for security boundaries and residual risks.
-- [Contributor setup](contributing.md) for repository development.

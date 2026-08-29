@@ -4,7 +4,8 @@ Pack lifecycle scripts are optional executable hooks. They are not sandboxed:
 an allowed hook runs with the invoking user's filesystem, process, network, and
 credential access. Review the pack source and hook arguments before permitting
 execution. Instruction hooks display prepared Markdown but never launch a
-process and do not use trust.
+process and do not use trust. See the [security model](../threat-model.md) for
+trust boundaries and residual risks.
 
 ## Script modes
 

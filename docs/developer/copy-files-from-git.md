@@ -9,7 +9,7 @@ current project.
 ## Add the repository as a source
 
 ```powershell
-luna sources add github awesome-copilot github/awesome-copilot
+luna sources add github awesome-copilot github/awesome-copilot --ref main
 ```
 
 ## Copy one file into your project
