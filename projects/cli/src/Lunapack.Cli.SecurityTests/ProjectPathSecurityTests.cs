@@ -1,4 +1,5 @@
 using System.IO.Abstractions.TestingHelpers;
+using Lunapack.Cli.Application.Paths;
 
 namespace Lunapack.Cli.SecurityTests;
 

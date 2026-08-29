@@ -1,3 +1,8 @@
+using Lunapack.Cli.Catalog;
+using Lunapack.Cli.Packs.Lifecycle;
+using Lunapack.Cli.Packs.Manifest;
+using Lunapack.Cli.Sources;
+
 namespace Lunapack.Cli.SecurityTests;
 
 public sealed class LifecycleScriptSecurityTests

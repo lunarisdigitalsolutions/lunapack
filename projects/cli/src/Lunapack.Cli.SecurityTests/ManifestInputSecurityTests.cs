@@ -1,3 +1,5 @@
+using Lunapack.Cli.Packs.Manifest;
+
 namespace Lunapack.Cli.SecurityTests;
 
 public sealed class ManifestInputSecurityTests

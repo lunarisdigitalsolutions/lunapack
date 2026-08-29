@@ -1,3 +1,5 @@
+using Lunapack.Cli.Sources;
+
 namespace Lunapack.Cli.SecurityTests;
 
 public sealed class GitSourceSecurityTests

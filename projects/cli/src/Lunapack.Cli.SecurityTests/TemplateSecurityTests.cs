@@ -1,3 +1,5 @@
+using Lunapack.Cli.Packs;
+
 namespace Lunapack.Cli.SecurityTests;
 
 public sealed class TemplateSecurityTests
