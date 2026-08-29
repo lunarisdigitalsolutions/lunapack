@@ -69,6 +69,7 @@ build/
 publish/
 !.github/**/build
 out/
+/tasks.md
 
 # Husky generated support files
 .husky/_/

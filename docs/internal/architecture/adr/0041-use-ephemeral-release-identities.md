@@ -60,6 +60,6 @@ first public release tag.
 
 ## References
 
-- [Release process](../../../developer/release-process.md).
+- [Release process](../../development/release-cli.md).
 - [Release security review](../../development/security-review.md).
 - [Threat model](../../../developer/threat-model.md).

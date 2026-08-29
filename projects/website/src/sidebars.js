@@ -8,67 +8,74 @@ const sidebars = {
     },
     {
       type: 'category',
-      label: 'Start here',
+      label: 'Get started',
       collapsed: false,
       items: [
         'installation',
         'sources',
+        'evaluate-packs',
         'install-packs',
-        'copy-files-from-git',
-        'update-packs'
+        'copy-files-from-git'
       ]
     },
     {
       type: 'category',
-      label: 'Advanced topics',
+      label: 'Everyday use',
       items: [
-        'lifecycle-hooks',
+        'update-packs',
         'parameters-and-variables',
         'remap-targets',
-        'manage-links'
+        'lifecycle-hooks'
       ]
     },
     {
       type: 'category',
-      label: 'CLI reference',
+      label: 'Advanced use',
       items: [
-        'cli/overview',
-        'cli/commands',
-        'cli/configuration',
-        'cli/links',
-        'cli/manifests',
-        'cli/trust-and-scripts'
+        'manage-links',
+        'advanced/approve-external-sources',
+        'advanced/adopt-existing-files',
+        'advanced/install-multiple-packs',
+        'advanced/audit-and-recover',
+        'automation'
       ]
     },
     {
       type: 'category',
-      label: 'Pack guide',
+      label: 'Author packs',
       items: [
         'packs/index',
         {
           type: 'category',
           label: 'Tutorials',
-          items: ['packs/tutorials/first-pack']
+          items: [
+            'packs/tutorials/first-pack',
+            'packs/tutorials/create-a-pack-version'
+          ]
         },
         {
           type: 'category',
-          label: 'How-to guides',
+          label: 'Core authoring',
           items: [
-            'packs/how-to/use-scriban-templates',
+            'packs/how-to/add-managed-content',
+            'packs/how-to/add-conditional-files',
             'packs/how-to/release-a-pack'
           ]
         },
         {
           type: 'category',
-          label: 'Reference',
+          label: 'Advanced authoring',
           items: [
-            'packs/reference/manifest',
-            'packs/reference/project-documents'
+            'packs/how-to/merge-managed-content',
+            'packs/how-to/compose-packs',
+            'packs/how-to/use-external-pack-sources',
+            'packs/how-to/use-scriban-templates',
+            'packs/how-to/use-pack-scripts'
           ]
         },
         {
           type: 'category',
-          label: 'Explanation',
+          label: 'Concepts',
           items: [
             'packs/explanation/composition-and-lifecycle',
             'packs/explanation/ownership-and-safety'
@@ -78,13 +85,37 @@ const sidebars = {
     },
     {
       type: 'category',
-      label: 'Operate',
-      items: ['troubleshooting', 'threat-model']
+      label: 'Reference',
+      items: [
+        {
+          type: 'category',
+          label: 'CLI',
+          items: [
+            'cli/index',
+            'cli/overview',
+            'cli/commands',
+            'cli/configuration',
+            'cli/links',
+            'cli/manifests',
+            'cli/trust-and-scripts'
+          ]
+        },
+        {
+          type: 'category',
+          label: 'Files and schemas',
+          items: [
+            'cli/environment',
+            'cli/lock-file',
+            'packs/reference/manifest',
+            'packs/reference/project-documents'
+          ]
+        }
+      ]
     },
     {
       type: 'category',
-      label: 'Contribute',
-      items: ['contributing', 'architecture', 'release-process']
+      label: 'Help and security',
+      items: ['troubleshooting', 'threat-model']
     }
   ]
 }

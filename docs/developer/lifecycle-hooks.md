@@ -57,17 +57,5 @@ Dry runs validate and summarize scripts and instructions without prompting,
 starting a process, or entering guided display. Denied script rows show
 `policy-denied` and every applicable scope without execution warnings.
 
-## Understand hook timing
-
-Supported events are `preInstall`, `postInstall`, `preUpdate`, `postUpdate`,
-`preUninstall`, and `postUninstall`. Luna processes dependencies before their
-consumers and preserves declaration order within each event. New dependencies
-introduced by an update use install hooks.
-
-Uninstall hooks come from the exact installed releases. Luna warns and
-continues without hooks when those releases cannot be retrieved, so a deleted
-or unreachable source cannot prevent removal.
-
-Pack authors can define and template hooks in `pack.yml`. See the
-[pack manifest reference](packs/reference/manifest.md#lifecycle-hooks) and
-[Scriban guide](packs/how-to/use-scriban-templates.md#render-lifecycle-hooks).
+See the [script and trust reference](cli/trust-and-scripts.md) for lifecycle
+ordering, exact trust scopes, execution behavior, and author requirements.

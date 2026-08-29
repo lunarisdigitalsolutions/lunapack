@@ -41,6 +41,9 @@ and include focused lifecycle tests when behavior changes. Changes to public
 CLI behavior must update help, tests, schemas, examples, developer documentation,
 and `CHANGELOG.md` when consumers can observe the change.
 
+Public documentation changes must follow the
+[external developer documentation standard](docs/internal/development/external-documentation-standard.md).
+
 ## Pull requests
 
 - Keep each pull request focused and explain the user-visible reason for it.

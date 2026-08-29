@@ -66,6 +66,5 @@ Confirm the executable is available before starting a project:
 luna --help
 ```
 
-For MVP evaluation, use the build supplied by the team running the evaluation.
-When seeking help, include the binary version, operating system, workspace
-path, command, and complete error output.
+When seeking help, include the binary version, operating system and
+architecture, workspace path, command, and complete error output.

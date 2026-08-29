@@ -12,3 +12,7 @@ A direct consumer request can relocate only that pack's files with a
 project-relative destination. Dependency targets keep their manifest targets.
 Explicit parameter values are not stored in project state. A matching project
 variable can supply a compatible value during installation.
+
+See [Configuration](../../cli/configuration.md) for portable project settings,
+the [lock file reference](../../cli/lock-file.md) for generated fields, and the
+[pack manifest reference](manifest.md) for author-controlled declarations.
