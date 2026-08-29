@@ -66,3 +66,4 @@ Create a new architecture decision record from the [MADR-based template](templat
 | [ADR-0060](0060-make-script-denial-dominant.md)                                 | Make script denial dominant and monotonic across every applicable trust scope.          |
 | [ADR-0061](0061-separate-release-builds-from-instrumented-tests.md)             | Separate strict Release builds from instrumented test coverage.                         |
 | [ADR-0062](0062-organize-cli-source-by-feature.md)                              | Organize CLI source by feature with matching namespaces.                                |
+| [ADR-0063](0063-organize-cli-tests-by-feature-and-scenario.md)                  | Organize CLI tests by feature and broader tests by scenario.                            |

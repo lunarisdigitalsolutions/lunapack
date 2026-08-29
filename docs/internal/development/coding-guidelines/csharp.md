@@ -19,7 +19,7 @@ C#-specific rules.
 
 - Place each type under its narrowest owning feature and make its namespace
   match its directory, as established by
-  [ADR-0061](../../architecture/adr/0061-organize-cli-source-by-feature.md).
+  [ADR-0062](../../architecture/adr/0062-organize-cli-source-by-feature.md).
   Avoid catch-all `Interfaces`, `Models`, and `Helpers` directories.
 - Keep methods focused and short enough to expose their workflow. Extract a
   private method for a distinct decision, validation, or side effect rather
@@ -130,6 +130,10 @@ C#-specific rules.
 
 ## Test Code
 
+- Place focused CLI tests under their matching production feature. Group
+  cross-feature integration tests by scenario, security tests by protected
+  boundary, and reusable fixtures under `TestSupport`, following
+  [ADR-0063](../../architecture/adr/0063-organize-cli-tests-by-feature-and-scenario.md).
 - Name tests `Scenario_Condition_ExpectedOutcome`; do not use Arrange-Act-Assert
   narration comments.
 - Use injected filesystem doubles for unit tests where appropriate. Run
