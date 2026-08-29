@@ -34,6 +34,7 @@ const sidebars = {
       items: [
         'manage-links',
         'advanced/approve-external-sources',
+        'advanced/git-source-behavior',
         'advanced/adopt-existing-files',
         'advanced/install-multiple-packs',
         'advanced/audit-and-recover',

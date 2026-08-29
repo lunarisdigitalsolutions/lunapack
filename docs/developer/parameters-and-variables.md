@@ -8,11 +8,8 @@ values to any pack with a matching parameter name.
 Use repeatable `--parameter` or `-p` options:
 
 ```powershell
-luna install company-foundation \
-  --parameter companyName="Lunaris Digital Solutions" \
-  --parameter projectType=service \
-  --parameter features=api \
-  --parameter features=docker
+luna install license-mit@1.0.0 \
+  --parameter companyName="Lunaris Digital Solutions"
 ```
 
 Repeated names collect values only when the declaration is an enum with
@@ -22,6 +19,11 @@ outside the declared enum, and repeated scalar names fail before mutation.
 Required values that are not supplied by command input, a composite pack, or a
 matching project variable prompt in an interactive terminal. Parameter values
 can control templates and managed-file conditions.
+
+Unattended commands must resolve every required parameter without a prompt.
+Supply explicit `--parameter` values, commit compatible project variables, or
+use composite bindings before running Luna with noninteractive standard input.
+Luna has no separate `--non-interactive` option.
 
 ## Reuse project variables
 
@@ -47,8 +49,8 @@ all variable matching with `--no-variables`, or exclude selected names with a
 repeatable `--skip-variable` option:
 
 ```powershell
-luna install company-foundation --no-variables
-luna install company-foundation --skip-variable companyName
+luna install license-mit@1.0.0 --no-variables
+luna install license-mit@1.0.0 --skip-variable companyName
 ```
 
 Remove a value when the project no longer needs it:
@@ -61,4 +63,7 @@ Variables are project configuration, while explicit installation inputs are
 not persisted as variables. Pack authors define `string`, `bool`, and `enum`
 parameters. See [Use Scriban templates](packs/how-to/use-scriban-templates.md)
 for declarations, template rendering, conditions, and the managed-file
-`files.path` and `files.relative_path` functions.
+`files.path` and `files.relative_path` functions. Composite graphs use one
+namespace for parameter names; see
+[Composition and lifecycle](packs/explanation/composition-and-lifecycle.md) for
+declaration and binding precedence.

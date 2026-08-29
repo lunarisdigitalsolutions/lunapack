@@ -76,9 +76,13 @@ Content digests do not make local edits immutable. During update,
 `copy:overwrite` replaces current content, `backup-and-overwrite` creates a
 backup before replacement, `skip-if-exists` retains the target, and
 `fail-if-exists` stops. Merge strategies combine pack content with the current
-target according to their method. Preview updates and choose pack strategies
-that match the target's ownership expectations. Uninstall uses recorded
-ownership and strategy state to avoid deleting unrelated content.
+target according to their method. Those strategies apply when desired pack
+content changes. If a new release removes a previously owned target, update can
+delete that target without comparing current bytes with the locked digest;
+`@ignore` preserves the file while dropping ownership. Preview updates and
+choose pack strategies that match the target's ownership expectations. Explicit
+uninstall uses recorded ownership and rejects deletion of modified owned
+content.
 
 Transactions can restore LunaPack-managed files and state after handled
 failures, but they cannot reverse script side effects or changes made by another

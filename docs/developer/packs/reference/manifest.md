@@ -7,7 +7,7 @@ collections remain valid during incremental authoring. `name`, `description`,
 manifests missing author or license attribution.
 
 ```yml
-id: documentation-standard
+id: example-documentation-standard
 name: Documentation standard
 version: 1.0.0
 license: MIT
@@ -81,12 +81,12 @@ is significant. A composite reference can set `disabledHooks` to suppress every
 typed hook in selected events for that transient pack.
 
 ```yml
-id: application-foundation
+id: example-application-foundation
 version: 1.0.0
 license: MIT
 author: Lunaris Digital Solutions <info@lunaris.digital>
 packs:
-  - id: documentation-standard
+  - id: example-documentation-standard
     version: 1.0.0
     disabledHooks:
       - preInstall

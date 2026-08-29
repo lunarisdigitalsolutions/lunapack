@@ -16,16 +16,52 @@ luna update dotnet-project
 Run `luna update --dry-run` to plan updates for every installed root. Use
 `luna update --prompt` when selecting which available updates to apply.
 
+## Understand version intent
+
+An update without an explicit version selects the latest available release and
+makes that root float for future updates by removing its requested `version`
+from `lunapack.yml`. This also happens to roots selected for a newer release by
+update-all or `--prompt`. Roots with no available version change keep their
+existing request.
+
+Use an exact reference when the project should remain pinned:
+
+```powershell
+luna update dotnet-project@1.0.0
+```
+
+The explicit version is persisted in `lunapack.yml`. Both forms still record
+the exact resolved release in `lunapack-lock.yml`.
+
+## Understand file decisions
+
 LunaPack recomputes the selected-root graph and updates project files and lock
-state together. Existing target behavior follows each managed-file strategy:
-copy strategies may replace, back up, retain, or reject current content, while
-merge strategies combine it according to their method. Review the dry run
-instead of assuming local edits are preserved. Symbolic external refs are
-refreshed even when the pack version is unchanged. Only changed selected paths
-or hashes produce an update; unrelated upstream commits do not. Removed
-external requirements release lock consumers but leave workspace sources
-configured. `--offline` avoids remote ref checks and reports that freshness
-could not be confirmed from remote state.
+state together. For an already owned target, Luna first compares newly rendered
+pack content with the previous locked digest. When they match, update plans no
+file action even if the current target was edited locally. The edit remains
+visible through `luna audit`; update does not provide a force-reconcile option.
+
+When desired pack content changes, the declared strategy applies to current
+target content. Copy strategies may replace, back up, retain, or reject it,
+while merge strategies combine it according to their method. Review the dry
+run instead of assuming local edits are preserved.
+
+When a new pack version stops declaring an owned target, update deletes that
+target without comparing its current bytes with the locked digest. This differs
+from uninstall, which refuses to remove a modified target. Use `--dry-run` to
+review deletions. A project `@ignore` remapping preserves a target while
+dropping ownership when that is the intended migration.
+
+`backup-and-overwrite` moves the current target to the first unused sibling
+name `<target>.1`, `<target>.2`, and so on, then writes new content. Existing
+number gaps are reused. Backups are not managed in the lock file and Luna does
+not expire or remove them.
+
+Symbolic external refs are refreshed even when the pack version is unchanged.
+Only changed selected paths or hashes produce an update; unrelated upstream
+commits do not. Removed external requirements release lock consumers but leave
+workspace sources configured. `--offline` avoids remote ref checks and reports
+that freshness could not be confirmed from remote state.
 
 Ordinary updates are pinned to their lock-record source identity. An explicit
 version available only from another source is shown in dry-run output and

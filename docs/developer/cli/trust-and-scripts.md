@@ -58,6 +58,15 @@ apply current-user trust across projects. These options are mutually exclusive.
 Project trust should be committed only when every consumer is expected to trust
 that source.
 
+Project trust has two parts: the portable declaration in `lunapack.yml` and an
+acknowledgement bound to the current user, canonical project path, and exact
+source identity. Both must match before the declaration authorizes a hook.
+`luna trust ... --project` writes both parts for the invoking user. Committing
+the declaration does not grant trust to another user, another checkout path, or
+a fresh `LUNAPACK_USER_PROFILE`; each must review it and run the corresponding
+`--project` trust command, choose another trust scope, use `--scripts run` for a
+reviewed invocation, or skip scripts.
+
 Revoke entries with matching identity and scope:
 
 ```powershell

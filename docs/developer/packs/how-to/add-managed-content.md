@@ -3,7 +3,15 @@
 Choose selectors and conflict strategies for files a pack owns in consumer
 projects.
 
-Start with `luna pack init --id <id> --author <author> --license <license>`.
+Start in an empty pack directory with a synthetic ID that cannot collide with a
+maintained repository pack:
+
+```powershell
+luna pack init --id example-documentation-standard `
+  --author "Example Engineering" `
+  --license MIT
+```
+
 The generated `pack.yml` contains only required author, ID, license, and version
 properties. Subsequent authoring commands load that minimal manifest and add
 only requested declarations.
@@ -65,7 +73,13 @@ section, JSON, newline, and conflict behavior.
 ```powershell
 luna pack list
 luna pack validate
-luna install engineering-standard --dry-run
+```
+
+Then switch to the initialized fixture whose local source contains the pack;
+[Create a first pack](../tutorials/first-pack.md) shows that setup.
+
+```powershell
+luna install example-documentation-standard@1.0.0 --dry-run
 ```
 
 Test the selected strategy against an absent target, expected existing content,

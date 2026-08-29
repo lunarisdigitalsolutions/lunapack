@@ -24,6 +24,18 @@ same user credentials outside Luna. Git source `timeoutSeconds` accepts 1 throug
 300 and defaults to 300. Luna does not store Git credentials in its workspace
 cache.
 
+Luna delegates authentication to Git and inherits the invoking environment;
+GitHub shorthand uses HTTPS. Test with the same transport, operating-system
+user, credential helper or SSH agent, and environment as the Luna process.
+
+For an unpinned source, Luna remembers the previously resolved default branch.
+If a host changes its default while the old branch remains, configure an
+explicit `ref` or remove that source's JSON entry below
+`.lunapack/git-sources` to force new remote-HEAD discovery. A terminated process
+can leave workspaces below the system temporary `lunapack` directory; remove a
+stale workspace only after confirming no Luna process uses it. See
+[Understand Git source behavior](advanced/git-source-behavior.md).
+
 ## Adding or removing a source fails
 
 Luna canonicalizes a source's repository, ref, and path before comparing it to
@@ -53,10 +65,14 @@ to make installation pass.
 
 ## A managed file was changed
 
-Update and uninstall preserve content whose current digest differs from the
-recorded installed digest. Review and reconcile it manually. `luna audit` shows
-current ownership; `luna mv` relocates a managed file or directory and can save
-the relocation as a reusable mapping with `--save-remap`.
+Run `luna audit` first. Local drift alone does not trigger an update when the
+newly rendered pack bytes still match the locked digest. When desired pack
+content changes, the configured strategy decides the action. When a new pack
+version removes the target entirely, update can delete the file without a drift
+check; preview the update and use `@ignore` when ownership should be dropped but
+the file retained. Explicit uninstall rejects deletion of modified owned
+content. `luna mv` relocates a managed file or directory and can save the
+relocation as a reusable mapping with `--save-remap`.
 
 ## A lifecycle script is denied
 

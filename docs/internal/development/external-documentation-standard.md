@@ -111,6 +111,26 @@ consistent pack IDs, versions, sources, and paths across related pages. Explain
 placeholders near the example and show expected results when they are not
 obvious.
 
+Executable consumer examples must reference only pack IDs present in
+`projects/packs`; any explicit version must also exist there. Use maintained
+packs whose real parameters, files, hooks, and dependencies exercise the
+documented behavior. Do not invent a pack or future version in a consumer
+command, because readers must be able to run the example without an unrelated
+pack-not-found or version-not-found failure.
+
+Pack-authoring documentation is the only place for synthetic pack IDs. Prefix
+them with `example-`, confirm they do not exist in `projects/packs`, and create
+them with `luna pack init` before any command references them. Before running
+consumer commands, show or directly link to the steps that place the pack in a
+configured catalog. A versioning workflow must create every referenced release
+before it validates, installs, compares, or updates that release. Keep one
+synthetic ID across a connected tutorial sequence when the later page extends
+the pack created by the earlier page.
+
+Manifest fragments may use a synthetic ID when their authoring context is
+explicit and the fragment is not presented as an immediately runnable consumer
+command. Prefer the same `example-*` IDs used by nearby authoring guides.
+
 Do not use ellipses in copyable configuration. Label partial fragments. Avoid
 unstable output and internal C# examples. Validate YAML and commands where
 repository tooling permits. Include script-execution warnings whenever an
@@ -143,6 +163,10 @@ same change.
 - [ ] Prerequisites, defaults, constraints, side effects, and verification are
       present where relevant.
 - [ ] Examples use supported public syntax and valid files.
+- [ ] Consumer pack references exist at the documented versions under
+      `projects/packs`.
+- [ ] Synthetic `example-*` packs occur only in authoring workflows and are
+      created and registered before consumer commands use them.
 - [ ] Security and platform differences are explicit where behavior differs.
 - [ ] Detailed rules have one authoritative location.
 - [ ] Sidebar placement and inbound links provide deliberate discovery.

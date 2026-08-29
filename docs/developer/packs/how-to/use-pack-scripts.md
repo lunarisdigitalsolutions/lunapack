@@ -4,6 +4,10 @@ Add lifecycle hooks only when managed files cannot complete the operation.
 Scripts run with the consumer's permissions and may have effects LunaPack cannot
 roll back.
 
+Run these authoring commands against the synthetic
+`example-documentation-standard` pack created by
+[Create a first pack](../tutorials/first-pack.md).
+
 ## Choose a hook
 
 Supported hooks are `preInstall`, `postInstall`, `preUpdate`, `postUpdate`,
@@ -52,8 +56,8 @@ values.
 ```powershell
 luna pack hooks
 luna pack validate
-luna install application-foundation --scripts skip --dry-run
-luna install application-foundation --scripts prompt
+luna install example-documentation-standard@1.0.0 --scripts skip --dry-run
+luna install example-documentation-standard@1.0.0 --scripts prompt
 ```
 
 Prompt mode asks consumers to approve untrusted hooks. `--scripts run` permits

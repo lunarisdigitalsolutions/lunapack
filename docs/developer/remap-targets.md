@@ -60,7 +60,7 @@ For one installation, pass the same value through a remapping option. Add
 `--save-remap` to retain it:
 
 ```powershell
-luna install engineering --remap-directory docs/generated=@ignore --save-remap
+luna install github-actions-pr-gate@1.0.0 --remap-directory .github=@ignore --save-remap
 ```
 
 Ignored files are not written and receive no managed-file lock entry. An exact

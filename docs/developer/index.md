@@ -35,6 +35,7 @@ records its requested packs and resolved state so the next change is clear.
   [lifecycle hooks](lifecycle-hooks.md).
 - Advanced workflows cover [Luna Links](manage-links.md),
   [external-source approval](advanced/approve-external-sources.md),
+  [Git source behavior](advanced/git-source-behavior.md),
   [existing-file adoption](advanced/adopt-existing-files.md), and
   [audit and recovery](advanced/audit-and-recover.md).
 - [CLI reference](cli/index.md) for the supported command surface and project

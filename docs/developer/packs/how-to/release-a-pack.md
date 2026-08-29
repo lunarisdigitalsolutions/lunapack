@@ -2,6 +2,11 @@
 
 Prepare and test an immutable pack release before consumers select it.
 
+This guide continues the synthetic `example-documentation-standard` catalog
+created by [Create a first pack](../tutorials/first-pack.md) and
+[Create a new pack version](../tutorials/create-a-pack-version.md). Complete
+those steps before running consumer commands below.
+
 ## Validate the authoring directory
 
 Run these commands from the directory that contains `pack.yml`:
@@ -39,8 +44,8 @@ cd release-test
 luna init
 luna sources add local candidate ../packs
 luna discover --versions 3
-luna validate gitignore-dotnet@1.1.0
-luna inspect gitignore-dotnet@1.1.0
+luna validate example-documentation-standard@1.1.0
+luna inspect example-documentation-standard@1.1.0
 ```
 
 Unlike `luna pack validate`, `luna validate <pack-reference>` runs from an
@@ -51,8 +56,8 @@ files.
 Preview before writing files:
 
 ```powershell
-luna install gitignore-dotnet@1.1.0 --dry-run
-luna install gitignore-dotnet@1.1.0
+luna install example-documentation-standard@1.1.0 --dry-run
+luna install example-documentation-standard@1.1.0
 luna audit
 ```
 
@@ -69,10 +74,10 @@ that also contains the candidate, and run:
 
 ```powershell
 luna outdated
-luna update gitignore-dotnet --dry-run
-luna update gitignore-dotnet
+luna update example-documentation-standard --dry-run
+luna update example-documentation-standard
 luna audit
-luna uninstall gitignore-dotnet
+luna uninstall example-documentation-standard
 ```
 
 Confirm updates preserve user-modified files according to the declared

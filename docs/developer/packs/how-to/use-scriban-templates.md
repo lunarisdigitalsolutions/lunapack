@@ -3,6 +3,10 @@
 Use Scriban when a managed file or lifecycle script argument must include a
 value chosen by the pack consumer. Keep static content as a normal managed file.
 
+Run these authoring examples against the synthetic
+`example-documentation-standard` pack created by
+[Create a first pack](../tutorials/first-pack.md).
+
 ## Declare parameters
 
 Declare each input in `pack.yml`. Names become Scriban globals.
@@ -34,7 +38,7 @@ parameters:
 Consumers pass values with repeatable `--parameter` or `-p` options:
 
 ```powershell
-luna install company-foundation \
+luna install example-documentation-standard@1.0.0 \
   -p companyName="Lunaris Digital Solutions" \
   -p projectType=service \
   -p features=api \

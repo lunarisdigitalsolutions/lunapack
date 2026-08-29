@@ -25,6 +25,13 @@ $env:LUNAPACK_USER_PROFILE = "$PWD/.ci-profile"
 Do not cache this directory across untrusted jobs. It can contain persisted
 source and pack trust decisions.
 
+Committed project trust does not authorize hooks by itself. Project trust also
+requires an acknowledgement in the selected user profile for the canonical
+workspace path and exact source identity. A fresh job must review and establish
+that acknowledgement with the matching `luna trust ... --project` command, use
+another explicit script policy, or skip scripts. Reusing a profile across
+checkout paths does not transfer project acknowledgement.
+
 ## Preview a pack
 
 Initialize a fixture project, add a source pinned to a reviewed full commit ID,
@@ -53,6 +60,12 @@ and `lunapack-lock.yml` in the fixture.
 When a pack declares additional Git sources, add `--accept-sources` only after
 reviewing them. It approves conflict-free source additions; it does not bypass
 Git authentication, path validation, lifecycle trust, or rollback.
+
+Luna delegates source authentication to the installed Git client. Configure
+credential helpers, SSH state, or other Git authentication for the job before
+invoking Luna; Luna does not implement login or token refresh. GitHub shorthand
+uses HTTPS. See [Understand Git source behavior](advanced/git-source-behavior.md)
+for the complete boundary.
 
 ## Choose lifecycle behavior
 
