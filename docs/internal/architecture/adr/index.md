@@ -64,3 +64,4 @@ Create a new architecture decision record from the [MADR-based template](templat
 | [ADR-0058](0058-represent-multi-select-enums-as-ordered-arrays.md)              | Represent multi-select enums as ordered unique arrays validated at graph boundaries.    |
 | [ADR-0059](0059-treat-ignore-remaps-as-unowned-exclusions.md)                   | Treat `@ignore` remaps as unowned exclusions that preserve existing local files.        |
 | [ADR-0060](0060-make-script-denial-dominant.md)                                 | Make script denial dominant and monotonic across every applicable trust scope.          |
+| [ADR-0061](0061-separate-release-builds-from-instrumented-tests.md)             | Separate strict Release builds from instrumented test coverage.                         |

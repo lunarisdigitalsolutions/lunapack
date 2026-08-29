@@ -42,6 +42,11 @@ runs:
       with:
         solution-path: projects/cli/src/Lunapack.slnx
         publish-project-path: projects/cli/src/Lunapack.Cli/Lunapack.Cli.csproj
+        test-project-paths: |
+          projects/cli/src/Lunapack.Cli.UnitTests/Lunapack.Cli.UnitTests.csproj
+          projects/cli/src/Lunapack.Cli.IntegrationTests/Lunapack.Cli.IntegrationTests.csproj
+          projects/cli/src/Lunapack.Cli.SecurityTests/Lunapack.Cli.SecurityTests.csproj
+        coverage-settings-path: projects/cli/src/coverage.settings.xml
         runtime-identifier: ${{ inputs.runtime-identifier }}
         should-publish: ${{ inputs.publish-artifacts }}
         additional-publish-arguments: --self-contained -p:PublishAot=true
