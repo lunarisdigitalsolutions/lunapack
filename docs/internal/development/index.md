@@ -1,7 +1,8 @@
 # Development
 
 This area is the maintainer reference for repository development practices.
-Use it when changing implementation, build configuration, schemas, or tests.
+Use it when changing implementation, build configuration, schemas, or the
+[CLI testing strategy](testing-strategy.md).
 
 - [Build and lock files](build-lock-files.md)
 - [Coding guidelines](coding-guidelines/index.md)

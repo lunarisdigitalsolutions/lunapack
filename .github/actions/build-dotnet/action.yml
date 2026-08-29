@@ -17,6 +17,18 @@ inputs:
     description: Build configuration.
     required: false
     default: Release
+  test-build-configuration:
+    description: Build configuration used for instrumented test runs.
+    required: false
+    default: Debug
+  test-project-paths:
+    description: Optional newline-separated test project paths for separate reporting.
+    required: false
+    default: ''
+  coverage-settings-path:
+    description: Optional Microsoft Code Coverage settings file.
+    required: false
+    default: ''
   should-run-tests:
     description: Whether to run the solution's tests with coverage.
     required: false
@@ -97,24 +109,158 @@ runs:
         dotnet @buildArguments @additionalArguments
 
     - name: Run tests
+      id: tests
       if: ${{ inputs.should-run-tests == 'true' }}
-      shell: bash
+      shell: pwsh
+      env:
+        COVERAGE_SETTINGS_PATH: ${{ inputs.coverage-settings-path }}
+        SOLUTION_PATH: ${{ inputs.solution-path }}
+        TEST_BUILD_CONFIGURATION: ${{ inputs.test-build-configuration }}
+        TEST_PROJECT_PATHS: ${{ inputs.test-project-paths }}
       run: |
-        set -euo pipefail
-        dotnet test --solution "${{ inputs.solution-path }}" \
-          --configuration "${{ inputs.build-configuration }}" \
-          --no-build \
-          --no-restore \
-          --results-directory "$RUNNER_TEMP/dotnet-test-results" \
-          --coverage \
-          --coverage-output-format cobertura
+        $ErrorActionPreference = 'Stop'
+        $projectPaths = @(
+          $env:TEST_PROJECT_PATHS -split '\r?\n' |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { $_ }
+        )
+        $targets = if ($projectPaths.Count -eq 0) {
+          @([PSCustomObject]@{ Option = '--solution'; Path = $env:SOLUTION_PATH; Name = 'solution' })
+        }
+        else {
+          @(
+            foreach ($projectPath in $projectPaths) {
+              [PSCustomObject]@{
+                Option = '--project'
+                Path = $projectPath
+                Name = [System.IO.Path]::GetFileNameWithoutExtension($projectPath)
+              }
+            }
+          )
+        }
+
+        foreach ($target in $targets) {
+          $resultsDirectory = Join-Path $env:RUNNER_TEMP "dotnet-test-results/$($target.Name)"
+          $testArguments = @(
+            'test'
+            $target.Option
+            $target.Path
+            '--configuration'
+            $env:TEST_BUILD_CONFIGURATION
+            '--no-restore'
+            '--results-directory'
+            $resultsDirectory
+            '--report-trx'
+            '--report-trx-filename'
+            "$($target.Name).trx"
+            '--coverage'
+            '--coverage-output'
+            "$($target.Name).cobertura.xml"
+            '--coverage-output-format'
+            'cobertura'
+            '--minimum-expected-tests'
+            '1'
+          )
+          if (-not [string]::IsNullOrWhiteSpace($env:COVERAGE_SETTINGS_PATH)) {
+            $testArguments += @('--coverage-settings', $env:COVERAGE_SETTINGS_PATH)
+          }
+
+          dotnet @testArguments
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+        }
+
+    - name: Publish coverage summary
+      if: ${{ always() && inputs.should-run-tests == 'true' }}
+      shell: pwsh
+      env:
+        TEST_OUTCOME: ${{ steps.tests.outcome }}
+        TEST_PROJECT_PATHS: ${{ inputs.test-project-paths }}
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $resultsDirectory = Join-Path $env:RUNNER_TEMP 'dotnet-test-results'
+        $expectedProjects = @(
+          $env:TEST_PROJECT_PATHS -split '\r?\n' |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { $_ } |
+            ForEach-Object { [System.IO.Path]::GetFileNameWithoutExtension($_) }
+        )
+        if ($expectedProjects.Count -eq 0) {
+          $expectedProjects = @('solution')
+        }
+
+        $expectedReportPaths = @(
+          $expectedProjects | ForEach-Object {
+            Join-Path $resultsDirectory "$_/$_.cobertura.xml"
+          }
+        )
+        $reports = @(
+          Get-ChildItem $resultsDirectory -Directory -ErrorAction SilentlyContinue |
+            ForEach-Object {
+              Get-ChildItem $_.FullName -Filter '*.cobertura.xml' -File -ErrorAction SilentlyContinue
+            }
+        )
+        if ($reports.Count -eq 0) {
+          @('## Code coverage', '', 'Coverage reports were not generated.') |
+            Add-Content $env:GITHUB_STEP_SUMMARY
+          if ($env:TEST_OUTCOME -eq 'success') {
+            throw 'Tests passed without generating coverage reports.'
+          }
+
+          return
+        }
+
+        if ($env:TEST_OUTCOME -eq 'success') {
+          $actualReportPaths = @($reports | ForEach-Object { $_.FullName })
+          $reportPathDifference = @(
+            Compare-Object $expectedReportPaths $actualReportPaths
+          )
+          if ($reportPathDifference.Count -ne 0) {
+            throw "Expected exactly one canonical coverage report per configured project. Differences: $($reportPathDifference | Out-String)"
+          }
+        }
+
+        $culture = [System.Globalization.CultureInfo]::InvariantCulture
+        $rows = @(
+          foreach ($report in $reports) {
+            [xml]$document = Get-Content $report.FullName -Raw
+            $coverage = $document.coverage
+            $linesValid = [int]$coverage.'lines-valid'
+            $branchesValid = [int]$coverage.'branches-valid'
+            if ($linesValid -eq 0 -or $branchesValid -eq 0) {
+              throw "Coverage report '$($report.FullName)' contains no instrumented code."
+            }
+
+            $lineRate = [decimal]::Parse($coverage.'line-rate', $culture)
+            $branchRate = [decimal]::Parse($coverage.'branch-rate', $culture)
+            [PSCustomObject]@{
+              Project = $report.Directory.Name
+              Lines = ($lineRate * 100).ToString('0.00', $culture)
+              Branches = ($branchRate * 100).ToString('0.00', $culture)
+            }
+          }
+        )
+
+        $summary = @(
+          '## Code coverage'
+          ''
+          '| Test project | Line coverage | Branch coverage |'
+          '| --- | ---: | ---: |'
+        )
+        $summary += @(
+          $rows |
+            Sort-Object Project |
+            ForEach-Object { "| $($_.Project) | $($_.Lines)% | $($_.Branches)% |" }
+        )
+        $summary | Add-Content $env:GITHUB_STEP_SUMMARY
 
     - name: Upload test results
       if: ${{ always() && inputs.should-run-tests == 'true' && inputs.should-upload-test-results == 'true' }}
       uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
       with:
         name: ${{ inputs.artifact-name }}-test-results
-        path: ${{ runner.temp }}/dotnet-test-results/**/*.trx
+        path: ${{ runner.temp }}/dotnet-test-results/*/*.trx
         if-no-files-found: warn
         retention-days: ${{ inputs.artifact-retention-days }}
 
@@ -123,7 +269,7 @@ runs:
       uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
       with:
         name: ${{ inputs.artifact-name }}-coverage
-        path: ${{ runner.temp }}/dotnet-test-results/**/*.cobertura.xml
+        path: ${{ runner.temp }}/dotnet-test-results/*/*.cobertura.xml
         if-no-files-found: warn
         retention-days: ${{ inputs.artifact-retention-days }}
 
