@@ -15,7 +15,7 @@ Search IDs, descriptions, and tags when you know the capability rather than the
 pack ID:
 
 ```powershell
-luna search documentation
+luna search guidelines
 ```
 
 Add `--versions 3` to either command when you need to compare older releases.
@@ -28,7 +28,7 @@ Pin the version while reviewing identity, attribution, parameters, and
 dependencies:
 
 ```powershell
-luna inspect documentation-standard@1.0.0
+luna inspect clean-code-guidelines@1.0.0
 ```
 
 Confirm the author, license, managed targets, required parameters, and referenced
@@ -43,7 +43,7 @@ validation for packs in configured local sources.
 Run installation as a dry run with scripts disabled:
 
 ```powershell
-luna install documentation-standard@1.0.0 `
+luna install clean-code-guidelines@1.0.0 `
   --dry-run `
   --scripts skip
 ```

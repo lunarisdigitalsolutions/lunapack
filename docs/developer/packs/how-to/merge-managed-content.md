@@ -41,7 +41,8 @@ dotnet format --verify-no-changes
 managedFiles:
   - source: templates/formatting.targets
     target: Directory.Build.targets
-    strategy: merge:section
+    strategy: merge
+    method: section
 ```
 
 When neither marker exists, Luna appends the complete source section. When each
@@ -62,7 +63,8 @@ objects or both be arrays:
 managedFiles:
   - source: templates/settings.json
     target: .vscode/settings.json
-    strategy: merge:json
+    strategy: merge
+    method: json
 ```
 
 Luna merges objects recursively, appends array values that are not deeply equal

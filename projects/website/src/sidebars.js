@@ -10,7 +10,13 @@ const sidebars = {
       type: 'category',
       label: 'Get started',
       collapsed: false,
-      items: ['installation', 'sources', 'evaluate-packs', 'install-packs']
+      items: [
+        'installation',
+        'sources',
+        'evaluate-packs',
+        'install-packs',
+        'copy-files-from-git'
+      ]
     },
     {
       type: 'category',
@@ -26,7 +32,6 @@ const sidebars = {
       type: 'category',
       label: 'Advanced use',
       items: [
-        'copy-files-from-git',
         'manage-links',
         'advanced/approve-external-sources',
         'advanced/adopt-existing-files',
