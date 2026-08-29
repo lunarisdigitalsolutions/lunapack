@@ -1,6 +1,8 @@
 using System.CommandLine;
+using Lunapack.Cli.Application;
+using Lunapack.Cli.Packs.Validation;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Packs.Commands;
 
 internal sealed class ValidatePackCommandHandler(
     PackValidationService packValidationService,

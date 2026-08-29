@@ -1,4 +1,4 @@
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Links;
 
 internal sealed record LinkAuditReport(
     string Name,

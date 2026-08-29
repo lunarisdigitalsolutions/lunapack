@@ -1,7 +1,10 @@
 using System.CommandLine;
+using Lunapack.Cli.Application;
+using Lunapack.Cli.Links;
+using Lunapack.Cli.Project;
 using Spectre.Console;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Audit;
 
 internal sealed class AuditCommandHandler(
     AuditService auditService,

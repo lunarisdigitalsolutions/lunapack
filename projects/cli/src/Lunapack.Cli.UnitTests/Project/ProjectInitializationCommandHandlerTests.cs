@@ -1,3 +1,8 @@
+using Lunapack.Cli.Application;
+using Lunapack.Cli.Application.Guidance;
+using Lunapack.Cli.Project;
+using Lunapack.Cli.Project.Commands;
+
 namespace Lunapack.Cli.UnitTests.Project;
 
 public sealed class ProjectInitializationCommandHandlerTests

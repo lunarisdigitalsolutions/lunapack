@@ -1,4 +1,4 @@
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Links;
 
 internal sealed record LinkDiff(
     bool DefinitionChanged,

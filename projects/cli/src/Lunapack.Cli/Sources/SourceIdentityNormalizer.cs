@@ -1,6 +1,9 @@
 using System.Text.RegularExpressions;
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Paths;
+using Lunapack.Cli.Project;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Sources;
 
 internal static partial class SourceIdentityNormalizer
 {

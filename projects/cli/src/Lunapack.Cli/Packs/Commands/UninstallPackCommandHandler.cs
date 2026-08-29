@@ -1,14 +1,19 @@
 using System.CommandLine;
 using System.IO.Abstractions;
+using Lunapack.Cli.Application;
+using Lunapack.Cli.Application.Guidance;
+using Lunapack.Cli.Links;
+using Lunapack.Cli.Project;
+using Lunapack.Cli.Trust;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Packs.Commands;
 
 internal sealed class UninstallPackCommandHandler(
     IFileSystem fileSystem,
     PackLifecycleService packLifecycleService,
     LinkCommandDispatcher linkCommandDispatcher,
     WorkspaceDirectoryResolver workspaceDirectoryResolver,
-    INextStepAdvisor nextStepAdvisor,
+    NextStepAdvisor nextStepAdvisor,
     NextStepRenderer nextStepRenderer,
     WorkflowPrerequisiteGuard prerequisiteGuard,
     CliConsole console

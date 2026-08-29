@@ -37,6 +37,16 @@ behavior.
 
 ## Local commands
 
+Run every CLI test suite, one suite, or any combination from the repository
+root:
+
+```powershell
+./test.ps1
+./test.ps1 unit
+./test.ps1 unit,int
+./test.ps1 -Suite int,security -Configuration Release
+```
+
 Restore and validate the strict build first:
 
 ```powershell

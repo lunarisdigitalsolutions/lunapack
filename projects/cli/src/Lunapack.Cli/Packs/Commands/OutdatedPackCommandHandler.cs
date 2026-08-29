@@ -1,7 +1,11 @@
-using System.CommandLine;
+﻿using System.CommandLine;
+using Lunapack.Cli.Application;
+using Lunapack.Cli.Links;
+using Lunapack.Cli.Packs.Planning;
+using Lunapack.Cli.Project;
 using Spectre.Console;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Packs.Commands;
 
 internal sealed class OutdatedPackCommandHandler(
     PackUpdateSelectionService updateSelectionService,

@@ -1,5 +1,25 @@
-using System.CommandLine;
+﻿using System.CommandLine;
 using System.IO.Abstractions;
+using Lunapack.Cli.Application;
+using Lunapack.Cli.Application.Guidance;
+using Lunapack.Cli.Audit;
+using Lunapack.Cli.Catalog;
+using Lunapack.Cli.Catalog.Commands;
+using Lunapack.Cli.Links;
+using Lunapack.Cli.Links.Commands;
+using Lunapack.Cli.Packs;
+using Lunapack.Cli.Packs.Authoring;
+using Lunapack.Cli.Packs.Commands;
+using Lunapack.Cli.Packs.ExternalSources;
+using Lunapack.Cli.Packs.Lifecycle;
+using Lunapack.Cli.Packs.Manifest;
+using Lunapack.Cli.Packs.Planning;
+using Lunapack.Cli.Packs.Validation;
+using Lunapack.Cli.Project;
+using Lunapack.Cli.Project.Commands;
+using Lunapack.Cli.Sources.Commands;
+using Lunapack.Cli.Sources.Git;
+using Lunapack.Cli.Trust;
 using Spectre.Console;
 
 namespace Lunapack.Cli;
@@ -198,7 +218,7 @@ internal sealed class CliApplication(
         WorkspaceDirectoryResolver workspaceDirectoryResolver,
         string projectDirectory,
         Option<string?> workspaceOption,
-        INextStepAdvisor nextStepAdvisor,
+        NextStepAdvisor nextStepAdvisor,
         NextStepRenderer nextStepRenderer,
         WorkflowPrerequisiteGuard prerequisiteGuard,
         CliConsole console
@@ -248,7 +268,7 @@ internal sealed class CliApplication(
         RootCommand rootCommand,
         IFileSystem fileSystem,
         WorkspaceDirectoryResolver workspaceDirectoryResolver,
-        INextStepAdvisor nextStepAdvisor,
+        NextStepAdvisor nextStepAdvisor,
         NextStepRenderer nextStepRenderer,
         GitRefResolver gitRefResolver,
         IGitProcessRunner gitProcessRunner,
@@ -266,16 +286,9 @@ internal sealed class CliApplication(
                 console,
                 gitRefResolver,
                 new PackAuthoringValidationService(
-                    new ExternalSourceRequirementPlanner(
-                        gitRefResolver,
-                        new ManagedFileConditionParser()
-                    ),
+                    new ExternalSourceRequirementPlanner(gitRefResolver),
                     new ExternalSourceMaterializer(fileSystem, gitProcessRunner, gitRefResolver),
-                    new PackInstallationPlanner(
-                        fileSystem,
-                        new PackTemplateRenderer(fileSystem),
-                        new ManagedFileConditionParser()
-                    )
+                    new PackInstallationPlanner(fileSystem, new PackTemplateRenderer(fileSystem))
                 )
             ).CreateCommand(projectDirectory, workspaceOption)
         );
@@ -362,11 +375,7 @@ internal sealed class CliApplication(
         var packLifecycleService = new PackLifecycleService(
             fileSystem,
             new CompositePackGraphResolver(packCatalog),
-            new PackInstallationPlanner(
-                fileSystem,
-                new PackTemplateRenderer(fileSystem),
-                new ManagedFileConditionParser()
-            ),
+            new PackInstallationPlanner(fileSystem, new PackTemplateRenderer(fileSystem)),
             new PackUpdatePlanner(fileSystem),
             new PackUpdateTransaction(fileSystem, console),
             projectStateStore,
@@ -379,8 +388,7 @@ internal sealed class CliApplication(
                 new ConsoleLifecycleHookConfirmer(console)
             ),
             configuredExternalSourceRequirementPlanner: new ExternalSourceRequirementPlanner(
-                gitRefResolver,
-                new ManagedFileConditionParser()
+                gitRefResolver
             ),
             configuredExternalSourceMaterializer: new ExternalSourceMaterializer(
                 fileSystem,
@@ -421,7 +429,7 @@ internal sealed class CliApplication(
         WorkspaceDirectoryResolver workspaceDirectoryResolver,
         string projectDirectory,
         Option<string?> workspaceOption,
-        INextStepAdvisor nextStepAdvisor,
+        NextStepAdvisor nextStepAdvisor,
         NextStepRenderer nextStepRenderer,
         CliConsole console,
         GitRefResolver gitRefResolver
@@ -484,7 +492,7 @@ internal sealed class CliApplication(
         WorkspaceDirectoryResolver workspaceDirectoryResolver,
         string projectDirectory,
         Option<string?> workspaceOption,
-        INextStepAdvisor nextStepAdvisor,
+        NextStepAdvisor nextStepAdvisor,
         NextStepRenderer nextStepRenderer,
         WorkflowPrerequisiteGuard prerequisiteGuard,
         CliConsole console
@@ -629,7 +637,7 @@ internal sealed class CliApplication(
     {
         public LinkCommandDispatcher CreateDispatcher(
             IProjectStateStore projectStateStore,
-            INextStepAdvisor nextStepAdvisor,
+            NextStepAdvisor nextStepAdvisor,
             NextStepRenderer nextStepRenderer,
             CliConsole console
         ) =>
@@ -656,7 +664,7 @@ internal sealed class CliApplication(
         LifecycleServices LifecycleServices,
         LinkServices LinkServices,
         IPackUpdatePrompter PackUpdatePrompter,
-        INextStepAdvisor NextStepAdvisor,
+        NextStepAdvisor NextStepAdvisor,
         NextStepRenderer NextStepRenderer,
         WorkflowPrerequisiteGuard PrerequisiteGuard,
         TrustService TrustService,
@@ -665,7 +673,7 @@ internal sealed class CliApplication(
     );
 
     private static async Task<int> RenderWorkspaceGuidanceAsync(
-        INextStepAdvisor nextStepAdvisor,
+        NextStepAdvisor nextStepAdvisor,
         NextStepRenderer nextStepRenderer,
         string projectDirectory,
         CliConsole console

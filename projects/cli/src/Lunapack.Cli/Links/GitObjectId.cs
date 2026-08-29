@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Links;
 
 internal static class GitObjectId
 {

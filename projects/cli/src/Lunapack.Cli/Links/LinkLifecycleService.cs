@@ -1,8 +1,12 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO.Abstractions;
 using System.Security.Cryptography;
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Packs.ManagedFiles;
+using Lunapack.Cli.Packs.Planning;
+using Lunapack.Cli.Project;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Links;
 
 internal sealed class LinkLifecycleService(
     IFileSystem fileSystem,

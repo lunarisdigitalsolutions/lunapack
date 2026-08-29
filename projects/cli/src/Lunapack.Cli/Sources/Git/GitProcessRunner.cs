@@ -1,8 +1,9 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Text;
+using Lunapack.Cli.Application.CommandExecution;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Sources.Git;
 
 internal sealed class GitProcessRunner(string executable = "git") : IGitProcessRunner
 {

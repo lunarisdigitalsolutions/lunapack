@@ -1,11 +1,16 @@
-using System.CommandLine;
+﻿using System.CommandLine;
+using Lunapack.Cli.Application;
+using Lunapack.Cli.Application.Guidance;
+using Lunapack.Cli.Packs;
+using Lunapack.Cli.Packs.Manifest;
+using Lunapack.Cli.Project;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Catalog.Commands;
 
 internal sealed class InspectPackCommandHandler(
     CatalogService catalogService,
     WorkspaceDirectoryResolver workspaceDirectoryResolver,
-    INextStepAdvisor nextStepAdvisor,
+    NextStepAdvisor nextStepAdvisor,
     NextStepRenderer nextStepRenderer,
     WorkflowPrerequisiteGuard prerequisiteGuard,
     CliConsole console

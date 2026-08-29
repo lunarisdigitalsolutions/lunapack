@@ -1,6 +1,7 @@
 using System.CommandLine;
+using Lunapack.Cli.Application;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Packs.Commands;
 
 internal sealed class MoveManagedFileCommandHandler(
     PackLifecycleService packLifecycleService,

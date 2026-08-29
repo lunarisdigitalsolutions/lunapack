@@ -1,7 +1,10 @@
 using System.IO.Abstractions;
 using System.Security.Cryptography;
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Project;
+using Lunapack.Cli.Sources;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Audit;
 
 internal sealed class AuditService(IFileSystem fileSystem, ProjectStateStore projectStateStore)
 {
@@ -35,31 +38,73 @@ internal sealed class AuditService(IFileSystem fileSystem, ProjectStateStore pro
                 );
             }
 
-            foreach (
-                var managedFile in pack.ManagedFiles.Where(file => file.SourceAlias is not null)
-            )
+            foreach (var managedFile in pack.ManagedFiles)
             {
-                var source = pack.ExternalSources[managedFile.SourceAlias!];
-                files.Add(
-                    new AuditReport.ExternalFile(
-                        pack.Id,
-                        pack.Version,
-                        managedFile.SourceAlias!,
-                        managedFile.SourceName!,
-                        managedFile.SourceFingerprint!,
-                        source.Ref,
-                        source.ResolvedCommit,
-                        managedFile.SourcePath!,
-                        managedFile.TargetPath,
-                        managedFile.Sha256,
-                        GetTargetStatus(projectDirectory, managedFile)
-                    )
-                );
+                var externalFile = CreateExternalFile(projectDirectory, pack, managedFile);
+                if (externalFile.Error is { } error)
+                {
+                    return ManifestOperationResult<AuditReport>.Failure(error);
+                }
+
+                if (externalFile.File is { } file)
+                {
+                    files.Add(file);
+                }
             }
         }
 
         return ManifestOperationResult<AuditReport>.Success(
             new AuditReport(state.LockFile.Packs, sources, files)
+        );
+    }
+
+    private (AuditReport.ExternalFile? File, string? Error) CreateExternalFile(
+        string projectDirectory,
+        ProjectLockFile.ResolvedPack pack,
+        ProjectLockFile.ManagedFile managedFile
+    )
+    {
+        if (
+            managedFile is
+            { SourceAlias: null, SourceName: null, SourceFingerprint: null, SourcePath: null }
+        )
+        {
+            return (null, null);
+        }
+
+        if (
+            managedFile
+                is not {
+                    SourceAlias: { } alias,
+                    SourceName: { } sourceName,
+                    SourceFingerprint: { } sourceFingerprint,
+                    SourcePath: { } sourcePath,
+                }
+            || !pack.ExternalSources.TryGetValue(alias, out var source)
+            || source is null
+        )
+        {
+            return (
+                null,
+                $"Invalid external source metadata for managed file '{managedFile.TargetPath}' in pack '{pack.Id}@{pack.Version}'."
+            );
+        }
+
+        return (
+            new AuditReport.ExternalFile(
+                pack.Id,
+                pack.Version,
+                alias,
+                sourceName,
+                sourceFingerprint,
+                source.Ref,
+                source.ResolvedCommit,
+                sourcePath,
+                managedFile.TargetPath,
+                managedFile.Sha256,
+                GetTargetStatus(projectDirectory, managedFile)
+            ),
+            null
         );
     }
 

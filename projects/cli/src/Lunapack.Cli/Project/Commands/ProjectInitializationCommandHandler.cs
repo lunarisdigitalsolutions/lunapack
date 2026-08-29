@@ -1,13 +1,15 @@
 using System.CommandLine;
 using System.IO.Abstractions;
+using Lunapack.Cli.Application;
+using Lunapack.Cli.Application.Guidance;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Project.Commands;
 
 internal sealed class ProjectInitializationCommandHandler(
     IFileSystem fileSystem,
     ProjectStateStore projectStateStore,
     WorkspaceDirectoryResolver workspaceDirectoryResolver,
-    INextStepAdvisor nextStepAdvisor,
+    NextStepAdvisor nextStepAdvisor,
     NextStepRenderer nextStepRenderer,
     CliConsole console
 )

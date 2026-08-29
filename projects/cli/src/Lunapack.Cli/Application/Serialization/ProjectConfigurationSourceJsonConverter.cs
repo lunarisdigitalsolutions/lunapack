@@ -1,7 +1,8 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Lunapack.Cli.Project;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Application.Serialization;
 
 internal sealed class ProjectConfigurationSourceJsonConverter
     : JsonConverter<ProjectConfiguration.Source>

@@ -1,9 +1,13 @@
-namespace Lunapack.Cli;
+﻿using Lunapack.Cli.Application.Guidance;
+using Lunapack.Cli.Packs.ManagedFiles;
+using Lunapack.Cli.Project;
+
+namespace Lunapack.Cli.Links;
 
 internal sealed class LinkCommandDispatcher(
     IProjectStateStore projectStateStore,
     LinkLifecycleService linkLifecycleService,
-    INextStepAdvisor nextStepAdvisor,
+    NextStepAdvisor nextStepAdvisor,
     NextStepRenderer nextStepRenderer,
     CliConsole console
 )
