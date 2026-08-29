@@ -40,6 +40,9 @@ Packs can also propose Git sources for selected external content during install
 or update. Follow [Approve pack-defined external sources](advanced/approve-external-sources.md)
 before accepting those additions.
 
+For cache locations, ref queries, temporary checkouts, and authentication
+boundaries, see [Understand Git source behavior](advanced/git-source-behavior.md).
+
 ## Rename a source
 
 Change a configured source's name without losing installed pack or trust

@@ -1,7 +1,9 @@
 # Create a new pack version
 
 Publish a second immutable release of an existing pack and test the upgrade.
-This tutorial uses `gitignore-dotnet` version `1.1.0`.
+First complete [Create a first pack](first-pack.md). This tutorial copies its
+synthetic `example-documentation-standard@1.0.0` release and creates version
+`1.1.0`; neither release conflicts with maintained packs under `projects/packs`.
 
 ## Organize the catalog
 
@@ -10,15 +12,15 @@ Keep one directory per pack ID and one child directory per released version:
 ```text
 engineering-packs/
   packs/
-    gitignore-dotnet/
+    example-documentation-standard/
       1.0.0/
         pack.yml
         templates/
-          dotnet.gitignore
+          standard.md
       1.1.0/
         pack.yml
         templates/
-          dotnet.gitignore
+          standard.md
 ```
 
 LunaPack discovers `pack.yml` recursively, so the grouping folders are a
@@ -31,9 +33,9 @@ Copy `1.0.0` to `1.1.0`, then enter the new directory. Update only the new
 manifest:
 
 ```powershell
-Copy-Item -Recurse packs/gitignore-dotnet/1.0.0 `
-  packs/gitignore-dotnet/1.1.0
-cd packs/gitignore-dotnet/1.1.0
+Copy-Item -Recurse packs/example-documentation-standard/1.0.0 `
+  packs/example-documentation-standard/1.1.0
+cd packs/example-documentation-standard/1.1.0
 luna pack set version 1.1.0
 ```
 
@@ -63,7 +65,7 @@ cd release-test
 luna init
 luna sources add local candidate ../packs
 luna discover --versions 2
-luna validate gitignore-dotnet@1.1.0
+luna validate example-documentation-standard@1.1.0
 ```
 
 ## Test the upgrade
@@ -71,10 +73,10 @@ luna validate gitignore-dotnet@1.1.0
 Install the old version, preview the update, and apply it:
 
 ```powershell
-luna install gitignore-dotnet@1.0.0
+luna install example-documentation-standard@1.0.0
 luna outdated
-luna update gitignore-dotnet --dry-run
-luna update gitignore-dotnet
+luna update example-documentation-standard --dry-run
+luna update example-documentation-standard
 luna audit
 ```
 

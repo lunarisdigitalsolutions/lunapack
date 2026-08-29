@@ -8,7 +8,7 @@ exist in the project and exactly match the content Luna would install.
 Start with a dry run:
 
 ```powershell
-luna install documentation-standard@1.0.0 `
+luna install clean-code-guidelines@1.0.0 `
   --adopt-existing `
   --dry-run `
   --scripts skip
@@ -27,7 +27,7 @@ Merge strategies already combine source and target content and do not require
 Remove `--dry-run` only after every existing target matches:
 
 ```powershell
-luna install documentation-standard@1.0.0 `
+luna install clean-code-guidelines@1.0.0 `
   --adopt-existing `
   --scripts skip
 ```

@@ -3,6 +3,10 @@
 Select pack files from values supplied by the consumer. Conditions control
 whether a managed selector participates in install and update planning.
 
+Run these authoring commands against the synthetic
+`example-documentation-standard` pack created by
+[Create a first pack](../tutorials/first-pack.md).
+
 ## Declare parameters
 
 Create Boolean and enum parameters with authoring commands:
@@ -60,11 +64,11 @@ include and exclude each selector:
 
 ```powershell
 luna pack validate
-luna install application-foundation `
+luna install example-documentation-standard@1.0.0 `
   -p includeCi=true `
   -p projectType=service `
   --dry-run
-luna install application-foundation `
+luna install example-documentation-standard@1.0.0 `
   -p includeCi=false `
   -p projectType=library `
   --dry-run
@@ -73,3 +77,9 @@ luna install application-foundation `
 Keep conditions on selectors, not inside static file content. Use
 [Scriban templates](use-scriban-templates.md) when selected file content must
 also vary.
+
+For an external selector, a false condition also suppresses source resolution,
+validation, approval, workspace configuration, and lock evidence when no other
+selected file requires that alias. Test both branches because later parameter
+values can activate the complete external-source workflow. See
+[Use external Git files in a pack](use-external-pack-sources.md).

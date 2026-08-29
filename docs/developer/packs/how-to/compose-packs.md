@@ -10,7 +10,7 @@ Version:
 
 ```powershell
 luna pack init `
-  --id dotnet-foundation `
+  --id example-dotnet-foundation `
   --author "Lunaris Digital Solutions <info@lunaris.digital>" `
   --license MIT
 luna pack add reference dotnet-gitignore 1.0.0
@@ -62,9 +62,9 @@ whose configured sources contain every exact dependency:
 
 ```powershell
 luna pack validate
-luna validate dotnet-foundation@1.0.0
-luna inspect dotnet-foundation@1.0.0
-luna install dotnet-foundation@1.0.0 --dry-run
+luna validate example-dotnet-foundation@1.0.0
+luna inspect example-dotnet-foundation@1.0.0
+luna install example-dotnet-foundation@1.0.0 --dry-run
 ```
 
 The consumer operation rejects missing releases, cycles, incompatible

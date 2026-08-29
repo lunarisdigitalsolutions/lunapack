@@ -3,8 +3,30 @@
 Use a merge strategy when a pack contributes part of a UTF-8 text or JSON file
 instead of owning the complete target.
 
+Run these authoring commands against a synthetic pack created with
+[Add managed content](add-managed-content.md), not a maintained pack under
+`projects/packs`.
+
 Only merge strategies may share one target. Add the selector with
 `--strategy merge:<method>` and test it against representative consumer content.
+
+Sharing applies across different pack IDs. Two selectors from the same pack
+cannot resolve to one target, even when both use merge strategies. Directory or
+glob expansion and consumer remapping can create this collision, so verify the
+expanded dry-run plan rather than checking only literal targets in `pack.yml`.
+
+## Order contributions
+
+Luna applies contributors in resolved graph order. Dependencies contribute
+before consumers, sibling dependencies follow their `packs` declaration order,
+and requested roots follow command or project-configuration order. Managed-file
+declarations within one pack retain manifest order. Each contribution merges
+into the result of the previous contribution.
+
+This fixed order controls appended lines, JSON array values, and section
+placement. Consumers cannot override merge order separately. Pack authors who
+need a different order must reorder dependencies or avoid sharing an
+order-sensitive target.
 
 ## Merge unique lines
 
@@ -80,7 +102,7 @@ layout may change.
 
 ```powershell
 luna pack validate
-luna install engineering-standard --dry-run
+luna install example-documentation-standard@1.0.0 --dry-run
 ```
 
 Test an absent target, expected existing content, ambiguous section markers,

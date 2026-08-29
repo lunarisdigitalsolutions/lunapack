@@ -18,6 +18,13 @@ Shared transient packs at the same version are reused. Luna reports a conflict
 when another requested root requires a different version or when managed
 targets cannot coexist.
 
+Reuse means one resolved node, one lock record, one set of managed-file
+contributions, and one lifecycle entry for the shared pack, even when several
+roots reference it. Its hooks run once rather than once per incoming reference.
+When uninstalling a root, Luna follows locked dependency edges from every root
+that remains; a shared dependency stays installed until its last reachable root
+is removed.
+
 ## Understand partial success
 
 A multi-root invocation processes requested roots sequentially. If a later root

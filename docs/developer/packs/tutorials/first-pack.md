@@ -4,10 +4,12 @@ Create a small pack, validate it, then install it in a throwaway project.
 
 ## Create Pack Content
 
-Create and enter an empty pack directory. Initialize its manifest:
+Create a versioned local catalog and enter an empty pack directory:
 
 ```bash
-luna pack init --id documentation-standard --version 1.0.0 --author "Example Engineering" --license MIT
+mkdir -p engineering-packs/packs/example-documentation-standard/1.0.0
+cd engineering-packs/packs/example-documentation-standard/1.0.0
+luna pack init --id example-documentation-standard --version 1.0.0 --author "Example Engineering" --license MIT
 ```
 
 Add a file:
@@ -38,15 +40,17 @@ The manifest remains normal YAML. Direct edits are supported, but rerun
 
 ## Test Installation
 
-From a separate throwaway project, initialize LunaPack and register the parent
-pack directory as a local source:
+Return to `engineering-packs`, create a separate throwaway project, then
+initialize LunaPack and register the catalog:
 
 ```bash
+mkdir release-test
+cd release-test
 luna init
 luna sources add local authoring ../packs
 luna discover
-luna install documentation-standard --dry-run
-luna install documentation-standard
+luna install example-documentation-standard@1.0.0 --dry-run
+luna install example-documentation-standard@1.0.0
 ```
 
 Check the managed file and lock record. Uninstall only after confirming the

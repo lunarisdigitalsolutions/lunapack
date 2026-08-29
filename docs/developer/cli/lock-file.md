@@ -14,18 +14,18 @@ evidence fit together:
 ```yml
 schemaVersion: 1
 packs:
-  - id: engineering-standard
+  - id: clean-code-guidelines
     version: 1.0.0
     sourceName: local-packs
     sourceIdentity:
       type: local
-      path: packs
-    sourcePath: packs
-    packPath: engineering-standard/1.0.0
+      path: projects/packs
+    sourcePath: projects/packs
+    packPath: clean-code-guidelines
     packs: []
     managedFiles:
-      - declaredTargetPath: docs/standard.md
-        targetPath: docs/standard.md
+      - declaredTargetPath: clean-code.md
+        targetPath: clean-code.md
         sha256: 0000000000000000000000000000000000000000000000000000000000000000
         strategy:
           type: copy

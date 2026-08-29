@@ -43,6 +43,12 @@ Project trust is stored in `lunapack.yml`. Local-user and global-user trust are
 stored outside the repository in user settings. Packs cannot grant themselves
 trust through `pack.yml`; consumers control every persisted trust entry.
 
+A project source or pack declaration is effective only when user settings also
+contain its acknowledgement for the canonical project path and exact source
+identity. `luna trust ... --project` writes both records for the current user;
+committed project trust alone does not authorize scripts for other users or
+fresh automation profiles.
+
 All three scopes support `deny.scripts`. Any active denial overrides grants and
 `--scripts run`. Project denial uses `trust.deny.scripts`; user settings use
 `deny.scripts` in the corresponding project or global record. Omission and

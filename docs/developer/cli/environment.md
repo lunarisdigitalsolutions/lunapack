@@ -38,6 +38,13 @@ variable is empty. Windows uses `%LOCALAPPDATA%\LunaPack\cache\sources`; macOS
 uses `~/Library/Caches/LunaPack/sources`. `LUNAPACK_USER_PROFILE` does not move
 these caches.
 
+Ordinary Git pack sources use a separate project-local metadata cache below
+`<workspace>/.lunapack/git-sources`. They do not keep persistent repository
+clones there. Discovery and pack materialization use best-effort-cleaned system
+temporary directories. See
+[Understand Git source behavior](../advanced/git-source-behavior.md) for cache
+contents, temporary paths, and default-branch reuse.
+
 ## Lifecycle command lookup
 
 Luna resolves lifecycle commands with the invoking process's `PATH`. On Windows,

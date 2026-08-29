@@ -4,7 +4,7 @@ date: 2026-08-27
 decision-makers: [LunaPack maintainers]
 ---
 
-# ADR-0061: Organize CLI source by feature
+# ADR-0062: Organize CLI source by feature
 
 ## Context and Problem Statement
 
