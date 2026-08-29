@@ -13,7 +13,14 @@ module.exports = {
     'scope-enum': [
       2,
       'always',
-      { scopes: [null, 'cli', 'website', 'pack'], delimiters: [','] }
+      {
+        scopes: [
+          null,
+          'backend',
+          'frontend'
+        ],
+        delimiters: [',']
+      }
     ]
   }
 }

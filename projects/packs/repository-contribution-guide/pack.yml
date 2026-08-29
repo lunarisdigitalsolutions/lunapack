@@ -1,0 +1,23 @@
+id: repository-contribution-guide
+version: 1.0.0
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Add a parameterized repository contribution guide.
+tags: [contributing, documentation, governance]
+parameters:
+  contributionProjectName:
+    type: string
+    required: true
+    displayName: Project name
+  contributionSetupCommand:
+    type: string
+    required: true
+    displayName: Setup command
+  contributionValidationCommand:
+    type: string
+    required: true
+    displayName: Validation command
+managedFiles:
+  - source: templates/CONTRIBUTING.md
+    target: CONTRIBUTING.md
+    template: true

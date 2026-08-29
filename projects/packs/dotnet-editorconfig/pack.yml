@@ -1,9 +1,11 @@
 id: dotnet-editorconfig
 
-version: 1.0.0
+version: 2.0.0
 license: MIT
 author: Lunaris Digital Solutions <info@lunaris.digital>
-description: Apply shared .NET and documentation formatting conventions.
-managedFiles:
-  - source: templates/.editorconfig
-    target: .editorconfig
+description: Apply shared general and C# EditorConfig conventions.
+packs:
+  - id: editorconfig-general
+    version: 1.0.0
+  - id: dotnet-csharp-editorconfig
+    version: 1.0.0

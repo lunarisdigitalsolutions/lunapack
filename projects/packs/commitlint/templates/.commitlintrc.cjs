@@ -13,7 +13,24 @@ module.exports = {
     'scope-enum': [
       2,
       'always',
-      { scopes: [null, 'frontend', 'backend'], delimiters: [','] }
+      {
+        scopes: [
+          null{{ if commitlintScopes contains "api" }},
+          'api'{{ end }}{{ if commitlintScopes contains "backend" }},
+          'backend'{{ end }}{{ if commitlintScopes contains "build" }},
+          'build'{{ end }}{{ if commitlintScopes contains "cli" }},
+          'cli'{{ end }}{{ if commitlintScopes contains "docs" }},
+          'docs'{{ end }}{{ if commitlintScopes contains "frontend" }},
+          'frontend'{{ end }}{{ if commitlintScopes contains "infrastructure" }},
+          'infrastructure'{{ end }}{{ if commitlintScopes contains "packs" }},
+          'packs'{{ end }}{{ if commitlintScopes contains "schema" }},
+          'schema'{{ end }}{{ if commitlintScopes contains "security" }},
+          'security'{{ end }}{{ if commitlintScopes contains "tests" }},
+          'tests'{{ end }}{{ if commitlintScopes contains "website" }},
+          'website'{{ end }}
+        ],
+        delimiters: [',']
+      }
     ]
   }
 }

@@ -1,0 +1,16 @@
+id: husky
+version: 1.0.0
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Add Husky as a repository-local Git hook manager.
+tags: [git, hooks, node]
+managedFiles:
+  - source: templates/package.json
+    target: package.json
+    strategy:
+      type: merge
+      method: json
+hooks:
+  postInstall:
+    - type: instruction
+      file: instructions/install.md

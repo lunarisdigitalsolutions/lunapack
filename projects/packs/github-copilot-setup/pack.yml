@@ -1,0 +1,19 @@
+id: github-copilot-setup
+version: 1.0.0
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Configure optional ripgrep and RTK installation for GitHub Copilot coding agents.
+tags: [github-copilot, automation, tooling]
+parameters:
+  copilotSetupInstallRipgrep:
+    type: bool
+    required: true
+    displayName: Install ripgrep
+  copilotSetupInstallRtk:
+    type: bool
+    required: true
+    displayName: Install RTK
+managedFiles:
+  - source: templates/.github/workflows/copilot-setup-steps.yml
+    target: .github/workflows/copilot-setup-steps.yml
+    template: true

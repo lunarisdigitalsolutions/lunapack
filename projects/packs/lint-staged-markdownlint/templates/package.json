@@ -1,0 +1,8 @@
+{
+  "lint-staged": {
+    "*.{md,mdx}": "markdownlint --fix"
+  },
+  "devDependencies": {
+    "markdownlint-cli": "0.49.1"
+  }
+}

@@ -1,0 +1,9 @@
+id: github-copilot-documentation-instructions
+version: 1.0.0
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Add scoped GitHub Copilot instructions for Markdown and documentation.
+tags: [github-copilot, documentation, instructions]
+managedFiles:
+  - directory: templates/.github/instructions
+    target: .github/instructions

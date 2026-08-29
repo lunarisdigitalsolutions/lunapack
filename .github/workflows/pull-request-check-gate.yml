@@ -1,4 +1,4 @@
-name: 'PR: External Check Gate'
+name: PR External Check Gate
 
 on:
   workflow_dispatch:
@@ -35,7 +35,6 @@ jobs:
     name: Validate External Checks
     if: |
       github.event_name != 'pull_request' || (
-        github.event_name == 'pull_request' &&
         github.event.pull_request.draft == false &&
         github.event.label.name == 'ready-to-merge'
       )

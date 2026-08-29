@@ -1,0 +1,19 @@
+{
+  "dotnet.defaultSolution": "{{ dotnetSolutionPath }}",
+  "editor.formatOnSave": true,
+  "[csharp]": {
+    "editor.defaultFormatter": "csharpier.csharpier-vscode"
+  },
+  "[xml]": {
+    "editor.defaultFormatter": "csharpier.csharpier-vscode"
+  },
+  "[csproj]": {
+    "editor.defaultFormatter": "csharpier.csharpier-vscode"
+  },
+  "[json]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[markdown]": {
+    "editor.defaultFormatter": "DavidAnson.vscode-markdownlint"
+  }
+}

@@ -1,0 +1,17 @@
+id: lint-staged-json
+version: 1.0.0
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Format staged JSON files with Prettier.
+tags: [lint-staged, json, formatting]
+packs:
+  - id: lint-staged
+    version: 1.0.0
+  - id: prettier-standard-config
+    version: 1.0.0
+managedFiles:
+  - source: templates/package.json
+    target: package.json
+    strategy:
+      type: merge
+      method: json

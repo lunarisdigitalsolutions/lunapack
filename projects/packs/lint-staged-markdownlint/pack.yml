@@ -1,0 +1,17 @@
+id: lint-staged-markdownlint
+version: 1.0.0
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Lint staged Markdown files with Markdownlint.
+tags: [lint-staged, markdown, linting]
+packs:
+  - id: lint-staged
+    version: 1.0.0
+  - id: markdownlint-config
+    version: 1.0.0
+managedFiles:
+  - source: templates/package.json
+    target: package.json
+    strategy:
+      type: merge
+      method: json

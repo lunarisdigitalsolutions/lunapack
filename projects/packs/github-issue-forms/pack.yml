@@ -1,0 +1,27 @@
+id: github-issue-forms
+version: 1.0.0
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Add parameterized GitHub bug and feature issue forms.
+tags: [github, issues, community]
+parameters:
+  issueProductName:
+    type: string
+    required: true
+    displayName: Product name
+  issueVersionCommand:
+    type: string
+    required: true
+    displayName: Version command
+  issueSecurityUrl:
+    type: string
+    required: true
+    displayName: Security reporting URL
+  issueSupportUrl:
+    type: string
+    required: true
+    displayName: Support URL
+managedFiles:
+  - directory: templates/.github/ISSUE_TEMPLATE
+    target: .github/ISSUE_TEMPLATE
+    template: true

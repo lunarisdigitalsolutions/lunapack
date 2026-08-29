@@ -1,0 +1,9 @@
+id: dotnet-coding-guidance
+version: 1.0.0
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Install clean-code and C# guidance with matching Copilot instructions.
+tags: [dotnet, guidance, composite]
+packs:
+  - id: github-copilot-dotnet-instructions
+    version: 1.0.0

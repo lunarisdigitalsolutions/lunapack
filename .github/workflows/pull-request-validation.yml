@@ -1,4 +1,4 @@
-name: 'PR: Title Validation'
+name: PR Title Validation
 
 on:
   pull_request:
@@ -20,6 +20,7 @@ jobs:
     if: ${{ !github.event.pull_request.draft }}
     name: Validate title and description
     runs-on: ubuntu-latest
+
     steps:
       - name: Check out pull request files
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

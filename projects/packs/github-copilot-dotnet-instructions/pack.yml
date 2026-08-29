@@ -1,0 +1,14 @@
+id: github-copilot-dotnet-instructions
+version: 1.0.0
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Add scoped GitHub Copilot instructions for C# and .NET project files.
+tags: [github-copilot, dotnet, instructions]
+packs:
+  - id: clean-code-guidelines
+    version: 1.0.0
+  - id: csharp-guidelines
+    version: 1.0.0
+managedFiles:
+  - directory: templates/.github/instructions
+    target: .github/instructions

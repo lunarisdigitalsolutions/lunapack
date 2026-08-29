@@ -1,0 +1,8 @@
+# BEGIN LunaPack CSharp EditorConfig
+[*.cs]
+indent_size = 4
+dotnet_separate_import_directive_groups = false
+dotnet_sort_system_directives_first = true
+csharp_style_namespace_declarations = file_scoped:suggestion
+csharp_using_directive_placement = outside_namespace:suggestion
+# END LunaPack CSharp EditorConfig

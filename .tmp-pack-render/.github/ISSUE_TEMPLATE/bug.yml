@@ -1,0 +1,42 @@
+name: Bug report
+description: Report reproducible incorrect behavior in Example.
+title: 'bug: '
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not report security vulnerabilities here. Use the private security reporting link instead.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Run `example --version` and provide the result.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Observed behavior
+      description: Describe what happened and include sanitized output.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Provide the smallest repository-safe reproduction.
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Data safety
+      options:
+        - label: I removed credentials, private URLs, customer data, and personal information.
+          required: true
