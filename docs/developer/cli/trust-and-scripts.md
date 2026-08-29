@@ -4,7 +4,8 @@ Pack lifecycle scripts are optional executable hooks. They are not sandboxed:
 an allowed hook runs with the invoking user's filesystem, process, network, and
 credential access. Review the pack source and hook arguments before permitting
 execution. Instruction hooks display prepared Markdown but never launch a
-process and do not use trust.
+process and do not use trust. See the [security model](../threat-model.md) for
+trust boundaries and residual risks.
 
 ## Script modes
 
@@ -107,6 +108,17 @@ Trust does not verify publisher identity, sign pack content, pin a registry, or
 restrict what a hook can do. Git lock provenance records a resolved commit for
 reproducibility, but it is not a signature.
 
+## Lifecycle order
+
+Supported events are `preInstall`, `postInstall`, `preUpdate`, `postUpdate`,
+`preUninstall`, and `postUninstall`. Luna processes dependencies before their
+consumers and preserves declaration order within each event. New dependencies
+introduced by an update use install hooks.
+
+Uninstall retrieves hooks from the exact installed releases. If source content
+is unavailable, Luna warns, skips those hooks, and continues removal rather
+than substituting hooks from another release.
+
 ## Author requirements
 
 Authors should prefer declarative managed files or non-executable instructions
@@ -117,10 +129,6 @@ support Scriban expressions over resolved pack parameters. LunaPack renders
 them before dry-run output, consent, trust authorization, and execution, so
 approval binds to exact argv. Composite packs can suppress selected lifecycle
 events with `disabledHooks`; suppression applies to both hook types.
-
-Uninstall retrieves hooks from the exact installed release. If that source
-content is unavailable, LunaPack warns, skips those hooks, and continues the
-removal. It never substitutes hooks from a different release.
 
 See [Use Scriban templates](../packs/how-to/use-scriban-templates.md) for syntax,
 examples, and restrictions.

@@ -12,12 +12,12 @@ copying an entire repository and losing ownership history.
 - Get selected files from Git without a pack.
 - Create a pack once and make it available to other projects.
 
-## Start in five minutes
+## Get started
 
 1. [Install Luna](installation.md).
 2. [Add a pack source](sources.md).
-3. [Discover and install a pack](install-packs.md).
-4. [Get a file from Git without a pack](copy-files-from-git.md).
+3. [Evaluate a pack](evaluate-packs.md) before changing project files.
+4. [Discover and install a pack](install-packs.md).
 5. [Update packs](update-packs.md) when a newer release is available.
 
 ```text
@@ -29,13 +29,17 @@ records its requested packs and resolved state so the next change is clear.
 
 ## Choose a guide
 
-- Advanced topics cover [lifecycle hooks](lifecycle-hooks.md),
+- Everyday work covers [updates](update-packs.md),
   [parameters and variables](parameters-and-variables.md),
   [target remapping](remap-targets.md), and
-  [Luna Links](manage-links.md).
+  [lifecycle hooks](lifecycle-hooks.md).
+- Advanced workflows cover [Luna Links](manage-links.md),
+  [external-source approval](advanced/approve-external-sources.md),
+  [existing-file adoption](advanced/adopt-existing-files.md), and
+  [audit and recovery](advanced/audit-and-recover.md).
 - [CLI reference](cli/index.md) for the supported command surface and project
   documents.
 - [Pack guide](packs/index.md) to create, release, and understand packs.
+- [Automation guide](automation.md) for noninteractive validation and installs.
 - [Troubleshooting](troubleshooting.md) for common failures and recovery.
 - [Threat model](threat-model.md) for security boundaries and residual risks.
-- [Contributor setup](contributing.md) for repository development.

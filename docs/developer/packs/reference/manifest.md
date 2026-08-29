@@ -132,3 +132,7 @@ Selected source files copy as-is unless their selector sets `template: true`.
 Template-enabled files are UTF-8 Scriban templates. Resolved parameter names are
 available as template globals, and supported date-time functions are available.
 Templates cannot access the filesystem, host services, or custom functions.
+
+See [Add managed content](../how-to/add-managed-content.md) for selector and copy
+behavior, and [Merge content into shared files](../how-to/merge-managed-content.md)
+for exact line, section, and JSON merge semantics.

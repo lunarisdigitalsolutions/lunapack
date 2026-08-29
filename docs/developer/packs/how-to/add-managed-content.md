@@ -57,6 +57,8 @@ Copy methods control conflicts with an existing target:
 Merge methods are `lines`, `section`, and `json`. Only merge strategies may
 share a target. Prefer `lines` for unique line sets, `section` for
 marker-bounded text owned by one pack, and `json` for structured JSON content.
+See [Merge content into shared files](merge-managed-content.md) for exact line,
+section, JSON, newline, and conflict behavior.
 
 ## Inspect and test
 
@@ -66,5 +68,6 @@ luna pack validate
 luna install engineering-standard --dry-run
 ```
 
-Test each strategy against an absent target, expected existing content, and a
-user-modified target. Confirm update and uninstall behavior before release.
+Test the selected strategy against an absent target, expected existing content,
+and a user-modified target. Confirm update and uninstall behavior before
+release.

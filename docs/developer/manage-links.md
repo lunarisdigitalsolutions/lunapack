@@ -10,7 +10,7 @@ can provide individual files without publishing a LunaPack manifest. Register
 it as a GitHub source:
 
 ```powershell
-luna sources add github awesome-copilot github/awesome-copilot
+luna sources add github awesome-copilot github/awesome-copilot --ref main
 ```
 
 Install one exact agent file:

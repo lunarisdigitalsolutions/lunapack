@@ -29,6 +29,8 @@ Update this section before creating a release tag.
 
 ### Fixed
 
+- External-source identifier conflicts can now be canceled by submitting the
+  empty value offered by the interactive prompt.
 - Managed files expanded from pack directory and glob selectors now honor exact
   file remappings from project configuration and install command options.
 - Project remappings with trailing `/` or `\\` separators now match declared

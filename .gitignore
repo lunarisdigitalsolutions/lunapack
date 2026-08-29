@@ -11,6 +11,7 @@
 
 # Test results
 TestResults/
+.test-results/
 *.trx
 
 # Dependencies
@@ -44,6 +45,8 @@ pids/
 
 # Test coverage and tool caches
 coverage/
+*.coverage
+*.cobertura.xml
 *.lcov
 .nyc_output/
 .eslintcache
@@ -66,6 +69,7 @@ build/
 publish/
 !.github/**/build
 out/
+/tasks.md
 
 # Husky generated support files
 .husky/_/

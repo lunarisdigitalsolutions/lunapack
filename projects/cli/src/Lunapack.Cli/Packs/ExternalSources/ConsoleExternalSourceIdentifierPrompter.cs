@@ -13,7 +13,10 @@ internal sealed class ConsoleExternalSourceIdentifierPrompter(CliConsole console
         console.Warning(
             $"Source identifier '{conflictingIdentifier}' is already used for another source. Required source: {source.Fingerprint}."
         );
-        var value = console.PromptText("Choose another source identifier (empty to cancel):");
+        var value = console.PromptText(
+            "Choose another source identifier (empty to cancel):",
+            allowEmpty: true
+        );
         return Task.FromResult(string.IsNullOrWhiteSpace(value) ? null : value.Trim());
     }
 }

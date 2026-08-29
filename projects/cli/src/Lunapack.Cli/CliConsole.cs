@@ -105,12 +105,17 @@ internal sealed class CliConsole(IAnsiConsole ansiConsole, CliLogLevel minimumLe
         return ansiConsole.Prompt(prompt);
     }
 
-    public string PromptText(string prompt, string? defaultValue = null)
+    public string PromptText(string prompt, string? defaultValue = null, bool allowEmpty = false)
     {
         var textPrompt = new TextPrompt<string>(Markup.Escape(prompt));
         if (defaultValue is not null)
         {
             textPrompt.DefaultValue(defaultValue);
+        }
+
+        if (allowEmpty)
+        {
+            textPrompt.AllowEmpty();
         }
 
         return ansiConsole.Prompt(textPrompt);

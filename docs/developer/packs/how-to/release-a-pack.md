@@ -9,7 +9,7 @@ Run these commands from the directory that contains `pack.yml`:
 ```powershell
 luna pack show
 luna pack list
-luna pack scripts
+luna pack hooks
 luna pack validate
 ```
 

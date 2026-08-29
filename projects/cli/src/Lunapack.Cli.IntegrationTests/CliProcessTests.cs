@@ -137,6 +137,33 @@ public sealed class CliProcessTests
     }
 
     [Test]
+    public async Task Install_WhenPackAlreadyInstalled_PreservesManagedFileAndProjectState()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreatePackSource(
+            workspace.Path,
+            ("one", "example", "1.0.0", null, "managed content")
+        );
+        await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
+        var firstInstall = await CliProcess.InvokeAsync(workspace.Path, "install", "example");
+        var configurationPath = Path.Combine(workspace.Path, "lunapack.yml");
+        var lockPath = Path.Combine(workspace.Path, "lunapack-lock.yml");
+        var managedPath = Path.Combine(workspace.Path, ".pack");
+        var installedConfiguration = File.ReadAllText(configurationPath);
+        var installedLock = File.ReadAllText(lockPath);
+        var installedContent = File.ReadAllText(managedPath);
+
+        var repeatedInstall = await CliProcess.InvokeAsync(workspace.Path, "install", "example");
+
+        await Assert.That(firstInstall.ExitCode).IsEqualTo(0);
+        await Assert.That(repeatedInstall.ExitCode).IsEqualTo(1);
+        await Assert.That(repeatedInstall.StandardOutput).Contains("already installed");
+        await Assert.That(File.ReadAllText(configurationPath)).IsEqualTo(installedConfiguration);
+        await Assert.That(File.ReadAllText(lockPath)).IsEqualTo(installedLock);
+        await Assert.That(File.ReadAllText(managedPath)).IsEqualTo(installedContent);
+    }
+
+    [Test]
     [Arguments("local-user")]
     [Arguments("project")]
     [Arguments("global-user")]

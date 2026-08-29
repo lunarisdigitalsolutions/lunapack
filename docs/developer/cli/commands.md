@@ -73,9 +73,9 @@ project. Pack trust and pack-trust revocation require `--source` or `-s`. See
 ## Luna Links
 
 - `luna links add <name> --source <name> --include <selector>`: Adds a
-  project-owned source selection. Repeat `--include` (`-i`) and `--exclude`
-  (`-e`); use `--path`, `--target` (`-t`), `--ref`, `--strip-prefix`,
-  `--flatten`, `--install`, or `--force` as needed.
+  project-owned source selection. `--source` accepts `-s`. Repeat `--include`
+  (`-i`) and `--exclude` (`-e`); use `--path`, `--target` (`-t`), `--ref`,
+  `--strip-prefix`, `--flatten`, `--install`, or `--force` as needed.
 - `luna links list`: Lists configured links and installation status.
 - `luna links show <name>`: Shows selectors, resolved Git evidence, selected
   file count, and local modification count.
@@ -111,9 +111,9 @@ project. Pack trust and pack-trust revocation require `--source` or `-s`. See
   license, and version. Invalid prompted pack IDs display their error
   immediately and prompt again before collecting remaining values.
 - `luna pack add file|directory|glob <path>`: Adds managed content.
-  `--source`, repeatable `--exclude`, `--flatten`, `--target`,
-  `--strategy <type>:<method>`, `--template`, and `--condition` configure the
-  selector. Globs require a target when none can be inferred.
+  `--source`, repeatable `--exclude`, `--flatten`, `--target` (`-t`),
+  `--strategy <type>:<method>` (`-s`), `--template`, and `--condition` (`-c`)
+  configure the selector. Globs require a target when none can be inferred.
 - `luna pack add hook script command <event> <command> [<arguments>...]`: Appends
   a direct executable hook. Use `--description` to explain its purpose.
 - `luna pack add hook script file <event> <file> <runner> [<arguments>...]`:
@@ -124,26 +124,27 @@ project. Pack trust and pack-trust revocation require `--source` or `-s`. See
   add command accepts `--replace <position>` to replace one existing hook at
   its one-based event position.
 - `luna pack add source git <name> <repository-url> --ref <ref>`: Adds a
-  pack-local external Git alias. `--path`, `--description`, and `--manifest`
-  are optional.
+  pack-local external Git alias. `--ref`, `--path`, and `--description` accept
+  `-r`, `-p`, and `-d`; `--manifest` is also optional.
 - `luna pack add source github <name> <owner/repository> --ref <ref>`: Adds the
   same declaration through GitHub shorthand.
 - `luna pack sources`: Lists sanitized source identities, canonical refs, base
   paths, and managed-selector reference counts.
 - `luna pack add reference <id> <version>`: Adds an exact composite reference.
-  Repeat `--parameter <name>=<value>` and `--disable-hook <hook>` as needed;
-  `--replace` updates an existing ID.
+  Repeat `--parameter <name>=<value>` (`-p`) and `--disable-hook <hook>` as
+  needed; `--replace` updates an existing ID.
 - `luna pack add tag <value>`: Adds one unique tag.
 - `luna pack set <property> <value>`: Sets `id`, `name`, `version`,
   `description`, `author`, `homepage`, or `license`.
 - `luna pack set parameter <name> <string|bool|enum>`: Creates or replaces a
-  parameter. Use `--required`, repeatable enum `--value`, `--display-name`, and
-  `--description`; `--default` supplies a typed prompt or optional binding
-  default. For a multi-select enum, add `--multiple` and repeat `--default` to
-  preserve an ordered default selection.
+  parameter. Use `--required`, repeatable enum `--value` (`-v`),
+  `--display-name`, and `--description` (`-d`); `--default` supplies a typed
+  prompt or optional binding default. For a multi-select enum, add `--multiple`
+  and repeat `--default` to preserve an ordered default selection.
 - `luna pack set reference <id> <version>`: Creates or replaces a composite
   reference.
-- `luna pack rm <selector>`: Removes one exact managed selector.
+- `luna pack rm <selector>` (`luna pack remove`): Removes one exact managed
+  selector. The alias applies to every `rm` subcommand below.
 - `luna pack rm hook <event> <position>`: Removes one hook at its one-based
   event position.
 - `luna pack rm source <name>`: Removes an unreferenced source alias.
@@ -175,10 +176,10 @@ adding content, viewing the manifest, or validating it.
   external content. `--offline` avoids remote checks and reports uncertainty.
 - `luna update [<pack-reference>...]`: Updates all roots or one or more selected
   roots.
-- `luna mv <source> <target>`: Moves one managed file or all managed files below
-  a directory and updates lock ownership. If files were moved manually, it can
-  rebind ownership when only the targets exist. `--save-remap` also records the
-  move as a reusable project mapping.
+- `luna mv <source> <target>` (`luna move`): Moves one managed file or all
+  managed files below a directory and updates lock ownership. If files were
+  moved manually, it can rebind ownership when only the targets exist.
+  `--save-remap` also records the move as a reusable project mapping.
 - `luna audit`: Reports resolved packs, dependencies, external alias mappings,
   fingerprints, refs, commits, source and target paths, ownership, digests, and
   drift or local-modification status.
@@ -201,8 +202,9 @@ source additions. `install`, `update`, and `uninstall` accept
 `--scripts <prompt|run|skip>`; `prompt` is the default and requires effective
 trust or interactive consent for each script hook. Interactive consent defaults
 to no. Use `--skip-instructions` to suppress instruction loading and display
-without changing script consent behavior. Uninstall also accepts lifecycle
-`--parameter`, `--no-variables`, and `--skip-variable` inputs.
+without changing script consent behavior. Uninstall also accepts repeatable
+`--parameter` (`-p`), `--no-variables` (`-nv`), and repeatable
+`--skip-variable` (`-sv`) inputs.
 Repeat `--parameter <name>=<value>` for each selected value of a multi-select
 enum. Repeated scalar names and duplicate or unknown selections are rejected.
 Interactive sessions show one prepared instruction step at a time and wait for
@@ -251,9 +253,8 @@ resolution conflicts, denied trust, Git failures, and filesystem or state-write
 failures return a nonzero exit code. Luna does not currently provide JSON output
 or stable machine-readable diagnostic codes.
 
-System.CommandLine supplies completion for commands and options. LunaPack adds
-the lower-case `verbose`, `debug`, `info`, `warning`, and `error` suggestions
-for `--log-level` and `-ll`.
+Command and option completion includes the lower-case `verbose`, `debug`,
+`info`, `warning`, and `error` suggestions for `--log-level` and `-ll`.
 
 Catalog commands ignore invalid packs in an otherwise reachable source. Run
 `validate` for a pack to see its manifest and selected-source-file issues; use

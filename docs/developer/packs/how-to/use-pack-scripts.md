@@ -1,4 +1,4 @@
-# Use scripts in a pack
+# Add lifecycle scripts to a pack
 
 Add lifecycle hooks only when managed files cannot complete the operation.
 Scripts run with the consumer's permissions and may have effects LunaPack cannot
@@ -6,18 +6,19 @@ roll back.
 
 ## Choose a hook
 
-Supported hooks are `preInstall`, `postInstall`, `preUpdate`, and `postUpdate`.
-Use a direct command when no script file is needed:
+Supported hooks are `preInstall`, `postInstall`, `preUpdate`, `postUpdate`,
+`preUninstall`, and `postUninstall`. Use a direct command when no script file is
+needed:
 
 ```powershell
-luna pack add script command postInstall dotnet tool restore `
+luna pack add hook script command postInstall dotnet tool restore `
   --description "Restore repository-local .NET tools."
 ```
 
 Use a packed script with an explicit runner when logic belongs in the pack:
 
 ```powershell
-luna pack add script file preUpdate scripts/check.ps1 pwsh `
+luna pack add hook script file preUpdate scripts/check.ps1 pwsh `
   -NoProfile `
   --description "Check update prerequisites."
 ```
@@ -32,14 +33,15 @@ Script arguments are Scriban templates, but the command, runner, and file are
 literal:
 
 ```yml
-scripts:
+hooks:
   preInstall:
-    file: scripts/setup.ps1
-    runner: pwsh
-    arguments:
-      - -ProjectType
-      - '{{ projectType }}'
-    description: Configure project tooling.
+    - type: script
+      file: scripts/setup.ps1
+      runner: pwsh
+      arguments:
+        - -ProjectType
+        - '{{ projectType }}'
+      description: Configure project tooling.
 ```
 
 Rendered arguments are shown before authorization and remain separate argv
@@ -48,7 +50,7 @@ values.
 ## Inspect and test hooks
 
 ```powershell
-luna pack scripts
+luna pack hooks
 luna pack validate
 luna install application-foundation --scripts skip --dry-run
 luna install application-foundation --scripts prompt
@@ -63,6 +65,6 @@ filesystem effects.
 Composite packs can suppress dependency hooks with `--disable-hook`:
 
 ```powershell
-luna pack add reference documentation-standard 1.0.0 `
+luna pack add reference dotnet-csharpier-tool 1.0.0 `
   --disable-hook postInstall
 ```
