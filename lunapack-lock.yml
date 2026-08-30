@@ -15,7 +15,7 @@ packs:
       method: section
       type: merge
     targetPath: .gitignore
-  packPath: dotnet-gitignore
+  packPath: dotnet-gitignore/1.0.0
   sourcePath: projects/packs
   version: 1.0.0
 - sourceIdentity:
@@ -32,7 +32,7 @@ packs:
       method: json
       type: merge
     targetPath: global.json
-  packPath: dotnet-sdk-10
+  packPath: dotnet-sdk-10/1.0.0
   sourcePath: projects/packs
   version: 1.0.0
 - sourceIdentity:
@@ -41,16 +41,16 @@ packs:
   sourceName: repository-packs
   externalSources: {}
   packs: []
-  id: editorconfig-general
+  id: editorconfig-baseline
   managedFiles:
-  - content: IyBCRUdJTiBMdW5hUGFjayBnZW5lcmFsIEVkaXRvckNvbmZpZw0KWypdDQpjaGFyc2V0ID0gdXRmLTgNCmVuZF9vZl9saW5lID0gbGYNCmluc2VydF9maW5hbF9uZXdsaW5lID0gdHJ1ZQ0KaW5kZW50X3N0eWxlID0gc3BhY2UNCmluZGVudF9zaXplID0gMg0KdHJpbV90cmFpbGluZ193aGl0ZXNwYWNlID0gdHJ1ZQ0KDQpbKi57bWQsbWR4fV0NCm1heF9saW5lX2xlbmd0aCA9IG9mZg0KdHJpbV90cmFpbGluZ193aGl0ZXNwYWNlID0gZmFsc2UNCg0KWyoue2pzb24seG1sLHltbCx5YW1sfV0NCmluZGVudF9zaXplID0gMg0KIyBFTkQgTHVuYVBhY2sgZ2VuZXJhbCBFZGl0b3JDb25maWcNCg==
+  - content: IyBCRUdJTiBMdW5hUGFjayBnZW5lcmFsIEVkaXRvckNvbmZpZwpbKl0KY2hhcnNldCA9IHV0Zi04CmVuZF9vZl9saW5lID0gbGYKaW5zZXJ0X2ZpbmFsX25ld2xpbmUgPSB0cnVlCmluZGVudF9zdHlsZSA9IHNwYWNlCmluZGVudF9zaXplID0gMgp0cmltX3RyYWlsaW5nX3doaXRlc3BhY2UgPSB0cnVlCgpbKi57bWQsbWR4fV0KbWF4X2xpbmVfbGVuZ3RoID0gb2ZmCnRyaW1fdHJhaWxpbmdfd2hpdGVzcGFjZSA9IGZhbHNlCgpbKi57anNvbix4bWwseW1sLHlhbWx9XQppbmRlbnRfc2l6ZSA9IDIKIyBFTkQgTHVuYVBhY2sgZ2VuZXJhbCBFZGl0b3JDb25maWcK
     declaredTargetPath: .editorconfig
     sha256: A27FDED885B7732BFB56EFAABBFCDF1290D76CE9E937002E1964407947F743D3
     strategy:
       method: section
       type: merge
     targetPath: .editorconfig
-  packPath: editorconfig-general
+  packPath: editorconfig-baseline/1.0.0
   sourcePath: projects/packs
   version: 1.0.0
 - sourceIdentity:
@@ -61,14 +61,14 @@ packs:
   packs: []
   id: dotnet-csharp-editorconfig
   managedFiles:
-  - content: IyBCRUdJTiBMdW5hUGFjayBDU2hhcnAgRWRpdG9yQ29uZmlnDQpbKi5jc10NCmluZGVudF9zaXplID0gNA0KZG90bmV0X3NlcGFyYXRlX2ltcG9ydF9kaXJlY3RpdmVfZ3JvdXBzID0gZmFsc2UNCmRvdG5ldF9zb3J0X3N5c3RlbV9kaXJlY3RpdmVzX2ZpcnN0ID0gdHJ1ZQ0KY3NoYXJwX3N0eWxlX25hbWVzcGFjZV9kZWNsYXJhdGlvbnMgPSBmaWxlX3Njb3BlZDpzdWdnZXN0aW9uDQpjc2hhcnBfdXNpbmdfZGlyZWN0aXZlX3BsYWNlbWVudCA9IG91dHNpZGVfbmFtZXNwYWNlOnN1Z2dlc3Rpb24NCiMgRU5EIEx1bmFQYWNrIENTaGFycCBFZGl0b3JDb25maWcNCg==
+  - content: IyBCRUdJTiBMdW5hUGFjayBDU2hhcnAgRWRpdG9yQ29uZmlnClsqLmNzXQppbmRlbnRfc2l6ZSA9IDQKZG90bmV0X3NlcGFyYXRlX2ltcG9ydF9kaXJlY3RpdmVfZ3JvdXBzID0gZmFsc2UKZG90bmV0X3NvcnRfc3lzdGVtX2RpcmVjdGl2ZXNfZmlyc3QgPSB0cnVlCmNzaGFycF9zdHlsZV9uYW1lc3BhY2VfZGVjbGFyYXRpb25zID0gZmlsZV9zY29wZWQ6c3VnZ2VzdGlvbgpjc2hhcnBfdXNpbmdfZGlyZWN0aXZlX3BsYWNlbWVudCA9IG91dHNpZGVfbmFtZXNwYWNlOnN1Z2dlc3Rpb24KIyBFTkQgTHVuYVBhY2sgQ1NoYXJwIEVkaXRvckNvbmZpZwo=
     declaredTargetPath: .editorconfig
     sha256: A27FDED885B7732BFB56EFAABBFCDF1290D76CE9E937002E1964407947F743D3
     strategy:
       method: section
       type: merge
     targetPath: .editorconfig
-  packPath: dotnet-csharp-editorconfig
+  packPath: dotnet-csharp-editorconfig/1.0.0
   sourcePath: projects/packs
   version: 1.0.0
 - sourceIdentity:
@@ -77,30 +77,13 @@ packs:
   sourceName: repository-packs
   externalSources: {}
   packs:
-  - id: editorconfig-general
+  - id: editorconfig-baseline
     version: 1.0.0
   - id: dotnet-csharp-editorconfig
     version: 1.0.0
   id: dotnet-editorconfig
   managedFiles: []
-  packPath: dotnet-editorconfig
-  sourcePath: projects/packs
-  version: 2.0.0
-- sourceIdentity:
-    path: projects/packs
-    type: local
-  sourceName: repository-packs
-  externalSources: {}
-  packs: []
-  id: dotnet-csharpier-tool
-  managedFiles:
-  - declaredTargetPath: dotnet-tools.json
-    sha256: 1C2DC30A012C734013C2E5030ED75EAEC2510403C3A30B727C50558B12A65712
-    strategy:
-      method: json
-      type: merge
-    targetPath: dotnet-tools.json
-  packPath: dotnet-csharpier-tool
+  packPath: dotnet-editorconfig/1.0.0
   sourcePath: projects/packs
   version: 1.0.0
 - sourceIdentity:
@@ -109,7 +92,24 @@ packs:
   sourceName: repository-packs
   externalSources: {}
   packs: []
-  id: dotnet-build-props
+  id: csharpier
+  managedFiles:
+  - declaredTargetPath: dotnet-tools.json
+    sha256: 1C2DC30A012C734013C2E5030ED75EAEC2510403C3A30B727C50558B12A65712
+    strategy:
+      method: json
+      type: merge
+    targetPath: dotnet-tools.json
+  packPath: csharpier/1.0.0
+  sourcePath: projects/packs
+  version: 1.0.0
+- sourceIdentity:
+    path: projects/packs
+    type: local
+  sourceName: repository-packs
+  externalSources: {}
+  packs: []
+  id: dotnet-build-config
   managedFiles:
   - declaredTargetPath: Directory.Build.props
     sha256: EEA42174CF225B5EE2FB9914AA08B4C2A9FE29BA97A510BF91C0F7866E47F7BE
@@ -117,7 +117,7 @@ packs:
       method: overwrite
       type: copy
     targetPath: Directory.Build.props
-  packPath: dotnet-build-props
+  packPath: dotnet-build-config/1.0.0
   sourcePath: projects/packs
   version: 1.0.0
 - sourceIdentity:
@@ -134,7 +134,7 @@ packs:
       method: overwrite
       type: copy
     targetPath: Directory.Packages.props
-  packPath: dotnet-central-package-management
+  packPath: dotnet-central-package-management/1.0.0
   sourcePath: projects/packs
   version: 1.0.0
 - sourceIdentity:
@@ -143,13 +143,13 @@ packs:
   sourceName: repository-packs
   externalSources: {}
   packs:
-  - id: dotnet-build-props
+  - id: dotnet-build-config
     version: 1.0.0
   - id: dotnet-central-package-management
     version: 1.0.0
   id: dotnet-project
   managedFiles: []
-  packPath: dotnet-project
+  packPath: dotnet-project/1.0.0
   sourcePath: projects/packs
   version: 1.0.0
 - sourceIdentity:
@@ -158,7 +158,7 @@ packs:
   sourceName: repository-packs
   externalSources: {}
   packs: []
-  id: madr-adr-template
+  id: madr-template
   managedFiles:
   - declaredTargetPath: docs/adr/template.md
     sha256: 719EC1865DCFE2E769B206C5B2DA8E508DA1A9CA351ACC0D09AB641934AD4EB1
@@ -166,7 +166,7 @@ packs:
       method: overwrite
       type: copy
     targetPath: docs/adr/template.md
-  packPath: madr-adr-template
+  packPath: madr-template/1.0.0
   sourcePath: projects/packs
   version: 1.0.0
 - sourceIdentity:
@@ -184,7 +184,7 @@ packs:
       method: overwrite
       type: copy
     targetPath: docs/internal/development/coding-guidelines/clean-code.md
-  packPath: clean-code-guidelines
+  packPath: clean-code-guidelines/1.0.0
   sourcePath: projects/packs
   version: 1.0.0
 - sourceIdentity:
@@ -202,7 +202,7 @@ packs:
       method: overwrite
       type: copy
     targetPath: docs/internal/development/coding-guidelines/csharp.md
-  packPath: csharp-guidelines
+  packPath: csharp-guidelines/1.0.0
   sourcePath: projects/packs
   version: 1.0.0
 - sourceIdentity:
@@ -219,7 +219,7 @@ packs:
       method: overwrite
       type: copy
     targetPath: LICENSE.md
-  packPath: license-mit
+  packPath: license-mit/1.0.0
   sourcePath: projects/packs
   version: 1.0.0
 - sourceIdentity:
@@ -228,7 +228,7 @@ packs:
   sourceName: repository-packs
   externalSources: {}
   packs: []
-  id: gitignore-general
+  id: gitignore-baseline
   managedFiles:
   - content: IyBCRUdJTiBMdW5hcGFjayBnZW5lcmFsIGlnbm9yZXMKIyBPcGVyYXRpbmctc3lzdGVtIGZpbGVzCi5EU19TdG9yZQpUaHVtYnMuZGIKCiMgRWRpdG9yLWxvY2FsIGZpbGVzCi52c2NvZGUvKgohLnZzY29kZS9zZXR0aW5ncy5qc29uCiEudnNjb2RlL3Rhc2tzLmpzb24KIS52c2NvZGUvbGF1bmNoLmpzb24KIS52c2NvZGUvZXh0ZW5zaW9ucy5qc29uCiEudnNjb2RlLyouY29kZS1zbmlwcGV0cwohKi5jb2RlLXdvcmtzcGFjZQoqLnZzaXgKIyBFTkQgTHVuYXBhY2sgZ2VuZXJhbCBpZ25vcmVz
     declaredTargetPath: .gitignore
@@ -237,7 +237,7 @@ packs:
       method: section
       type: merge
     targetPath: .gitignore
-  packPath: gitignore-general
+  packPath: gitignore-baseline/1.0.0
   sourcePath: projects/packs
   version: 1.0.0
 - sourceIdentity:
@@ -260,9 +260,9 @@ packs:
       method: overwrite
       type: copy
     targetPath: docs/developer/conventional-commits.md
-  packPath: commitlint
+  packPath: commitlint/1.0.0
   sourcePath: projects/packs
-  version: 2.0.0
+  version: 1.0.0
 - sourceIdentity:
     path: projects/packs
     type: local
@@ -270,8 +270,8 @@ packs:
   externalSources: {}
   packs:
   - id: commitlint
-    version: 2.0.0
-  id: github-actions-commitlint
+    version: 1.0.0
+  id: github-commitlint-workflow
   managedFiles:
   - declaredTargetPath: .github/workflows/pull-request-validation.yml
     sha256: 7B4FDF64CF86FDE6B340AA324B23A707C3F26D25B22622D9EEC61EE1985FE240
@@ -285,16 +285,16 @@ packs:
       method: overwrite
       type: copy
     targetPath: docs/developer/github-actions/pull-request-validation.md
-  packPath: github-actions-commitlint
+  packPath: github-commitlint-workflow/1.0.0
   sourcePath: projects/packs
-  version: 2.0.0
+  version: 1.0.0
 - sourceIdentity:
     path: projects/packs
     type: local
   sourceName: repository-packs
   externalSources: {}
   packs: []
-  id: github-actions-pr-gate
+  id: github-pull-request-gate-workflow
   managedFiles:
   - declaredTargetPath: .github/workflows/pull-request-check-gate.yml
     sha256: CAA665A4E46F2B1EB4F83FA26EFCC2930A88D96FDC0C9EED999C1C04F46601DB
@@ -314,7 +314,70 @@ packs:
       method: overwrite
       type: copy
     targetPath: docs/developer/github-actions/pull-request-check-gate.md
-  packPath: github-actions-pr-gate
+  packPath: github-pull-request-gate-workflow/1.0.0
+  sourcePath: projects/packs
+  version: 1.0.0
+- sourceIdentity:
+    path: projects/packs
+    type: local
+  sourceName: repository-packs
+  externalSources: {}
+  packs: []
+  id: vscode-dotnet-workspace
+  managedFiles:
+  - declaredTargetPath: .vscode/settings.json
+    sha256: 6D64710A45F011DC409DC2858A24BFFB425FAAAE6C36B38F3849C48800EA4D3B
+    strategy:
+      method: json
+      type: merge
+    targetPath: .vscode/settings.json
+  - declaredTargetPath: .vscode/extensions.json
+    sha256: 273E5340D9767A926BFCC31E87424F1CF699266A26E6E26B3B8250EA46B52EDC
+    strategy:
+      method: json
+      type: merge
+    targetPath: .vscode/extensions.json
+  packPath: vscode-dotnet-workspace/1.0.0
+  sourcePath: projects/packs
+  version: 1.0.0
+- sourceIdentity:
+    path: projects/packs
+    type: local
+  sourceName: repository-packs
+  externalSources: {}
+  packs:
+  - id: gitignore-baseline
+    version: 1.0.0
+  - id: dotnet-gitignore
+    version: 1.0.0
+  - id: dotnet-sdk-10
+    version: 1.0.0
+  - id: dotnet-editorconfig
+    version: 1.0.0
+  - id: csharpier
+    version: 1.0.0
+  - id: dotnet-project
+    version: 1.0.0
+  - id: vscode-dotnet-workspace
+    version: 1.0.0
+  id: dotnet-repository
+  managedFiles: []
+  packPath: dotnet-repository/1.0.0
+  sourcePath: projects/packs
+  version: 1.0.0
+- sourceIdentity:
+    path: projects/packs
+    type: local
+  sourceName: repository-packs
+  externalSources: {}
+  packs:
+  - id: github-commitlint-workflow
+    version: 1.0.0
+  - id: github-pull-request-gate-workflow
+    version: 1.0.0
+  id: github-pull-request-quality
+  managedFiles: []
+  packPath: github-pull-request-quality/1.0.0
   sourcePath: projects/packs
   version: 1.0.0
 - sourceIdentity:
@@ -326,12 +389,12 @@ packs:
   id: husky
   managedFiles:
   - declaredTargetPath: package.json
-    sha256: B4F06EA8FB611A5DB0E53675A50FFD56459B4ED5E3228CC8316E4DD32020720F
+    sha256: 3CF65FA51C6EE4330773316CEDAE509D970A16B07B4290869C4FF656D2F9EFD4
     strategy:
       method: json
       type: merge
     targetPath: package.json
-  packPath: husky
+  packPath: husky/1.0.0
   sourcePath: projects/packs
   version: 1.0.0
 - sourceIdentity:
@@ -343,12 +406,12 @@ packs:
   id: lint-staged
   managedFiles:
   - declaredTargetPath: package.json
-    sha256: B4F06EA8FB611A5DB0E53675A50FFD56459B4ED5E3228CC8316E4DD32020720F
+    sha256: 3CF65FA51C6EE4330773316CEDAE509D970A16B07B4290869C4FF656D2F9EFD4
     strategy:
       method: json
       type: merge
     targetPath: package.json
-  packPath: lint-staged
+  packPath: lint-staged/1.0.0
   sourcePath: projects/packs
   version: 1.0.0
 - sourceIdentity:
@@ -357,17 +420,19 @@ packs:
   sourceName: repository-packs
   externalSources: {}
   packs:
+  - id: husky
+    version: 1.0.0
   - id: lint-staged
     version: 1.0.0
-  id: lint-staged-csharp
+  id: husky-lint-staged
   managedFiles:
-  - declaredTargetPath: package.json
-    sha256: B4F06EA8FB611A5DB0E53675A50FFD56459B4ED5E3228CC8316E4DD32020720F
+  - declaredTargetPath: .husky/pre-commit
+    sha256: E2B7C9733375D7182AF2033BDA9A7D2A05D0DB5EEF5BE53D26EB7B5F3DF8FBC3
     strategy:
-      method: json
-      type: merge
-    targetPath: package.json
-  packPath: lint-staged-csharp
+      method: overwrite
+      type: copy
+    targetPath: .husky/pre-commit
+  packPath: husky-lint-staged/1.0.0
   sourcePath: projects/packs
   version: 1.0.0
 - sourceIdentity:
@@ -384,7 +449,7 @@ packs:
       method: overwrite
       type: copy
     targetPath: .markdownlint.json
-  packPath: markdownlint-config
+  packPath: markdownlint-config/1.0.0
   sourcePath: projects/packs
   version: 1.0.0
 - sourceIdentity:
@@ -400,12 +465,12 @@ packs:
   id: lint-staged-markdownlint
   managedFiles:
   - declaredTargetPath: package.json
-    sha256: B4F06EA8FB611A5DB0E53675A50FFD56459B4ED5E3228CC8316E4DD32020720F
+    sha256: 3CF65FA51C6EE4330773316CEDAE509D970A16B07B4290869C4FF656D2F9EFD4
     strategy:
       method: json
       type: merge
     targetPath: package.json
-  packPath: lint-staged-markdownlint
+  packPath: lint-staged-markdownlint/1.0.0
   sourcePath: projects/packs
   version: 1.0.0
 - sourceIdentity:
@@ -414,10 +479,10 @@ packs:
   sourceName: repository-packs
   externalSources: {}
   packs: []
-  id: prettier-standard-config
+  id: prettier-config
   managedFiles:
   - declaredTargetPath: package.json
-    sha256: B4F06EA8FB611A5DB0E53675A50FFD56459B4ED5E3228CC8316E4DD32020720F
+    sha256: 3CF65FA51C6EE4330773316CEDAE509D970A16B07B4290869C4FF656D2F9EFD4
     strategy:
       method: json
       type: merge
@@ -428,7 +493,28 @@ packs:
       method: overwrite
       type: copy
     targetPath: prettier.config.cjs
-  packPath: prettier-standard-config
+  packPath: prettier-config/1.0.0
+  sourcePath: projects/packs
+  version: 1.0.0
+- sourceIdentity:
+    path: projects/packs
+    type: local
+  sourceName: repository-packs
+  externalSources: {}
+  packs:
+  - id: lint-staged-markdownlint
+    version: 1.0.0
+  - id: prettier-config
+    version: 1.0.0
+  id: lint-staged-markdown
+  managedFiles:
+  - declaredTargetPath: package.json
+    sha256: 3CF65FA51C6EE4330773316CEDAE509D970A16B07B4290869C4FF656D2F9EFD4
+    strategy:
+      method: json
+      type: merge
+    targetPath: package.json
+  packPath: lint-staged-markdown/1.0.0
   sourcePath: projects/packs
   version: 1.0.0
 - sourceIdentity:
@@ -439,17 +525,17 @@ packs:
   packs:
   - id: lint-staged
     version: 1.0.0
-  - id: prettier-standard-config
+  - id: prettier-config
     version: 1.0.0
   id: lint-staged-json
   managedFiles:
   - declaredTargetPath: package.json
-    sha256: B4F06EA8FB611A5DB0E53675A50FFD56459B4ED5E3228CC8316E4DD32020720F
+    sha256: 3CF65FA51C6EE4330773316CEDAE509D970A16B07B4290869C4FF656D2F9EFD4
     strategy:
       method: json
       type: merge
     targetPath: package.json
-  packPath: lint-staged-json
+  packPath: lint-staged-json/1.0.0
   sourcePath: projects/packs
   version: 1.0.0
 - sourceIdentity:
@@ -460,17 +546,17 @@ packs:
   packs:
   - id: lint-staged
     version: 1.0.0
-  - id: prettier-standard-config
+  - id: prettier-config
     version: 1.0.0
   id: lint-staged-html
   managedFiles:
   - declaredTargetPath: package.json
-    sha256: B4F06EA8FB611A5DB0E53675A50FFD56459B4ED5E3228CC8316E4DD32020720F
+    sha256: 3CF65FA51C6EE4330773316CEDAE509D970A16B07B4290869C4FF656D2F9EFD4
     strategy:
       method: json
       type: merge
     targetPath: package.json
-  packPath: lint-staged-html
+  packPath: lint-staged-html/1.0.0
   sourcePath: projects/packs
   version: 1.0.0
 - sourceIdentity:
@@ -481,17 +567,17 @@ packs:
   packs:
   - id: lint-staged
     version: 1.0.0
-  - id: prettier-standard-config
+  - id: prettier-config
     version: 1.0.0
   id: lint-staged-yaml
   managedFiles:
   - declaredTargetPath: package.json
-    sha256: B4F06EA8FB611A5DB0E53675A50FFD56459B4ED5E3228CC8316E4DD32020720F
+    sha256: 3CF65FA51C6EE4330773316CEDAE509D970A16B07B4290869C4FF656D2F9EFD4
     strategy:
       method: json
       type: merge
     targetPath: package.json
-  packPath: lint-staged-yaml
+  packPath: lint-staged-yaml/1.0.0
   sourcePath: projects/packs
   version: 1.0.0
 - sourceIdentity:
@@ -500,9 +586,49 @@ packs:
   sourceName: repository-packs
   externalSources: {}
   packs:
-  - id: lint-staged-csharp
+  - id: lint-staged
     version: 1.0.0
-  - id: lint-staged-markdownlint
+  - id: prettier-config
+    version: 1.0.0
+  id: lint-staged-css
+  managedFiles:
+  - declaredTargetPath: package.json
+    sha256: 3CF65FA51C6EE4330773316CEDAE509D970A16B07B4290869C4FF656D2F9EFD4
+    strategy:
+      method: json
+      type: merge
+    targetPath: package.json
+  packPath: lint-staged-css/1.0.0
+  sourcePath: projects/packs
+  version: 1.0.0
+- sourceIdentity:
+    path: projects/packs
+    type: local
+  sourceName: repository-packs
+  externalSources: {}
+  packs:
+  - id: lint-staged
+    version: 1.0.0
+  - id: prettier-config
+    version: 1.0.0
+  id: lint-staged-scss
+  managedFiles:
+  - declaredTargetPath: package.json
+    sha256: 3CF65FA51C6EE4330773316CEDAE509D970A16B07B4290869C4FF656D2F9EFD4
+    strategy:
+      method: json
+      type: merge
+    targetPath: package.json
+  packPath: lint-staged-scss/1.0.0
+  sourcePath: projects/packs
+  version: 1.0.0
+- sourceIdentity:
+    path: projects/packs
+    type: local
+  sourceName: repository-packs
+  externalSources: {}
+  packs:
+  - id: lint-staged-markdown
     version: 1.0.0
   - id: lint-staged-json
     version: 1.0.0
@@ -510,9 +636,13 @@ packs:
     version: 1.0.0
   - id: lint-staged-yaml
     version: 1.0.0
+  - id: lint-staged-css
+    version: 1.0.0
+  - id: lint-staged-scss
+    version: 1.0.0
   id: lint-staged-quality
   managedFiles: []
-  packPath: lint-staged-quality
+  packPath: lint-staged-quality/1.0.0
   sourcePath: projects/packs
   version: 1.0.0
 - sourceIdentity:
@@ -521,19 +651,47 @@ packs:
   sourceName: repository-packs
   externalSources: {}
   packs:
-  - id: husky
+  - id: lint-staged
     version: 1.0.0
+  id: lint-staged-csharp
+  managedFiles:
+  - declaredTargetPath: package.json
+    sha256: 3CF65FA51C6EE4330773316CEDAE509D970A16B07B4290869C4FF656D2F9EFD4
+    strategy:
+      method: json
+      type: merge
+    targetPath: package.json
+  packPath: lint-staged-csharp/1.0.0
+  sourcePath: projects/packs
+  version: 1.0.0
+- sourceIdentity:
+    path: projects/packs
+    type: local
+  sourceName: repository-packs
+  externalSources: {}
+  packs:
   - id: lint-staged-quality
     version: 1.0.0
-  id: husky-lint-staged
-  managedFiles:
-  - declaredTargetPath: .husky/pre-commit
-    sha256: 9B8F37D88F68E18D4F6FCCD16C8199E37A6C6BF59EF70B3120CFE13F025C17BF
-    strategy:
-      method: overwrite
-      type: copy
-    targetPath: .husky/pre-commit
-  packPath: husky-lint-staged
+  - id: lint-staged-csharp
+    version: 1.0.0
+  id: lint-staged-dotnet-quality
+  managedFiles: []
+  packPath: lint-staged-dotnet-quality/1.0.0
+  sourcePath: projects/packs
+  version: 1.0.0
+- sourceIdentity:
+    path: projects/packs
+    type: local
+  sourceName: repository-packs
+  externalSources: {}
+  packs:
+  - id: husky-lint-staged
+    version: 1.0.0
+  - id: lint-staged-dotnet-quality
+    version: 1.0.0
+  id: husky-lint-staged-dotnet-quality
+  managedFiles: []
+  packPath: husky-lint-staged-dotnet-quality/1.0.0
   sourcePath: projects/packs
   version: 1.0.0
 - sourceIdentity:
@@ -542,78 +700,15 @@ packs:
   sourceName: repository-packs
   externalSources: {}
   packs: []
-  id: github-copilot-setup
+  id: github-copilot-setup-workflow
   managedFiles:
   - declaredTargetPath: .github/workflows/copilot-setup-steps.yml
-    sha256: 0E1694FA3439A38F69BBC3646A45CAB5CC3343915641DEEF07C42CDE891B027D
+    sha256: 42AFBE9BB47FFC0D01707F0528D1A52DBF2CDBAE9FC0730C85C0B6CFAF85CD4D
     strategy:
       method: overwrite
       type: copy
     targetPath: .github/workflows/copilot-setup-steps.yml
-  packPath: github-copilot-setup
-  sourcePath: projects/packs
-  version: 1.0.0
-- sourceIdentity:
-    path: projects/packs
-    type: local
-  sourceName: repository-packs
-  externalSources: {}
-  packs: []
-  id: dotnet-vscode-workspace
-  managedFiles:
-  - declaredTargetPath: .vscode/settings.json
-    sha256: 6D64710A45F011DC409DC2858A24BFFB425FAAAE6C36B38F3849C48800EA4D3B
-    strategy:
-      method: json
-      type: merge
-    targetPath: .vscode/settings.json
-  - declaredTargetPath: .vscode/extensions.json
-    sha256: 273E5340D9767A926BFCC31E87424F1CF699266A26E6E26B3B8250EA46B52EDC
-    strategy:
-      method: json
-      type: merge
-    targetPath: .vscode/extensions.json
-  packPath: dotnet-vscode-workspace
-  sourcePath: projects/packs
-  version: 1.0.0
-- sourceIdentity:
-    path: projects/packs
-    type: local
-  sourceName: repository-packs
-  externalSources: {}
-  packs:
-  - id: gitignore-general
-    version: 1.0.0
-  - id: dotnet-gitignore
-    version: 1.0.0
-  - id: dotnet-sdk-10
-    version: 1.0.0
-  - id: dotnet-editorconfig
-    version: 2.0.0
-  - id: dotnet-csharpier-tool
-    version: 1.0.0
-  - id: dotnet-project
-    version: 1.0.0
-  - id: dotnet-vscode-workspace
-    version: 1.0.0
-  id: dotnet-repository
-  managedFiles: []
-  packPath: dotnet-repository
-  sourcePath: projects/packs
-  version: 1.0.0
-- sourceIdentity:
-    path: projects/packs
-    type: local
-  sourceName: repository-packs
-  externalSources: {}
-  packs:
-  - id: github-actions-commitlint
-    version: 2.0.0
-  - id: github-actions-pr-gate
-    version: 1.0.0
-  id: github-pr-quality
-  managedFiles: []
-  packPath: github-pr-quality
+  packPath: github-copilot-setup-workflow/1.0.0
   sourcePath: projects/packs
   version: 1.0.0
 schemaVersion: 1

@@ -9,18 +9,18 @@ Publish reusable engineering conventions from LunaPack's local source and let th
 ### Requirement: Publish bundled engineering convention packs
 
 The repository SHALL publish schema-valid versioned packs in its local pack
-source for `dotnet-gitignore`, `gitignore-general`, `dotnet-sdk-10`,
-`dotnet-editorconfig`, `dotnet-csharpier-tool`, `dotnet-quality-baseline`, and
-`madr-adr-template`. Each pack SHALL provide a concise description suitable for
+source for `dotnet-gitignore`, `gitignore-baseline`, `dotnet-sdk-10`,
+`dotnet-editorconfig`, `csharpier`, `dotnet-quality-baseline`, and
+`madr-template`. Each pack SHALL provide a concise description suitable for
 catalog discovery and SHALL manage only complete files.
 
 The packs SHALL target `.gitignore`, `global.json`, `.editorconfig`,
 `dotnet-tools.json`, the pair `Directory.Build.props` and
 `Directory.Packages.props`, and `docs/adr/template.md`, respectively. The
-`dotnet-gitignore` and `gitignore-general` packs SHALL declare section merge
+`dotnet-gitignore` and `gitignore-baseline` packs SHALL declare section merge
 strategies for their `.gitignore` targets. `dotnet-sdk-10` and
-`dotnet-csharpier-tool` SHALL declare JSON merge strategies. A consumer of
-`madr-adr-template` SHALL create its `docs/adr` target directory before
+`csharpier` SHALL declare JSON merge strategies. A consumer of
+`madr-template` SHALL create its `docs/adr` target directory before
 installation.
 
 #### Scenario: Discover the bundled catalog
@@ -35,7 +35,7 @@ installation.
 
 #### Scenario: Merge generic and .NET ignore sections
 
-- **WHEN** a consumer installs both `gitignore-general` and `dotnet-gitignore`
+- **WHEN** a consumer installs both `gitignore-baseline` and `dotnet-gitignore`
 - **THEN** each pack manages its marked `.gitignore` section without replacing
   the other pack's section
 

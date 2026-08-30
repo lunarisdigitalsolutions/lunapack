@@ -1,0 +1,15 @@
+id: lunapack-pack-authoring
+version: 1.0.0
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Scaffold a minimal versioned LunaPack pack with one managed file.
+tags: [lunapack, authoring, starter]
+managedFiles:
+  - source: targets/starter-pack.yml
+    target: pack.yml
+  - source: targets/targets/example.txt
+    target: targets/example.txt
+hooks:
+  postInstall:
+    - type: instruction
+      file: instructions/next-steps.md

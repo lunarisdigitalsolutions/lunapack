@@ -68,3 +68,4 @@ Create a new architecture decision record from the [MADR-based template](templat
 | [ADR-0062](0062-organize-cli-source-by-feature.md)                              | Organize CLI source by feature with matching namespaces.                                |
 | [ADR-0063](0063-organize-cli-tests-by-feature-and-scenario.md)                  | Organize CLI tests by feature and broader tests by scenario.                            |
 | [ADR-0064](0064-ground-pack-examples-in-testable-catalogs.md)                   | Separate maintained consumer examples from synthetic pack-authoring workflows.          |
+| [ADR-0065](0065-organize-packs-by-release-and-payload-purpose.md)               | Organize immutable pack releases and group payloads by ownership purpose.               |

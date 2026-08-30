@@ -1,0 +1,23 @@
+id: vscode-dotnet-workspace
+version: 1.0.0
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Configure shared VS Code formatters and extensions for .NET repositories.
+tags: [dotnet, vscode, editor]
+parameters:
+  solutionPath:
+    type: string
+    default: .
+    displayName: .NET solution path
+managedFiles:
+  - source: fragments/settings.json/vscode-dotnet-workspace.json
+    target: .vscode/settings.json
+    template: true
+    strategy:
+      type: merge
+      method: json
+  - source: fragments/extensions.json/vscode-dotnet-workspace.json
+    target: .vscode/extensions.json
+    strategy:
+      type: merge
+      method: json

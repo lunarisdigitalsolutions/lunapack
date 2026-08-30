@@ -1,40 +1,38 @@
 links: {}
 packs:
-  - id: dotnet-gitignore
-  - id: dotnet-sdk-10
-  - id: dotnet-editorconfig
-  - id: dotnet-csharpier-tool
-  - id: dotnet-project
-    version: 1.0.0
-  - id: madr-adr-template
-    version: 1.0.0
-  - destination: docs/internal/development/coding-guidelines
-    id: clean-code-guidelines
-  - destination: docs/internal/development/coding-guidelines
-    id: csharp-guidelines
-  - id: license-mit
-  - id: gitignore-general
-  - id: github-actions-commitlint
-  - id: github-actions-pr-gate
-  - id: husky-lint-staged
-    version: 1.0.0
-  - id: github-copilot-setup
-    version: 1.0.0
-  - id: dotnet-repository
-    version: 1.0.0
-  - id: github-pr-quality
-    version: 1.0.0
+- id: dotnet-gitignore
+- id: dotnet-sdk-10
+- id: dotnet-editorconfig
+- id: csharpier
+- id: dotnet-project
+  version: 1.0.0
+- id: madr-template
+  version: 1.0.0
+- destination: docs/internal/development/coding-guidelines
+  id: clean-code-guidelines
+- destination: docs/internal/development/coding-guidelines
+  id: csharp-guidelines
+- id: license-mit
+- id: gitignore-baseline
+- id: github-commitlint-workflow
+- id: github-pull-request-gate-workflow
+- id: dotnet-repository
+  version: 1.0.0
+- id: github-pull-request-quality
+  version: 1.0.0
+- id: husky-lint-staged-dotnet-quality
+- id: github-copilot-setup-workflow
 schemaVersion: 1
 sources:
-  - path: projects/packs
-    type: local
-    name: repository-packs
+- path: projects/packs
+  type: local
+  name: repository-packs
 trust:
   packs: []
   sources: []
 variables:
   companyName: Lunaris Digital Solutions
-  copilotSetupInstallRipgrep: true
-  copilotSetupInstallRtk: true
-  dotnetSolutionPath: projects/cli/src/Lunapack.slnx
-  lintStagedDotnetWorkspace: projects/cli/src/Lunapack.slnx
+  installRipgrep: true
+  installRtk: true
+  prepareCommand: husky && dotnet tool restore
+  solutionPath: projects/cli/src/Lunapack.slnx

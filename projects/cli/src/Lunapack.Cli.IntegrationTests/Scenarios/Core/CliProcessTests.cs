@@ -1253,7 +1253,7 @@ public sealed class CliProcessTests
         await InitializeAndAddSampleSourceAsync(workspace.Path);
         var adrDirectory = Directory.CreateDirectory(Path.Combine(workspace.Path, "docs", "adr"));
 
-        var install = await CliProcess.InvokeAsync(workspace.Path, "install", "madr-adr-template");
+        var install = await CliProcess.InvokeAsync(workspace.Path, "install", "madr-template");
 
         await Assert.That(install.ExitCode).IsEqualTo(0);
         await Assert.That(File.Exists(Path.Combine(adrDirectory.FullName, "template.md"))).IsTrue();
@@ -1386,7 +1386,7 @@ public sealed class CliProcessTests
         var generalInstall = await CliProcess.InvokeAsync(
             workspace.Path,
             "install",
-            "gitignore-general"
+            "gitignore-baseline"
         );
         var gitIgnore = File.ReadAllText(Path.Combine(workspace.Path, ".gitignore"));
         var lockFile = File.ReadAllText(Path.Combine(workspace.Path, "lunapack-lock.yml"));
@@ -1398,7 +1398,7 @@ public sealed class CliProcessTests
         await Assert.That(gitIgnore).Contains("# BEGIN Lunapack general ignores");
         await Assert.That(gitIgnore).Contains("# END Lunapack general ignores");
         await Assert.That(lockFile).Contains("id: dotnet-gitignore");
-        await Assert.That(lockFile).Contains("id: gitignore-general");
+        await Assert.That(lockFile).Contains("id: gitignore-baseline");
     }
 
     [Test]
@@ -2365,27 +2365,70 @@ public sealed class CliProcessTests
     private static IReadOnlyList<(string Id, string Version)> GetBundledPacks() =>
         [
             ("clean-code-guidelines", "1.0.0"),
+            ("commitlint", "1.0.0"),
             ("csharp-guidelines", "1.0.0"),
-            ("dotnet-csharpier-tool", "1.0.0"),
-            ("dotnet-build-props", "1.0.0"),
+            ("dotnet-build-config", "1.0.0"),
             ("dotnet-central-package-management", "1.0.0"),
+            ("dotnet-coding-guidance", "1.0.0"),
+            ("dotnet-csharp-editorconfig", "1.0.0"),
+            ("csharpier", "1.0.0"),
             ("dotnet-editorconfig", "1.0.0"),
             ("dotnet-gitignore", "1.0.0"),
             ("dotnet-project", "1.0.0"),
+            ("dotnet-repository", "1.0.0"),
             ("dotnet-sdk-10", "1.0.0"),
-            ("gitignore-general", "1.0.0"),
+            ("vscode-dotnet-workspace", "1.0.0"),
+            ("editorconfig-baseline", "1.0.0"),
+            ("github-commitlint-workflow", "1.0.0"),
+            ("github-pull-request-gate-workflow", "1.0.0"),
+            ("github-community-health", "1.0.0"),
+            ("github-copilot-documentation-instructions", "1.0.0"),
+            ("github-copilot-dotnet-instructions", "1.0.0"),
+            ("github-copilot-setup-workflow", "1.0.0"),
+            ("github-issue-forms", "1.0.0"),
+            ("github-open-source-baseline", "1.0.0"),
+            ("github-pull-request-quality", "1.0.0"),
+            ("gitignore-baseline", "1.0.0"),
+            ("husky", "1.0.0"),
+            ("husky-lint-staged", "1.0.0"),
+            ("husky-lint-staged-dotnet-quality", "1.0.0"),
             ("license-mit", "1.0.0"),
-            ("madr-adr-template", "1.0.0"),
+            ("lint-staged", "1.0.0"),
+            ("lint-staged-csharp", "1.0.0"),
+            ("lint-staged-css", "1.0.0"),
+            ("lint-staged-dotnet-quality", "1.0.0"),
+            ("lint-staged-html", "1.0.0"),
+            ("lint-staged-json", "1.0.0"),
+            ("lint-staged-markdown", "1.0.0"),
+            ("lint-staged-markdownlint", "1.0.0"),
+            ("lint-staged-quality", "1.0.0"),
+            ("lint-staged-scss", "1.0.0"),
+            ("lint-staged-yaml", "1.0.0"),
+            ("madr-template", "1.0.0"),
+            ("markdownlint-config", "1.0.0"),
+            ("lunapack-pack-authoring", "1.0.0"),
+            ("prettier-config", "1.0.0"),
+            ("repository-contribution-guide", "1.0.0"),
+            ("repository-documentation-quality", "1.0.0"),
         ];
 
     private static IReadOnlyList<string> GetConfiguredRootPackIds() =>
         [
-            "dotnet-csharpier-tool",
+            "clean-code-guidelines",
+            "csharp-guidelines",
+            "csharpier",
             "dotnet-editorconfig",
             "dotnet-gitignore",
-            "gitignore-general",
+            "gitignore-baseline",
             "dotnet-project",
             "dotnet-sdk-10",
-            "madr-adr-template",
+            "dotnet-repository",
+            "github-commitlint-workflow",
+            "github-pull-request-gate-workflow",
+            "github-copilot-setup-workflow",
+            "github-pull-request-quality",
+            "husky-lint-staged-dotnet-quality",
+            "license-mit",
+            "madr-template",
         ];
 }

@@ -112,7 +112,7 @@ public sealed class PackInstallationRequestTests
         var result = PackInstallationRequest.Create(
             new MockFileSystem(),
             "C:\\project",
-            "madr-adr-template",
+            "madr-template",
             "docs",
             false,
             [],
@@ -131,7 +131,7 @@ public sealed class PackInstallationRequestTests
         var result = PackInstallationRequest.Create(
             new MockFileSystem(),
             "C:\\project",
-            "madr-adr-template",
+            "madr-template",
             "docs\\architecture",
             false,
             [],
@@ -149,7 +149,7 @@ public sealed class PackInstallationRequestTests
         var result = PackInstallationRequest.Create(
             new MockFileSystem(),
             "C:\\project",
-            "madr-adr-template",
+            "madr-template",
             "C:\\",
             false,
             [],
@@ -166,7 +166,7 @@ public sealed class PackInstallationRequestTests
         var result = PackInstallationRequest.Create(
             new MockFileSystem(),
             "C:\\project",
-            "madr-adr-template",
+            "madr-template",
             null,
             false,
             [],
@@ -184,7 +184,7 @@ public sealed class PackInstallationRequestTests
         var result = PackInstallationRequest.Create(
             new MockFileSystem(),
             "C:\\project",
-            "madr-adr-template",
+            "madr-template",
             null,
             false,
             [],

@@ -43,7 +43,7 @@ For each configured Git source, LunaPack SHALL catalog schema-valid `pack.yml` c
 
 #### Scenario: Inspect a pack with an ADR directory mapping
 
-- **WHEN** a project globally remaps `docs/adr` and a consumer runs `luna inspect madr-adr-template`
+- **WHEN** a project globally remaps `docs/adr` and a consumer runs `luna inspect madr-template`
 - **THEN** inspection lists `docs/adr/template.md ->` followed by the remapped effective target, without listing `templates/template.md`
 
 #### Scenario: Inspect a pack without matching remapping

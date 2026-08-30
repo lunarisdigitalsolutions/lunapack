@@ -1,0 +1,8 @@
+{
+  "lint-staged": {
+    "*.{md,mdx}": [
+      "markdownlint --fix",
+      "prettier --write"
+    ]
+  }
+}

@@ -98,7 +98,7 @@ LunaPack SHALL reject a composite graph that contains a dependency cycle, resolv
 
 ### Requirement: Discover and install bundled managed-file packs
 
-LunaPack SHALL provide versioned `dotnet-gitignore`, `dotnet-sdk-10`, `dotnet-editorconfig`, `dotnet-csharpier-tool`, `dotnet-quality-baseline`, and `madr-adr-template` packs in the repository's local pack source. Each pack SHALL declare one or more managed files containing complete reusable engineering-convention content.
+LunaPack SHALL provide versioned `dotnet-gitignore`, `dotnet-sdk-10`, `dotnet-editorconfig`, `csharpier`, `dotnet-quality-baseline`, and `madr-template` packs in the repository's local pack source. Each pack SHALL declare one or more managed files containing complete reusable engineering-convention content.
 
 The `luna install <pack-id>` command SHALL discover each bundled pack from configured local sources, create each declared target when it does not already exist, and record the pack identity, resolved version, source, managed target paths, and installed content digests in `lunapack-lock.yml`.
 
@@ -114,7 +114,7 @@ The `luna install <pack-id>` command SHALL discover each bundled pack from confi
 
 #### Scenario: Install a documentation template into an existing directory
 
-- **WHEN** a user creates `docs/adr`, configures the repository local source, and runs `luna install madr-adr-template`
+- **WHEN** a user creates `docs/adr`, configures the repository local source, and runs `luna install madr-template`
 - **THEN** LunaPack creates `docs/adr/template.md` and records it as the pack's managed file
 
 #### Scenario: Refuse an unknown or unavailable pack
@@ -496,12 +496,12 @@ Every declared and effective target supplied by remapping SHALL be non-empty, pr
 
 #### Scenario: Remap a manifest target directory at installation
 
-- **WHEN** a consumer runs `luna install madr-adr-template --remap-directory docs/adr=docs/internal/01-architecture/decisions`
-- **THEN** LunaPack writes `docs/internal/01-architecture/decisions/template.md` and records that effective target as managed by `madr-adr-template`
+- **WHEN** a consumer runs `luna install madr-template --remap-directory docs/adr=docs/internal/01-architecture/decisions`
+- **THEN** LunaPack writes `docs/internal/01-architecture/decisions/template.md` and records that effective target as managed by `madr-template`
 
 #### Scenario: Rename a single managed file at installation
 
-- **WHEN** a consumer runs `luna install madr-adr-template --remap-file docs/adr/template.md=docs/adr/_template.md`
+- **WHEN** a consumer runs `luna install madr-template --remap-file docs/adr/template.md=docs/adr/_template.md`
 - **THEN** LunaPack writes and records `docs/adr/_template.md` as the managed target for the declared `docs/adr/template.md` file
 
 #### Scenario: Retain descendants under a mapped directory

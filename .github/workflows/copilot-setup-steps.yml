@@ -12,7 +12,6 @@ jobs:
       contents: read
     environment: copilot
     steps:
-
       - shell: bash
         name: Install ripgrep
         run: sudo apt-get update && sudo apt-get install -y ripgrep
@@ -20,4 +19,3 @@ jobs:
       - shell: bash
         name: Install RTK
         run: curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/9cc4937dac3ba9aa27147699afe66a2842e7bffc/install.sh | sh
-

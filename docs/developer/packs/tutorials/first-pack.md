@@ -15,9 +15,9 @@ luna pack init --id example-documentation-standard --version 1.0.0 --author "Exa
 Add a file:
 
 ```bash
-mkdir -p templates
-printf '# Engineering standard\n' > templates/standard.md
-luna pack add file templates/standard.md --target docs/standard.md
+mkdir -p targets/docs
+printf '# Engineering standard\n' > targets/docs/standard.md
+luna pack add file targets/docs/standard.md --target docs/standard.md
 ```
 
 Add optional metadata:
@@ -37,6 +37,17 @@ luna pack validate
 
 The manifest remains normal YAML. Direct edits are supported, but rerun
 `luna pack validate` before distributing the pack.
+
+When your configured catalog contains `lunapack-pack-authoring`, you can instead
+install its minimal scaffold into a new release directory:
+
+```powershell
+luna install lunapack-pack-authoring@1.0.0 `
+  --destination packs/example-documentation-standard/1.0.0
+```
+
+Replace the generated example identity, attribution, description, target, and
+content before validation.
 
 ## Test Installation
 

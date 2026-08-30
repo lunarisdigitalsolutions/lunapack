@@ -8,5 +8,7 @@ This area records LunaPack's product direction, current MVP position, and roadma
 | [Epics](epics/index.md)              | Future delivery themes                     |
 | [Milestones](milestones/index.md)    | Release outcomes                           |
 | [Pack opportunities]                 | Reusable pack and composition candidates   |
+| [Pack ecosystem concept]             | Ownership and lifecycle product direction  |
 
 [pack opportunities]: pack-dogfooding-opportunities.md
+[pack ecosystem concept]: pack-ecosystem-working-concept.md

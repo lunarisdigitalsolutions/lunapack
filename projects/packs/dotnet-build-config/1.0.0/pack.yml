@@ -1,0 +1,9 @@
+id: dotnet-build-config
+
+version: 1.0.0
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Apply shared .NET build, analyzer, and test quality policy.
+managedFiles:
+  - source: targets/Directory.Build.props
+    target: Directory.Build.props

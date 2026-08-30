@@ -30,16 +30,16 @@ luna pack set parameter features enum `
 Add selectors with `--condition` or `-c`:
 
 ```powershell
-luna pack add file templates/build.yml `
+luna pack add file targets/build.yml `
   --target .github/workflows/build.yml `
   --condition includeCi
-luna pack add file templates/service.json `
+luna pack add file targets/service.json `
   --target config/service.json `
   --condition 'includeCi && projectType == "service"'
-luna pack add file templates/library.props `
+luna pack add file targets/library.props `
   --target Directory.Build.props `
   --condition 'projectType == "library"'
-luna pack add file templates/docker.yml `
+luna pack add file targets/docker.yml `
   --target compose.yml `
   --condition '"docker" in features'
 ```
