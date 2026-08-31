@@ -5,10 +5,15 @@ for a pull request to `main` have completed successfully. It can run when a
 non-draft pull request receives the `ready-to-merge` label, when a check suite
 finishes, or from the Actions page with an optional pull request number.
 
-The workflow checks out and invokes `.github/scripts/validate-external-checks.js`.
-That script resolves the open pull request, then evaluates its latest check run
-and commit-status result for the current head SHA. Duplicate names use their
-newest result, while this gate's own job is excluded from its check-run query.
+The workflow checks out `.github/scripts/validate-external-checks.js` from the
+pull request's base revision or the default branch, never from pull-request
+content. That script resolves the open pull request, then evaluates its latest
+check run and commit-status result for the current head SHA. Duplicate names use
+their newest result, while this gate's own job is excluded from its query.
+
+Pending, failed, skipped, and cancelled results block the gate. A check can be
+non-blocking only when it reports `success` or `neutral`, or when the workflow
+explicitly excludes its name.
 
 The workflow passes `skippedCheckNameParts` to the validator. Each entry is
 matched as a case-insensitive substring of a check-run name or commit-status

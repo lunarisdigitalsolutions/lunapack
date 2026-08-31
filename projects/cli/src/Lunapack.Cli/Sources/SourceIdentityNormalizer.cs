@@ -156,7 +156,10 @@ internal static partial class SourceIdentityNormalizer
 
         var embedsCredentials =
             location.UserInformation is { } credentials
-            && credentials.Contains(':', StringComparison.Ordinal);
+            && (
+                credentials.Contains(':', StringComparison.Ordinal)
+                || trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+            );
         if (embedsCredentials)
         {
             return ManifestOperationResult<string>.Failure(

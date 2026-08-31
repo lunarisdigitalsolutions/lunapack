@@ -69,6 +69,19 @@ public sealed class ExternalSourceIdentityTests
     }
 
     [Test]
+    public async Task Normalizer_WhenHttpsUrlEmbedsTokenOnlyUserInfo_IsRejected()
+    {
+        var fingerprint = SourceIdentityNormalizer.CreateGit(
+            "https://placeholder-token@example.test/owner/packs.git",
+            reference: null,
+            path: null
+        );
+
+        await Assert.That(fingerprint.IsSuccess).IsFalse();
+        await Assert.That(fingerprint.Error).DoesNotContain("placeholder-token");
+    }
+
+    [Test]
     [Arguments("../escape")]
     [Arguments("packs/../../escape")]
     public async Task Normalizer_WhenBasePathEscapes_IsRejected(string basePath)

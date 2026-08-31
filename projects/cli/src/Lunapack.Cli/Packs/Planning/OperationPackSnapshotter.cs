@@ -1,5 +1,7 @@
 using System.IO.Abstractions;
+using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Paths;
 using Lunapack.Cli.Catalog;
 using Lunapack.Cli.Sources.Git;
 
@@ -7,7 +9,8 @@ namespace Lunapack.Cli.Packs.Planning;
 
 internal sealed class OperationPackSnapshotter(
     IFileSystem fileSystem,
-    IOperationSnapshotSecurity snapshotSecurity
+    IOperationSnapshotSecurity snapshotSecurity,
+    CliConsole console
 )
 {
     public ManifestOperationResult<DiscoveredPack> Snapshot(
@@ -26,10 +29,11 @@ internal sealed class OperationPackSnapshotter(
                 );
             }
 
+            RejectPackDirectoryLink(sourcePath, sourcePackDirectory);
+
             var packPath = fileSystem.Path.GetRelativePath(sourcePath, sourcePackDirectory);
             var snapshotPackDirectory = CreateSnapshotPackDirectory(snapshotRoot, packPath);
-            CopyDirectories(sourcePackDirectory, snapshotPackDirectory);
-            CopyFiles(sourcePackDirectory, snapshotPackDirectory);
+            CopyEntries(sourcePackDirectory, sourcePackDirectory, snapshotPackDirectory);
             snapshotSecurity.MakeReadOnly(fileSystem, snapshotRoot);
 
             return ManifestOperationResult<DiscoveredPack>.Success(
@@ -61,37 +65,60 @@ internal sealed class OperationPackSnapshotter(
         return snapshotPackDirectory;
     }
 
-    private void CopyDirectories(string sourcePackDirectory, string snapshotPackDirectory)
+    private void CopyEntries(
+        string sourcePackDirectory,
+        string sourceDirectory,
+        string snapshotDirectory
+    )
     {
-        var sourceDirectories = fileSystem
-            .Directory.EnumerateDirectories(sourcePackDirectory, "*", SearchOption.AllDirectories)
+        var sourceEntries = fileSystem
+            .Directory.EnumerateFileSystemEntries(
+                sourceDirectory,
+                "*",
+                SearchOption.TopDirectoryOnly
+            )
             .OrderBy(path => path, StringComparer.Ordinal);
-        foreach (var sourceDirectory in sourceDirectories)
+        foreach (var sourceEntry in sourceEntries)
         {
-            var directoryPath = fileSystem.Path.GetRelativePath(
-                sourcePackDirectory,
-                sourceDirectory
+            var attributes = fileSystem.File.GetAttributes(sourceEntry);
+            if (
+                attributes.HasFlag(FileAttributes.ReparsePoint)
+                || attributes.HasFlag(FileAttributes.Device)
+            )
+            {
+                console.Warning(
+                    $"Skipping unsupported pack snapshot entry '{GetRelativePath(sourcePackDirectory, sourceEntry)}'; only regular files and directories are copied."
+                );
+                continue;
+            }
+
+            var destination = fileSystem.Path.Combine(
+                snapshotDirectory,
+                fileSystem.Path.GetFileName(sourceEntry)
             );
-            var snapshotDirectory = fileSystem.Path.GetFullPath(
-                directoryPath,
-                snapshotPackDirectory
-            );
-            fileSystem.Directory.CreateDirectory(snapshotDirectory);
-            snapshotSecurity.ApplyDirectory(snapshotDirectory);
+            if (attributes.HasFlag(FileAttributes.Directory))
+            {
+                fileSystem.Directory.CreateDirectory(destination);
+                snapshotSecurity.ApplyDirectory(destination);
+                CopyEntries(sourcePackDirectory, sourceEntry, destination);
+                continue;
+            }
+
+            fileSystem.File.Copy(sourceEntry, destination);
+            snapshotSecurity.ApplyFile(destination);
         }
     }
 
-    private void CopyFiles(string sourcePackDirectory, string snapshotPackDirectory)
+    private void RejectPackDirectoryLink(string sourcePath, string sourcePackDirectory)
     {
-        var sourceFiles = fileSystem
-            .Directory.EnumerateFiles(sourcePackDirectory, "*", SearchOption.AllDirectories)
-            .OrderBy(path => path, StringComparer.Ordinal);
-        foreach (var sourceFile in sourceFiles)
+        if (fileSystem.File.GetAttributes(sourcePackDirectory).HasFlag(FileAttributes.ReparsePoint))
         {
-            var filePath = fileSystem.Path.GetRelativePath(sourcePackDirectory, sourceFile);
-            var snapshotFile = fileSystem.Path.GetFullPath(filePath, snapshotPackDirectory);
-            fileSystem.File.Copy(sourceFile, snapshotFile);
-            snapshotSecurity.ApplyFile(snapshotFile);
+            throw new IOException(
+                $"Pack snapshot root '{GetRelativePath(sourcePath, sourcePackDirectory)}' cannot be a link or reparse point."
+            );
         }
     }
+
+    private string GetRelativePath(string root, string path) =>
+        ProjectPath.Normalize(fileSystem.Path.GetRelativePath(root, path));
 }

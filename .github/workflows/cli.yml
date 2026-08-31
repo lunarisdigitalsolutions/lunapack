@@ -165,7 +165,7 @@ jobs:
           release-type: stable
           version: ${{ inputs.version || github.ref_name }}
           run-id: ${{ inputs.run-id || github.run_id }}
-          nuget-user: ${{ vars.NUGET_USER }}
+          nuget-user: ${{ secrets.NUGET_USER }}
           dry-run: ${{ inputs.dry-run || 'false' }}
 
   preview-version:
@@ -253,7 +253,7 @@ jobs:
           release-type: preview
           version: ${{ needs.preview-version.outputs.value }}
           runtime-identifier: ${{ matrix.runtimeIdentifier }}
-          nuget-user: ${{ vars.NUGET_USER }}
+          nuget-user: ${{ secrets.NUGET_USER }}
 
   publish-preview-pointer-package:
     name: Publish pointer preview
@@ -272,4 +272,4 @@ jobs:
         with:
           release-type: preview
           version: ${{ needs.preview-version.outputs.value }}
-          nuget-user: ${{ vars.NUGET_USER }}
+          nuget-user: ${{ secrets.NUGET_USER }}

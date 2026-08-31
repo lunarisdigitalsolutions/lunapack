@@ -1,0 +1,45 @@
+name: Release Luna CLI to GitHub
+description: Create or verify a GitHub Release from prepared CLI assets.
+
+inputs:
+  version:
+    description: Existing v-prefixed stable release tag.
+    required: true
+  dry-run:
+    description: Skip GitHub Release publication.
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Create GitHub Release
+      if: ${{ inputs.dry-run != 'true' }}
+      env:
+        GH_TOKEN: ${{ github.token }}
+        VERSION: ${{ inputs.version }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        if gh release view "$VERSION" >/dev/null 2>&1; then
+          release_directory="release-staging/existing-release"
+          rm -rf "$release_directory"
+          mkdir -p "$release_directory"
+          gh release download "$VERSION" --dir "$release_directory"
+          gh release view "$VERSION" --json body \
+            > release-staging/existing-release.json
+          node projects/cli/distribution/verify-release-assets.mjs \
+            release-staging \
+            "$release_directory" \
+            release-staging/existing-release.json \
+            "${VERSION#v}"
+          echo "Verified existing GitHub Release: $VERSION"
+        else
+          gh release create "$VERSION" \
+            --verify-tag \
+            --title "Luna $VERSION" \
+            --notes-file release-staging/CHANGELOG.md \
+            release-staging/distributions/* \
+            release-staging/SHA256SUMS.txt \
+            release-staging/CHANGELOG.md
+        fi

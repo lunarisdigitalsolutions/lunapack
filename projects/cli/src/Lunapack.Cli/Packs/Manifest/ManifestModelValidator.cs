@@ -321,6 +321,10 @@ internal static partial class ManifestModelValidator
             {
                 issues.Add("Managed file target is required.");
             }
+            else if (!IsSafeProjectRelativePath(managedFile.Target))
+            {
+                issues.Add("Managed file target must stay inside the project.");
+            }
 
             if (managedFile.Condition is "")
             {
@@ -666,6 +670,7 @@ internal static partial class ManifestModelValidator
         }
 
         ValidateSourceFingerprintUniqueness(configuration.Sources, issues);
+        ValidateRemapping(configuration.Remap, issues);
         ValidateRequestedPacks(configuration.Packs, issues);
         ValidateLinks(configuration.Links, sourceNames, issues);
         ValidateProjectTrust(configuration.Trust, sourceNames, issues);
@@ -833,7 +838,7 @@ internal static partial class ManifestModelValidator
             var hasInvalidFile =
                 !IsSafeProjectRelativePath(file.SourcePath)
                 || !IsSafeProjectRelativePath(file.DeclaredTargetPath)
-                || !IsRelativePath(file.TargetPath)
+                || !IsSafeProjectRelativePath(file.TargetPath)
                 || !IsSha256(file.Sha256);
             if (hasInvalidFile)
             {
@@ -997,6 +1002,7 @@ internal static partial class ManifestModelValidator
         List<string> issues
     )
     {
+        var repository = SourceIdentityNormalizer.NormalizeRepository(source.Url);
         var isInvalidGitSource =
             !string.Equals(source.Type, "git", StringComparison.Ordinal)
             || string.IsNullOrEmpty(source.Url)
@@ -1006,6 +1012,11 @@ internal static partial class ManifestModelValidator
         if (isInvalidGitSource)
         {
             issues.Add("Git sources must define a URL and valid optional ref, path, and timeout.");
+        }
+
+        if (!repository.IsSuccess)
+        {
+            issues.Add($"Git source '{source.Name}' URL is invalid.");
         }
     }
 
@@ -1033,6 +1044,29 @@ internal static partial class ManifestModelValidator
             {
                 issues.Add($"Requested pack '{requestedPack.Id}' has an unsafe destination.");
             }
+
+            ValidateRemapping(requestedPack.Remap, issues);
+        }
+    }
+
+    private static void ValidateRemapping(
+        ProjectConfiguration.Remapping? remapping,
+        List<string> issues
+    )
+    {
+        if (remapping is null)
+        {
+            return;
+        }
+
+        var hasUnsafeMapping = remapping
+            .Directories.Concat(remapping.Files)
+            .Any(mapping =>
+                !IsSafeProjectRelativePath(mapping.Key) || !IsSafeProjectRelativePath(mapping.Value)
+            );
+        if (hasUnsafeMapping)
+        {
+            issues.Add("Managed file remappings must stay inside the project.");
         }
     }
 
@@ -1139,7 +1173,7 @@ internal static partial class ManifestModelValidator
         {
             var hasInvalidManagedFile =
                 !IsSafeProjectRelativePath(managedFile.DeclaredTargetPath)
-                || !IsRelativePath(managedFile.TargetPath)
+                || !IsSafeProjectRelativePath(managedFile.TargetPath)
                 || !IsSha256(managedFile.Sha256)
                 || (
                     managedFile.Strategy is not null
@@ -1326,6 +1360,7 @@ internal static partial class ManifestModelValidator
         var isInvalidGitSource =
             !string.Equals(source.Type, "git", StringComparison.Ordinal)
             || string.IsNullOrEmpty(source.Url)
+            || !SourceIdentityNormalizer.NormalizeRepository(source.Url).IsSuccess
             || source.Ref is ""
             || (source.Path is not null && !IsSafeProjectRelativePath(source.Path))
             || !IsGitCommit(source.ResolvedCommit);

@@ -557,7 +557,11 @@ public sealed class ExternalPackLifecycleTests
             new PackUpdateTransaction(workspace.FileSystem, console),
             stateStore,
             console,
-            configuredGitPackMaterializer: new GitPackMaterializer(workspace.FileSystem, runner),
+            configuredGitPackMaterializer: new GitPackMaterializer(
+                workspace.FileSystem,
+                runner,
+                TestConsole.Create()
+            ),
             configuredExternalSourceRequirementPlanner: new ExternalSourceRequirementPlanner(
                 refResolver
             ),

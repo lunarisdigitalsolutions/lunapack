@@ -57,7 +57,7 @@ selectors install content.
 | `draft`                | Optional visibility marker. Defaults to `false`; drafts require `--allow-draft` in discovery and search but remain available to direct commands.                                |
 | `homepage`             | Optional absolute HTTP or HTTPS URI.                                                                                                                                            |
 | `license`              | Required non-empty license identifier or expression.                                                                                                                            |
-| `managedFiles`         | Each entry has one `source`, `directory`, or `glob` selector and a project-relative `target`.                                                                                   |
+| `managedFiles`         | Each entry has one `source`, `directory`, or `glob` selector and a non-empty project-relative `target` that cannot contain `.` or `..` segments.                                |
 | `packs`                | Each composite reference has a hyphen-separated alphanumeric ID and an exact version.                                                                                           |
 | `parameters`           | Identifier-named `string`, `bool`, or `enum` declarations. Enums require unique values and may set `multiple: true`; multi-select defaults are unique arrays of allowed values. |
 | Reference `parameters` | String, Boolean, or unique string-array bindings for a referenced pack. Runtime validation checks arrays against the target multi-select enum.                                  |
@@ -156,6 +156,11 @@ them in project-level `lunapack.yml` configuration or through `luna install`
 options; pack authors do not declare consumer remapping in `pack.yml`. See
 [Remap managed targets](../../remap-targets.md) for
 mapping syntax, precedence, lifecycle retention, and explicit relocation.
+
+Target validation is lexical. LunaPack rejects rooted and escaping targets, but
+does not yet guarantee alias-safe mutation when an existing target or ancestor
+inside the workspace is a symbolic link, junction, or hard link. Inspect or
+remove such aliases before installing into an untrusted workspace.
 
 Selected source files copy as-is unless their selector sets `template: true`.
 Template-enabled files are UTF-8 Scriban templates. Resolved parameter names are

@@ -444,7 +444,7 @@ internal sealed class CliApplication(
             new PackUpdateTransaction(fileSystem, console),
             projectStateStore,
             console,
-            new GitPackMaterializer(fileSystem, gitProcessRunner),
+            new GitPackMaterializer(fileSystem, gitProcessRunner, console),
             configuredHookAuthorizer: new LifecycleHookAuthorizer(
                 userSettingsStore,
                 new TrustPolicy(fileSystem),

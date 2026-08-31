@@ -257,6 +257,12 @@ SHALL remain valid.
 - **WHEN** a resolved link file omits its source path, declared target, effective target, or installed digest
 - **THEN** lock-file schema validation fails
 
+#### Scenario: Reject an unsafe effective target
+
+- **WHEN** a resolved pack or Luna Link records an effective target that is
+  rooted or contains a current-directory or parent-directory segment
+- **THEN** lock-file schema validation fails
+
 ### Requirement: Maintain schema compatibility deliberately
 
 The project configuration schema SHALL retain explicit schema version `1`, and the lock-file schema SHALL use its own explicit schema version. LunaPack SHALL not support the former version-1 document shape that contains resolved source provenance or managed-file ownership. Future incompatible lock-file changes SHALL use a new lock-file schema version.

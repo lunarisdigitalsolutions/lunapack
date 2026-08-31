@@ -79,6 +79,75 @@ public sealed class GitSourceTransportTests
     }
 
     [Test]
+    public async Task Cache_WhenCachedManifestIsInvalid_TreatsEntryAsCacheMiss()
+    {
+        var fileSystem = new MockFileSystem();
+        var cache = new GitSourceCache(fileSystem);
+        var source = CreateSource();
+        var manifest = new PackManifest
+        {
+            Id = "example",
+            Version = "1.0.0",
+            ManagedFiles =
+            [
+                new PackManifest.PackManagedFile
+                {
+                    Path = "template.txt",
+                    Target = "../outside.txt",
+                },
+            ],
+        };
+        var entry = CreateCacheEntry(source, manifest, "packs/example");
+        await Assert.That(cache.Save(@"C:\project", entry).IsSuccess).IsTrue();
+
+        var loaded = cache.Load(@"C:\project", source);
+
+        await Assert.That(loaded.Value).IsNull();
+    }
+
+    [Test]
+    public async Task Cache_WhenCachedPackPathEscapesRepository_TreatsEntryAsCacheMiss()
+    {
+        var fileSystem = new MockFileSystem();
+        var cache = new GitSourceCache(fileSystem);
+        var source = CreateSource();
+        var manifest = new PackManifest { Id = "example", Version = "1.0.0" };
+        var entry = CreateCacheEntry(source, manifest, "../outside");
+        await Assert.That(cache.Save(@"C:\project", entry).IsSuccess).IsTrue();
+
+        var loaded = cache.Load(@"C:\project", source);
+
+        await Assert.That(loaded.Value).IsNull();
+    }
+
+    [Test]
+    public async Task Cache_WhenCachedPackIdentityDiffersFromManifest_TreatsEntryAsCacheMiss()
+    {
+        var fileSystem = new MockFileSystem();
+        var cache = new GitSourceCache(fileSystem);
+        var source = CreateSource();
+        var manifest = new PackManifest { Id = "embedded", Version = "1.0.0" };
+        var entry = CreateCacheEntry(source, manifest, "packs/example") with
+        {
+            Packs =
+            [
+                new GitCachedPack
+                {
+                    Id = "substituted",
+                    Version = manifest.Version,
+                    Manifest = manifest,
+                    PackPath = "packs/example",
+                },
+            ],
+        };
+        await Assert.That(cache.Save(@"C:\project", entry).IsSuccess).IsTrue();
+
+        var loaded = cache.Load(@"C:\project", source);
+
+        await Assert.That(loaded.Value).IsNull();
+    }
+
+    [Test]
     public async Task ProcessRunner_WhenCanceledBeforeStart_ReturnsFailure()
     {
         using var cancellation = new CancellationTokenSource();
@@ -256,6 +325,7 @@ public sealed class GitSourceTransportTests
         var materializer = new GitPackMaterializer(
             fileSystem,
             processRunner,
+            TestConsole.Create(),
             new NoOpOperationSnapshotSecurity()
         );
 
@@ -333,6 +403,27 @@ public sealed class GitSourceTransportTests
 
     private static ProjectConfiguration.GitSource CreateSource() =>
         new() { Name = "git", Url = "https://example.test/packs.git" };
+
+    private static GitSourceCacheEntry CreateCacheEntry(
+        ProjectConfiguration.GitSource source,
+        PackManifest manifest,
+        string packPath
+    ) =>
+        new()
+        {
+            Source = GitSourceCacheIdentity.Create(source),
+            ResolvedCommit = Commit,
+            Packs =
+            [
+                new GitCachedPack
+                {
+                    Id = manifest.Id,
+                    Version = manifest.Version,
+                    Manifest = manifest,
+                    PackPath = packPath,
+                },
+            ],
+        };
 
     private sealed class FakeGitProcessRunner(ManifestOperationResult<GitProcessOutput> result)
         : IGitProcessRunner

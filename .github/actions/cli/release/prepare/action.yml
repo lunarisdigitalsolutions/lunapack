@@ -1,0 +1,146 @@
+name: Prepare Luna CLI release
+description: Download, validate, and stage stable Luna CLI release inputs.
+
+inputs:
+  version:
+    description: Existing v-prefixed stable release tag.
+    required: true
+  artifact-pattern:
+    description: Pattern used to download CLI distribution artifacts.
+    required: false
+    default: cli-distribution-*
+  run-id:
+    description: Workflow run ID containing release artifacts.
+    required: true
+  changelog-path:
+    description: Canonical CLI changelog path.
+    required: false
+    default: projects/cli/CHANGELOG.md
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve stable release revision
+      id: revision
+      shell: bash
+      env:
+        TAG: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        expected_sha="$(git rev-parse "$TAG^{commit}")"
+        printf 'expected-sha=%s\n' "$expected_sha" >> "$GITHUB_OUTPUT"
+
+    - name: Validate artifact workflow run
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      env:
+        CURRENT_RUN_ID: ${{ github.run_id }}
+        EXPECTED_SHA: ${{ steps.revision.outputs.expected-sha }}
+        RUN_ID: ${{ inputs.run-id }}
+      with:
+        script: |
+          const runIdText = process.env.RUN_ID;
+          if (!/^[1-9][0-9]*$/.test(runIdText)) {
+            throw new Error('Artifact workflow run ID must be a positive integer.');
+          }
+
+          const runId = Number(runIdText);
+          if (!Number.isSafeInteger(runId)) {
+            throw new Error('Artifact workflow run ID is outside the supported range.');
+          }
+
+          const { owner, repo } = context.repo;
+          const { data: run } = await github.rest.actions.getWorkflowRun({
+            owner,
+            repo,
+            run_id: runId
+          });
+          if (run.path !== '.github/workflows/cli.yml') {
+            throw new Error('Artifacts must come from the CLI release workflow.');
+          }
+          if (run.head_sha.toLowerCase() !== process.env.EXPECTED_SHA.toLowerCase()) {
+            throw new Error('Artifact workflow revision does not match the release tag.');
+          }
+          if (runIdText !== process.env.CURRENT_RUN_ID && run.conclusion !== 'success') {
+            throw new Error('A previous artifact workflow run must have succeeded.');
+          }
+
+    - name: Download CLI archives
+      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        github-token: ${{ github.token }}
+        pattern: ${{ inputs.artifact-pattern }}
+        path: release-staging/distributions
+        merge-multiple: true
+        run-id: ${{ inputs.run-id }}
+
+    - name: Set up Node.js
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        node-version: 24
+
+    - name: Validate and stage release inputs
+      shell: bash
+      env:
+        CHANGELOG_PATH: ${{ inputs.changelog-path }}
+        TAG: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        if [[ ! "$TAG" =~ ^v((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?)$ ]]; then
+          echo 'Stable release tag must use v<semantic-version> without build metadata.' >&2
+          exit 1
+        fi
+        version="${BASH_REMATCH[1]}"
+
+        mkdir -p release-staging
+        if [[ ! -f "$CHANGELOG_PATH" ]]; then
+          echo "Warning: changelog file not found: $CHANGELOG_PATH. Continuing without release notes." >&2
+          : > release-staging/CHANGELOG.md
+        elif ! node projects/cli/distribution/extract-release-notes.mjs \
+          "$CHANGELOG_PATH" \
+          release-staging/CHANGELOG.md \
+          "$version"; then
+          echo 'Warning: failed to extract release notes. Continuing without release notes.' >&2
+          : > release-staging/CHANGELOG.md
+        fi
+
+        expected_archives=(
+          "luna-cli-${version}-linux-x64.tar.gz"
+          "luna-cli-${version}-linux-arm64.tar.gz"
+          "luna-cli-${version}-osx-x64.tar.gz"
+          "luna-cli-${version}-osx-arm64.tar.gz"
+          "luna-cli-${version}-win-x64.zip"
+        )
+        mapfile -d '' archives < <(find release-staging/distributions -type f -print0 | sort -z)
+        if [[ ${#archives[@]} -ne ${#expected_archives[@]} ]]; then
+          echo "Expected ${#expected_archives[@]} CLI archives, found ${#archives[@]}." >&2
+          exit 1
+        fi
+        declare -A seen_archives=()
+        for archive in "${archives[@]}"; do
+          archive_name="$(basename "$archive")"
+          if [[ ! " ${expected_archives[*]} " =~ " $archive_name " ]]; then
+            echo "Unexpected CLI archive name: $archive_name" >&2
+            exit 1
+          fi
+          if [[ -n "${seen_archives[$archive_name]:-}" ]]; then
+            echo "Duplicate CLI archive name: $archive_name" >&2
+            exit 1
+          fi
+          seen_archives[$archive_name]=1
+        done
+        for archive_name in "${expected_archives[@]}"; do
+          if [[ -z "${seen_archives[$archive_name]:-}" ]]; then
+            echo "Missing CLI archive: $archive_name" >&2
+            exit 1
+          fi
+        done
+
+        (
+          cd release-staging/distributions
+          printf '%s\0' "${expected_archives[@]}" | xargs -0 sha256sum
+        ) > release-staging/SHA256SUMS.txt
+
+        node projects/cli/distribution/package-distribution.mjs \
+          --archives release-staging/distributions \
+          --output release-staging/packages \
+          --version "$version"

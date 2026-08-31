@@ -1,4 +1,5 @@
 using System.IO.Abstractions;
+using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Catalog;
 using Lunapack.Cli.Packs.Planning;
@@ -9,6 +10,7 @@ namespace Lunapack.Cli.Sources.Git;
 internal sealed class GitPackMaterializer(
     IFileSystem fileSystem,
     IGitProcessRunner processRunner,
+    CliConsole console,
     IOperationSnapshotSecurity? snapshotSecurity = null
 )
 {
@@ -55,7 +57,7 @@ internal sealed class GitPackMaterializer(
         CancellationToken cancellationToken
     )
     {
-        var snapshotter = new OperationPackSnapshotter(fileSystem, _snapshotSecurity);
+        var snapshotter = new OperationPackSnapshotter(fileSystem, _snapshotSecurity, console);
         var materializedPacks = new List<DiscoveredPack>(graph.Packs.Count);
         foreach (var pack in graph.Packs)
         {

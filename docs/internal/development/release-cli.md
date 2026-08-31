@@ -7,17 +7,21 @@ commit and tag in the order consumed by GitHub Actions.
 Commits to `main` that change `projects/cli` run the NuGet preview path in the
 `CLI: Release` workflow. MinVer derives the next patch preview from the latest
 `v` tag, such as `1.2.1-preview.1` after `v1.2.0`. Preview versions are not Git
-tags; stable releases remain `vX.Y.Z` tags. The preview jobs publish the five
+tags; tagged releases use v-prefixed Semantic Versioning. The preview jobs publish the five
 RID-specific tool packages directly from native runners, then publish the
 pointer package. They do not publish npm packages or containers and do not
 create a GitHub artifact or release. Preview NuGet packages include a generated
 `CHANGELOG.md` containing only the canonical `Unreleased` section.
 
 Both paths call the reusable release action. Its `release-type` input accepts
-`stable` or `preview` and defaults to `stable`. Stable runs the complete release
-path. Preview currently runs only NuGet setup, Native AOT packaging,
-authentication, and publication; this leaves room to add preview channels
-without changing the release-type contract.
+`stable` or `preview` and defaults to `stable`. The action maps stable to the
+GitHub, container, npm, and NuGet channels and preview to NuGet. A channel
+dispatcher validates that selection and calls one composite publisher per
+channel. Before stable dispatch, the release action prepares the archives,
+release notes, checksums, native files, and npm packages shared by GitHub,
+container, and npm. NuGet downloads and validates its RID packages inside the
+NuGet publisher. Preview runs only NuGet setup, Native AOT packaging,
+authentication, and publication.
 
 ## Prerequisites
 
@@ -80,31 +84,34 @@ archives for `win-x64`, `linux-x64`,
 `linux-arm64`, `osx-x64`, and `osx-arm64`, plus `SHA256SUMS.txt`. Builds run on
 matching native GitHub-hosted runners: Windows x64, Linux x64/Arm64, and macOS
 x64/Arm64. Each runner also creates its Native AOT RID-specific NuGet package.
-The release job rejects a missing, duplicate, or unexpected archive or RID
-package before creating the release.
+The release action rejects a missing, duplicate, or unexpected archive before
+dispatch. The NuGet publisher performs the equivalent RID package validation
+when its channel starts.
 
-After GitHub Release creation, the release action publishes five constrained
-npm binary packages, then `@lunarisdigitalsolutions/lunapack`, then the five
-RID-specific `Lunaris.Lunapack.Luna` NuGet tool packages, and finally its
-pointer package. Stable npm and NuGet packages include the complete CLI
-changelog. The action also builds a Linux x64 image from the downloaded Linux
-archive and pushes version plus `latest` or `next` tags to
+After GitHub Release creation, the dispatcher builds and publishes the Linux
+x64 container, publishes five constrained npm binary packages followed by
+`@lunarisdigitalsolutions/lunapack`, then publishes the five RID-specific
+`Lunaris.Lunapack.Luna` NuGet tool packages followed by its pointer package.
+Stable npm and NuGet packages include the complete CLI changelog. The container
+publisher uses the staged Linux binary and pushes version plus `latest` or
+`next` tags to
 `ghcr.io/lunarisdigitalsolutions/lunapack`. Configure npm trusted publishing for
 this workflow and package, configure NuGet trusted publishing, and set the
-non-secret `NUGET_USER` repository variable before tagging. Stable npm releases
-use `latest`; prerelease versions use `next`. Release tags must omit Semantic
+`NUGET_USER` repository Actions secret before tagging. Stable npm releases use
+`latest`; prerelease versions use `next`. Release tags must omit Semantic
 Versioning build metadata because OCI tags cannot contain `+` and every channel
 uses one unchanged version. A rerun downloads an existing GitHub Release and
-requires its five archives, checksum manifest, changelog asset, and release notes
-to match local staging exactly. It then skips an already-published npm version
-and uses NuGet duplicate skipping to resume an interrupted registry publication.
+requires its five archives, checksum manifest, changelog asset, and release
+notes to match local staging exactly. It then skips an already-published npm
+version and uses NuGet duplicate skipping to resume an interrupted registry
+publication.
 
 The reusable release action accepts `dry-run: 'true'`. Dry-run execution
 downloads and validates archives, stages npm packages, and builds NuGet
-pointer metadata after validating native RID packages, but skips GitHub Release
-creation, registry authentication, and all publishing steps. Use this mode from
-a temporary validation workflow before the first public release; do not publish
-from a pull request.
+pointer metadata after validating native RID packages. It also builds the
+container locally, but skips GitHub Release creation, registry authentication,
+and all publishing steps. Use this mode from a temporary validation workflow
+before the first public release; do not publish from a pull request.
 
 ## Configure Package Publishers
 
@@ -132,9 +139,9 @@ maintainer environment, then remove the temporary token and use OIDC only.
 For NuGet.org, create trusted-publishing policies for the `Lunaris.Lunapack.Luna`
 pointer package and its five RID package IDs. Use owner
 `lunarisdigitalsolutions`, repository `lunapack`, workflow `cli.yml`, and no
-environment. Set repository Actions variable `NUGET_USER` to the NuGet.org
-username associated with those policies. `NuGet/login` exchanges OIDC for a
-temporary API key; do not create a `NUGET_API_KEY` secret.
+environment. Store the NuGet.org username associated with those policies as a
+repository Actions secret named `NUGET_USER`. `NuGet/login` exchanges OIDC for
+a temporary API key; do not create a `NUGET_API_KEY` secret.
 
 GHCR uses the job-scoped `GITHUB_TOKEN`; no registry secret is required. Keep
 `packages: write` on the release job, allow GitHub Actions to create organization

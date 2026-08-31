@@ -71,4 +71,8 @@ Create a new architecture decision record from the [MADR-based template](templat
 | [ADR-0065](0065-organize-packs-by-release-and-payload-purpose.md)               | Superseded by ADR-0066.                                                                 |
 | [ADR-0066](0066-organize-maintained-packs-by-family-and-role.md)                | Organize maintained packs by stable family, then role or concern.                       |
 | [ADR-0067](0067-own-and-package-the-cli-changelog.md)                           | Superseded by ADR-0068.                                                                 |
-| [ADR-0068](0068-publish-nuget-previews-from-main.md)                            | Publish NuGet-only CLI previews from qualifying commits to main.                        |
+| [ADR-0068](0068-publish-nuget-previews-from-main.md)                            | Publish NuGet previews and dispatch CLI releases through channel-owned publishers.      |
+| [ADR-0069](0069-revalidate-git-source-cache-entries.md)                         | Revalidate project-local Git cache entries before using derived pack metadata.          |
+| [ADR-0070][adr-0070]                                                            | Bind privileged workflows to trusted input provenance.                                  |
+
+[adr-0070]: 0070-bind-privileged-workflows-to-trusted-provenance.md

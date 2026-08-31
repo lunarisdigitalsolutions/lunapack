@@ -42,7 +42,7 @@ internal sealed class PackLifecycleService(
 
     private readonly GitPackMaterializer _gitPackMaterializer =
         configuredGitPackMaterializer
-        ?? new GitPackMaterializer(fileSystem, new GitProcessRunner());
+        ?? new GitPackMaterializer(fileSystem, new GitProcessRunner(), console);
     private readonly CliConsole _console = console;
     private readonly LifecycleHookPlanner _hookPlanner = configuredHookPlanner ?? new(fileSystem);
     private readonly LifecycleHookAuthorizer _hookAuthorizer =

@@ -11,6 +11,55 @@ namespace Lunapack.Cli.UnitTests.Application.Serialization;
 public sealed class ManifestSchemaTests
 {
     [Test]
+    public async Task PackSchema_WhenManagedFileTargetDeclared_RequiresSafeRelativePath()
+    {
+        using var schema = JsonDocument.Parse(
+            File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "pack.schema.json"))
+        );
+        var target = schema
+            .RootElement.GetProperty("definitions")
+            .GetProperty("managedFile")
+            .GetProperty("properties")
+            .GetProperty("target")
+            .GetProperty("$ref")
+            .GetString();
+
+        await Assert.That(target).IsEqualTo("#/definitions/sourceRelativePath");
+    }
+
+    [Test]
+    public async Task LockSchema_WhenEffectiveTargetDeclared_RequiresSafeRelativePath()
+    {
+        using var schema = JsonDocument.Parse(
+            File.ReadAllText(
+                Path.Combine(AppContext.BaseDirectory, "TestData", "lunapack-lock.schema.json")
+            )
+        );
+        var definitions = schema.RootElement.GetProperty("definitions");
+
+        await Assert
+            .That(
+                definitions
+                    .GetProperty("managedFile")
+                    .GetProperty("properties")
+                    .GetProperty("targetPath")
+                    .GetProperty("$ref")
+                    .GetString()
+            )
+            .IsEqualTo("#/definitions/repositoryRelativePath");
+        await Assert
+            .That(
+                definitions
+                    .GetProperty("linkFile")
+                    .GetProperty("properties")
+                    .GetProperty("targetPath")
+                    .GetProperty("$ref")
+                    .GetString()
+            )
+            .IsEqualTo("#/definitions/repositoryRelativePath");
+    }
+
+    [Test]
     public async Task ProjectSchema_WhenRequestedPackDeclared_AllowsPackRemapping()
     {
         using var schema = JsonDocument.Parse(

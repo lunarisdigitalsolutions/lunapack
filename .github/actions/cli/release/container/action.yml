@@ -1,0 +1,68 @@
+name: Release Luna CLI container
+description: Build and publish the Luna CLI container from staged release packages.
+
+inputs:
+  version:
+    description: V-prefixed stable release version.
+    required: true
+  dry-run:
+    description: Build locally without publishing the container.
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Stage container context
+      shell: bash
+      run: |
+        set -euo pipefail
+        container_directory="release-staging/container"
+        rm -rf "$container_directory"
+        mkdir -p "$container_directory"
+        cp release-staging/packages/native/linux-x64/luna "$container_directory/luna"
+        test -f "$container_directory/luna"
+
+    - name: Authenticate to GitHub Container Registry
+      if: ${{ inputs.dry-run != 'true' }}
+      shell: bash
+      env:
+        REGISTRY_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        test -n "$REGISTRY_TOKEN"
+        printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io \
+          --username "$GITHUB_ACTOR" \
+          --password-stdin
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+
+    - name: Build Luna container image
+      shell: bash
+      env:
+        DRY_RUN: ${{ inputs.dry-run }}
+        REVISION: ${{ github.sha }}
+        TAG: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        version="${TAG#v}"
+        image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/lunapack"
+        channel=latest
+        if [[ "$version" == *-* ]]; then
+          channel=next
+        fi
+        output=(--push --provenance=mode=max --sbom=true)
+        if [[ "$DRY_RUN" == 'true' ]]; then
+          output=(--load)
+        fi
+
+        docker buildx build \
+          --platform linux/amd64 \
+          --file projects/cli/distribution/Dockerfile \
+          --build-arg "VERSION=$version" \
+          --build-arg "REVISION=$REVISION" \
+          --tag "$image:$version" \
+          --tag "$image:$channel" \
+          "${output[@]}" \
+          release-staging/container
