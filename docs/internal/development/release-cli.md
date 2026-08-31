@@ -4,6 +4,21 @@ Create a CLI release after its consumer-visible implementation commits are on
 `main`. The release script validates the changelog and publishes the release
 commit and tag in the order consumed by GitHub Actions.
 
+Commits to `main` that change `projects/cli` run the NuGet preview path in the
+`CLI: Release` workflow. MinVer derives the next patch preview from the latest
+`v` tag, such as `1.2.1-preview.1` after `v1.2.0`. Preview versions are not Git
+tags; stable releases remain `vX.Y.Z` tags. The preview jobs publish the five
+RID-specific tool packages directly from native runners, then publish the
+pointer package. They do not publish npm packages or containers and do not
+create a GitHub artifact or release. Preview NuGet packages include a generated
+`CHANGELOG.md` containing only the canonical `Unreleased` section.
+
+Both paths call the reusable release action. Its `release-type` input accepts
+`stable` or `preview` and defaults to `stable`. Stable runs the complete release
+path. Preview currently runs only NuGet setup, Native AOT packaging,
+authentication, and publication; this leaves room to add preview channels
+without changing the release-type contract.
+
 ## Prerequisites
 
 - Commit and push all implementation changes to `origin/main`.
@@ -71,7 +86,7 @@ package before creating the release.
 After GitHub Release creation, the release action publishes five constrained
 npm binary packages, then `@lunarisdigitalsolutions/lunapack`, then the five
 RID-specific `Lunaris.Lunapack.Luna` NuGet tool packages, and finally its
-pointer package. Every npm and NuGet package includes the complete CLI
+pointer package. Stable npm and NuGet packages include the complete CLI
 changelog. The action also builds a Linux x64 image from the downloaded Linux
 archive and pushes version plus `latest` or `next` tags to
 `ghcr.io/lunarisdigitalsolutions/lunapack`. Configure npm trusted publishing for

@@ -7,7 +7,7 @@ namespace Lunapack.Cli.UnitTests.Links;
 
 public sealed class LinkSelectionTests
 {
-    private static readonly string[] Candidates =
+    private static readonly string[] _candidates =
     [
         "agents/CSharpExpert.agent.md",
         "agents/ai-team-architect.agent.md",
@@ -23,7 +23,7 @@ public sealed class LinkSelectionTests
         var selection = LinkSelectionService.Select(
             "agents-csharp-expert",
             CreateLink(path: "agents", includes: ["CSharpExpert.agent.md"]),
-            Candidates
+            _candidates
         );
 
         await Assert
@@ -37,7 +37,7 @@ public sealed class LinkSelectionTests
         var selection = LinkSelectionService.Select(
             "agents",
             CreateLink(includes: ["agents"]),
-            Candidates
+            _candidates
         );
 
         await Assert
@@ -59,7 +59,7 @@ public sealed class LinkSelectionTests
                 path: "agents",
                 includes: ["ai-team*.agent.md", "ai-team-architect.agent.md"]
             ),
-            Candidates
+            _candidates
         );
 
         await Assert
@@ -76,7 +76,7 @@ public sealed class LinkSelectionTests
         var selection = LinkSelectionService.Select(
             "agents",
             CreateLink(path: "agents", includes: ["**/*.agent.md"], excludes: ["nested/*"]),
-            Candidates
+            _candidates
         );
 
         await Assert
@@ -94,7 +94,7 @@ public sealed class LinkSelectionTests
         var selection = LinkSelectionService.Select(
             "chatmodes",
             CreateLink(path: "chatmodes", includes: ["**/*.md"]),
-            Candidates
+            _candidates
         );
 
         await Assert.That(selection.RequireValue()).IsEquivalentTo(["chatmodes/plan.chatmode.md"]);
@@ -106,7 +106,7 @@ public sealed class LinkSelectionTests
         var selection = LinkSelectionService.Select(
             "agents",
             CreateLink(path: "agents", includes: ["missing.agent.md"]),
-            Candidates
+            _candidates
         );
 
         await Assert.That(selection.Error).Contains("does not match any source file");
@@ -118,7 +118,7 @@ public sealed class LinkSelectionTests
         var selection = LinkSelectionService.Select(
             "agents",
             CreateLink(path: "agents", includes: ["**/*.agent.md"], excludes: ["**/*.agent.md"]),
-            Candidates
+            _candidates
         );
 
         await Assert.That(selection.Error).Contains("select no files");
@@ -130,7 +130,7 @@ public sealed class LinkSelectionTests
         var selection = LinkSelectionService.Select(
             "agents",
             CreateLink(includes: [@"agents\nested\deep.agent.md"]),
-            Candidates
+            _candidates
         );
 
         await Assert.That(selection.RequireValue()).IsEquivalentTo(["agents/nested/deep.agent.md"]);

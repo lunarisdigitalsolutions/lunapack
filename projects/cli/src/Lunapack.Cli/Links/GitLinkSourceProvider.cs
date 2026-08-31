@@ -201,22 +201,21 @@ internal sealed class GitLinkSourceProvider(
     )
     {
         var timeout = CreateTimeout(source);
-        foreach (
-            var arguments in new[]
-            {
-                new[] { "init", "--quiet", repository },
-                ["-C", repository, "remote", "add", "origin", source.Url],
-                [
-                    "-C",
-                    repository,
-                    "fetch",
-                    "--depth=1",
-                    "--filter=blob:none",
-                    "origin",
-                    provenance.ResolvedCommit,
-                ],
-            }
-        )
+        var commands = new[]
+        {
+            new[] { "init", "--quiet", repository },
+            ["-C", repository, "remote", "add", "origin", source.Url],
+            [
+                "-C",
+                repository,
+                "fetch",
+                "--depth=1",
+                "--filter=blob:none",
+                "origin",
+                provenance.ResolvedCommit,
+            ],
+        };
+        foreach (var arguments in commands)
         {
             var result = await processRunner.RunAsync(arguments, timeout, cancellationToken);
             if (!result.IsSuccess)
@@ -249,35 +248,34 @@ internal sealed class GitLinkSourceProvider(
         var repositoryPaths = missingPaths.Select(path =>
             string.IsNullOrEmpty(basePath) ? path : $"{basePath}/{path}"
         );
-        foreach (
-            var arguments in new[]
-            {
-                new[] { "-C", listing.RootDirectory, "sparse-checkout", "init", "--no-cone" },
-                [
-                    "-C",
-                    listing.RootDirectory,
-                    "sparse-checkout",
-                    "set",
-                    "--no-cone",
-                    "--",
-                    .. repositoryPaths.Select(path => $"/{path}"),
-                ],
-                [
-                    "-c",
-                    "core.autocrlf=false",
-                    "-c",
-                    "core.eol=lf",
-                    "-c",
-                    "core.symlinks=false",
-                    "-C",
-                    listing.RootDirectory,
-                    "checkout",
-                    "--quiet",
-                    "--detach",
-                    "FETCH_HEAD",
-                ],
-            }
-        )
+        var commands = new[]
+        {
+            new[] { "-C", listing.RootDirectory, "sparse-checkout", "init", "--no-cone" },
+            [
+                "-C",
+                listing.RootDirectory,
+                "sparse-checkout",
+                "set",
+                "--no-cone",
+                "--",
+                .. repositoryPaths.Select(path => $"/{path}"),
+            ],
+            [
+                "-c",
+                "core.autocrlf=false",
+                "-c",
+                "core.eol=lf",
+                "-c",
+                "core.symlinks=false",
+                "-C",
+                listing.RootDirectory,
+                "checkout",
+                "--quiet",
+                "--detach",
+                "FETCH_HEAD",
+            ],
+        };
+        foreach (var arguments in commands)
         {
             var result = await processRunner.RunAsync(
                 arguments,
@@ -365,11 +363,11 @@ internal sealed class GitLinkSourceProvider(
             }
 
             var fields = line[..separator].Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (
+            var treeEntryIsInvalid =
                 fields.Length != 3
                 || !string.Equals(fields[1], "blob", StringComparison.Ordinal)
-                || !IsRegularFileMode(fields[0])
-            )
+                || !IsRegularFileMode(fields[0]);
+            if (treeEntryIsInvalid)
             {
                 continue;
             }

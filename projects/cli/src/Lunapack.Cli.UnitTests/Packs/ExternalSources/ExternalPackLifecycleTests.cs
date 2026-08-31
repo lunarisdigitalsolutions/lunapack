@@ -1,3 +1,4 @@
+using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Catalog;
 using Lunapack.Cli.Packs;

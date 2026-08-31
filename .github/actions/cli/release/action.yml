@@ -1,10 +1,18 @@
 name: Release Luna CLI
-description: Publish downloaded Luna CLI archives, checksums, and the changelog for an existing tag.
+description: Publish stable or preview Luna CLI distributions.
 
 inputs:
+  release-type:
+    description: Release type. Stable publishes every distribution; preview currently publishes NuGet only.
+    required: false
+    default: stable
   version:
-    description: Existing v-prefixed semantic version tag used as the release version.
+    description: Existing v-prefixed stable tag or plain preview package version.
     required: true
+  runtime-identifier:
+    description: Optional runtime identifier for a RID-specific preview package. Omit for the pointer package.
+    required: false
+    default: ''
   artifact-pattern:
     description: Pattern used to download CLI distribution artifacts.
     required: false
@@ -32,7 +40,19 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Validate release type
+      shell: bash
+      env:
+        RELEASE_TYPE: ${{ inputs.release-type }}
+      run: |
+        set -euo pipefail
+        if [[ "$RELEASE_TYPE" != 'stable' && "$RELEASE_TYPE" != 'preview' ]]; then
+          echo "Unsupported release type: $RELEASE_TYPE" >&2
+          exit 1
+        fi
+
     - name: Download CLI archives
+      if: ${{ inputs.release-type == 'stable' }}
       uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
       with:
         github-token: ${{ github.token }}
@@ -42,6 +62,7 @@ runs:
         run-id: ${{ inputs.run-id || github.run_id }}
 
     - name: Download RID-specific .NET tools
+      if: ${{ inputs.release-type == 'stable' }}
       uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
       with:
         github-token: ${{ github.token }}
@@ -56,6 +77,7 @@ runs:
         registry-url: https://registry.npmjs.org
 
     - name: Stage release assets
+      if: ${{ inputs.release-type == 'stable' }}
       shell: bash
       env:
         CHANGELOG_PATH: ${{ inputs.changelog-path }}
@@ -157,7 +179,7 @@ runs:
         ) > release-staging/SHA256SUMS.txt
 
     - name: Create GitHub Release
-      if: ${{ inputs.dry-run != 'true' }}
+      if: ${{ inputs.release-type == 'stable' && inputs.dry-run != 'true' }}
       env:
         GH_TOKEN: ${{ github.token }}
         VERSION: ${{ inputs.version }}
@@ -190,6 +212,7 @@ runs:
 
     - name: Stage package distributions
       id: packages
+      if: ${{ inputs.release-type == 'stable' }}
       shell: bash
       env:
         TAG: ${{ inputs.version }}
@@ -203,7 +226,7 @@ runs:
         printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
 
     - name: Set up .NET SDK
-      uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+      uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
       with:
         global-json-file: global.json
         cache: true
@@ -214,6 +237,7 @@ runs:
       run: dotnet restore projects/cli/src/Lunapack.Cli/Lunapack.Cli.csproj --locked-mode
 
     - name: Pack Luna .NET tool pointer
+      if: ${{ inputs.release-type == 'stable' }}
       shell: bash
       env:
         VERSION: ${{ steps.packages.outputs.version }}
@@ -226,7 +250,78 @@ runs:
           -p:MinVerVersionOverride="$VERSION" \
           -p:LunapackPackAsTool=true
 
+    - name: Validate preview inputs
+      if: ${{ inputs.release-type == 'preview' }}
+      shell: bash
+      env:
+        RUNTIME_IDENTIFIER: ${{ inputs.runtime-identifier }}
+        VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        if [[ ! "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-preview\.(0|[1-9][0-9]*)$ ]]; then
+          echo "Preview version is invalid: $VERSION" >&2
+          exit 1
+        fi
+
+        if [[ -n "$RUNTIME_IDENTIFIER" && ! " win-x64 linux-x64 linux-arm64 osx-x64 osx-arm64 " =~ " $RUNTIME_IDENTIFIER " ]]; then
+          echo "Unsupported preview runtime identifier: $RUNTIME_IDENTIFIER" >&2
+          exit 1
+        fi
+
+    - name: Publish Native AOT preview
+      if: ${{ inputs.release-type == 'preview' && inputs.runtime-identifier != '' }}
+      shell: bash
+      env:
+        RUNTIME_IDENTIFIER: ${{ inputs.runtime-identifier }}
+        VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        dotnet publish projects/cli/src/Lunapack.Cli/Lunapack.Cli.csproj \
+          --configuration Release \
+          --runtime "$RUNTIME_IDENTIFIER" \
+          --no-restore \
+          --self-contained \
+          -p:PublishAot=true \
+          -p:MinVerVersionOverride="$VERSION"
+
+    - name: Extract Unreleased changelog
+      if: ${{ inputs.release-type == 'preview' }}
+      shell: bash
+      run: node projects/cli/distribution/extract-release-notes.mjs projects/cli/CHANGELOG.md "$RUNNER_TEMP/CHANGELOG.md" unreleased
+
+    - name: Pack preview .NET tool
+      id: preview-package
+      if: ${{ inputs.release-type == 'preview' }}
+      shell: bash
+      env:
+        RUNTIME_IDENTIFIER: ${{ inputs.runtime-identifier }}
+        VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        package_id='Lunaris.Lunapack.Luna'
+        pack_arguments=(
+          --configuration Release
+          --no-restore
+          --output release-staging/nuget
+          -p:MinVerVersionOverride="$VERSION"
+          -p:LunapackPackAsTool=true
+          -p:LunapackChangelogPath="$RUNNER_TEMP/CHANGELOG.md"
+        )
+        if [[ -n "$RUNTIME_IDENTIFIER" ]]; then
+          pack_arguments+=(
+            --no-build
+            -p:RuntimeIdentifier="$RUNTIME_IDENTIFIER"
+          )
+          package_id="$package_id.$RUNTIME_IDENTIFIER"
+        fi
+
+        dotnet pack projects/cli/src/Lunapack.Cli/Lunapack.Cli.csproj "${pack_arguments[@]}"
+        package_path="release-staging/nuget/$package_id.$VERSION.nupkg"
+        test -f "$package_path"
+        printf 'path=%s\n' "$package_path" >> "$GITHUB_OUTPUT"
+
     - name: Stage container context
+      if: ${{ inputs.release-type == 'stable' }}
       shell: bash
       env:
         VERSION: ${{ steps.packages.outputs.version }}
@@ -239,7 +334,7 @@ runs:
         test -f "$container_directory/luna"
 
     - name: Authenticate to GitHub Container Registry
-      if: ${{ inputs.dry-run != 'true' }}
+      if: ${{ inputs.release-type == 'stable' && inputs.dry-run != 'true' }}
       shell: bash
       env:
         REGISTRY_TOKEN: ${{ github.token }}
@@ -251,9 +346,11 @@ runs:
           --password-stdin
 
     - name: Set up Docker Buildx
+      if: ${{ inputs.release-type == 'stable' }}
       uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
 
     - name: Build Luna container image
+      if: ${{ inputs.release-type == 'stable' }}
       shell: bash
       env:
         DRY_RUN: ${{ inputs.dry-run }}
@@ -283,7 +380,7 @@ runs:
           release-staging/container
 
     - name: Publish npm platform packages
-      if: ${{ inputs.dry-run != 'true' }}
+      if: ${{ inputs.release-type == 'stable' && inputs.dry-run != 'true' }}
       shell: bash
       env:
         VERSION: ${{ steps.packages.outputs.version }}
@@ -304,7 +401,7 @@ runs:
         done
 
     - name: Publish npm entry package
-      if: ${{ inputs.dry-run != 'true' }}
+      if: ${{ inputs.release-type == 'stable' && inputs.dry-run != 'true' }}
       shell: bash
       env:
         VERSION: ${{ steps.packages.outputs.version }}
@@ -329,7 +426,7 @@ runs:
         user: ${{ inputs.nuget-user }}
 
     - name: Publish Luna .NET tool
-      if: ${{ inputs.dry-run != 'true' }}
+      if: ${{ inputs.release-type == 'stable' && inputs.dry-run != 'true' }}
       shell: bash
       env:
         NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
@@ -344,6 +441,20 @@ runs:
             --skip-duplicate
         done
         dotnet nuget push "release-staging/nuget/Lunaris.Lunapack.Luna.${VERSION}.nupkg" \
+          --api-key "$NUGET_API_KEY" \
+          --source https://api.nuget.org/v3/index.json \
+          --skip-duplicate
+
+    - name: Publish preview .NET tool
+      if: ${{ inputs.release-type == 'preview' && inputs.dry-run != 'true' }}
+      shell: bash
+      env:
+        NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+        PACKAGE_PATH: ${{ steps.preview-package.outputs.path }}
+      run: |
+        set -euo pipefail
+        test -n "$NUGET_API_KEY"
+        dotnet nuget push "$PACKAGE_PATH" \
           --api-key "$NUGET_API_KEY" \
           --source https://api.nuget.org/v3/index.json \
           --skip-duplicate

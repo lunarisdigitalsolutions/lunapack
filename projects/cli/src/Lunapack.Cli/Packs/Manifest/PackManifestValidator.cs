@@ -73,9 +73,10 @@ internal static class PackManifestValidator
     )
     {
         var normalizedDirectory = ProjectPath.Normalize(directory).TrimEnd('/') + "/";
-        if (
-            !sourceFiles.Any(path => path.StartsWith(normalizedDirectory, StringComparison.Ordinal))
-        )
+        var hasSourceFiles = sourceFiles.Any(path =>
+            path.StartsWith(normalizedDirectory, StringComparison.Ordinal)
+        );
+        if (!hasSourceFiles)
         {
             issues.Add($"Pack '{packId}' source directory '{directory}' contains no files.");
         }

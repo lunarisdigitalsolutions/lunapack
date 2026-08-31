@@ -91,9 +91,13 @@ internal sealed class LifecycleHookAuthorizer(
             authorization = ManifestOperationResult<
                 IReadOnlyList<ResolvedLifecycleHookInvocation>
             >.Success([]);
-            deniedScripts = scripts
-                .Select(script => new PolicyDeniedLifecycleHook(script, evaluation.DenyingScopes))
-                .ToArray();
+            deniedScripts =
+            [
+                .. scripts.Select(script => new PolicyDeniedLifecycleHook(
+                    script,
+                    evaluation.DenyingScopes
+                )),
+            ];
         }
         else
         {

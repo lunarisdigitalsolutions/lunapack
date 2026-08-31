@@ -60,9 +60,8 @@ internal sealed class LifecycleCommandResolver(IFileSystem fileSystem)
             yield break;
         }
 
-        foreach (
-            var extension in (Environment.GetEnvironmentVariable("PATHEXT") ?? ".EXE").Split(';')
-        )
+        var pathExtensions = (Environment.GetEnvironmentVariable("PATHEXT") ?? ".EXE").Split(';');
+        foreach (var extension in pathExtensions)
         {
             if (!string.IsNullOrEmpty(extension))
             {

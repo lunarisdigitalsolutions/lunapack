@@ -27,12 +27,11 @@ internal sealed class SearchPacksCommandHandler(
         {
             Description = "Maximum versions to display for each package.",
         };
-        versionCountOption.CompletionSources.Add(
-            Enumerable
+        versionCountOption.CompletionSources.Add([
+            .. Enumerable
                 .Range(1, 10)
-                .Select(value => value.ToString(System.Globalization.CultureInfo.InvariantCulture))
-                .ToArray()
-        );
+                .Select(value => value.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+        ]);
         var allowDraftOption = new Option<bool>("--allow-draft")
         {
             Description = "Include draft packs.",
@@ -101,7 +100,7 @@ internal sealed class SearchPacksCommandHandler(
         var normalizedSearchTerm = searchTerm.Trim();
         var searchablePacks = allowDraft
             ? catalogPacks
-            : catalogPacks.Where(pack => !pack.Manifest.Draft).ToList();
+            : [.. catalogPacks.Where(pack => !pack.Manifest.Draft)];
         var packs = PackCatalog.Search(searchablePacks, normalizedSearchTerm);
         var linkSummaries = await linkInspectionService.ListAsync(projectDirectory);
         if (linkSummaries.Value is not { } links)

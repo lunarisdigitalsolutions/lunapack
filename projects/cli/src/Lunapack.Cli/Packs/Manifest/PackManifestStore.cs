@@ -193,7 +193,7 @@ internal sealed class PackManifestStore(IFileSystem fileSystem)
                 )
                 : _serializer.Serialize(manifest);
             fileSystem.File.WriteAllText(temporaryPath, contents);
-            if (
+            var manifestChanged =
                 expectedContents is not null
                 && (
                     !fileSystem.File.Exists(manifestPath)
@@ -202,8 +202,8 @@ internal sealed class PackManifestStore(IFileSystem fileSystem)
                         expectedContents,
                         StringComparison.Ordinal
                     )
-                )
-            )
+                );
+            if (manifestChanged)
             {
                 return Task.FromResult(
                     ManifestOperationResult<PackManifest>.Failure(
@@ -280,10 +280,10 @@ internal sealed class PackManifestStore(IFileSystem fileSystem)
             return metadataPath;
         }
 
-        if (
+        var isParameterIssue =
             issue.StartsWith("Parameter ", StringComparison.Ordinal)
-            || issue.StartsWith("Enum parameter ", StringComparison.Ordinal)
-        )
+            || issue.StartsWith("Enum parameter ", StringComparison.Ordinal);
+        if (isParameterIssue)
         {
             return "$.parameters";
         }
@@ -293,11 +293,11 @@ internal sealed class PackManifestStore(IFileSystem fileSystem)
             return "$.managedFiles";
         }
 
-        if (
+        var isHookIssue =
             issue.StartsWith("Lifecycle hook ", StringComparison.Ordinal)
             || issue.StartsWith("Script hook ", StringComparison.Ordinal)
-            || issue.StartsWith("Instruction hook ", StringComparison.Ordinal)
-        )
+            || issue.StartsWith("Instruction hook ", StringComparison.Ordinal);
+        if (isHookIssue)
         {
             return "$.hooks";
         }
@@ -307,10 +307,10 @@ internal sealed class PackManifestStore(IFileSystem fileSystem)
             return "$.packs";
         }
 
-        if (
+        var isTagIssue =
             issue.StartsWith("Pack tag", StringComparison.Ordinal)
-            || issue.StartsWith("Pack cannot define more than", StringComparison.Ordinal)
-        )
+            || issue.StartsWith("Pack cannot define more than", StringComparison.Ordinal);
+        if (isTagIssue)
         {
             return "$.tags";
         }

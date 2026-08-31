@@ -1,6 +1,7 @@
-namespace Lunapack.Cli.Packs.Lifecycle;
-
+using Lunapack.Cli.Application;
 using Spectre.Console;
+
+namespace Lunapack.Cli.Packs.Lifecycle;
 
 internal sealed class ConsoleLifecycleHookConfirmer(CliConsole console) : ILifecycleHookConfirmer
 {

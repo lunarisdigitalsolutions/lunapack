@@ -9,7 +9,7 @@ namespace Lunapack.Cli.UnitTests.Links;
 
 public sealed class LinkResolverTests
 {
-    private static readonly string ProjectDirectory = OperatingSystem.IsWindows()
+    private static readonly string _projectDirectory = OperatingSystem.IsWindows()
         ? @"C:\project"
         : "/project";
 
@@ -112,7 +112,7 @@ public sealed class LinkResolverTests
     public async Task ResolveAsync_WhenSourceDirectoryIsMissing_Fails()
     {
         var fileSystem = new MockFileSystem();
-        fileSystem.AddDirectory(ProjectDirectory);
+        fileSystem.AddDirectory(_projectDirectory);
 
         var resolution = await ResolveAsync(fileSystem, CreateLink());
 
@@ -125,7 +125,7 @@ public sealed class LinkResolverTests
         var fileSystem = CreateFileSystem();
         fileSystem.File.CreateSymbolicLink(
             SourceFilePath("agents", "linked.agent.md"),
-            fileSystem.Path.Combine(ProjectDirectory, "secret.md")
+            fileSystem.Path.Combine(_projectDirectory, "secret.md")
         );
 
         using var resolution = (await ResolveAsync(fileSystem, CreateLink())).RequireValue();
@@ -173,7 +173,7 @@ public sealed class LinkResolverTests
             },
         };
         var invocationRemapping = ManagedFileTargetRemapping
-            .Create(fileSystem, ProjectDirectory, [".github/agents=.invocation/agents"], [])
+            .Create(fileSystem, _projectDirectory, [".github/agents=.invocation/agents"], [])
             .RequireValue();
 
         using var resolution = (
@@ -233,7 +233,7 @@ public sealed class LinkResolverTests
             [new LocalLinkSourceProvider(fileSystem)]
         );
         return resolver.ResolveAsync(
-            ProjectDirectory,
+            _projectDirectory,
             configuration ?? CreateConfiguration(),
             "agents",
             link,
@@ -260,12 +260,15 @@ public sealed class LinkResolverTests
         );
         fileSystem.AddFile(SourceFilePath("agents", "ai-team.agent.md"), new MockFileData("team"));
         fileSystem.AddFile(SourceFilePath("README.md"), new MockFileData("readme"));
-        fileSystem.AddFile(Path.Combine(ProjectDirectory, "secret.md"), new MockFileData("secret"));
+        fileSystem.AddFile(
+            Path.Combine(_projectDirectory, "secret.md"),
+            new MockFileData("secret")
+        );
         return fileSystem;
     }
 
     private static string SourceFilePath(params string[] segments) =>
-        Path.Combine([ProjectDirectory, "upstream", .. segments]);
+        Path.Combine([_projectDirectory, "upstream", .. segments]);
 
     private static ProjectConfiguration.Link CreateLink() =>
         new()

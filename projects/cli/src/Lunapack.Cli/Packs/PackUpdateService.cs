@@ -24,7 +24,7 @@ internal sealed class PackUpdateService(
         bool skipInstructions = false,
         bool acceptSources = false
     ) =>
-        await this.UpdateAsync(
+        await UpdateAsync(
             projectDirectory,
             packReference,
             selectedUpdateIds: null,
@@ -42,7 +42,7 @@ internal sealed class PackUpdateService(
         bool skipInstructions = false,
         bool acceptSources = false
     ) =>
-        await this.UpdateAsync(
+        await UpdateAsync(
             projectDirectory,
             packReference: null,
             selectedUpdateIds,
@@ -188,11 +188,13 @@ internal sealed class PackUpdateService(
             );
         }
 
-        if (
-            !dryRun
-            && update.SourceSwitch is { } sourceSwitch
-            && !_sourceSwitchConfirmer.Confirm(sourceSwitch)
-        )
+        if (dryRun || update.SourceSwitch is not { } sourceSwitch)
+        {
+            return null;
+        }
+
+        var sourceSwitchConfirmed = _sourceSwitchConfirmer.Confirm(sourceSwitch);
+        if (!sourceSwitchConfirmed)
         {
             return UpdateResult.Failure(
                 $"Source switch for pack '{sourceSwitch.PackId}' was not confirmed."
@@ -417,14 +419,14 @@ internal sealed class PackUpdateService(
     private static List<UpdateOutcome> CreateUpdateOutcomes(
         IEnumerable<AvailablePackUpdate> updates
     ) =>
-        updates
-            .Select(update => new UpdateOutcome(
+        [
+            .. updates.Select(update => new UpdateOutcome(
                 update.RequestedRoot.Id,
                 update.Current.Version,
                 update.Latest.Manifest.Version,
                 IsCurrent: false
-            ))
-            .ToList();
+            )),
+        ];
 
     private static List<ProjectConfiguration.RequestedPack> SelectExternalRefreshRoots(
         ProjectState state,
@@ -432,14 +434,14 @@ internal sealed class PackUpdateService(
         HashSet<string> versionUpdateIds,
         Dictionary<string, ProjectLockFile.ResolvedPack> currentPacks
     ) =>
-        state
-            .Configuration.Packs.Where(root =>
+        [
+            .. state.Configuration.Packs.Where(root =>
                 !versionUpdateIds.Contains(root.Id)
                 && (selectedUpdateIds is null || selectedUpdateIds.Contains(root.Id))
                 && currentPacks.TryGetValue(root.Id, out var current)
                 && current.ExternalSources.Count > 0
-            )
-            .ToList();
+            ),
+        ];
 
     private async Task<UpdateResult?> PreviewExternalRefreshAsync(
         string projectDirectory,

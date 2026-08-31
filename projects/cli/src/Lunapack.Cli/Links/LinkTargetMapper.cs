@@ -46,13 +46,12 @@ internal sealed class LinkTargetMapper(IFileSystem fileSystem)
                 targetRemapping?.Resolve(effectiveTarget, configuredRemapping)
                 ?? configuredRemapping?.Resolve(effectiveTarget)
                 ?? effectiveTarget;
-            if (
-                string.Equals(
-                    configuredTarget,
-                    ManagedFileTargetRemapping.IgnoreTarget,
-                    StringComparison.Ordinal
-                )
-            )
+            var targetIsIgnored = string.Equals(
+                configuredTarget,
+                ManagedFileTargetRemapping.IgnoreTarget,
+                StringComparison.Ordinal
+            );
+            if (targetIsIgnored)
             {
                 continue;
             }

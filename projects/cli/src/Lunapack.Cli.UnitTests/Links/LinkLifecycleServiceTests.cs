@@ -1,5 +1,6 @@
 using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
+using Lunapack.Cli.Application;
 using Lunapack.Cli.Links;
 using Lunapack.Cli.Packs.ManagedFiles;
 using Lunapack.Cli.Packs.Planning;
@@ -11,7 +12,7 @@ namespace Lunapack.Cli.UnitTests.Links;
 
 public sealed class LinkLifecycleServiceTests
 {
-    private static readonly string ProjectDirectory = OperatingSystem.IsWindows()
+    private static readonly string _projectDirectory = OperatingSystem.IsWindows()
         ? @"C:\project"
         : "/project";
 
@@ -22,7 +23,7 @@ public sealed class LinkLifecycleServiceTests
         var service = CreateService(fileSystem);
         await WriteConfigurationAsync(fileSystem, CreateConfiguration());
 
-        var exitCode = await service.InstallAsync(ProjectDirectory, "agents");
+        var exitCode = await service.InstallAsync(_projectDirectory, "agents");
 
         await Assert.That(exitCode).IsEqualTo(0);
         await Assert.That(fileSystem.File.Exists(TargetPath("CSharpExpert.agent.md"))).IsTrue();
@@ -43,7 +44,7 @@ public sealed class LinkLifecycleServiceTests
         var service = CreateService(fileSystem);
         await WriteConfigurationAsync(fileSystem, CreateConfiguration());
 
-        var exitCode = await service.InstallAsync(ProjectDirectory, "missing");
+        var exitCode = await service.InstallAsync(_projectDirectory, "missing");
 
         await Assert.That(exitCode).IsEqualTo(1);
     }
@@ -55,9 +56,9 @@ public sealed class LinkLifecycleServiceTests
         var console = new SpectreTestConsole();
         var service = CreateService(fileSystem, console);
         await WriteConfigurationAsync(fileSystem, CreateConfiguration());
-        await service.InstallAsync(ProjectDirectory, "agents");
+        await service.InstallAsync(_projectDirectory, "agents");
 
-        var exitCode = await service.InstallAsync(ProjectDirectory, "agents");
+        var exitCode = await service.InstallAsync(_projectDirectory, "agents");
 
         await Assert.That(exitCode).IsEqualTo(1);
         await Assert.That(Unwrap(console)).Contains("is already installed");
@@ -72,7 +73,7 @@ public sealed class LinkLifecycleServiceTests
         var service = CreateService(fileSystem, console);
         await WriteConfigurationAsync(fileSystem, CreateConfiguration());
 
-        var exitCode = await service.InstallAsync(ProjectDirectory, "agents");
+        var exitCode = await service.InstallAsync(_projectDirectory, "agents");
 
         await Assert.That(exitCode).IsEqualTo(1);
         await Assert.That(Unwrap(console)).Contains("is not managed by LunaPack");
@@ -86,7 +87,7 @@ public sealed class LinkLifecycleServiceTests
         var service = CreateService(fileSystem);
         await WriteConfigurationAsync(fileSystem, CreateConfiguration());
 
-        var exitCode = await service.InstallAsync(ProjectDirectory, "agents", adoptExisting: true);
+        var exitCode = await service.InstallAsync(_projectDirectory, "agents", adoptExisting: true);
 
         await Assert.That(exitCode).IsEqualTo(0);
     }
@@ -110,7 +111,7 @@ public sealed class LinkLifecycleServiceTests
             }
         );
 
-        var exitCode = await service.InstallAsync(ProjectDirectory, "agents");
+        var exitCode = await service.InstallAsync(_projectDirectory, "agents");
 
         await Assert.That(exitCode).IsEqualTo(1);
         await Assert.That(Unwrap(console)).Contains("already managed by pack 'acme-pack'");
@@ -122,10 +123,10 @@ public sealed class LinkLifecycleServiceTests
         var fileSystem = CreateFileSystem();
         var service = CreateService(fileSystem);
         await WriteConfigurationAsync(fileSystem, CreateConfiguration());
-        await service.InstallAsync(ProjectDirectory, "agents");
+        await service.InstallAsync(_projectDirectory, "agents");
         fileSystem.File.WriteAllText(SourceFilePath("agents", "CSharpExpert.agent.md"), "changed");
 
-        var exitCode = await service.UpdateAsync(ProjectDirectory, "agents");
+        var exitCode = await service.UpdateAsync(_projectDirectory, "agents");
 
         await Assert.That(exitCode).IsEqualTo(0);
         await Assert
@@ -139,10 +140,10 @@ public sealed class LinkLifecycleServiceTests
         var fileSystem = CreateFileSystem();
         var service = CreateService(fileSystem);
         await WriteConfigurationAsync(fileSystem, CreateConfiguration());
-        await service.InstallAsync(ProjectDirectory, "agents");
+        await service.InstallAsync(_projectDirectory, "agents");
         fileSystem.File.Delete(SourceFilePath("agents", "ai-team.agent.md"));
 
-        var exitCode = await service.UpdateAsync(ProjectDirectory, "agents");
+        var exitCode = await service.UpdateAsync(_projectDirectory, "agents");
 
         await Assert.That(exitCode).IsEqualTo(0);
         await Assert.That(fileSystem.File.Exists(TargetPath("ai-team.agent.md"))).IsFalse();
@@ -157,7 +158,7 @@ public sealed class LinkLifecycleServiceTests
         var service = CreateService(fileSystem);
         var configuration = CreateConfiguration();
         await WriteConfigurationAsync(fileSystem, configuration);
-        await service.InstallAsync(ProjectDirectory, "agents");
+        await service.InstallAsync(_projectDirectory, "agents");
         configuration.Remap = new ProjectConfiguration.Remapping
         {
             Directories = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -167,7 +168,7 @@ public sealed class LinkLifecycleServiceTests
         };
         await WriteConfigurationAsync(fileSystem, configuration);
 
-        var exitCode = await service.UpdateAsync(ProjectDirectory, "agents");
+        var exitCode = await service.UpdateAsync(_projectDirectory, "agents");
 
         await Assert.That(exitCode).IsEqualTo(0);
         await Assert.That(fileSystem.File.Exists(TargetPath("CSharpExpert.agent.md"))).IsTrue();
@@ -182,10 +183,10 @@ public sealed class LinkLifecycleServiceTests
         var fileSystem = CreateFileSystem();
         var service = CreateService(fileSystem);
         await WriteConfigurationAsync(fileSystem, CreateConfiguration());
-        await service.InstallAsync(ProjectDirectory, "agents");
+        await service.InstallAsync(_projectDirectory, "agents");
         var before = await LoadLockFileAsync(fileSystem);
 
-        var exitCode = await service.UpdateAsync(ProjectDirectory, "agents");
+        var exitCode = await service.UpdateAsync(_projectDirectory, "agents");
 
         await Assert.That(exitCode).IsEqualTo(0);
         var after = await LoadLockFileAsync(fileSystem);
@@ -200,12 +201,12 @@ public sealed class LinkLifecycleServiceTests
         var fileSystem = CreateFileSystem();
         var service = CreateService(fileSystem);
         await WriteConfigurationAsync(fileSystem, CreateConfiguration());
-        await service.InstallAsync(ProjectDirectory, "agents");
+        await service.InstallAsync(_projectDirectory, "agents");
         var configuration = CreateConfiguration();
         configuration.Links["agents"].Includes = ["CSharpExpert.agent.md"];
         await WriteConfigurationAsync(fileSystem, configuration);
 
-        var reports = (await service.OutdatedAsync(ProjectDirectory)).RequireValue();
+        var reports = (await service.OutdatedAsync(_projectDirectory)).RequireValue();
 
         await Assert.That(reports.Count).IsEqualTo(1);
         await Assert.That(reports[0].Name).IsEqualTo("agents");
@@ -219,9 +220,9 @@ public sealed class LinkLifecycleServiceTests
         var fileSystem = CreateFileSystem();
         var service = CreateService(fileSystem);
         await WriteConfigurationAsync(fileSystem, CreateConfiguration());
-        await service.InstallAsync(ProjectDirectory, "agents");
+        await service.InstallAsync(_projectDirectory, "agents");
 
-        var reports = (await service.OutdatedAsync(ProjectDirectory)).RequireValue();
+        var reports = (await service.OutdatedAsync(_projectDirectory)).RequireValue();
 
         await Assert.That(reports).IsEmpty();
     }
@@ -233,7 +234,7 @@ public sealed class LinkLifecycleServiceTests
         var service = CreateService(fileSystem);
         await WriteConfigurationAsync(fileSystem, CreateConfiguration());
 
-        var reports = (await service.OutdatedAsync(ProjectDirectory)).RequireValue();
+        var reports = (await service.OutdatedAsync(_projectDirectory)).RequireValue();
 
         await Assert.That(reports[0].Reasons).IsEquivalentTo(["not installed"]);
     }
@@ -244,11 +245,11 @@ public sealed class LinkLifecycleServiceTests
         var fileSystem = CreateFileSystem();
         var service = CreateService(fileSystem);
         await WriteConfigurationAsync(fileSystem, CreateConfiguration());
-        await service.InstallAsync(ProjectDirectory, "agents");
+        await service.InstallAsync(_projectDirectory, "agents");
         fileSystem.File.Delete(TargetPath("ai-team.agent.md"));
         fileSystem.File.WriteAllText(TargetPath("CSharpExpert.agent.md"), "edited");
 
-        var reports = service.Audit(ProjectDirectory, await LoadLockFileAsync(fileSystem));
+        var reports = service.Audit(_projectDirectory, await LoadLockFileAsync(fileSystem));
 
         await Assert.That(reports.Count).IsEqualTo(1);
         await Assert
@@ -265,11 +266,11 @@ public sealed class LinkLifecycleServiceTests
         var fileSystem = CreateFileSystem();
         var service = CreateService(fileSystem);
         await WriteConfigurationAsync(fileSystem, CreateConfiguration());
-        await service.InstallAsync(ProjectDirectory, "agents");
+        await service.InstallAsync(_projectDirectory, "agents");
         var lockFile = await LoadLockFileAsync(fileSystem);
         lockFile.Packs.Add(CreateResolvedPack(".github/agents/ai-team.agent.md"));
 
-        var reports = service.Audit(ProjectDirectory, lockFile);
+        var reports = service.Audit(_projectDirectory, lockFile);
 
         await Assert
             .That(reports[0].Files.Select(file => file.Status))
@@ -282,9 +283,9 @@ public sealed class LinkLifecycleServiceTests
         var fileSystem = CreateFileSystem();
         var service = CreateService(fileSystem);
         await WriteConfigurationAsync(fileSystem, CreateConfiguration());
-        await service.InstallAsync(ProjectDirectory, "agents");
+        await service.InstallAsync(_projectDirectory, "agents");
 
-        var exitCode = await service.UninstallAsync(ProjectDirectory, "agents");
+        var exitCode = await service.UninstallAsync(_projectDirectory, "agents");
 
         await Assert.That(exitCode).IsEqualTo(0);
         await Assert.That(fileSystem.File.Exists(TargetPath("CSharpExpert.agent.md"))).IsFalse();
@@ -301,10 +302,10 @@ public sealed class LinkLifecycleServiceTests
         var console = new SpectreTestConsole();
         var service = CreateService(fileSystem, console);
         await WriteConfigurationAsync(fileSystem, CreateConfiguration());
-        await service.InstallAsync(ProjectDirectory, "agents");
+        await service.InstallAsync(_projectDirectory, "agents");
         fileSystem.File.WriteAllText(TargetPath("CSharpExpert.agent.md"), "edited");
 
-        var exitCode = await service.UninstallAsync(ProjectDirectory, "agents");
+        var exitCode = await service.UninstallAsync(_projectDirectory, "agents");
 
         await Assert.That(exitCode).IsEqualTo(1);
         await Assert.That(Unwrap(console)).Contains("has changed");
@@ -320,7 +321,7 @@ public sealed class LinkLifecycleServiceTests
         var service = CreateService(fileSystem);
         await WriteConfigurationAsync(fileSystem, CreateConfiguration());
 
-        var exitCode = await service.UninstallAsync(ProjectDirectory, "agents");
+        var exitCode = await service.UninstallAsync(_projectDirectory, "agents");
 
         await Assert.That(exitCode).IsEqualTo(1);
     }
@@ -332,9 +333,9 @@ public sealed class LinkLifecycleServiceTests
         var console = new SpectreTestConsole();
         var service = CreateService(fileSystem, console);
         await WriteConfigurationAsync(fileSystem, CreateConfiguration());
-        await service.InstallAsync(ProjectDirectory, "agents");
+        await service.InstallAsync(_projectDirectory, "agents");
 
-        var exitCode = await service.RemoveAsync(ProjectDirectory, "agents", force: false);
+        var exitCode = await service.RemoveAsync(_projectDirectory, "agents", force: false);
 
         await Assert.That(exitCode).IsEqualTo(1);
         await Assert.That(Unwrap(console)).Contains("--force");
@@ -348,10 +349,10 @@ public sealed class LinkLifecycleServiceTests
         var console = new SpectreTestConsole();
         var service = CreateService(fileSystem, console);
         await WriteConfigurationAsync(fileSystem, CreateConfiguration());
-        await service.InstallAsync(ProjectDirectory, "agents");
+        await service.InstallAsync(_projectDirectory, "agents");
         fileSystem.File.WriteAllText(TargetPath("CSharpExpert.agent.md"), "edited");
 
-        var exitCode = await service.RemoveAsync(ProjectDirectory, "agents", force: true);
+        var exitCode = await service.RemoveAsync(_projectDirectory, "agents", force: true);
 
         await Assert.That(exitCode).IsEqualTo(0);
         await Assert.That(fileSystem.File.Exists(TargetPath("CSharpExpert.agent.md"))).IsTrue();
@@ -370,7 +371,7 @@ public sealed class LinkLifecycleServiceTests
         var service = CreateService(fileSystem);
         await WriteConfigurationAsync(fileSystem, CreateConfiguration());
 
-        var exitCode = await service.RemoveAsync(ProjectDirectory, "agents", force: false);
+        var exitCode = await service.RemoveAsync(_projectDirectory, "agents", force: false);
 
         await Assert.That(exitCode).IsEqualTo(0);
         var configuration = await LoadConfigurationAsync(fileSystem);
@@ -383,10 +384,14 @@ public sealed class LinkLifecycleServiceTests
         var fileSystem = CreateFileSystem();
         var service = CreateService(fileSystem);
         await WriteConfigurationAsync(fileSystem, CreateConfiguration());
-        await service.InstallAsync(ProjectDirectory, "agents");
+        await service.InstallAsync(_projectDirectory, "agents");
         fileSystem.File.Delete(TargetPath("ai-team.agent.md"));
 
-        var exitCode = await service.InstallAsync(ProjectDirectory, "agents", allowReinstall: true);
+        var exitCode = await service.InstallAsync(
+            _projectDirectory,
+            "agents",
+            allowReinstall: true
+        );
 
         await Assert.That(exitCode).IsEqualTo(0);
         await Assert.That(fileSystem.File.Exists(TargetPath("ai-team.agent.md"))).IsTrue();
@@ -399,7 +404,7 @@ public sealed class LinkLifecycleServiceTests
         var console = new SpectreTestConsole();
         var service = CreateService(fileSystem, console);
         await WriteConfigurationAsync(fileSystem, CreateConfiguration());
-        await service.InstallAsync(ProjectDirectory, "agents");
+        await service.InstallAsync(_projectDirectory, "agents");
         var configuration = CreateConfiguration();
         configuration.Sources =
         [
@@ -407,11 +412,11 @@ public sealed class LinkLifecycleServiceTests
         ];
         await WriteConfigurationAsync(fileSystem, configuration, allowUnconfiguredSources: true);
         fileSystem.AddFile(
-            Path.Combine(ProjectDirectory, "other", "agents", "CSharpExpert.agent.md"),
+            Path.Combine(_projectDirectory, "other", "agents", "CSharpExpert.agent.md"),
             new MockFileData("expert")
         );
 
-        var exitCode = await service.UpdateAsync(ProjectDirectory, "agents");
+        var exitCode = await service.UpdateAsync(_projectDirectory, "agents");
 
         await Assert.That(exitCode).IsEqualTo(1);
         await Assert.That(Unwrap(console)).Contains("locked identity");
@@ -502,7 +507,7 @@ public sealed class LinkLifecycleServiceTests
         bool allowUnconfiguredSources = false
     )
     {
-        var state = await new ProjectStateStore(fileSystem).LoadAsync(ProjectDirectory);
+        var state = await new ProjectStateStore(fileSystem).LoadAsync(_projectDirectory);
         await WriteStateAsync(
             fileSystem,
             configuration,
@@ -521,8 +526,8 @@ public sealed class LinkLifecycleServiceTests
         var store = new ProjectStateStore(fileSystem);
         var nextState = new ProjectState { Configuration = configuration, LockFile = lockFile };
         var saved = allowUnconfiguredSources
-            ? await store.SaveAllowingUnavailableSourcesAsync(ProjectDirectory, nextState)
-            : await store.SaveAsync(ProjectDirectory, nextState);
+            ? await store.SaveAllowingUnavailableSourcesAsync(_projectDirectory, nextState)
+            : await store.SaveAsync(_projectDirectory, nextState);
         if (!saved.IsSuccess)
         {
             throw new InvalidOperationException(saved.Error);
@@ -530,20 +535,20 @@ public sealed class LinkLifecycleServiceTests
     }
 
     private static async Task<ProjectLockFile> LoadLockFileAsync(IFileSystem fileSystem) =>
-        (await new ProjectStateStore(fileSystem).LoadAsync(ProjectDirectory))
+        (await new ProjectStateStore(fileSystem).LoadAsync(_projectDirectory))
             .RequireValue()
             .LockFile;
 
     private static async Task<ProjectConfiguration> LoadConfigurationAsync(
         IFileSystem fileSystem
     ) =>
-        (await new ProjectStateStore(fileSystem).LoadAsync(ProjectDirectory))
+        (await new ProjectStateStore(fileSystem).LoadAsync(_projectDirectory))
             .RequireValue()
             .Configuration;
 
     private static string SourceFilePath(params string[] segments) =>
-        Path.Combine([ProjectDirectory, "upstream", .. segments]);
+        Path.Combine([_projectDirectory, "upstream", .. segments]);
 
     private static string TargetPath(string fileName) =>
-        Path.Combine(ProjectDirectory, ".github", "agents", fileName);
+        Path.Combine(_projectDirectory, ".github", "agents", fileName);
 }

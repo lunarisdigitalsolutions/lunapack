@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO.Abstractions;
 using System.Text;
+using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.CommandExecution;
 
 namespace Lunapack.Cli.Packs.Lifecycle;
@@ -149,11 +150,11 @@ internal sealed class LifecycleHookExecutor(IFileSystem fileSystem, CliConsole c
     }
 
     private static string Sanitize(string output) =>
-        new string(
-            output
-                .Where(character => character is '\n' or '\r' or '\t' || !char.IsControl(character))
-                .ToArray()
-        );
+        new([
+            .. output.Where(character =>
+                character is '\n' or '\r' or '\t' || !char.IsControl(character)
+            ),
+        ]);
 
     private static async Task StopAsync(Process process)
     {

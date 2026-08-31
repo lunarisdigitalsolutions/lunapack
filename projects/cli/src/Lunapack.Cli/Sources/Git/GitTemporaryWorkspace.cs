@@ -13,13 +13,12 @@ internal static class GitTemporaryWorkspace
 
         try
         {
-            foreach (
-                var filePath in fileSystem.Directory.EnumerateFiles(
-                    workspace,
-                    "*",
-                    SearchOption.AllDirectories
-                )
-            )
+            var filePaths = fileSystem.Directory.EnumerateFiles(
+                workspace,
+                "*",
+                SearchOption.AllDirectories
+            );
+            foreach (var filePath in filePaths)
             {
                 fileSystem.File.SetAttributes(filePath, FileAttributes.Normal);
             }

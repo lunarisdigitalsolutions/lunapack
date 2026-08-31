@@ -1,4 +1,5 @@
 using System.IO.Abstractions;
+using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Application.Serialization;
 using Lunapack.Cli.Packs.Authoring;
@@ -10,7 +11,7 @@ using YamlDotNet.Serialization.NamingConventions;
 
 namespace Lunapack.Cli.Catalog;
 
-internal sealed class LocalPackDiscovery
+internal sealed class LocalPackDiscovery(IFileSystem fileSystem, CliConsole console)
 {
     private static readonly IDeserializer _deserializer = new StaticDeserializerBuilder(
         new LunapackYamlContext()
@@ -20,14 +21,8 @@ internal sealed class LocalPackDiscovery
         .WithTypeConverter(new ScalarValueDictionaryYamlTypeConverter())
         .Build();
 
-    private readonly IFileSystem _fileSystem;
-    private readonly CliConsole _console;
-
-    public LocalPackDiscovery(IFileSystem fileSystem, CliConsole console)
-    {
-        this._fileSystem = fileSystem;
-        _console = console;
-    }
+    private readonly IFileSystem _fileSystem = fileSystem;
+    private readonly CliConsole _console = console;
 
     public async Task<ManifestOperationResult<IReadOnlyList<CatalogPack>>> BrowseAsync(
         string sourcePath,

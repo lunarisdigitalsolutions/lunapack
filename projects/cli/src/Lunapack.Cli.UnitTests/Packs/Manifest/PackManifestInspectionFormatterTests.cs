@@ -108,13 +108,12 @@ public sealed class PackManifestInspectionFormatterTests
         };
         var console = new SpectreTestConsole();
 
-        foreach (
-            var renderable in PackManifestInspectionFormatter.Format(
-                manifest,
-                packRemapping,
-                globalRemapping
-            )
-        )
+        var renderables = PackManifestInspectionFormatter.Format(
+            manifest,
+            packRemapping,
+            globalRemapping
+        );
+        foreach (var renderable in renderables)
         {
             console.Write(renderable);
         }
@@ -204,11 +203,9 @@ public sealed class PackManifestInspectionFormatterTests
     {
         var console = new SpectreTestConsole();
 
-        foreach (
-            var renderable in PackManifestInspectionFormatter.Format(
-                new PackManifest { Id = "example", Version = "1.0.0" }
-            )
-        )
+        var manifest = new PackManifest { Id = "example", Version = "1.0.0" };
+        var renderables = PackManifestInspectionFormatter.Format(manifest);
+        foreach (var renderable in renderables)
         {
             console.Write(renderable);
         }

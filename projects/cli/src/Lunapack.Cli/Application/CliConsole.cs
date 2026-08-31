@@ -2,7 +2,7 @@ using Lunapack.Cli.Packs;
 using Spectre.Console;
 using Spectre.Console.Rendering;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Application;
 
 internal sealed class CliConsole(IAnsiConsole ansiConsole, CliLogLevel minimumLevel)
 {

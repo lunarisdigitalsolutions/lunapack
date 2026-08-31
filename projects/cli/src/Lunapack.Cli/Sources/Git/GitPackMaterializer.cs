@@ -143,33 +143,32 @@ internal sealed class GitPackMaterializer(
     {
         var timeout = TimeSpan.FromSeconds(source.TimeoutSeconds ?? DefaultTimeoutSeconds);
         fileSystem.Directory.CreateDirectory(workspace);
-        foreach (
-            var command in new[]
-            {
-                new[] { "init", "--quiet", workspace },
-                ["-C", workspace, "remote", "add", "origin", gitSource.Url],
-                [
-                    "-C",
-                    workspace,
-                    "fetch",
-                    "--depth=1",
-                    "--filter=blob:none",
-                    "origin",
-                    gitSource.ResolvedCommit,
-                ],
-                ["-C", workspace, "sparse-checkout", "init", "--no-cone"],
-                [
-                    "-C",
-                    workspace,
-                    "sparse-checkout",
-                    "set",
-                    "--no-cone",
-                    "--",
-                    CreateSparsePattern(pack.RepositoryPath),
-                ],
-                ["-C", workspace, "checkout", "--quiet", "--detach", "FETCH_HEAD"],
-            }
-        )
+        var commands = new[]
+        {
+            new[] { "init", "--quiet", workspace },
+            ["-C", workspace, "remote", "add", "origin", gitSource.Url],
+            [
+                "-C",
+                workspace,
+                "fetch",
+                "--depth=1",
+                "--filter=blob:none",
+                "origin",
+                gitSource.ResolvedCommit,
+            ],
+            ["-C", workspace, "sparse-checkout", "init", "--no-cone"],
+            [
+                "-C",
+                workspace,
+                "sparse-checkout",
+                "set",
+                "--no-cone",
+                "--",
+                CreateSparsePattern(pack.RepositoryPath),
+            ],
+            ["-C", workspace, "checkout", "--quiet", "--detach", "FETCH_HEAD"],
+        };
+        foreach (var command in commands)
         {
             var result = await processRunner.RunAsync(command, timeout, cancellationToken);
             if (!result.IsSuccess)

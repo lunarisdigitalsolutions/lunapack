@@ -51,13 +51,12 @@ internal sealed class TrustCommandHandler(
         };
         command.SetAction(async parseResult =>
         {
-            if (
-                !TryGetScope(
-                    parseResult.GetValue(projectOption),
-                    parseResult.GetValue(globalOption),
-                    out var scope
-                )
-            )
+            var hasValidScope = TryGetScope(
+                parseResult.GetValue(projectOption),
+                parseResult.GetValue(globalOption),
+                out var scope
+            );
+            if (!hasValidScope)
             {
                 return console.Fail("The --project and --global options are mutually exclusive.");
             }
@@ -88,13 +87,12 @@ internal sealed class TrustCommandHandler(
         };
         command.SetAction(async parseResult =>
         {
-            if (
-                !TryGetScope(
-                    parseResult.GetValue(projectOption),
-                    parseResult.GetValue(globalOption),
-                    out var scope
-                )
-            )
+            var hasValidScope = TryGetScope(
+                parseResult.GetValue(projectOption),
+                parseResult.GetValue(globalOption),
+                out var scope
+            );
+            if (!hasValidScope)
             {
                 return console.Fail("The --project and --global options are mutually exclusive.");
             }
@@ -122,13 +120,12 @@ internal sealed class TrustCommandHandler(
         };
         command.SetAction(async parseResult =>
         {
-            if (
-                !TryGetScope(
-                    parseResult.GetValue(projectOption),
-                    parseResult.GetValue(globalOption),
-                    out var scope
-                )
-            )
+            var hasValidScope = TryGetScope(
+                parseResult.GetValue(projectOption),
+                parseResult.GetValue(globalOption),
+                out var scope
+            );
+            if (!hasValidScope)
             {
                 return console.Fail("The --project and --global options are mutually exclusive.");
             }
@@ -183,13 +180,12 @@ internal sealed class TrustCommandHandler(
         };
         command.SetAction(async parseResult =>
         {
-            if (
-                !TryGetScope(
-                    parseResult.GetValue(projectOption),
-                    parseResult.GetValue(globalOption),
-                    out var scope
-                )
-            )
+            var hasValidScope = TryGetScope(
+                parseResult.GetValue(projectOption),
+                parseResult.GetValue(globalOption),
+                out var scope
+            );
+            if (!hasValidScope)
             {
                 return console.Fail("The --project and --global options are mutually exclusive.");
             }
@@ -242,13 +238,12 @@ internal sealed class TrustCommandHandler(
                 return console.Fail("The --source option is required for pack trust revocation.");
             }
 
-            if (
-                !TryGetScope(
-                    parseResult.GetValue(projectOption),
-                    parseResult.GetValue(globalOption),
-                    out var scope
-                )
-            )
+            var hasValidScope = TryGetScope(
+                parseResult.GetValue(projectOption),
+                parseResult.GetValue(globalOption),
+                out var scope
+            );
+            if (!hasValidScope)
             {
                 return console.Fail("The --project and --global options are mutually exclusive.");
             }
@@ -285,13 +280,12 @@ internal sealed class TrustCommandHandler(
         };
         command.SetAction(async parseResult =>
         {
-            if (
-                !TryGetScope(
-                    parseResult.GetValue(projectOption),
-                    parseResult.GetValue(globalOption),
-                    out var scope
-                )
-            )
+            var hasValidScope = TryGetScope(
+                parseResult.GetValue(projectOption),
+                parseResult.GetValue(globalOption),
+                out var scope
+            );
+            if (!hasValidScope)
             {
                 return console.Fail("The --project and --global options are mutually exclusive.");
             }
@@ -342,13 +336,12 @@ internal sealed class TrustCommandHandler(
                 return console.Fail("The --source option is required for pack trust.");
             }
 
-            if (
-                !TryGetScope(
-                    parseResult.GetValue(projectOption),
-                    parseResult.GetValue(globalOption),
-                    out var scope
-                )
-            )
+            var hasValidScope = TryGetScope(
+                parseResult.GetValue(projectOption),
+                parseResult.GetValue(globalOption),
+                out var scope
+            );
+            if (!hasValidScope)
             {
                 return console.Fail("The --project and --global options are mutually exclusive.");
             }

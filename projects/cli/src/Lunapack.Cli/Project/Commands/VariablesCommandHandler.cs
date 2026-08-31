@@ -99,12 +99,11 @@ internal sealed class VariablesCommandHandler(
         }
 
         var table = CreateTable();
-        foreach (
-            var variable in projectState.Configuration.Variables.OrderBy(
-                variable => variable.Key,
-                StringComparer.Ordinal
-            )
-        )
+        var orderedVariables = projectState.Configuration.Variables.OrderBy(
+            variable => variable.Key,
+            StringComparer.Ordinal
+        );
+        foreach (var variable in orderedVariables)
         {
             table.AddRow(Markup.Escape(variable.Key), Markup.Escape(FormatValue(variable.Value)));
         }

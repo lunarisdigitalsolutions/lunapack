@@ -346,13 +346,12 @@ internal sealed class UpdatePackCommandHandler(
 
         if (dryRun)
         {
-            foreach (
-                var line in PackDryRunFormatter.FormatUpdate(
-                    result.Outcomes,
-                    result.FileChangePlan ?? new PackUpdatePlan([]),
-                    result.ProposedSourceSwitch
-                )
-            )
+            var lines = PackDryRunFormatter.FormatUpdate(
+                result.Outcomes,
+                result.FileChangePlan ?? new PackUpdatePlan([]),
+                result.ProposedSourceSwitch
+            );
+            foreach (var line in lines)
             {
                 console.MarkupInfo(line);
             }

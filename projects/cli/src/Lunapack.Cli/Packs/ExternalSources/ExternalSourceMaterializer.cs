@@ -158,33 +158,24 @@ internal sealed class ExternalSourceMaterializer(
     {
         var timeout = TimeSpan.FromSeconds(group.Source.TimeoutSeconds ?? DefaultTimeoutSeconds);
         fileSystem.Directory.CreateDirectory(workspace);
-        foreach (
-            var command in new[]
-            {
-                new[] { "init", "--quiet", workspace },
-                ["-C", workspace, "remote", "add", "origin", group.Source.Url],
-                [
-                    "-C",
-                    workspace,
-                    "fetch",
-                    "--depth=1",
-                    "--filter=blob:none",
-                    "origin",
-                    resolvedCommit,
-                ],
-                ["-C", workspace, "sparse-checkout", "init", "--no-cone"],
-                [
-                    "-C",
-                    workspace,
-                    "sparse-checkout",
-                    "set",
-                    "--no-cone",
-                    "--",
-                    CreateSparsePattern(group.Source.Path),
-                ],
-                ["-C", workspace, "checkout", "--quiet", "--detach", "FETCH_HEAD"],
-            }
-        )
+        var commands = new[]
+        {
+            new[] { "init", "--quiet", workspace },
+            ["-C", workspace, "remote", "add", "origin", group.Source.Url],
+            ["-C", workspace, "fetch", "--depth=1", "--filter=blob:none", "origin", resolvedCommit],
+            ["-C", workspace, "sparse-checkout", "init", "--no-cone"],
+            [
+                "-C",
+                workspace,
+                "sparse-checkout",
+                "set",
+                "--no-cone",
+                "--",
+                CreateSparsePattern(group.Source.Path),
+            ],
+            ["-C", workspace, "checkout", "--quiet", "--detach", "FETCH_HEAD"],
+        };
+        foreach (var command in commands)
         {
             var result = await processRunner.RunAsync(command, timeout, cancellationToken);
             if (!result.IsSuccess)
@@ -214,13 +205,12 @@ internal sealed class ExternalSourceMaterializer(
     private ManifestOperationResult<bool> ValidatePhysicalContainment(string root)
     {
         var canonicalRoot = fileSystem.Path.GetFullPath(root);
-        foreach (
-            var path in fileSystem.Directory.EnumerateFileSystemEntries(
-                root,
-                "*",
-                SearchOption.AllDirectories
-            )
-        )
+        var paths = fileSystem.Directory.EnumerateFileSystemEntries(
+            root,
+            "*",
+            SearchOption.AllDirectories
+        );
+        foreach (var path in paths)
         {
             if (!fileSystem.File.GetAttributes(path).HasFlag(FileAttributes.ReparsePoint))
             {

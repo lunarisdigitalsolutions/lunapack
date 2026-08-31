@@ -26,8 +26,8 @@ status at `NOT READY`. Accepted deferrals remain explicit residual risks.
 - npm uses OIDC trusted publishing with provenance instead of a stored token.
 - NuGet uses workload identity to obtain a temporary publishing key.
 - Registry credentials are scoped to their publishing steps.
-- Workflow-level permissions are read-only; only the release job receives OIDC
-  and publication permissions.
+- Workflow-level permissions are read-only; only release and NuGet preview
+  publication jobs receive OIDC or registry-write permissions.
 - Release dry-run mode stages and validates artifacts without authentication or
   publication.
 - Package staging rejects unsafe archive paths, links, special entries, and

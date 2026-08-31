@@ -63,15 +63,10 @@ internal sealed class OperationPackSnapshotter(
 
     private void CopyDirectories(string sourcePackDirectory, string snapshotPackDirectory)
     {
-        foreach (
-            var sourceDirectory in fileSystem
-                .Directory.EnumerateDirectories(
-                    sourcePackDirectory,
-                    "*",
-                    SearchOption.AllDirectories
-                )
-                .OrderBy(path => path, StringComparer.Ordinal)
-        )
+        var sourceDirectories = fileSystem
+            .Directory.EnumerateDirectories(sourcePackDirectory, "*", SearchOption.AllDirectories)
+            .OrderBy(path => path, StringComparer.Ordinal);
+        foreach (var sourceDirectory in sourceDirectories)
         {
             var directoryPath = fileSystem.Path.GetRelativePath(
                 sourcePackDirectory,
@@ -88,11 +83,10 @@ internal sealed class OperationPackSnapshotter(
 
     private void CopyFiles(string sourcePackDirectory, string snapshotPackDirectory)
     {
-        foreach (
-            var sourceFile in fileSystem
-                .Directory.EnumerateFiles(sourcePackDirectory, "*", SearchOption.AllDirectories)
-                .OrderBy(path => path, StringComparer.Ordinal)
-        )
+        var sourceFiles = fileSystem
+            .Directory.EnumerateFiles(sourcePackDirectory, "*", SearchOption.AllDirectories)
+            .OrderBy(path => path, StringComparer.Ordinal);
+        foreach (var sourceFile in sourceFiles)
         {
             var filePath = fileSystem.Path.GetRelativePath(sourcePackDirectory, sourceFile);
             var snapshotFile = fileSystem.Path.GetFullPath(filePath, snapshotPackDirectory);

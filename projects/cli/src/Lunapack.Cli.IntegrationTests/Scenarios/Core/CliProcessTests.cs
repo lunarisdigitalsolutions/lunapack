@@ -195,15 +195,15 @@ public sealed class CliProcessTests
         var denyArguments = scopeName switch
         {
             "project" => new[] { "trust", "scripts", "deny", "--project" },
-            "global-user" => new[] { "trust", "scripts", "deny", "--global" },
-            _ => new[] { "trust", "scripts", "deny" },
+            "global-user" => ["trust", "scripts", "deny", "--global"],
+            _ => ["trust", "scripts", "deny"],
         };
         var denied = await CliProcess.InvokeAsync(workspace.Path, environment, denyArguments);
         var listArguments = scopeName switch
         {
             "project" => new[] { "trust", "list", "--project" },
-            "global-user" => new[] { "trust", "list", "--global" },
-            _ => new[] { "trust", "list" },
+            "global-user" => ["trust", "list", "--global"],
+            _ => ["trust", "list"],
         };
         var listed = await CliProcess.InvokeAsync(workspace.Path, environment, listArguments);
         var dryRun = await CliProcess.InvokeAsync(
@@ -2149,13 +2149,12 @@ public sealed class CliProcessTests
         var sourcePath = Directory
             .CreateDirectory(Path.Combine(projectDirectory, "source"))
             .FullName;
-        foreach (
-            var (directory, version, contents) in new[]
-            {
-                ("example-v1", "1.0.0", "version one"),
-                ("example-v2", "2.0.0", "version two"),
-            }
-        )
+        var packs = new[]
+        {
+            ("example-v1", "1.0.0", "version one"),
+            ("example-v2", "2.0.0", "version two"),
+        };
+        foreach (var (directory, version, contents) in packs)
         {
             var packDirectory = Directory
                 .CreateDirectory(Path.Combine(sourcePath, directory))
@@ -2256,9 +2255,8 @@ public sealed class CliProcessTests
                 return;
             }
 
-            foreach (
-                var filePath in Directory.EnumerateFiles(Path, "*", SearchOption.AllDirectories)
-            )
+            var filePaths = Directory.EnumerateFiles(Path, "*", SearchOption.AllDirectories);
+            foreach (var filePath in filePaths)
             {
                 File.SetAttributes(filePath, FileAttributes.Normal);
             }
@@ -2322,20 +2320,16 @@ public sealed class CliProcessTests
         var destinationPath = Path.Combine(projectDirectory, sourceDirectoryName);
         Directory.CreateDirectory(destinationPath);
 
-        foreach (
-            var sourceFile in Directory.EnumerateFiles(sourcePath, "*", SearchOption.AllDirectories)
-        )
+        var sourceFiles = Directory.EnumerateFiles(sourcePath, "*", SearchOption.AllDirectories);
+        foreach (var sourceFile in sourceFiles)
         {
             var relativePath = Path.GetRelativePath(sourcePath, sourceFile);
             var destinationFile = Path.Combine(destinationPath, relativePath);
-            var destinationDirectory = Path.GetDirectoryName(destinationFile);
-            if (destinationDirectory is null)
-            {
-                throw new InvalidOperationException(
+            var destinationDirectory =
+                Path.GetDirectoryName(destinationFile)
+                ?? throw new InvalidOperationException(
                     $"Unable to determine destination directory for '{destinationFile}'."
                 );
-            }
-
             Directory.CreateDirectory(destinationDirectory);
             File.Copy(sourceFile, destinationFile);
         }

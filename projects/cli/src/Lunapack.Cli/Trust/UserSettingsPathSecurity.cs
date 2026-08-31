@@ -58,10 +58,10 @@ internal static class UserSettingsPathSecurity
         FileSystemSecurity security = directory
             ? new DirectoryInfo(path).GetAccessControl()
             : new FileInfo(path).GetAccessControl();
-        if (
+        var hasUnsafeAccessControl =
             !security.AreAccessRulesProtected
-            || security.GetOwner(typeof(SecurityIdentifier)) != identity
-        )
+            || security.GetOwner(typeof(SecurityIdentifier)) != identity;
+        if (hasUnsafeAccessControl)
         {
             return $"User settings path '{path}' must be owned only by the current user.";
         }

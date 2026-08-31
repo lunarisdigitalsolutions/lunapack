@@ -99,10 +99,10 @@ internal static class PackParameterResolver
 
                 if (declarations.TryGetValue(name, out var existingDeclaration))
                 {
-                    if (
+                    var declarationsAreIncompatible =
                         existingDeclaration.Type != parameterDeclaration.Type
-                        || existingDeclaration.Multiple != parameterDeclaration.Multiple
-                    )
+                        || existingDeclaration.Multiple != parameterDeclaration.Multiple;
+                    if (declarationsAreIncompatible)
                     {
                         return ManifestOperationResult<
                             IReadOnlyDictionary<string, PackParameterDefinition>
@@ -504,10 +504,10 @@ internal static class PackParameterResolver
         string source
     )
     {
-        if (
+        var isInvalidEnumValue =
             declaration.Type == PackParameterType.Enum
-            && !declaration.Values.Contains(value, StringComparer.Ordinal)
-        )
+            && !declaration.Values.Contains(value, StringComparer.Ordinal);
+        if (isInvalidEnumValue)
         {
             return ManifestOperationResult<ResolvedPackParameterValue>.Failure(
                 $"{source} '{name}' must be one of: {string.Join(", ", declaration.Values)}."

@@ -27,14 +27,7 @@ internal sealed class LinkPlanner(IFileSystem fileSystem)
         foreach (var file in snapshot.Files)
         {
             var targetPath = fileSystem.Path.GetFullPath(file.TargetPath, projectDirectory);
-            var conflict = FindConflict(
-                owner,
-                file,
-                targetPath,
-                ownership,
-                adoptExisting,
-                resolution
-            );
+            var conflict = FindConflict(owner, file, targetPath, ownership, adoptExisting);
             if (conflict is not null)
             {
                 return ManifestOperationResult<PackUpdatePlan>.Failure(conflict);
@@ -85,10 +78,10 @@ internal sealed class LinkPlanner(IFileSystem fileSystem)
             .ToHashSet(StringComparer.Ordinal);
         foreach (var lockedFile in lockedLink.Files)
         {
-            if (
+            var targetIsRetained =
                 plannedTargets.Contains(lockedFile.TargetPath)
-                || ignoredDeclaredTargets.Contains(lockedFile.DeclaredTargetPath)
-            )
+                || ignoredDeclaredTargets.Contains(lockedFile.DeclaredTargetPath);
+            if (targetIsRetained)
             {
                 continue;
             }
@@ -111,8 +104,7 @@ internal sealed class LinkPlanner(IFileSystem fileSystem)
         ResolvedLinkFile file,
         string targetPath,
         Dictionary<string, List<ManagedRootOwner>> ownership,
-        bool adoptExisting,
-        LinkResolution resolution
+        bool adoptExisting
     )
     {
         if (!fileSystem.File.Exists(targetPath))

@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
-import { extractReleaseNotes } from '../extract-release-notes.mjs'
+import {
+  extractReleaseNotes,
+  extractUnreleasedNotes
+} from '../extract-release-notes.mjs'
 
 const workflow = readFileSync('.github/workflows/cli.yml', 'utf8')
+const previewJobs = workflow.slice(workflow.indexOf('  preview-version:'))
 const buildAction = readFileSync('.github/actions/cli/build/action.yml', 'utf8')
 const dotnetBuildAction = readFileSync(
   '.github/actions/build-dotnet/action.yml',
@@ -70,15 +74,15 @@ test('Scenario_ReleaseAction_NuGetPublishesRidPackagesBeforePointerPackage', () 
 })
 
 test('Scenario_ReleaseWorkflow_RegistryPublishingUsesFederatedIdentity', () => {
-  assert.doesNotMatch(workflow, /NPM_TOKEN|NUGET_API_KEY/)
+  assert.doesNotMatch(workflow, /secrets\.(?:NPM_TOKEN|NUGET_API_KEY)/)
   assert.doesNotMatch(
     releaseAction,
     /npm-token|NPM_CONFIG_USERCONFIG|_authToken/
   )
-  assert.equal([...workflow.matchAll(/id-token: write/g)].length, 1)
+  assert.equal([...workflow.matchAll(/id-token: write/g)].length, 3)
   assert.match(
     workflow,
-    /release:[\s\S]*?permissions:\s+contents: write\s+id-token: write\s+packages: write/
+    /release:[\s\S]*?permissions:\s+actions: read\s+contents: write\s+id-token: write\s+packages: write/
   )
   assert.match(releaseAction, /npm publish [^\n]+ --provenance /)
   assert.match(
@@ -130,6 +134,120 @@ Older notes.
   )
 })
 
+test('Scenario_PreviewPackage_ChangelogContainsOnlyUnreleasedNotes', () => {
+  const changelog = `# Changelog
+
+## Unreleased
+
+Pending preview notes.
+
+## Version 1.2.0 - 2026-08-29
+
+Stable notes.
+`
+
+  assert.equal(
+    extractUnreleasedNotes(changelog),
+    '# Changelog\n\n## Unreleased\n\nPending preview notes.\n'
+  )
+  assert.throws(
+    () => extractUnreleasedNotes('# Changelog\n'),
+    /no Unreleased section/
+  )
+})
+
+test('Scenario_PreviewWorkflow_PublishesOnlyNuGetForCliChangesOnMain', () => {
+  assert.match(
+    workflow,
+    /push:[\s\S]*?tags:\s+- '\*\*'\s+branches:\s+- main\s+paths:\s+- 'projects\/cli\/\*\*'/
+  )
+  assert.match(workflow, /name: 'CLI: Release'/)
+  assert.match(workflow, /- name: Release Luna CLI[\s\S]*?release-type: stable/)
+  assert.match(
+    workflow,
+    /preview-version:[\s\S]*?if: \$\{\{ github\.event_name == 'push' && github\.ref_type == 'branch' \}\}/
+  )
+  assert.match(
+    workflow,
+    /plan:[\s\S]*?github\.event_name == 'workflow_dispatch' \|\| github\.ref_type == 'tag'/
+  )
+  assert.match(workflow, /cancel-in-progress: false/)
+  assert.match(
+    previewJobs,
+    /dotnet minver \. --tag-prefix v --default-pre-release-identifiers preview/
+  )
+  assert.match(previewJobs, /-preview\\\.\(0\|\[1-9\]\[0-9\]\*\)/)
+  assert.match(
+    releaseAction,
+    /extract-release-notes\.mjs projects\/cli\/CHANGELOG\.md "\$RUNNER_TEMP\/CHANGELOG\.md" unreleased/
+  )
+  assert.match(
+    releaseAction,
+    /-p:LunapackChangelogPath="\$RUNNER_TEMP\/CHANGELOG\.md"/
+  )
+  assert.match(
+    previewJobs,
+    /needs: \[preview-version, publish-preview-rid-packages\]/
+  )
+  assert.equal(
+    [...previewJobs.matchAll(/uses: \.\/\.github\/actions\/cli\/release/g)]
+      .length,
+    2
+  )
+  assert.equal([...previewJobs.matchAll(/release-type: preview/g)].length, 2)
+  assert.match(
+    previewJobs,
+    /runtime-identifier: \$\{\{ matrix\.runtimeIdentifier \}\}/
+  )
+  assert.match(previewJobs, /nuget-user: \$\{\{ vars\.NUGET_USER \}\}/)
+  assert.match(releaseAction, /uses: NuGet\/login@[0-9a-f]{40}/)
+  assert.match(releaseAction, /user: \$\{\{ inputs\.nuget-user \}\}/)
+  assert.match(
+    releaseAction,
+    /release-type:[\s\S]*?currently publishes NuGet only[\s\S]*?default: stable/
+  )
+  assert.match(
+    releaseAction,
+    /RELEASE_TYPE.*!= 'stable'.*RELEASE_TYPE.*!= 'preview'/
+  )
+
+  for (const step of [
+    'Download CLI archives',
+    'Download RID-specific .NET tools',
+    'Stage release assets',
+    'Stage package distributions',
+    'Pack Luna .NET tool pointer',
+    'Stage container context',
+    'Set up Docker Buildx',
+    'Build Luna container image'
+  ]) {
+    assert.match(
+      releaseAction,
+      new RegExp(
+        `- name: ${step}\\n(?:\\s+id: [^\\n]+\\n)?\\s+if: \\$\\{\\{ inputs\\.release-type == 'stable' \\}\\}`
+      )
+    )
+  }
+
+  for (const runtimeIdentifier of [
+    'win-x64',
+    'linux-x64',
+    'linux-arm64',
+    'osx-x64',
+    'osx-arm64'
+  ]) {
+    assert.match(
+      previewJobs,
+      new RegExp(`runtimeIdentifier: ${runtimeIdentifier}`)
+    )
+  }
+
+  assert.doesNotMatch(
+    previewJobs,
+    /actions\/upload-artifact|npm publish|docker|gh release/
+  )
+})
+
 test('Scenario_ReleaseWorkflow_AcceptsOnlyOciSafeSemanticVersions', () => {
   assert.match(workflow, /-cnotmatch/)
   const workflowPattern = workflow.match(/-cnotmatch '([^']+)'/)[1]
@@ -178,7 +296,7 @@ test('Scenario_ReleaseWorkflow_RunsAreBoundedAndSerialized', () => {
     /concurrency:\s+group: cli-release-\$\{\{ github\.ref \}\}/
   )
   assert.match(workflow, /cancel-in-progress: false/)
-  assert.equal([...workflow.matchAll(/timeout-minutes:/g)].length, 3)
+  assert.equal([...workflow.matchAll(/timeout-minutes:/g)].length, 7)
   assert.match(buildAction, /default: '3'/)
   assert.match(
     buildAction,
@@ -195,26 +313,29 @@ test('Scenario_CliBuild_CoverageIsInstrumentedAndPublishedToSummary', () => {
     assert.match(buildAction, new RegExp(`${project}/${project}\\.csproj`))
   }
 
-  assert.match(
-    buildAction,
-    /coverage-settings-path: projects\/cli\/src\/coverage\.settings\.xml/
-  )
+  assert.doesNotMatch(buildAction, /coverage-settings-path/)
   assert.match(
     dotnetBuildAction,
     /test-build-configuration:[\s\S]*default: Debug/
   )
-  assert.match(dotnetBuildAction, /--coverage-settings/)
+  assert.doesNotMatch(dotnetBuildAction, /coverage-settings-path/)
+  assert.match(dotnetBuildAction, /'--coverage'/)
   assert.match(
     dotnetBuildAction,
-    /Coverage report .* contains no instrumented code/
+    /'--coverage-output-format'[\s\S]*'cobertura'/
   )
   assert.match(
     dotnetBuildAction,
-    /Expected exactly one canonical coverage report per configured project/
+    /dorny\/test-reporter@[0-9a-f]{40} # v3\.0\.0/
   )
-  assert.match(dotnetBuildAction, /dotnet-test-results\/\*\/\*\.cobertura\.xml/)
+  assert.match(dotnetBuildAction, /reporter: dotnet-trx/)
+  assert.match(
+    dotnetBuildAction,
+    /danielpalme\/ReportGenerator-GitHub-Action@[0-9a-f]{40} # 5\.5\.11/
+  )
+  assert.match(dotnetBuildAction, /\*\*\/\*\.cobertura\.xml/)
+  assert.match(dotnetBuildAction, /reporttypes: MarkdownSummaryGithub/)
   assert.match(dotnetBuildAction, /GITHUB_STEP_SUMMARY/)
-  assert.match(dotnetBuildAction, /Line coverage \| Branch coverage/)
 })
 
 test('Scenario_ReleaseAction_ThirdPartyActionsUseCommitPins', () => {
@@ -235,16 +356,24 @@ test('Scenario_ReleaseAction_DryRunSkipsEveryPublishingStep', () => {
     'Authenticate to GitHub Container Registry',
     'Publish npm platform packages',
     'Publish npm entry package',
-    'NuGet login',
     'Publish Luna .NET tool'
   ]) {
     assert.match(
       releaseAction,
       new RegExp(
-        `- name: ${step}\\n(?:\\s+id: [^\\n]+\\n)?\\s+if: \\$\\{\\{ inputs\\.dry-run != 'true' \\}\\}`
+        `- name: ${step}\\n(?:\\s+id: [^\\n]+\\n)?\\s+if: \\$\\{\\{ inputs\\.release-type == 'stable' && inputs\\.dry-run != 'true' \\}\\}`
       )
     )
   }
+
+  assert.match(
+    releaseAction,
+    /- name: NuGet login\n\s+id: login\n\s+if: \$\{\{ inputs\.dry-run != 'true' \}\}/
+  )
+  assert.match(
+    releaseAction,
+    /- name: Publish preview \.NET tool\n\s+if: \$\{\{ inputs\.release-type == 'preview' && inputs\.dry-run != 'true' \}\}/
+  )
 })
 
 test('Scenario_ReleaseAction_ExistingReleaseMustMatchStagedAssets', () => {

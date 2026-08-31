@@ -1,7 +1,8 @@
+using Lunapack.Cli.Application;
 using Lunapack.Cli.Packs;
 using SpectreTestConsole = Spectre.Console.Testing.TestConsole;
 
-namespace Lunapack.Cli.UnitTests;
+namespace Lunapack.Cli.UnitTests.Application;
 
 public sealed class CliConsoleTests
 {

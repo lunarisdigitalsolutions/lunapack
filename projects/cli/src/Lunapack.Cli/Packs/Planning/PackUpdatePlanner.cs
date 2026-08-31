@@ -195,23 +195,22 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
             previousTarget
         );
         var targetPath = ProjectPath.Normalize(effectiveManagedFile.TargetPathRelativeToProject);
-        byte[]? targetContents = null;
-        if (!plannedResultingContents.TryGetValue(targetPath, out targetContents))
+        if (!plannedResultingContents.TryGetValue(targetPath, out var targetContents))
         {
             targetContents = fileSystem.File.Exists(effectiveManagedFile.TargetPath)
                 ? fileSystem.File.ReadAllBytes(effectiveManagedFile.TargetPath)
                 : null;
         }
 
-        if (
+        var managedFileDoesNotRequireUpdate =
             previousTarget is not null
             && targetContents is not null
             && string.Equals(
                 ComputeSha256(managedFile.Contents),
                 previousTarget.ManagedFile.Sha256,
                 StringComparison.OrdinalIgnoreCase
-            )
-        )
+            );
+        if (managedFileDoesNotRequireUpdate)
         {
             return ManifestOperationResult<bool>.Success(true);
         }
@@ -251,13 +250,13 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
             .ToHashSet(StringComparer.Ordinal);
         foreach (var (key, previousTarget) in previousTargetMap)
         {
-            if (
+            var targetIsStillPlannedOrIgnored =
                 plannedTargetMap.ContainsKey(key)
                 || plannedTargetPaths.Contains(
                     ProjectPath.Normalize(previousTarget.ManagedFile.TargetPath)
                 )
-                || ignoredDeclaredTargets.Contains(key.TargetPath)
-            )
+                || ignoredDeclaredTargets.Contains(key.TargetPath);
+            if (targetIsStillPlannedOrIgnored)
             {
                 continue;
             }
@@ -491,11 +490,11 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
                 );
             }
 
-            if (
+            var markersAreIncompleteOrAmbiguous =
                 firstMarkerIndexes.Count != 1
                 || lastMarkerIndexes.Count != 1
-                || firstMarkerIndexes[0] >= lastMarkerIndexes[0]
-            )
+                || firstMarkerIndexes[0] >= lastMarkerIndexes[0];
+            if (markersAreIncompleteOrAmbiguous)
             {
                 return ManifestOperationResult<byte[]>.Failure(
                     "Section merge markers are incomplete or ambiguous."

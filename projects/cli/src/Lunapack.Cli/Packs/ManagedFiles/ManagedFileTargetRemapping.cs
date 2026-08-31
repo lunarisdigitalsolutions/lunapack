@@ -191,11 +191,8 @@ internal sealed class ManagedFileTargetRemapping
 
     private string? TryResolveDirectory(string declaredTarget)
     {
-        foreach (
-            var (sourceDirectory, targetDirectory) in _directories.OrderByDescending(mapping =>
-                mapping.Key.Length
-            )
-        )
+        var mappingsBySpecificity = _directories.OrderByDescending(mapping => mapping.Key.Length);
+        foreach (var (sourceDirectory, targetDirectory) in mappingsBySpecificity)
         {
             if (string.Equals(sourceDirectory, declaredTarget, StringComparison.Ordinal))
             {

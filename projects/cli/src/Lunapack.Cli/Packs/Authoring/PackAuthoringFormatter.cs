@@ -35,12 +35,11 @@ internal static class PackAuthoringFormatter
         }
 
         var parameters = CreateTable("Parameters", "ID", "Type", "Values", "Default");
-        foreach (
-            var (name, parameter) in manifest.Parameters.OrderBy(
-                item => item.Key,
-                StringComparer.Ordinal
-            )
-        )
+        var orderedParameters = manifest.Parameters.OrderBy(
+            item => item.Key,
+            StringComparer.Ordinal
+        );
+        foreach (var (name, parameter) in orderedParameters)
         {
             parameters.AddRow(
                 Markup.Escape(name),
@@ -92,12 +91,8 @@ internal static class PackAuthoringFormatter
             "Path",
             "References"
         );
-        foreach (
-            var (alias, source) in manifest.Sources.OrderBy(
-                item => item.Key,
-                StringComparer.Ordinal
-            )
-        )
+        var orderedSources = manifest.Sources.OrderBy(item => item.Key, StringComparer.Ordinal);
+        foreach (var (alias, source) in orderedSources)
         {
             var fingerprint = SourceIdentityNormalizer.CreateGit(
                 source.Url,

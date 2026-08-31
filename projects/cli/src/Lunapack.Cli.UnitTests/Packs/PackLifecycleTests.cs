@@ -391,8 +391,8 @@ public sealed class PackLifecycleTests
         var denyArguments = scopeName switch
         {
             "project" => new[] { "trust", "scripts", "deny", "--project" },
-            "global-user" => new[] { "trust", "scripts", "deny", "--global" },
-            _ => new[] { "trust", "scripts", "deny" },
+            "global-user" => ["trust", "scripts", "deny", "--global"],
+            _ => ["trust", "scripts", "deny"],
         };
         await workspace.Application.RunAsync(denyArguments, workspace.Path);
 
@@ -430,8 +430,8 @@ public sealed class PackLifecycleTests
         var trustArguments = scopeName switch
         {
             "project" => new[] { "trust", "source", "local", "--project" },
-            "global-user" => new[] { "trust", "source", "local", "--global" },
-            _ => new[] { "trust", "source", "local" },
+            "global-user" => ["trust", "source", "local", "--global"],
+            _ => ["trust", "source", "local"],
         };
         var trustExitCode = await workspace.Application.RunAsync(trustArguments, workspace.Path);
         var outputStart = ansiConsole.Output.Length;

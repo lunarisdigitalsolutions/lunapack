@@ -47,7 +47,7 @@ internal sealed class NextStepAdvisor(IFileSystem fileSystem, IProjectStateStore
     public IReadOnlyList<NextStepRecommendation> Recommend(
         NextStepContext context,
         string? value = null
-    ) => CreateRecommendations(context, value).Take(_maximumRecommendations).ToList();
+    ) => [.. CreateRecommendations(context, value).Take(_maximumRecommendations)];
 
     private WorkspaceGuidance CreateGuidance(
         WorkspaceStage stage,

@@ -89,17 +89,17 @@ internal sealed class InspectPackCommandHandler(
             return console.Fail(configuration.Error);
         }
 
-        foreach (
-            var renderable in PackManifestInspectionFormatter.Format(
-                pack.Manifest,
-                projectConfiguration
-                    .Packs.FirstOrDefault(request =>
-                        string.Equals(request.Id, pack.Manifest.Id, StringComparison.Ordinal)
-                    )
-                    ?.Remap,
-                projectConfiguration.Remap
+        var packRemap = projectConfiguration
+            .Packs.FirstOrDefault(request =>
+                string.Equals(request.Id, pack.Manifest.Id, StringComparison.Ordinal)
             )
-        )
+            ?.Remap;
+        var renderables = PackManifestInspectionFormatter.Format(
+            pack.Manifest,
+            packRemap,
+            projectConfiguration.Remap
+        );
+        foreach (var renderable in renderables)
         {
             console.Render(renderable);
         }

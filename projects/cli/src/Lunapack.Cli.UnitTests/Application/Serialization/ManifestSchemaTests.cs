@@ -281,16 +281,13 @@ public sealed class ManifestSchemaTests
         using var schema = JsonDocument.Parse(
             File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "pack.schema.json"))
         );
-        var pattern = schema
-            .RootElement.GetProperty("properties")
-            .GetProperty("id")
-            .GetProperty("pattern")
-            .GetString();
-        if (pattern is null)
-        {
-            throw new InvalidOperationException("Pack ID schema pattern is missing.");
-        }
-
+        var pattern =
+            schema
+                .RootElement.GetProperty("properties")
+                .GetProperty("id")
+                .GetProperty("pattern")
+                .GetString()
+            ?? throw new InvalidOperationException("Pack ID schema pattern is missing.");
         await Assert
             .That(
                 Regex.IsMatch(
@@ -353,16 +350,13 @@ public sealed class ManifestSchemaTests
         using var schema = JsonDocument.Parse(
             File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "pack.schema.json"))
         );
-        var pattern = schema
-            .RootElement.GetProperty("properties")
-            .GetProperty("homepage")
-            .GetProperty("pattern")
-            .GetString();
-        if (pattern is null)
-        {
-            throw new InvalidOperationException("Pack homepage schema pattern is missing.");
-        }
-
+        var pattern =
+            schema
+                .RootElement.GetProperty("properties")
+                .GetProperty("homepage")
+                .GetProperty("pattern")
+                .GetString()
+            ?? throw new InvalidOperationException("Pack homepage schema pattern is missing.");
         await Assert
             .That(
                 Regex.IsMatch(

@@ -65,7 +65,7 @@ internal sealed class TrustPolicy(IFileSystem fileSystem)
 
         settings.Projects.TryGetValue(projectKey, out var localTrust);
         var scopes = new List<TrustScope>(3);
-        if (
+        var hasProjectTrust =
             localTrust is not null
             && IsAcknowledgedProjectTrust(
                 configuration.Trust,
@@ -73,8 +73,8 @@ internal sealed class TrustPolicy(IFileSystem fileSystem)
                 sourceName,
                 identity,
                 packId
-            )
-        )
+            );
+        if (hasProjectTrust)
         {
             scopes.Add(TrustScope.Project);
         }

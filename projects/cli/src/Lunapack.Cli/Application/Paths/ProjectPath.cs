@@ -35,10 +35,10 @@ internal static class ProjectPath
         )
             ? projectPath
             : $"{projectPath}{fileSystem.Path.DirectorySeparatorChar}";
-        if (
+        var resolvesOutsideProject =
             !string.Equals(resolvedPath, projectPath, comparison)
-            && !resolvedPath.StartsWith(projectPathWithSeparator, comparison)
-        )
+            && !resolvedPath.StartsWith(projectPathWithSeparator, comparison);
+        if (resolvesOutsideProject)
         {
             return ManifestOperationResult<string>.Failure(
                 "Path must resolve within the project directory."

@@ -2,6 +2,7 @@
 using System.IO.Abstractions;
 using System.Security.Cryptography;
 using System.Text;
+using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Application.Paths;
 using Lunapack.Cli.Catalog;
@@ -356,10 +357,10 @@ internal sealed class PackLifecycleService(
             );
         }
 
-        if (
+        var directoriesContainOneAnother =
             request.TargetPath.StartsWith(sourcePrefix, StringComparison.Ordinal)
-            || request.SourcePath.StartsWith($"{request.TargetPath}/", StringComparison.Ordinal)
-        )
+            || request.SourcePath.StartsWith($"{request.TargetPath}/", StringComparison.Ordinal);
+        if (directoriesContainOneAnother)
         {
             return ManifestOperationResult<ManagedFileMoveSelection>.Failure(
                 "Managed directory source and target must not contain one another."
@@ -375,10 +376,10 @@ internal sealed class PackLifecycleService(
         bool isDirectory
     )
     {
-        if (
+        var hasDuplicateTargets =
             moves.Select(move => move.TargetPath).Distinct(StringComparer.Ordinal).Count()
-            != moves.Count
-        )
+            != moves.Count;
+        if (hasDuplicateTargets)
         {
             return ManifestOperationResult<ManagedFileMoveSelection>.Failure(
                 "Managed file move produces duplicate targets."
@@ -597,10 +598,10 @@ internal sealed class PackLifecycleService(
 
         foreach (var directory in createdDirectories.Distinct(StringComparer.Ordinal).Reverse())
         {
-            if (
+            var directoryIsEmpty =
                 fileSystem.Directory.Exists(directory)
-                && !fileSystem.Directory.EnumerateFileSystemEntries(directory).Any()
-            )
+                && !fileSystem.Directory.EnumerateFileSystemEntries(directory).Any();
+            if (directoryIsEmpty)
             {
                 fileSystem.Directory.Delete(directory);
             }
@@ -623,11 +624,10 @@ internal sealed class PackLifecycleService(
             return;
         }
 
-        foreach (
-            var directory in fileSystem
-                .Directory.EnumerateDirectories(sourcePath, "*", SearchOption.AllDirectories)
-                .OrderByDescending(path => path.Length)
-        )
+        var directories = fileSystem
+            .Directory.EnumerateDirectories(sourcePath, "*", SearchOption.AllDirectories)
+            .OrderByDescending(path => path.Length);
+        foreach (var directory in directories)
         {
             if (!fileSystem.Directory.EnumerateFileSystemEntries(directory).Any())
             {
@@ -657,11 +657,10 @@ internal sealed class PackLifecycleService(
         }
 
         var requestedPack = installationRequest.PackReference;
-        if (
-            state.Configuration.Packs.Exists(pack =>
-                string.Equals(pack.Id, requestedPack.Id, StringComparison.Ordinal)
-            )
-        )
+        var requestedPackIsInstalled = state.Configuration.Packs.Exists(pack =>
+            string.Equals(pack.Id, requestedPack.Id, StringComparison.Ordinal)
+        );
+        if (requestedPackIsInstalled)
         {
             return ManifestOperationResult<IReadOnlyList<PackParameterPrompt>>.Failure(
                 $"Pack '{requestedPack.Id}' is already installed."
@@ -719,13 +718,12 @@ internal sealed class PackLifecycleService(
                 continue;
             }
 
-            if (
-                !string.Equals(
-                    installedPack.Version,
-                    pack.Manifest.Version,
-                    StringComparison.Ordinal
-                )
-            )
+            var installedVersionConflicts = !string.Equals(
+                installedPack.Version,
+                pack.Manifest.Version,
+                StringComparison.Ordinal
+            );
+            if (installedVersionConflicts)
             {
                 return ManifestOperationResult<ResolvedPackGraph>.Failure(
                     $"Pack '{pack.Manifest.Id}' is already installed as version '{installedPack.Version}', which conflicts with version '{pack.Manifest.Version}'."
@@ -901,11 +899,10 @@ internal sealed class PackLifecycleService(
         }
 
         var packReference = installationRequest.PackReference;
-        if (
-            state.Configuration.Packs.Exists(request =>
-                string.Equals(request.Id, packReference.Id, StringComparison.Ordinal)
-            )
-        )
+        var requestedPackIsInstalled = state.Configuration.Packs.Exists(request =>
+            string.Equals(request.Id, packReference.Id, StringComparison.Ordinal)
+        );
+        if (requestedPackIsInstalled)
         {
             return ManifestOperationResult<PreparedPackGraphMaterialization>.Failure(
                 $"Pack '{packReference.Id}' is already installed."
@@ -1337,13 +1334,12 @@ internal sealed class PackLifecycleService(
         );
         if (exitCode == 0)
         {
-            foreach (
-                var sourceName in GetUnusedExternalSources(
-                    state.Configuration,
-                    prepared.RemovedPacks,
-                    prepared.NextState.LockFile
-                )
-            )
+            var unusedSourceNames = GetUnusedExternalSources(
+                state.Configuration,
+                prepared.RemovedPacks,
+                prepared.NextState.LockFile
+            );
+            foreach (var sourceName in unusedSourceNames)
             {
                 _console.Info(
                     $"External source '{sourceName}' has no remaining consumers. Remove it with 'luna sources rm {sourceName}'."
@@ -1682,7 +1678,7 @@ internal sealed class PackLifecycleService(
         var isPersisted = false;
         try
         {
-            var completion = await CompleteUpdateAsync(
+            var (ExitCode, IsCheckpointPersisted, IsPersisted) = await CompleteUpdateAsync(
                 state,
                 nextConfiguration,
                 graph,
@@ -1692,9 +1688,9 @@ internal sealed class PackLifecycleService(
                 preserveExistingLock,
                 authorizedHooks
             );
-            isCheckpointPersisted = completion.IsCheckpointPersisted;
-            isPersisted = completion.IsPersisted;
-            return completion.ExitCode;
+            isCheckpointPersisted = IsCheckpointPersisted;
+            isPersisted = IsPersisted;
+            return ExitCode;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
@@ -1738,7 +1734,6 @@ internal sealed class PackLifecycleService(
     {
         var resultingContents = CreateResultingContents(updatePlan);
         var updatedLockFile = CreateLockFile(
-            projectDirectory,
             nextConfiguration,
             graph,
             installationPlan,
@@ -2002,10 +1997,10 @@ internal sealed class PackLifecycleService(
 
     private ManifestOperationResult<bool> VerifyManifestSnapshot(ManifestSnapshot snapshot)
     {
-        if (
+        var manifestIsUnchanged =
             fileSystem.File.Exists(snapshot.Path)
-            && fileSystem.File.ReadAllBytes(snapshot.Path).SequenceEqual(snapshot.Contents)
-        )
+            && fileSystem.File.ReadAllBytes(snapshot.Path).SequenceEqual(snapshot.Contents);
+        if (manifestIsUnchanged)
         {
             return ManifestOperationResult<bool>.Success(true);
         }
@@ -2256,7 +2251,6 @@ internal sealed class PackLifecycleService(
     }
 
     private ProjectLockFile CreateLockFile(
-        string projectDirectory,
         ProjectConfiguration configuration,
         ResolvedPackGraph graph,
         PackInstallationPlan installationPlan,
@@ -2354,12 +2348,13 @@ internal sealed class PackLifecycleService(
         ProjectLockFile previousLockFile,
         IReadOnlyDictionary<string, byte[]>? resultingContents
     ) =>
-        installationPlan
-            .ManagedFiles.Where(managedFile => IsSamePack(managedFile.Pack, pack))
-            .Select(managedFile =>
-                CreateLockManagedFile(pack, managedFile, previousLockFile, resultingContents)
-            )
-            .ToList();
+        [
+            .. installationPlan
+                .ManagedFiles.Where(managedFile => IsSamePack(managedFile.Pack, pack))
+                .Select(managedFile =>
+                    CreateLockManagedFile(pack, managedFile, previousLockFile, resultingContents)
+                ),
+        ];
 
     private static ProjectLockFile.ManagedFile CreateLockManagedFile(
         DiscoveredPack pack,
@@ -2429,14 +2424,14 @@ internal sealed class PackLifecycleService(
 
             foreach (var dependency in resolvedPack.Packs)
             {
-                if (
+                var dependencyIsMissingOrMismatched =
                     !packsById.TryGetValue(dependency.Id, out var resolvedDependency)
                     || !string.Equals(
                         dependency.Version,
                         resolvedDependency.Version,
                         StringComparison.Ordinal
-                    )
-                )
+                    );
+                if (dependencyIsMissingOrMismatched)
                 {
                     return ManifestOperationResult<ProjectLockFile>.Failure(
                         $"Lock file does not contain resolved pack '{dependency.Id}@{dependency.Version}'."
@@ -2452,9 +2447,7 @@ internal sealed class PackLifecycleService(
             {
                 SchemaVersion = 1,
                 Links = CloneLinks(previousLockFile),
-                Packs = previousLockFile
-                    .Packs.Where(pack => remainingIds.Contains(pack.Id))
-                    .ToList(),
+                Packs = [.. previousLockFile.Packs.Where(pack => remainingIds.Contains(pack.Id))],
             }
         );
     }
@@ -2474,13 +2467,13 @@ internal sealed class PackLifecycleService(
         ProjectLockFile previousLockFile,
         ProjectLockFile remainingLockFile
     ) =>
-        previousLockFile
-            .Packs.Where(lockPack =>
+        [
+            .. previousLockFile.Packs.Where(lockPack =>
                 !remainingLockFile.Packs.Exists(pack =>
                     string.Equals(pack.Id, lockPack.Id, StringComparison.Ordinal)
                 )
-            )
-            .ToList();
+            ),
+        ];
 
     private static List<ManagedFileRemoval> GetManagedFilesToRemove(
         IReadOnlyList<ProjectLockFile.ResolvedPack> removedPacks,
@@ -2587,11 +2580,11 @@ internal sealed class PackLifecycleService(
         var targetLines = ReadLines(targetText);
         var firstMarkerIndexes = FindMarkerIndexes(targetLines, sectionLines[0]);
         var lastMarkerIndexes = FindMarkerIndexes(targetLines, sectionLines[^1]);
-        if (
+        var markersAreIncompleteOrAmbiguous =
             firstMarkerIndexes.Count != 1
             || lastMarkerIndexes.Count != 1
-            || firstMarkerIndexes[0] >= lastMarkerIndexes[0]
-        )
+            || firstMarkerIndexes[0] >= lastMarkerIndexes[0];
+        if (markersAreIncompleteOrAmbiguous)
         {
             return ManifestOperationResult<byte[]>.Failure(
                 "Managed section markers are incomplete or ambiguous."
@@ -2613,11 +2606,12 @@ internal sealed class PackLifecycleService(
     }
 
     private static List<int> FindMarkerIndexes(IReadOnlyList<string> lines, string marker) =>
-        lines
-            .Select((line, index) => new { line, index })
-            .Where(item => string.Equals(item.line, marker, StringComparison.Ordinal))
-            .Select(item => item.index)
-            .ToList();
+        [
+            .. lines
+                .Select((line, index) => new { line, index })
+                .Where(item => string.Equals(item.line, marker, StringComparison.Ordinal))
+                .Select(item => item.index),
+        ];
 
     private static List<string> ReadLines(string text)
     {
@@ -2640,13 +2634,12 @@ internal sealed class PackLifecycleService(
         var normalizedTargetPath = ProjectPath.Normalize(targetPath);
         foreach (var managedFile in lockFile.Packs.SelectMany(pack => pack.ManagedFiles))
         {
-            if (
-                string.Equals(
-                    ProjectPath.Normalize(managedFile.TargetPath),
-                    normalizedTargetPath,
-                    StringComparison.Ordinal
-                )
-            )
+            var isMatchingTarget = string.Equals(
+                ProjectPath.Normalize(managedFile.TargetPath),
+                normalizedTargetPath,
+                StringComparison.Ordinal
+            );
+            if (isMatchingTarget)
             {
                 managedFile.Sha256 = ComputeSha256(contents);
             }

@@ -10,10 +10,12 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/lunarisdigitalsolutions/lunapack</RepositoryUrl>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <LunapackChangelogPath Condition="'$(LunapackChangelogPath)' == ''"
+      >..\..\CHANGELOG.md</LunapackChangelogPath>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(LunapackPackAsTool)' == 'true'">
     <None Include="..\..\README.md" Pack="true" PackagePath="\" />
-    <None Include="..\..\CHANGELOG.md" Pack="true" PackagePath="\" />
+    <None Include="$(LunapackChangelogPath)" Pack="true" PackagePath="\" />
   </ItemGroup>
 </Project>

@@ -11,6 +11,7 @@ on:
       - main
     paths:
       - 'projects/cli/**'
+      - '.github/actions/build-dotnet/**'
       - '.github/actions/cli/**'
       - '.github/workflows/cli.yml'
       - '.github/workflows/cli-pr.yml'
@@ -22,6 +23,9 @@ jobs:
   build:
     if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
+    permissions:
+      checks: write
+      contents: read
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1

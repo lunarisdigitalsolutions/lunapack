@@ -1,4 +1,5 @@
 using System.Text;
+using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.CommandExecution;
 using Spectre.Console;
 
@@ -66,12 +67,12 @@ internal sealed class InstructionPresenter(CliConsole console)
         var output = new StringBuilder(markdown.Length);
         for (var index = 0; index < markdown.Length; )
         {
-            if (
+            var appendedFormatting =
                 TryAppendLink(markdown, ref index, output)
                 || TryAppendDelimited(markdown, ref index, output, "`", "yellow")
                 || TryAppendDelimited(markdown, ref index, output, "**", "bold")
-                || TryAppendDelimited(markdown, ref index, output, "*", "italic")
-            )
+                || TryAppendDelimited(markdown, ref index, output, "*", "italic");
+            if (appendedFormatting)
             {
                 continue;
             }

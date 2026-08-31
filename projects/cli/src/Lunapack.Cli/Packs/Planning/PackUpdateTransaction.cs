@@ -1,4 +1,5 @@
 ﻿using System.IO.Abstractions;
+using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Packs.ManagedFiles;
 
@@ -75,14 +76,11 @@ internal sealed class PackUpdateTransaction(IFileSystem fileSystem, CliConsole c
 
     private void WriteTarget(PlannedPackUpdateAction action, Rollback rollback)
     {
-        var contents = action.ResultingContents;
-        if (contents is null)
-        {
-            throw new InvalidOperationException(
+        var contents =
+            action.ResultingContents
+            ?? throw new InvalidOperationException(
                 $"Update action for '{action.TargetPathRelativeToProject}' has no resulting content."
             );
-        }
-
         rollback.Snapshot(action.TargetPath);
         CreateTargetDirectory(action.TargetPath, rollback);
         fileSystem.File.WriteAllBytes(action.TargetPath, contents);
@@ -132,10 +130,10 @@ internal sealed class PackUpdateTransaction(IFileSystem fileSystem, CliConsole c
 
             foreach (var createdDirectory in _createdDirectories.AsEnumerable().Reverse())
             {
-                if (
+                var createdDirectoryIsEmpty =
                     fileSystem.Directory.Exists(createdDirectory)
-                    && !fileSystem.Directory.EnumerateFileSystemEntries(createdDirectory).Any()
-                )
+                    && !fileSystem.Directory.EnumerateFileSystemEntries(createdDirectory).Any();
+                if (createdDirectoryIsEmpty)
                 {
                     fileSystem.Directory.Delete(createdDirectory);
                     console.Verbose(

@@ -141,12 +141,11 @@ internal sealed class PackUpdateSelectionService(
             StringComparer.Ordinal
         );
         var updates = new List<AvailablePackUpdate>();
-        foreach (
-            var requestedRoot in state.Configuration.Packs.OrderBy(
-                pack => pack.Id,
-                StringComparer.Ordinal
-            )
-        )
+        var requestedRoots = state.Configuration.Packs.OrderBy(
+            pack => pack.Id,
+            StringComparer.Ordinal
+        );
+        foreach (var requestedRoot in requestedRoots)
         {
             if (!currentPacks.TryGetValue(requestedRoot.Id, out var currentPack))
             {

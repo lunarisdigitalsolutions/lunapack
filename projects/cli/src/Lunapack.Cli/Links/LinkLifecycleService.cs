@@ -1,6 +1,7 @@
 ﻿using System.Diagnostics;
 using System.IO.Abstractions;
 using System.Security.Cryptography;
+using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Packs.ManagedFiles;
 using Lunapack.Cli.Packs.Planning;
@@ -289,12 +290,12 @@ internal sealed class LinkLifecycleService(
         }
 
         using var scope = resolved;
-        if (
+        var linkIsCurrent =
             lockedLink is not null
             && LinkDiffCalculator.Compare(lockedLink, resolved.Snapshot) is { IsCurrent: true }
             && FindModifiedTargets(projectDirectory, lockedLink).Count == 0
-            && !HasMissingTargets(projectDirectory, lockedLink)
-        )
+            && !HasMissingTargets(projectDirectory, lockedLink);
+        if (linkIsCurrent)
         {
             return await SaveEvidenceAsync(projectDirectory, state, resolved.Snapshot);
         }
@@ -508,10 +509,10 @@ internal sealed class LinkLifecycleService(
         Dictionary<string, List<ManagedRootOwner>> ownership
     )
     {
-        if (
+        var hasConflictingOwner =
             ownership.TryGetValue(file.TargetPath, out var owners)
-            && owners.Exists(candidate => !candidate.Matches(owner))
-        )
+            && owners.Exists(candidate => !candidate.Matches(owner));
+        if (hasConflictingOwner)
         {
             return new LinkFileAuditStatus(file.TargetPath, "conflicting");
         }

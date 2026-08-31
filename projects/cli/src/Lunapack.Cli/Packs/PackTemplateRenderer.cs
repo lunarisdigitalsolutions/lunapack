@@ -173,10 +173,10 @@ internal sealed class PackTemplateRenderer(IFileSystem fileSystem)
             );
         }
 
-        if (
+        var requiresContainsCompatibilityFlag =
             parameters.Values.Values.Any(value => value.StringValues is not null)
-            && !parameters.Values.ContainsKey("contains")
-        )
+            && !parameters.Values.ContainsKey("contains");
+        if (requiresContainsCompatibilityFlag)
         {
             globals.SetValue("contains", true, readOnly: true);
         }

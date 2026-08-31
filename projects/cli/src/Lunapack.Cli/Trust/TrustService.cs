@@ -188,16 +188,15 @@ internal sealed class TrustService(
         var uniquePackIds = packIds.Distinct(StringComparer.Ordinal).ToArray();
         var updatedState = CloneState(context.State);
         var updatedSettings = CloneSettings(context.Settings);
-        if (
-            !ApplyPacks(
-                scope,
-                context.ProjectKey,
-                sources[0],
-                uniquePackIds,
-                updatedState,
-                updatedSettings
-            )
-        )
+        var changed = ApplyPacks(
+            scope,
+            context.ProjectKey,
+            sources[0],
+            uniquePackIds,
+            updatedState,
+            updatedSettings
+        );
+        if (!changed)
         {
             return ManifestOperationResult<bool>.Success(true);
         }
@@ -319,16 +318,15 @@ internal sealed class TrustService(
 
         var updatedState = CloneState(context.State);
         var updatedSettings = CloneSettings(context.Settings);
-        if (
-            !RemovePacks(
-                scope,
-                context.ProjectKey,
-                sources[0],
-                packIds.Distinct(StringComparer.Ordinal),
-                updatedState,
-                updatedSettings
-            )
-        )
+        var changed = RemovePacks(
+            scope,
+            context.ProjectKey,
+            sources[0],
+            packIds.Distinct(StringComparer.Ordinal),
+            updatedState,
+            updatedSettings
+        );
+        if (!changed)
         {
             return ManifestOperationResult<bool>.Success(true);
         }
@@ -619,12 +617,11 @@ internal sealed class TrustService(
         string packId
     )
     {
-        if (
-            packs.Exists(pack =>
-                string.Equals(pack.Source, sourceName, StringComparison.Ordinal)
-                && string.Equals(pack.Id, packId, StringComparison.Ordinal)
-            )
-        )
+        var containsPack = packs.Exists(pack =>
+            string.Equals(pack.Source, sourceName, StringComparison.Ordinal)
+            && string.Equals(pack.Id, packId, StringComparison.Ordinal)
+        );
+        if (containsPack)
         {
             return false;
         }
