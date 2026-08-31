@@ -13,6 +13,12 @@ namespace Lunapack.Cli.Packs.Planning;
 internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
 {
     private static readonly UTF8Encoding _utf8 = new(false, true);
+    private static readonly JsonSerializerOptions _mergedJsonOptions = new(
+        LunapackJsonSerializerOptions.Default
+    )
+    {
+        WriteIndented = true,
+    };
 
     public ManifestOperationResult<PackUpdatePlan> Plan(
         string projectDirectory,
@@ -497,7 +503,7 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
             }
 
             return ManifestOperationResult<byte[]>.Success(
-                _utf8.GetBytes(merged.ToJsonString(LunapackJsonSerializerOptions.Default))
+                _utf8.GetBytes(merged.ToJsonString(_mergedJsonOptions))
             );
         }
         catch (Exception exception) when (exception is DecoderFallbackException or JsonException)

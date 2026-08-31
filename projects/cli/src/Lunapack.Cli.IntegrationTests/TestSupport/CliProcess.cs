@@ -26,6 +26,7 @@ internal static class CliProcess
         {
             CreateNoWindow = true,
             RedirectStandardError = true,
+            RedirectStandardInput = true,
             RedirectStandardOutput = true,
             UseShellExecute = false,
             WorkingDirectory = workingDirectory,
@@ -48,6 +49,7 @@ internal static class CliProcess
         using var process =
             Process.Start(startInfo)
             ?? throw new InvalidOperationException("Unable to start the LunaPack CLI process.");
+        process.StandardInput.Close();
         var standardOutput = process.StandardOutput.ReadToEndAsync();
         var standardError = process.StandardError.ReadToEndAsync();
 

@@ -35,7 +35,7 @@ The solution SHALL enforce CSharpier formatting and Roslyn analyzer diagnostics.
 
 ### Requirement: Produce deterministic MinVer-versioned CI builds
 
-The root `Directory.Build.props` and the `dotnet-build-props` pack template
+The root `Directory.Build.props` and the `dotnet-build-config` pack template
 SHALL configure deterministic CI builds, Source Link, locked restore, and
 exclusion of source-revision data from the informational version. Both SHALL
 set `MinVerDefaultPreReleaseIdentifiers` to `preview`. The CLI project SHALL
@@ -64,6 +64,6 @@ tag as that override.
 
 #### Scenario: Apply the build-properties pack
 
-- **WHEN** a consumer installs `dotnet-build-props`
+- **WHEN** a consumer installs `dotnet-build-config`
 - **THEN** its generated `Directory.Build.props` provides the same CI
   determinism and restore policy as the repository root file

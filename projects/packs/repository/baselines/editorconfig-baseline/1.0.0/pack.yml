@@ -1,0 +1,14 @@
+id: editorconfig-baseline
+version: 1.0.0
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Apply portable EditorConfig conventions for common repository file types.
+tags:
+  - editorconfig
+  - formatting
+managedFiles:
+  - source: fragments/.editorconfig/editorconfig-baseline.editorconfig
+    target: .editorconfig
+    strategy:
+      type: merge
+      method: section

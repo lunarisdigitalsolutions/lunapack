@@ -20,7 +20,7 @@ inputs:
   changelog-path:
     description: Source changelog from which the matching release section is extracted.
     required: false
-    default: CHANGELOG.md
+    default: projects/cli/CHANGELOG.md
   nuget-user:
     description: NuGet username used to authenticate for publishing packages.
     required: true

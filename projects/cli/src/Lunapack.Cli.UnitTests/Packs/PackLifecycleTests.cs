@@ -1246,7 +1246,7 @@ public sealed class PackLifecycleTests
         await ConfigureSourceAsync(workspace, sourcePath);
         await workspace.Application.RunAsync(["install", "dotnet-gitignore@1.0.0"], workspace.Path);
         await workspace.Application.RunAsync(
-            ["install", "gitignore-general@1.0.0"],
+            ["install", "gitignore-baseline@1.0.0"],
             workspace.Path
         );
 
@@ -1262,7 +1262,7 @@ public sealed class PackLifecycleTests
         await Assert.That(targetContents).Contains("# general:start\n*.temporary\n# general:end");
         await Assert
             .That(state.RequireValue().Configuration.Packs.Select(pack => pack.Id))
-            .IsEquivalentTo(["gitignore-general"]);
+            .IsEquivalentTo(["gitignore-baseline"]);
     }
 
     [Test]
@@ -1819,14 +1819,14 @@ public sealed class PackLifecycleTests
             .DryRunInstallAsync(
                 workspace.Path,
                 new PackInstallationRequest(
-                    new PackReference("gitignore-general", "1.0.0"),
+                    new PackReference("gitignore-baseline", "1.0.0"),
                     null,
                     false
                 )
             );
         await Assert.That(secondInstallDryRun.Error).IsNull();
         var secondInstallExitCode = await workspace.Application.RunAsync(
-            ["install", "gitignore-general@1.0.0"],
+            ["install", "gitignore-baseline@1.0.0"],
             workspace.Path
         );
         var targetPath = Path.Combine(workspace.Path, ".gitignore");
@@ -1853,7 +1853,7 @@ public sealed class PackLifecycleTests
                     },
                     new ProjectConfiguration.RequestedPack
                     {
-                        Id = "gitignore-general",
+                        Id = "gitignore-baseline",
                         Version = "2.0.0",
                     },
                 ],
@@ -2403,14 +2403,14 @@ public sealed class PackLifecycleTests
         );
         CreatePack(
             sourcePath,
-            "gitignore-general-v1",
-            "id: gitignore-general\nversion: 1.0.0\nmanagedFiles:\n  - source: templates/content.txt\n    target: .gitignore\n    strategy:\n      type: merge\n      method: section\n",
+            "gitignore-baseline-v1",
+            "id: gitignore-baseline\nversion: 1.0.0\nmanagedFiles:\n  - source: templates/content.txt\n    target: .gitignore\n    strategy:\n      type: merge\n      method: section\n",
             "# general:start\n*.temporary\n# general:end\n"
         );
         CreatePack(
             sourcePath,
-            "gitignore-general-v2",
-            "id: gitignore-general\nversion: 2.0.0\nmanagedFiles:\n  - source: templates/content.txt\n    target: .gitignore\n    strategy:\n      type: merge\n      method: section\n",
+            "gitignore-baseline-v2",
+            "id: gitignore-baseline\nversion: 2.0.0\nmanagedFiles:\n  - source: templates/content.txt\n    target: .gitignore\n    strategy:\n      type: merge\n      method: section\n",
             "# general:start\n*.temporary-v2\n# general:end\n"
         );
 

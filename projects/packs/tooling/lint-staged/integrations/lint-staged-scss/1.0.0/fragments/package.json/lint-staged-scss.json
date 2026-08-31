@@ -1,0 +1,5 @@
+{
+  "lint-staged": {
+    "*.scss": "prettier --write"
+  }
+}

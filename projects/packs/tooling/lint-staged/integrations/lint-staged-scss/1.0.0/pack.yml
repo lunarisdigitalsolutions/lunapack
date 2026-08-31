@@ -1,0 +1,17 @@
+id: lint-staged-scss
+version: 1.0.0
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Format staged SCSS files with Prettier.
+tags: [lint-staged, scss, formatting]
+packs:
+  - id: lint-staged
+    version: 1.0.0
+  - id: prettier-config
+    version: 1.0.0
+managedFiles:
+  - source: fragments/package.json/lint-staged-scss.json
+    target: package.json
+    strategy:
+      type: merge
+      method: json

@@ -1,8 +1,0 @@
-id: clean-code-guidelines
-version: 1.0.0
-license: MIT
-author: Lunaris Digital Solutions <info@lunaris.digital>
-description: Portable clean-code principles for software projects.
-managedFiles:
-  - source: templates/clean-code.md
-    target: clean-code.md

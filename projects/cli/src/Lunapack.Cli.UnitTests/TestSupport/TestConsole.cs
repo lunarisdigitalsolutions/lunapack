@@ -6,8 +6,9 @@ internal static class TestConsole
 {
     public static CliConsole Create() => new(CreateAnsiConsole(), CliLogLevel.Info);
 
-    public static IAnsiConsole CreateAnsiConsole() =>
-        AnsiConsole.Create(
+    public static IAnsiConsole CreateAnsiConsole()
+    {
+        var console = AnsiConsole.Create(
             new AnsiConsoleSettings
             {
                 Ansi = AnsiSupport.No,
@@ -15,4 +16,7 @@ internal static class TestConsole
                 Out = new AnsiConsoleOutput(TextWriter.Null),
             }
         );
+        console.Profile.Capabilities.Interactive = false;
+        return console;
+    }
 }

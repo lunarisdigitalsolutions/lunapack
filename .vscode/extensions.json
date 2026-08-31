@@ -6,6 +6,7 @@
     "ms-dotnettools.csharp",
     "editorconfig.editorconfig",
     "esbenp.prettier-vscode",
-    "DotJoshJohnson.xml"
+    "DotJoshJohnson.xml",
+    "DavidAnson.vscode-markdownlint"
   ]
 }

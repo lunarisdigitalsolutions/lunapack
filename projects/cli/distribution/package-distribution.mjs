@@ -218,6 +218,7 @@ export function stagePackages({ archiveDirectory, outputDirectory, version }) {
   rmSync(outputDirectory, { recursive: true, force: true })
   mkdirSync(outputDirectory, { recursive: true })
 
+  const changelogPath = resolve(import.meta.dirname, '..', 'CHANGELOG.md')
   const packageRoot = join(outputDirectory, 'npm')
   const nativeRoot = join(outputDirectory, 'native')
   mkdirSync(packageRoot, { recursive: true })
@@ -251,13 +252,14 @@ export function stagePackages({ archiveDirectory, outputDirectory, version }) {
       resolve(import.meta.dirname, '..', 'README.md'),
       join(packageDirectory, 'README.md')
     )
+    cpSync(changelogPath, join(packageDirectory, 'CHANGELOG.md'))
     writeJson(join(packageDirectory, 'package.json'), {
       name: packageName(target),
       version,
       description: `Luna native binary for ${target.os} ${target.cpu}.`,
       os: [target.os],
       cpu: [target.cpu],
-      files: [target.binary, 'README.md'],
+      files: [target.binary, 'README.md', 'CHANGELOG.md'],
       license: 'MIT',
       repository: 'github:lunarisdigitalsolutions/lunapack'
     })
@@ -273,6 +275,7 @@ export function stagePackages({ archiveDirectory, outputDirectory, version }) {
     resolve(import.meta.dirname, '..', 'README.md'),
     join(entryDirectory, 'README.md')
   )
+  cpSync(changelogPath, join(entryDirectory, 'CHANGELOG.md'))
   writeJson(join(entryDirectory, 'package.json'), {
     name: '@lunarisdigitalsolutions/lunapack',
     version,
@@ -281,7 +284,7 @@ export function stagePackages({ archiveDirectory, outputDirectory, version }) {
     optionalDependencies: Object.fromEntries(
       targets.map((target) => [packageName(target), version])
     ),
-    files: ['run-luna.mjs', 'README.md'],
+    files: ['run-luna.mjs', 'README.md', 'CHANGELOG.md'],
     license: 'MIT',
     repository: 'github:lunarisdigitalsolutions/lunapack'
   })

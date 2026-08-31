@@ -21,16 +21,16 @@ only requested declarations.
 Use a file selector for one source and a directory or glob for a set:
 
 ```powershell
-luna pack add file templates/.editorconfig --target .editorconfig
-luna pack add directory templates/docs --target docs/standards
-luna pack add glob 'templates/**/*.json' --target config
+luna pack add file targets/.editorconfig --target .editorconfig
+luna pack add directory targets/docs --target docs/standards
+luna pack add glob 'targets/config/**/*.json' --target config
 ```
 
 Directory and glob matches retain their paths below the target. Use repeatable
 `--exclude` patterns to remove matches:
 
 ```powershell
-luna pack add directory templates/docs `
+luna pack add directory targets/docs `
   --target docs/standards `
   --exclude '**/drafts/**' `
   --exclude '**/*.internal.md'
@@ -45,10 +45,10 @@ or `--flatten`.
 Set a strategy as `<type>:<method>`:
 
 ```powershell
-luna pack add file templates/.editorconfig `
+luna pack add file targets/.editorconfig `
   --target .editorconfig `
   --strategy copy:fail-if-exists
-luna pack add file templates/gitignore `
+luna pack add file fragments/.gitignore/example-documentation-standard.gitignore `
   --target .gitignore `
   --strategy merge:lines
 ```

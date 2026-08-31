@@ -1,0 +1,46 @@
+id: commitlint
+version: 1.0.0
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Validate conventional titles with configurable repository scopes.
+tags:
+  - git
+  - pull-request
+  - commitlint
+parameters:
+  scopes:
+    type: enum
+    multiple: true
+    default: []
+    displayName: Commitlint scopes
+    description: Allowed optional scopes for conventional titles.
+    values:
+      - api
+      - backend
+      - build
+      - cli
+      - docs
+      - frontend
+      - infrastructure
+      - packs
+      - schema
+      - security
+      - tests
+      - website
+managedFiles:
+  - source: targets/.commitlintrc.cjs
+    target: .commitlintrc.cjs
+    template: true
+  - source: targets/docs/developer/conventional-commits.md
+    target: docs/developer/conventional-commits.md
+hooks:
+  postInstall:
+    - type: script
+      command: npm
+      arguments:
+        - install
+        - --save-dev
+        - --ignore-scripts
+        - '@commitlint/config-conventional@20.4.2'
+        - '@commitlint/cli@20.4.2'
+      description: Install Commitlint and its conventional-commit rules.

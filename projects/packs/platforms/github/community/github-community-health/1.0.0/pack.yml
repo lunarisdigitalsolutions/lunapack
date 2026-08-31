@@ -1,0 +1,37 @@
+id: github-community-health
+version: 1.0.0
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Add parameterized conduct, security, and support policies.
+tags: [github, community, governance]
+parameters:
+  projectName:
+    type: string
+    default: Your project
+    displayName: Project name
+  contact:
+    type: string
+    default: maintainers@example.com
+    displayName: Community contact
+  securityUrl:
+    type: string
+    default: https://example.com/security
+    displayName: Private security reporting URL
+  supportUrl:
+    type: string
+    default: https://example.com/support
+    displayName: Support URL
+managedFiles:
+  - source: targets/CODE_OF_CONDUCT.md
+    target: CODE_OF_CONDUCT.md
+    template: true
+  - source: targets/SECURITY.md
+    target: SECURITY.md
+    template: true
+  - source: targets/SUPPORT.md
+    target: SUPPORT.md
+    template: true
+hooks:
+  postInstall:
+    - type: instruction
+      file: instructions/customize.md
