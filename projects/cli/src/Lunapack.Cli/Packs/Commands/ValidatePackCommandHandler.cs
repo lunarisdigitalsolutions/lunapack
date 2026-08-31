@@ -6,6 +6,7 @@ namespace Lunapack.Cli.Packs.Commands;
 
 internal sealed class ValidatePackCommandHandler(
     PackValidationService packValidationService,
+    CliCompletionProvider completionProvider,
     WorkspaceDirectoryResolver workspaceDirectoryResolver,
     CliConsole console
 )
@@ -16,6 +17,7 @@ internal sealed class ValidatePackCommandHandler(
         {
             Description = "Pack ID, optionally followed by @version.",
         };
+        packReferenceArgument.CompletionSources.Add(completionProvider.GetAvailablePackIds);
         var command = new Command("validate", "Validate a pack in configured sources.")
         {
             packReferenceArgument,

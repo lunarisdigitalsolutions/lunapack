@@ -495,6 +495,7 @@ internal sealed class PackAuthoringCommandHandler(
     )
     {
         var hookArgument = new Argument<string>("event");
+        hookArgument.CompletionSources.Add(_hooks);
         var executableArgument = new Argument<string>("command");
         var argumentsArgument = new Argument<string[]>("arguments")
         {
@@ -544,6 +545,7 @@ internal sealed class PackAuthoringCommandHandler(
     )
     {
         var hookArgument = new Argument<string>("event");
+        hookArgument.CompletionSources.Add(_hooks);
         var fileArgument = new Argument<string>("file");
         var runnerArgument = new Argument<string>("runner");
         var argumentsArgument = new Argument<string[]>("arguments")
@@ -607,6 +609,7 @@ internal sealed class PackAuthoringCommandHandler(
     )
     {
         var hookArgument = new Argument<string>("event");
+        hookArgument.CompletionSources.Add(_hooks);
         var fileArgument = new Argument<string>("file");
         var templatingOption = new Option<bool>("--templating")
         {
@@ -694,6 +697,15 @@ internal sealed class PackAuthoringCommandHandler(
     private Command CreateSetCommand(string projectDirectory, Option<string?> workspaceOption)
     {
         var propertyArgument = new Argument<string>("property");
+        propertyArgument.CompletionSources.Add(
+            "author",
+            "description",
+            "homepage",
+            "id",
+            "license",
+            "name",
+            "version"
+        );
         var valueArgument = new Argument<string>("value");
         var command = new Command("set", "Set pack metadata.") { propertyArgument, valueArgument };
         command.SetAction(async parseResult =>
@@ -727,6 +739,7 @@ internal sealed class PackAuthoringCommandHandler(
         var versionArgument = new Argument<string>("version");
         var parameterOption = new Option<string[]>("--parameter", "-p");
         var disabledHookOption = new Option<string[]>("--disable-hook");
+        disabledHookOption.CompletionSources.Add(_hooks);
         var replaceOption = new Option<bool>("--replace");
         var command = new Command(name, "Add or replace a composite pack reference.")
         {
@@ -810,6 +823,7 @@ internal sealed class PackAuthoringCommandHandler(
     {
         var nameArgument = new Argument<string>("name");
         var typeArgument = new Argument<string>("type");
+        typeArgument.CompletionSources.Add("bool", "enum", "string");
         var valueOption = new Option<string[]>("--value", "-v");
         var requiredOption = new Option<bool>("--required");
         var defaultOption = new Option<string[]>("--default");
@@ -1018,6 +1032,7 @@ internal sealed class PackAuthoringCommandHandler(
     )
     {
         var hookArgument = new Argument<string>("event");
+        hookArgument.CompletionSources.Add(_hooks);
         var positionArgument = new Argument<int>("position");
         var command = new Command("hook", "Remove a positioned lifecycle hook.")
         {

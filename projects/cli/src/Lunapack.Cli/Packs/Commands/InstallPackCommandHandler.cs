@@ -15,6 +15,7 @@ internal sealed class InstallPackCommandHandler(
     IFileSystem fileSystem,
     PackLifecycleService packLifecycleService,
     LinkCommandDispatcher linkCommandDispatcher,
+    CliCompletionProvider completionProvider,
     WorkspaceDirectoryResolver workspaceDirectoryResolver,
     NextStepAdvisor nextStepAdvisor,
     NextStepRenderer nextStepRenderer,
@@ -24,7 +25,7 @@ internal sealed class InstallPackCommandHandler(
 {
     public Command CreateCommand(string projectDirectory, Option<string?> workspaceOption)
     {
-        var packReferenceArgument = CreatePackReferenceArgument();
+        var packReferenceArgument = CreatePackReferenceArgument(completionProvider);
         var destinationOption = CreateDestinationOption();
         var remapDirectoryOption = CreateRemapDirectoryOption();
         var remapFileOption = CreateRemapFileOption();
@@ -35,7 +36,7 @@ internal sealed class InstallPackCommandHandler(
         var acceptSourcesOption = CreateAcceptSourcesOption();
         var parameterOption = CreateParameterOption();
         var noVariablesOption = CreateNoVariablesOption();
-        var skipVariableOption = CreateSkipVariableOption();
+        var skipVariableOption = CreateSkipVariableOption(completionProvider);
         var scriptsOption = CreateScriptsOption();
         var skipInstructionsOption = CreateSkipInstructionsOption();
         var command = new Command("install", "Install a pack.")
@@ -147,12 +148,18 @@ internal sealed class InstallPackCommandHandler(
         return 0;
     }
 
-    private static Argument<string[]> CreatePackReferenceArgument() =>
-        new("pack-reference")
+    private static Argument<string[]> CreatePackReferenceArgument(
+        CliCompletionProvider completionProvider
+    )
+    {
+        var argument = new Argument<string[]>("pack-reference")
         {
             Arity = ArgumentArity.OneOrMore,
             Description = "Pack IDs, optionally followed by @version.",
         };
+        argument.CompletionSources.Add(completionProvider.GetInstallReferences);
+        return argument;
+    }
 
     private static Option<string?> CreateDestinationOption() =>
         new("--destination", "-d")
@@ -205,14 +212,27 @@ internal sealed class InstallPackCommandHandler(
     private static Option<bool> CreateNoVariablesOption() =>
         new("--no-variables", "-nv") { Description = "Do not bind matching project variables." };
 
-    private static Option<string[]> CreateSkipVariableOption() =>
-        new("--skip-variable", "-sv")
+    private static Option<string[]> CreateSkipVariableOption(
+        CliCompletionProvider completionProvider
+    )
+    {
+        var option = new Option<string[]>("--skip-variable", "-sv")
         {
             Description = "Project variable name to skip during parameter binding.",
         };
+        option.CompletionSources.Add(completionProvider.GetConfiguredVariableNames);
+        return option;
+    }
 
-    private static Option<string?> CreateScriptsOption() =>
-        new("--scripts") { Description = "Lifecycle script mode: prompt, run, or skip." };
+    private static Option<string?> CreateScriptsOption()
+    {
+        var option = new Option<string?>("--scripts")
+        {
+            Description = "Lifecycle script mode: prompt, run, or skip.",
+        };
+        option.CompletionSources.Add("prompt", "run", "skip");
+        return option;
+    }
 
     private static Option<bool> CreateSkipInstructionsOption() =>
         new("--skip-instructions") { Description = "Skip lifecycle instructions." };

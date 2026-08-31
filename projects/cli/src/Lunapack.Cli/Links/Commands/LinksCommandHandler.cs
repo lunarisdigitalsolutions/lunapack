@@ -10,6 +10,7 @@ internal sealed class LinksCommandHandler(
     LinkDefinitionFactory linkDefinitionFactory,
     LinkLifecycleService linkLifecycleService,
     LinkInspectionService linkInspectionService,
+    CliCompletionProvider completionProvider,
     WorkspaceDirectoryResolver workspaceDirectoryResolver,
     NextStepAdvisor nextStepAdvisor,
     NextStepRenderer nextStepRenderer,
@@ -30,7 +31,7 @@ internal sealed class LinksCommandHandler(
     private Command CreateAddCommand(string projectDirectory, Option<string?> workspaceOption)
     {
         var nameArgument = CreateLinkNameArgument();
-        var sourceOption = CreateSourceOption();
+        var sourceOption = CreateSourceOption(completionProvider);
         var includeOption = CreateIncludeOption();
         var excludeOption = CreateExcludeOption();
         var pathOption = CreatePathOption();
@@ -82,8 +83,15 @@ internal sealed class LinksCommandHandler(
     private static Argument<string> CreateLinkNameArgument() =>
         new("name") { Description = "Unique link name using pack-ID syntax." };
 
-    private static Option<string?> CreateSourceOption() =>
-        new("--source", "-s") { Description = "Configured source name to select files from." };
+    private static Option<string?> CreateSourceOption(CliCompletionProvider completionProvider)
+    {
+        var option = new Option<string?>("--source", "-s")
+        {
+            Description = "Configured source name to select files from.",
+        };
+        option.CompletionSources.Add(completionProvider.GetConfiguredSourceNames);
+        return option;
+    }
 
     private static Option<string[]> CreateIncludeOption() =>
         new("--include", "-i") { Description = "File, directory, or glob selector to include." };
@@ -133,6 +141,7 @@ internal sealed class LinksCommandHandler(
         {
             Description = "Name of the configured link to show.",
         };
+        nameArgument.CompletionSources.Add(completionProvider.GetConfiguredLinkNames);
         var command = new Command("show", "Show a configured link.") { nameArgument };
         command.SetAction(async parseResult =>
             await ShowAsync(
@@ -153,6 +162,7 @@ internal sealed class LinksCommandHandler(
         {
             Description = "Name of the configured link to remove.",
         };
+        nameArgument.CompletionSources.Add(completionProvider.GetConfiguredLinkNames);
         var forceOption = new Option<bool>("--force")
         {
             Description = "Remove an installed link definition and its ownership records.",

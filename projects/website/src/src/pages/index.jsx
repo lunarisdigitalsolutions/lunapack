@@ -31,10 +31,12 @@ luna install dotnet-project
 luna outdated
 luna update dotnet-project --dry-run`
 
-const authorCommand = `mkdir my-pack
-
-# Add my-pack/pack.yml and managed content
+const authorCommand = `
 luna sources add local my-packs .
+
+mkdir my-pack && cd my-pack
+luna pack init
+
 luna validate my-pack`
 
 const solutionSteps = [

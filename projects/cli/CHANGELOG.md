@@ -7,6 +7,13 @@ pack-package, documentation, CI, build, test, and release-process changes.
 
 Update this section before creating a release tag.
 
+### Completions
+
+- `luna completions script` now generates native Bash, Fish, Nushell,
+  PowerShell, and Zsh Tab-completion registration without an external tool.
+  Completion includes commands, options, valid finite values, available and
+  installed pack or link IDs, and configured source, link, and variable IDs.
+
 ### Changed
 
 - `luna install --save-remap` now stores mappings on the installed pack's

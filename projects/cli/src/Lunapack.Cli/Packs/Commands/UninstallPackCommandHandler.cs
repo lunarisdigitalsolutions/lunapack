@@ -12,6 +12,7 @@ internal sealed class UninstallPackCommandHandler(
     IFileSystem fileSystem,
     PackLifecycleService packLifecycleService,
     LinkCommandDispatcher linkCommandDispatcher,
+    CliCompletionProvider completionProvider,
     WorkspaceDirectoryResolver workspaceDirectoryResolver,
     NextStepAdvisor nextStepAdvisor,
     NextStepRenderer nextStepRenderer,
@@ -26,6 +27,7 @@ internal sealed class UninstallPackCommandHandler(
             Arity = ArgumentArity.OneOrMore,
             Description = "Pack IDs, optionally followed by @version.",
         };
+        packReferenceArgument.CompletionSources.Add(completionProvider.GetInstalledReferences);
         var parameterOption = new Option<string[]>("--parameter", "-p")
         {
             Description = "Lifecycle template parameter in <name>=<value> form.",
@@ -38,10 +40,12 @@ internal sealed class UninstallPackCommandHandler(
         {
             Description = "Project variable name to skip during lifecycle hook binding.",
         };
+        skipVariableOption.CompletionSources.Add(completionProvider.GetConfiguredVariableNames);
         var scriptsOption = new Option<string?>("--scripts")
         {
             Description = "Lifecycle script mode: prompt, run, or skip.",
         };
+        scriptsOption.CompletionSources.Add("prompt", "run", "skip");
         var skipInstructionsOption = new Option<bool>("--skip-instructions")
         {
             Description = "Skip lifecycle instructions.",

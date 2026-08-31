@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO.Abstractions.TestingHelpers;
 using Lunapack.Cli.Project;
 using SpectreTestConsole = Spectre.Console.Testing.TestConsole;
@@ -6,6 +7,193 @@ namespace Lunapack.Cli.UnitTests;
 
 public sealed class CliApplicationTests
 {
+    [Test]
+    public async Task Complete_WhenCommandLineIsPartial_ReturnsContextualSuggestions()
+    {
+        using var workspace = new TestWorkspace();
+        CreatePack(
+            workspace.Path,
+            "dotnet-sdk",
+            "id: dotnet-sdk\nversion: 1.0.0\nlicense: MIT\nauthor: Lunaris Digital Solutions <info@lunaris.digital>\nmanagedFiles:\n  - source: templates/content.txt\n    target: sdk.txt\n",
+            "sdk"
+        );
+        await workspace.Application.RunAsync(["init"], workspace.Path);
+        await workspace.Application.RunAsync(
+            ["sources", "add", "local", "local", "source"],
+            workspace.Path
+        );
+
+        await using var output = new StringWriter();
+        var commandLine = "luna install dot";
+        var exitCode = await workspace.Application.RunAsync(
+            [
+                "complete",
+                "--position",
+                commandLine.Length.ToString(CultureInfo.InvariantCulture),
+                commandLine,
+            ],
+            workspace.Path,
+            output
+        );
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(output.ToString()).Contains("dotnet-sdk");
+
+        var commandSuggestions = await GetCompletionsAsync(
+            workspace.Application,
+            workspace.Path,
+            "luna pa"
+        );
+        var subcommandSuggestions = await GetCompletionsAsync(
+            workspace.Application,
+            workspace.Path,
+            "luna pack se"
+        );
+        var argumentSuggestions = await GetCompletionsAsync(
+            workspace.Application,
+            workspace.Path,
+            "luna remap set d"
+        );
+
+        await Assert.That(commandSuggestions).Contains("pack");
+        await Assert.That(subcommandSuggestions).Contains("set");
+        await Assert.That(argumentSuggestions).Contains("directory");
+    }
+
+    [Test]
+    public async Task CompletionsScript_WhenSupportedShellRequested_EmitsNativeRegistration()
+    {
+        using var workspace = new TestWorkspace();
+        var shells = new[]
+        {
+            (Name: "bash", Marker: "complete -f -F"),
+            (Name: "fish", Marker: "complete -f -c luna"),
+            (Name: "nushell", Marker: "nu-complete luna"),
+            (Name: "pwsh", Marker: "Register-ArgumentCompleter"),
+            (Name: "zsh", Marker: "compdef"),
+        };
+
+        foreach (var shell in shells)
+        {
+            await using var output = new StringWriter();
+            var exitCode = await workspace.Application.RunAsync(
+                ["completions", "script", shell.Name],
+                workspace.Path,
+                output
+            );
+
+            await Assert.That(exitCode).IsEqualTo(0).Because(shell.Name);
+            await Assert.That(output.ToString()).Contains(shell.Marker).Because(shell.Name);
+            await Assert.That(output.ToString()).Contains("luna complete").Because(shell.Name);
+        }
+    }
+
+    [Test]
+    public async Task CompletionsScriptInstall_WhenConfirmationDefaultsToNo_DoesNotCreateProfile()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        ansiConsole.Input.PushKey(ConsoleKey.Enter);
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var profilePath = Path.Combine(workspace.Path, "profile", ".bashrc");
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["completions", "script", "bash", "--install"],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(ansiConsole.Output).Contains(profilePath);
+        await Assert.That(ansiConsole.Output).Contains("complete -f -F");
+        await Assert.That(File.Exists(profilePath)).IsFalse();
+    }
+
+    [Test]
+    public async Task CompletionsScriptInstall_WhenConfirmed_AppendsScriptToProfile()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        ansiConsole.Input.PushKey(ConsoleKey.Y);
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var profilePath = Path.Combine(workspace.Path, "profile", ".bashrc");
+        Directory.CreateDirectory(Path.GetDirectoryName(profilePath)!);
+        await File.WriteAllTextAsync(profilePath, "# existing\n");
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["completions", "script", "bash", "--install"],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(await File.ReadAllTextAsync(profilePath)).StartsWith("# existing\n");
+        await Assert.That(await File.ReadAllTextAsync(profilePath)).Contains("complete -f -F");
+    }
+
+    [Test]
+    public async Task Completion_WhenWorkspaceHasKnownValues_ReturnsContextualSuggestions()
+    {
+        using var workspace = new TestWorkspace();
+        CreatePack(
+            workspace.Path,
+            "dotnet-sdk",
+            "id: dotnet-sdk\nversion: 1.0.0\nlicense: MIT\nauthor: Lunaris Digital Solutions <info@lunaris.digital>\nmanagedFiles:\n  - source: templates/content.txt\n    target: sdk.txt\n",
+            "sdk"
+        );
+        await workspace.Application.RunAsync(["init"], workspace.Path);
+        await workspace.Application.RunAsync(
+            ["sources", "add", "local", "local", "source"],
+            workspace.Path
+        );
+        await workspace.Application.RunAsync(
+            [
+                "links",
+                "add",
+                "dotnet-link",
+                "--source",
+                "local",
+                "--include",
+                "dotnet-sdk/pack.yml",
+            ],
+            workspace.Path
+        );
+        await workspace.Application.RunAsync(
+            ["variables", "set", "companyName", "Lunaris"],
+            workspace.Path
+        );
+
+        var installSuggestions = await GetCompletionsAsync(
+            workspace.Application,
+            workspace.Path,
+            "luna install dot"
+        );
+        await workspace.Application.RunAsync(["install", "dotnet-sdk"], workspace.Path);
+        var updateSuggestions = await GetCompletionsAsync(
+            workspace.Application,
+            workspace.Path,
+            "luna update dot"
+        );
+        var sourceSuggestions = await GetCompletionsAsync(
+            workspace.Application,
+            workspace.Path,
+            "luna sources rm loc"
+        );
+        var linkSuggestions = await GetCompletionsAsync(
+            workspace.Application,
+            workspace.Path,
+            "luna links show dot"
+        );
+        var variableSuggestions = await GetCompletionsAsync(
+            workspace.Application,
+            workspace.Path,
+            "luna variables rm comp"
+        );
+
+        await Assert.That(installSuggestions).Contains("dotnet-sdk");
+        await Assert.That(installSuggestions).Contains("dotnet-link");
+        await Assert.That(updateSuggestions).Contains("dotnet-sdk");
+        await Assert.That(sourceSuggestions).Contains("local");
+        await Assert.That(linkSuggestions).Contains("dotnet-link");
+        await Assert.That(variableSuggestions).Contains("companyName");
+    }
+
     [Test]
     public async Task Install_WhenRequiredParameterUnresolved_PromptsAndInstalls()
     {
@@ -597,6 +785,23 @@ public sealed class CliApplicationTests
         await Assert.That(configuredSource.Name).IsEqualTo("local");
         await Assert.That(configuredSource.Path).IsEqualTo(sourcePath);
         await Assert.That(configuredSource.Type).IsEqualTo("local");
+    }
+
+    private static async Task<string> GetCompletionsAsync(
+        CliApplication application,
+        string projectDirectory,
+        string commandLine
+    )
+    {
+        await using var output = new StringWriter();
+        var exitCode = await application.RunAsync(
+            [$"[suggest:{commandLine.Length}]", commandLine],
+            projectDirectory,
+            output
+        );
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        return output.ToString();
     }
 
     private static void CreatePack(

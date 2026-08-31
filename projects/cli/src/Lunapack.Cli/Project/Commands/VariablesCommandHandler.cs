@@ -6,6 +6,7 @@ namespace Lunapack.Cli.Project.Commands;
 
 internal sealed class VariablesCommandHandler(
     ProjectStateStore projectStateStore,
+    CliCompletionProvider completionProvider,
     WorkspaceDirectoryResolver workspaceDirectoryResolver,
     CliConsole console
 )
@@ -62,6 +63,7 @@ internal sealed class VariablesCommandHandler(
     private Command CreateRemoveCommand(string projectDirectory, Option<string?> workspaceOption)
     {
         var nameArgument = new Argument<string>("name") { Description = "Variable name." };
+        nameArgument.CompletionSources.Add(completionProvider.GetConfiguredVariableNames);
         var command = new Command("rm", "Remove a project variable.") { nameArgument };
         command.SetAction(async parseResult =>
         {

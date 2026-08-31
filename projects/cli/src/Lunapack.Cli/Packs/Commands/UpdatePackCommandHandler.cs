@@ -14,6 +14,7 @@ internal sealed class UpdatePackCommandHandler(
     LinkCommandDispatcher linkCommandDispatcher,
     PackUpdateSelectionService updateSelectionService,
     IPackUpdatePrompter packUpdatePrompter,
+    CliCompletionProvider completionProvider,
     WorkspaceDirectoryResolver workspaceDirectoryResolver,
     NextStepAdvisor nextStepAdvisor,
     NextStepRenderer nextStepRenderer,
@@ -23,7 +24,7 @@ internal sealed class UpdatePackCommandHandler(
 {
     public Command CreateCommand(string projectDirectory, Option<string?> workspaceOption)
     {
-        var packReferenceArgument = CreatePackReferenceArgument();
+        var packReferenceArgument = CreatePackReferenceArgument(completionProvider);
         var promptOption = CreatePromptOption();
         var dryRunOption = CreateDryRunOption();
         var noFileChangeOutputOption = CreateNoFileChangeOutputOption();
@@ -201,12 +202,18 @@ internal sealed class UpdatePackCommandHandler(
         return 0;
     }
 
-    private static Argument<string[]> CreatePackReferenceArgument() =>
-        new("pack-reference")
+    private static Argument<string[]> CreatePackReferenceArgument(
+        CliCompletionProvider completionProvider
+    )
+    {
+        var argument = new Argument<string[]>("pack-reference")
         {
             Arity = ArgumentArity.ZeroOrMore,
             Description = "Pack IDs, optionally followed by @version.",
         };
+        argument.CompletionSources.Add(completionProvider.GetInstalledReferences);
+        return argument;
+    }
 
     private static Option<bool> CreatePromptOption() =>
         new("--prompt", "-p") { Description = "Confirm each available update before applying it." };
@@ -226,8 +233,15 @@ internal sealed class UpdatePackCommandHandler(
             Description = "Approve conflict-free external source additions.",
         };
 
-    private static Option<string?> CreateScriptsOption() =>
-        new("--scripts") { Description = "Lifecycle script mode: prompt, run, or skip." };
+    private static Option<string?> CreateScriptsOption()
+    {
+        var option = new Option<string?>("--scripts")
+        {
+            Description = "Lifecycle script mode: prompt, run, or skip.",
+        };
+        option.CompletionSources.Add("prompt", "run", "skip");
+        return option;
+    }
 
     private static Option<bool> CreateSkipInstructionsOption() =>
         new("--skip-instructions") { Description = "Skip lifecycle instructions." };
