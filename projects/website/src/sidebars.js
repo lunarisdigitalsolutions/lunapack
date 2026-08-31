@@ -108,6 +108,7 @@ const sidebars = {
             'cli/environment',
             'cli/lock-file',
             'packs/reference/manifest',
+            'packs/reference/catalog-layout',
             'packs/reference/project-documents'
           ]
         }

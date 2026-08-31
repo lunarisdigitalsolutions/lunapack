@@ -1,0 +1,3 @@
+# Pack source artifacts include templates and files governed by target conventions
+
+projects/packs/**

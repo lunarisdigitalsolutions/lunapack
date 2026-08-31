@@ -133,18 +133,19 @@ scripts, instructions, and examples. Prefer directories that describe purpose
 and target behavior:
 
 ```text
-projects/packs/lint-staged-css/
-  pack.yml
-  fragments/
-    package.json/
-      lint-staged-css.json
-  instructions/
-    install.md
-  scripts/
-    verify.ps1
-  fixtures/
-    minimal/
-      package.json
+projects/packs/tooling/lint-staged/integrations/lint-staged-css/
+  1.0.0/
+    pack.yml
+    fragments/
+      package.json/
+        lint-staged-css.json
+    instructions/
+      install.md
+    scripts/
+      verify.ps1
+    fixtures/
+      minimal/
+        package.json
 ```
 
 Use these conventions:
@@ -168,6 +169,32 @@ The manifest remains the only installation authority. Folder names explain
 intent; they do not imply automatic selection. Small packs should omit empty
 directories.
 
+### Catalog organization
+
+The maintained catalog groups packs first by stable family and then by role or
+concern:
+
+```text
+projects/packs/
+  ecosystems/dotnet/{components,profiles,foundations,integrations}/
+  platforms/github/{community,actions,copilot}/
+  tooling/lint-staged/{core,integrations,profiles}/
+  tooling/husky/{core,integrations,profiles}/
+  tooling/configuration/
+  repository/{baselines,guidance,documentation,legal}/
+  lunapack/authoring/
+```
+
+Cross-family packs live with their primary discoverable owner. For example,
+`husky-lint-staged` belongs to the Husky family, while
+`github-copilot-dotnet-instructions` belongs to GitHub Copilot. Tags,
+capabilities, and dependency inspection expose secondary relationships.
+
+These directories organize this maintained source; they do not namespace pack
+IDs or alter dependency resolution. Avoid speculative empty categories and add
+another classification level only when a family has enough packs to justify
+it.
+
 ### Version layout
 
 Published releases must be immutable and remain resolvable while consumers
@@ -175,13 +202,16 @@ hold exact lock references. A source should support this layout:
 
 ```text
 packs/
-  husky/
-    1.0.0/
-      pack.yml
-      fragments/
-    1.1.0/
-      pack.yml
-      fragments/
+  tooling/
+    husky/
+      core/
+        husky/
+          1.0.0/
+            pack.yml
+            fragments/
+          1.1.0/
+            pack.yml
+            fragments/
 ```
 
 Current catalog discovery already accepts nested manifest directories and can

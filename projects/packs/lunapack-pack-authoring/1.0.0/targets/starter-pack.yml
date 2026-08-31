@@ -1,8 +1,0 @@
-id: example-pack
-version: 1.0.0
-license: MIT
-author: Your Name <you@example.com>
-description: Manage one example file.
-managedFiles:
-  - source: targets/example.txt
-    target: example.txt

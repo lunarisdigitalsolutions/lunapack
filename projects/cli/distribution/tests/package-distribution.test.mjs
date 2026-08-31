@@ -124,6 +124,13 @@ test('Scenario_ValidArchives_StagesConstrainedNpmPackages', () => {
     ),
     readFileSync(join(staged.packageRoot, 'lunapack', 'README.md'), 'utf8')
   )
+  assert.equal(
+    readFileSync(
+      join(staged.packageRoot, 'lunapack-linux-x64', 'CHANGELOG.md'),
+      'utf8'
+    ),
+    readFileSync('projects/cli/CHANGELOG.md', 'utf8')
+  )
 
   const entryPackage = JSON.parse(
     readFileSync(join(staged.packageRoot, 'lunapack', 'package.json'))
@@ -134,5 +141,13 @@ test('Scenario_ValidArchives_StagesConstrainedNpmPackages', () => {
     ],
     '1.2.3'
   )
-  assert.deepEqual(entryPackage.files, ['run-luna.mjs', 'README.md'])
+  assert.deepEqual(entryPackage.files, [
+    'run-luna.mjs',
+    'README.md',
+    'CHANGELOG.md'
+  ])
+  assert.equal(
+    readFileSync(join(staged.packageRoot, 'lunapack', 'CHANGELOG.md'), 'utf8'),
+    readFileSync('projects/cli/CHANGELOG.md', 'utf8')
+  )
 })

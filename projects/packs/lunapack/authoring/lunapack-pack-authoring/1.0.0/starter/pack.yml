@@ -1,0 +1,24 @@
+id: example-pack
+version: 1.0.0
+license: MIT
+author: Your Name <you@example.com>
+description: Install an example file and maintain a marked README section.
+tags:
+  - example
+  - starter
+managedFiles:
+  - source: targets/examples/example.txt
+    target: examples/example.txt
+  - source: fragments/README.md/example-pack.md
+    target: README.md
+    strategy:
+      type: merge
+      method: section
+hooks:
+  postInstall:
+    - type: script
+      file: scripts/hello.ps1
+      runner: pwsh
+      description: Confirm that the example pack was installed.
+    - type: instruction
+      file: instructions/next-steps.md

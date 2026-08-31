@@ -43,6 +43,7 @@
 - [ ] Tests cover changed behavior and pass locally.
 - [ ] Public documentation matches implemented behavior.
 - [ ] Maintainer documentation records durable implementation decisions.
-- [ ] `CHANGELOG.md` includes externally observable consumer changes only.
+- [ ] `projects/cli/CHANGELOG.md` includes externally observable CLI changes
+      only.
 - [ ] Schema, pack, workflow, website, and package surfaces are updated together
       when their shared contract changes.

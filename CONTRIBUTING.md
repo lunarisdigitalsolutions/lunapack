@@ -39,7 +39,9 @@ npm run --prefix projects/website build
 Changes to pack manifests must validate against `projects/schema/pack.schema.json`
 and include focused lifecycle tests when behavior changes. Changes to public
 CLI behavior must update help, tests, schemas, examples, developer documentation,
-and `CHANGELOG.md` when consumers can observe the change.
+and `projects/cli/CHANGELOG.md` when CLI consumers can observe the change.
+Changes limited to independently versioned pack packages do not belong in the
+CLI changelog.
 
 Public documentation changes must follow the
 [external developer documentation standard](docs/internal/development/external-documentation-standard.md).
