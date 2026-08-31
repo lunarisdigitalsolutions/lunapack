@@ -7,6 +7,8 @@ pack-package, documentation, CI, build, test, and release-process changes.
 
 Update this section before creating a release tag.
 
+## Version 1.3.0 - 2026-08-31
+
 ### Completions
 
 - `luna completions script` now generates native Bash, Fish, Nushell,
