@@ -7,8 +7,8 @@ commit and tag in the order consumed by GitHub Actions.
 ## Prerequisites
 
 - Commit and push all implementation changes to `origin/main`.
-- Leave the Git index empty. Unstaged changes outside `CHANGELOG.md` remain
-  uncommitted by the script.
+- Leave the Git index empty. Unstaged changes outside
+  `projects/cli/CHANGELOG.md` remain uncommitted by the script.
 - Run the script with PowerShell Core (`pwsh`), not Windows PowerShell.
 - Restore the repository-local .NET tools so the script can run MinVer:
 
@@ -42,7 +42,8 @@ entries into it when that section has release notes. The default `Update this
 section before creating a release tag.` text remains in `Unreleased` and does
 not trigger this prompt. Choose the transfer option after recording release
 notes below that text. Release notes describe externally observable changes for
-CLI or pack consumers; exclude CI, build, test, and release-process work.
+CLI consumers; exclude independently versioned pack packages, documentation,
+CI, build, test, and release-process work.
 Otherwise, the new version receives a release-notes placeholder. The script
 stops after either action. Fill in the new release section and rerun the
 script. This flow applies to derived and explicit
@@ -55,11 +56,12 @@ existing local or remote `vx.x.x` tags. It asks before fetching,
 creating the changelog section, creating the release commit, pushing `main`,
 creating the annotated tag, and pushing that tag. Declining a dependent action
 stops the remaining release workflow. The release commit contains only
-`CHANGELOG.md` and uses `chore: Release version x.x.x`. If `CHANGELOG.md` has
-no changes, the script skips the release commit and `main` push before creating
-the tag. The pushed `vx.x.x` tag starts the Luna release workflow. The GitHub
-Release title is `Luna vx.x.x` and attaches a `CHANGELOG.md` containing only
-the matching version section. It publishes archives for `win-x64`, `linux-x64`,
+`projects/cli/CHANGELOG.md` and uses `chore: Release version x.x.x`. If the
+changelog has no changes, the script skips the release commit and `main` push
+before creating the tag. The pushed `vx.x.x` tag starts the Luna release
+workflow. The GitHub Release title is `Luna vx.x.x` and attaches a
+`CHANGELOG.md` containing only the matching version section. It publishes
+archives for `win-x64`, `linux-x64`,
 `linux-arm64`, `osx-x64`, and `osx-arm64`, plus `SHA256SUMS.txt`. Builds run on
 matching native GitHub-hosted runners: Windows x64, Linux x64/Arm64, and macOS
 x64/Arm64. Each runner also creates its Native AOT RID-specific NuGet package.
@@ -69,7 +71,8 @@ package before creating the release.
 After GitHub Release creation, the release action publishes five constrained
 npm binary packages, then `@lunarisdigitalsolutions/lunapack`, then the five
 RID-specific `Lunaris.Lunapack.Luna` NuGet tool packages, and finally its
-pointer package. It also builds a Linux x64 image from the downloaded Linux
+pointer package. Every npm and NuGet package includes the complete CLI
+changelog. The action also builds a Linux x64 image from the downloaded Linux
 archive and pushes version plus `latest` or `next` tags to
 `ghcr.io/lunarisdigitalsolutions/lunapack`. Configure npm trusted publishing for
 this workflow and package, configure NuGet trusted publishing, and set the

@@ -103,6 +103,8 @@ test('Scenario_ReleaseAction_StagesPortableChecksumsAndBoundedNotes', () => {
 })
 
 test('Scenario_ReleaseAction_ChangelogContainsOnlyRequestedVersion', () => {
+  assert.match(releaseAction, /default: projects\/cli\/CHANGELOG\.md/)
+
   const changelog = `# Changelog
 
 ## Unreleased

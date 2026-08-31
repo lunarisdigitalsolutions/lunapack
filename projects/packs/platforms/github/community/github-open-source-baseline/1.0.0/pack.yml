@@ -1,0 +1,13 @@
+id: github-open-source-baseline
+version: 1.0.0
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Install community policies, issue forms, and contribution guidance.
+tags: [github, open-source, composite]
+packs:
+  - id: github-community-health
+    version: 1.0.0
+  - id: github-issue-forms
+    version: 1.0.0
+  - id: repository-contribution-guide
+    version: 1.0.0

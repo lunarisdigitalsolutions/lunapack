@@ -1,0 +1,46 @@
+id: lunapack-pack-authoring
+version: 1.0.0
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Scaffold a versioned LunaPack pack with managed content, a section fragment, lifecycle guidance, a script, and authoring agents.
+tags:
+  - lunapack
+  - authoring
+  - starter
+managedFiles:
+  - source: starter/_pack.yml
+    target: examples/starter-pack/pack.yml
+  - source: starter/targets/examples/example.txt
+    target: examples/starter-pack/targets/examples/example.txt
+  - source: starter/fragments/README.md/example-pack.md
+    target: examples/starter-pack/fragments/README.md/example-pack.md
+  - source: starter/instructions/next-steps.md
+    target: examples/starter-pack/instructions/next-steps.md
+  - source: starter/scripts/hello.ps1
+    target: examples/starter-pack/scripts/hello.ps1
+  - source: starter/docs/packs/writing-a-good-pack.md
+    target: docs/packs/writing-a-good-pack.md
+  - source: starter/.github/agents/pack-authoring.agent.md
+    target: .github/agents/pack-authoring.agent.md
+    template: true
+    condition: '"GitHub Copilot" in assistant'
+  - source: starter/.claude/agents/pack-authoring.md
+    target: .claude/agents/pack-authoring.md
+    template: true
+    condition: '"Claude Code" in assistant'
+hooks:
+  postInstall:
+    - type: instruction
+      file: starter/instructions/next-steps.md
+parameters:
+  assistant:
+    displayName: AI Assistant
+    description: AI assistants to configure for code review.
+    type: enum
+    multiple: true
+    required: true
+    values:
+      - GitHub Copilot
+      - Claude Code
+    default:
+      - GitHub Copilot

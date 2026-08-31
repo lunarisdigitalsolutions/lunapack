@@ -57,10 +57,10 @@ Set `template: true` only for selectors whose UTF-8 content uses Scriban.
 
 ```yml
 managedFiles:
-  - source: templates/NOTICE.md
+  - source: targets/NOTICE.md
     target: NOTICE.md
     template: true
-  - source: templates/workflow.yml
+  - source: targets/.github/workflows/validation.yml
     target: .github/workflows/build.yml
     template: true
     condition: includeWorkflow

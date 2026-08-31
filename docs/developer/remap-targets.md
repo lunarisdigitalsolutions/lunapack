@@ -25,8 +25,8 @@ It does not move an installed file.
 Use repeatable command options for invocation-only mappings:
 
 ```powershell
-luna install madr-adr-template --remap-directory docs/adr=docs/internal/architecture/decisions
-luna install madr-adr-template --remap-file docs/adr/template.md=docs/adr/_template.md
+luna install madr-template --remap-directory docs/adr=docs/internal/architecture/decisions
+luna install madr-template --remap-file docs/adr/template.md=docs/adr/_template.md
 ```
 
 Command-line mappings take precedence over project mappings of the same type.
@@ -36,7 +36,7 @@ Add `--save-remap` to merge the command-line mappings into `lunapack.yml` after
 a successful installation:
 
 ```powershell
-luna install madr-adr-template --remap-directory docs/adr=docs/internal/architecture/decisions --save-remap
+luna install madr-template --remap-directory docs/adr=docs/internal/architecture/decisions --save-remap
 ```
 
 The saved mappings apply to later installs. A failed installation leaves the
@@ -60,7 +60,7 @@ For one installation, pass the same value through a remapping option. Add
 `--save-remap` to retain it:
 
 ```powershell
-luna install github-actions-pr-gate@1.0.0 --remap-directory .github=@ignore --save-remap
+luna install github-pull-request-gate-workflow@1.0.0 --remap-directory .github=@ignore --save-remap
 ```
 
 Ignored files are not written and receive no managed-file lock entry. An exact

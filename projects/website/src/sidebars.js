@@ -78,6 +78,7 @@ const sidebars = {
           type: 'category',
           label: 'Concepts',
           items: [
+            'packs/explanation/scope-taxonomy-and-naming',
             'packs/explanation/composition-and-lifecycle',
             'packs/explanation/ownership-and-safety'
           ]
@@ -108,6 +109,7 @@ const sidebars = {
             'cli/environment',
             'cli/lock-file',
             'packs/reference/manifest',
+            'packs/reference/catalog-layout',
             'packs/reference/project-documents'
           ]
         }

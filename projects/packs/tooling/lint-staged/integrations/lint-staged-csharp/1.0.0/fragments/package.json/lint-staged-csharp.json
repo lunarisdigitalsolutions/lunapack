@@ -1,0 +1,8 @@
+{
+  "lint-staged": {
+    "*.cs": [
+      "dotnet format style {{ solutionPath }} --severity info --include",
+      "dotnet csharpier format"
+    ]
+  }
+}

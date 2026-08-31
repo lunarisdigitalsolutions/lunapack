@@ -35,7 +35,7 @@ lines that do not already occur:
 
 ```yml
 managedFiles:
-  - source: templates/gitignore
+  - source: fragments/.gitignore/example-ignore.gitignore
     target: .gitignore
     strategy: merge:lines
 ```
@@ -61,7 +61,7 @@ dotnet format --verify-no-changes
 
 ```yml
 managedFiles:
-  - source: templates/formatting.targets
+  - source: fragments/Directory.Build.targets/example-formatting.targets
     target: Directory.Build.targets
     strategy: merge
     method: section
@@ -83,7 +83,7 @@ objects or both be arrays:
 
 ```yml
 managedFiles:
-  - source: templates/settings.json
+  - source: fragments/settings.json/example-settings.json
     target: .vscode/settings.json
     strategy: merge
     method: json
@@ -95,8 +95,8 @@ values of different kinds. Source `{"editor":{"formatOnSave":true}}`, for
 example, preserves unrelated target properties while setting
 `editor.formatOnSave` to `true`.
 
-JSON output is rewritten using Luna's serializer, so formatting and property
-layout may change.
+JSON output is rewritten with two-space indentation using Luna's serializer, so
+property layout may change.
 
 ## Verify lifecycle behavior
 

@@ -17,9 +17,35 @@ tags:
   - documentation
   - engineering
 managedFiles:
-  - source: templates/standard.md
+  - source: targets/docs/standard.md
     target: docs/standard.md
 ```
+
+## Release layout
+
+Organize a catalog by pack ID and immutable release version. Keep complete
+managed files under `targets/`, mirroring their default project paths, and keep
+merge inputs under `fragments/<target>/`:
+
+```text
+packs/
+  example-documentation-standard/
+    1.0.0/
+      pack.yml
+      targets/
+        docs/
+          standard.md
+      fragments/
+        package.json/
+          example-documentation-standard.json
+      instructions/
+        setup.md
+```
+
+Omit directories the release does not use. Use `scripts/` for packed lifecycle
+programs, `fixtures/` for isolated lifecycle test workspaces, and `examples/`
+for content that is not installed. Folder names explain purpose; only manifest
+selectors install content.
 
 | Field                  | Rules                                                                                                                                                                           |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -119,8 +145,9 @@ CLI authoring migration is direct:
 <position>`.
 - Replace `luna pack scripts` with `luna pack hooks`.
 
-The manifest directory is the pack root. Source selectors read from that root;
-directory and glob matches retain their relative paths below the target.
+The version directory containing the manifest is the pack root. Source
+selectors read from that root; directory and glob matches retain their relative
+paths below the target.
 
 Managed-file `target` values are portable pack defaults. Consumers can remap
 them in project-level `lunapack.yml` configuration or through `luna install`

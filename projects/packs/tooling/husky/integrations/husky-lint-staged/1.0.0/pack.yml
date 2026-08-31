@@ -1,0 +1,14 @@
+id: husky-lint-staged
+version: 1.0.0
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Run lint-staged from a Husky pre-commit hook.
+tags: [husky, lint-staged, composite]
+packs:
+  - id: husky
+    version: 1.0.0
+  - id: lint-staged
+    version: 1.0.0
+managedFiles:
+  - source: targets/.husky/pre-commit
+    target: .husky/pre-commit

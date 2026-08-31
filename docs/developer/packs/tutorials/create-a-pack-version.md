@@ -15,12 +15,14 @@ engineering-packs/
     example-documentation-standard/
       1.0.0/
         pack.yml
-        templates/
-          standard.md
+        targets/
+          docs/
+            standard.md
       1.1.0/
         pack.yml
-        templates/
-          standard.md
+        targets/
+          docs/
+            standard.md
 ```
 
 LunaPack discovers `pack.yml` recursively, so the grouping folders are a
@@ -45,7 +47,7 @@ Keep the same `id`. Change the version according to Semantic Versioning:
 - Minor for compatible new files, parameters, or behavior.
 - Major for incompatible targets, defaults, removals, or lifecycle behavior.
 
-Edit templates and declarations in `1.1.0`. Never edit `1.0.0` after it has
+Edit managed content and declarations in `1.1.0`. Never edit `1.0.0` after it has
 been published.
 
 ## Validate the candidate

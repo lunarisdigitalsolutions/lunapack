@@ -69,6 +69,6 @@ filesystem effects.
 Composite packs can suppress dependency hooks with `--disable-hook`:
 
 ```powershell
-luna pack add reference dotnet-csharpier-tool 1.0.0 `
+luna pack add reference csharpier 1.0.0 `
   --disable-hook postInstall
 ```

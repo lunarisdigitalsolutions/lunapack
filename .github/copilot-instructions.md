@@ -1,12 +1,14 @@
-# Decisions and Documentation
+# Copilot Instructions
+
+## Decisions and Documentation
 
 - For every decision made while working, assess its documentation impact. Update the relevant internal documentation in `docs/internal` and developer documentation in `docs/developer` in the same change whenever the decision creates, changes, or clarifies a fact that maintainers or consumers need to know.
 - Keep implementation and public-consumption guidance separate. Do not document planned behavior as implemented.
 - Create an ADR for each accepted, durable decision that affects architecture boundaries, lifecycle behavior, trust, compatibility, governance, repository conventions, or recurring engineering workflows. Do not create ADRs for transient or strictly local implementation details.
 - Create ADRs in `docs/internal/architecture/adr` from `template.md`, assign the next sequential number, and add accepted records to `index.md`.
-- Don't change existing ADRs. Rather create a new one that superseeds the old one and change the status for the old one to Superseded by <ADR-xxxx>.
+- Don't change existing ADRs. Rather create a new one that superseeds the old one and change the status for the old one to Superseded by `ADR-xxxx`.
 
-# Pull Requests
+## Pull Requests
 
 When creating or updating a pull request, follow the [PR description template](../docs/internal/development/process/pull-request-template.md)
 exactly and keep the section order from that document.
@@ -22,13 +24,14 @@ the pull request description that asks the user to replace it with the correct `
 
 Make sure branches are named based on the [branch naming guideline](../docs/internal/development/process/branch-naming.md).
 
-# Changelog
+## Changelog
 
-Add only externally observable consumer changes to `CHANGELOG.md`. Exclude
-internal maintenance work, including CI, build, test, and release-process
-changes.
+Add only externally observable Luna CLI changes to
+`projects/cli/CHANGELOG.md`. Exclude changes to independently versioned packs
+and internal maintenance work, including documentation, CI, build, test, and
+release-process changes. Keep the changelog in npm and NuGet CLI packages.
 
-# CLI Path Handling
+## CLI Path Handling
 
 `ProjectPath` is the single path-canonicalization authority in
 `projects/cli/src/Lunapack.Cli`.
@@ -51,11 +54,11 @@ path)` for CLI or other external input that identifies a project filesystem
 
 <!-- rtk-instructions v2 -->
 
-# RTK — Token-Optimized CLI
+## RTK — Token-Optimized CLI
 
 **rtk** is a CLI proxy that filters and compresses command outputs, saving 60-90% tokens.
 
-## Rule
+### Rule
 
 Always prefix shell commands with `rtk`:
 
@@ -68,7 +71,7 @@ docker ps                  rtk docker ps
 kubectl get pods           rtk kubectl get pods
 ```
 
-## Meta commands (use directly)
+### Meta commands (use directly)
 
 ```bash
 rtk gain              # Token savings dashboard

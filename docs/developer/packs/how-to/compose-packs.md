@@ -25,7 +25,7 @@ use `luna pack set reference` to create or replace it.
 Repeat `--parameter` to supply string or Boolean values to a dependency:
 
 ```powershell
-luna pack add reference github-actions-pr-gate 1.0.0 `
+luna pack add reference github-pull-request-gate-workflow 1.0.0 `
   --parameter required=true `
   --parameter checkName=build
 ```
@@ -48,7 +48,7 @@ Disable selected lifecycle hooks for a transient dependency when the root pack
 already performs equivalent work:
 
 ```powershell
-luna pack add reference dotnet-csharpier-tool 1.0.0 `
+luna pack add reference csharpier 1.0.0 `
   --disable-hook postInstall
 ```
 

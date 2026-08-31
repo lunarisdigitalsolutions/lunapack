@@ -278,6 +278,24 @@ public sealed class PackUpdatePlannerTests
     }
 
     [Test]
+    public async Task Plan_WhenJsonObjectsMerged_UsesReadableFormatting()
+    {
+        var action = PlanMerge("{\"existing\":true}", "{\"added\":1}", "json");
+
+        await Assert
+            .That(ReadContents(action))
+            .IsEqualTo(
+                string.Join(
+                    Environment.NewLine,
+                    "{",
+                    "  \"existing\": true,",
+                    "  \"added\": 1",
+                    "}"
+                )
+            );
+    }
+
+    [Test]
     public async Task Plan_WhenJsonArraysMerged_PreservesOrderAndExcludesDuplicates()
     {
         var action = PlanMerge("[1,{\"name\":\"one\"}]", "[{\"name\":\"one\"},2]", "json");

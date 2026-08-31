@@ -1,0 +1,21 @@
+id: dotnet-repository
+version: 1.0.0
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Apply an opinionated .NET 10 repository foundation.
+tags: [dotnet, repository, composite]
+packs:
+  - id: gitignore-baseline
+    version: 1.0.0
+  - id: dotnet-gitignore
+    version: 1.0.0
+  - id: dotnet-sdk-10
+    version: 1.0.0
+  - id: dotnet-editorconfig
+    version: 1.0.0
+  - id: csharpier
+    version: 1.0.0
+  - id: dotnet-project
+    version: 1.0.0
+  - id: vscode-dotnet-workspace
+    version: 1.0.0
