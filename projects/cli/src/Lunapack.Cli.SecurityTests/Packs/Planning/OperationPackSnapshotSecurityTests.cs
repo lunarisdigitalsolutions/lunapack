@@ -150,7 +150,7 @@ public sealed class OperationPackSnapshotSecurityTests
 
     private static void Cleanup(
         IFileSystem fileSystem,
-        IOperationSnapshotSecurity security,
+        OperationSnapshotSecurity security,
         string root,
         string snapshotRoot
     )

@@ -15,7 +15,10 @@ internal sealed class ScalarValueDictionaryYamlTypeConverter : IYamlTypeConverte
         while (!parser.Accept<MappingEnd>(out _))
         {
             var name = parser.Consume<Scalar>().Value;
-            values.Add(name, ReadValue(parser, rootDeserializer));
+            if (!values.TryAdd(name, ReadValue(parser, rootDeserializer)))
+            {
+                throw new YamlException($"Duplicate named value '{name}'.");
+            }
         }
 
         parser.Consume<MappingEnd>();

@@ -33,7 +33,6 @@ jobs:
           fetch-depth: 0
 
       - name: Build Luna CLI
-        if:
         uses: ./.github/actions/cli/build
         with:
           runtime-identifier: linux-x64

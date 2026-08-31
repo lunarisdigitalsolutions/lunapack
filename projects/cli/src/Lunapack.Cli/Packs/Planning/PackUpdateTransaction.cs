@@ -1,17 +1,26 @@
 ﻿using System.IO.Abstractions;
 using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Paths;
 using Lunapack.Cli.Packs.ManagedFiles;
 
 namespace Lunapack.Cli.Packs.Planning;
 
 internal sealed class PackUpdateTransaction(IFileSystem fileSystem, CliConsole console)
 {
-    public ManifestOperationResult<Rollback> Apply(PackUpdatePlan updatePlan)
+    public ManifestOperationResult<Rollback> Apply(
+        string projectDirectory,
+        PackUpdatePlan updatePlan
+    )
     {
-        var rollback = new Rollback(fileSystem, console);
+        var rollback = new Rollback(fileSystem, console, projectDirectory);
         try
         {
+            foreach (var action in updatePlan.Actions)
+            {
+                ValidateActionPath(projectDirectory, action);
+            }
+
             foreach (var action in updatePlan.Actions)
             {
                 ApplyAction(action, rollback);
@@ -29,6 +38,23 @@ internal sealed class PackUpdateTransaction(IFileSystem fileSystem, CliConsole c
             rollback.Restore();
             return ManifestOperationResult<Rollback>.Failure(
                 $"Unable to apply pack update: {exception.Message}"
+            );
+        }
+    }
+
+    private void ValidateActionPath(string projectDirectory, PlannedPackUpdateAction action)
+    {
+        ProjectMutationPathSecurity.EnsureNoAliases(
+            fileSystem,
+            projectDirectory,
+            action.TargetPath
+        );
+        if (action is BackupAndCopyManagedFileUpdateAction backupAction)
+        {
+            ProjectMutationPathSecurity.EnsureNoAliases(
+                fileSystem,
+                projectDirectory,
+                backupAction.BackupPath
             );
         }
     }
@@ -83,7 +109,12 @@ internal sealed class PackUpdateTransaction(IFileSystem fileSystem, CliConsole c
             );
         rollback.Snapshot(action.TargetPath);
         CreateTargetDirectory(action.TargetPath, rollback);
-        fileSystem.File.WriteAllBytes(action.TargetPath, contents);
+        ProjectMutationPathSecurity.ReplaceFile(
+            fileSystem,
+            rollback.ProjectDirectory,
+            action.TargetPath,
+            contents
+        );
         console.Debug($"Wrote managed file '{action.TargetPathRelativeToProject}'.");
     }
 
@@ -105,11 +136,17 @@ internal sealed class PackUpdateTransaction(IFileSystem fileSystem, CliConsole c
         }
     }
 
-    internal sealed class Rollback(IFileSystem fileSystem, CliConsole console)
+    internal sealed class Rollback(
+        IFileSystem fileSystem,
+        CliConsole console,
+        string projectDirectory
+    )
     {
         private readonly List<string> _createdDirectories = [];
         private readonly List<string> _createdFiles = [];
         private readonly Dictionary<string, byte[]> _snapshots = new(StringComparer.Ordinal);
+
+        public string ProjectDirectory { get; } = projectDirectory;
 
         public void Restore()
         {
@@ -124,7 +161,12 @@ internal sealed class PackUpdateTransaction(IFileSystem fileSystem, CliConsole c
 
             foreach (var (path, contents) in _snapshots)
             {
-                fileSystem.File.WriteAllBytes(path, contents);
+                ProjectMutationPathSecurity.ReplaceFile(
+                    fileSystem,
+                    ProjectDirectory,
+                    path,
+                    contents
+                );
                 console.Verbose($"Restored managed file '{path}' from rollback snapshot.");
             }
 

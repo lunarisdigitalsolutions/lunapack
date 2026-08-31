@@ -242,6 +242,41 @@ public sealed class ProjectStateStoreTests
     }
 
     [Test]
+    [Arguments(
+        "schemaVersion: 1\nsources:\n  - name: local\n    type: local\n    path: source\n    unknown: value\npacks: []\n"
+    )]
+    [Arguments(
+        "schemaVersion: 1\nsources:\n  - name: local\n    name: replacement\n    type: local\n    path: source\npacks: []\n"
+    )]
+    [Arguments(
+        "schemaVersion: 1\nsources:\n  - name: git\n    type: git\n    url: https://example.test/packs.git\n    timeoutSeconds: invalid\npacks: []\n"
+    )]
+    [Arguments(
+        "schemaVersion: 1\nsources: []\npacks: []\nvariables:\n  mode: first\n  mode: second\n"
+    )]
+    public async Task Load_WhenConfigurationYamlIsAmbiguousOrMalformed_ReturnsFailure(
+        string configuration
+    )
+    {
+        var fileSystem = CreateFileSystem();
+        const string projectDirectory = @"C:\project";
+        fileSystem.AddDirectory(projectDirectory);
+        fileSystem.AddFile(
+            fileSystem.Path.Combine(projectDirectory, ProjectStateStore.ConfigurationFileName),
+            new MockFileData(configuration)
+        );
+        fileSystem.AddFile(
+            fileSystem.Path.Combine(projectDirectory, ProjectStateStore.LockFileName),
+            new MockFileData("schemaVersion: 1\npacks: []\n")
+        );
+        var stateStore = new ProjectStateStore(fileSystem);
+
+        var loaded = await stateStore.LoadAsync(projectDirectory);
+
+        await Assert.That(loaded.IsSuccess).IsFalse();
+    }
+
+    [Test]
     public async Task Load_WhenLockContainsUnreachablePack_ReturnsFailure()
     {
         var fileSystem = CreateFileSystem();

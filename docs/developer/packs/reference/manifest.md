@@ -157,10 +157,12 @@ options; pack authors do not declare consumer remapping in `pack.yml`. See
 [Remap managed targets](../../remap-targets.md) for
 mapping syntax, precedence, lifecycle retention, and explicit relocation.
 
-Target validation is lexical. LunaPack rejects rooted and escaping targets, but
-does not yet guarantee alias-safe mutation when an existing target or ancestor
-inside the workspace is a symbolic link, junction, or hard link. Inspect or
-remove such aliases before installing into an untrusted workspace.
+LunaPack rejects rooted and escaping targets. Before mutation it also rejects
+existing symbolic-link, junction, or reparse-point ancestors inside the
+workspace. Replacing a hard-linked target creates a new file identity so other
+names retain their prior content. A same-user process can still race path
+inspection and use; do not run LunaPack concurrently with an untrusted local
+process that can modify the workspace.
 
 Selected source files copy as-is unless their selector sets `template: true`.
 Template-enabled files are UTF-8 Scriban templates. Resolved parameter names are

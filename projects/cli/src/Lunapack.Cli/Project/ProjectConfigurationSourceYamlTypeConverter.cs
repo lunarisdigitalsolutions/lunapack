@@ -19,9 +19,15 @@ internal sealed class ProjectConfigurationSourceYamlTypeConverter : IYamlTypeCon
         string? sourceName = null;
         string? sourceType = null;
         string? url = null;
+        var propertyNames = new HashSet<string>(StringComparer.Ordinal);
         while (!parser.Accept<MappingEnd>(out _))
         {
             var propertyName = parser.Consume<Scalar>().Value;
+            if (!propertyNames.Add(propertyName))
+            {
+                throw new YamlException($"Duplicate project source property '{propertyName}'.");
+            }
+
             var value = parser.Consume<Scalar>().Value;
             switch (propertyName)
             {
@@ -35,7 +41,21 @@ internal sealed class ProjectConfigurationSourceYamlTypeConverter : IYamlTypeCon
                     reference = value;
                     break;
                 case "timeoutSeconds":
-                    timeoutSeconds = int.Parse(value, CultureInfo.InvariantCulture);
+                    if (
+                        !int.TryParse(
+                            value,
+                            NumberStyles.Integer,
+                            CultureInfo.InvariantCulture,
+                            out var parsedTimeoutSeconds
+                        )
+                    )
+                    {
+                        throw new YamlException(
+                            "Project source timeoutSeconds must be an integer."
+                        );
+                    }
+
+                    timeoutSeconds = parsedTimeoutSeconds;
                     break;
                 case "type":
                     sourceType = value;
@@ -43,6 +63,8 @@ internal sealed class ProjectConfigurationSourceYamlTypeConverter : IYamlTypeCon
                 case "url":
                     url = value;
                     break;
+                default:
+                    throw new YamlException($"Unknown project source property '{propertyName}'.");
             }
         }
 

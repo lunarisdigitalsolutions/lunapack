@@ -412,19 +412,21 @@ internal sealed class PackLifecycleService(
         bool saveRemapping
     )
     {
-        var operations = selection
-            .Moves.Select(move => CreateManagedFileMoveOperation(projectDirectory, move))
-            .ToList();
-        var operationError = ValidateManagedFileMoveOperations(operations);
-        if (operationError is not null)
-        {
-            return _console.Fail(operationError);
-        }
-
         var createdDirectories = new List<string>();
         var movedOperations = new List<ManagedFileMoveOperation>();
         try
         {
+            var operations = selection
+                .Moves.Select(move => CreateManagedFileMoveOperation(projectDirectory, move))
+                .ToList();
+            EnsureMovePathsAreSafe(projectDirectory, operations);
+
+            var operationError = ValidateManagedFileMoveOperations(operations);
+            if (operationError is not null)
+            {
+                return _console.Fail(operationError);
+            }
+
             foreach (var operation in operations.Where(operation => operation.SourceExists))
             {
                 createdDirectories.AddRange(CreateTargetDirectories(operation.TargetFilePath));
@@ -484,6 +486,26 @@ internal sealed class PackLifecycleService(
             RestoreManagedFileMoves(movedOperations, createdDirectories);
             RestoreManagedFileMoveTargets(selection.Moves);
             return _console.Fail($"Unable to move managed files: {exception.Message}");
+        }
+    }
+
+    private void EnsureMovePathsAreSafe(
+        string projectDirectory,
+        IReadOnlyList<ManagedFileMoveOperation> operations
+    )
+    {
+        foreach (var operation in operations)
+        {
+            ProjectMutationPathSecurity.EnsureNoAliases(
+                fileSystem,
+                projectDirectory,
+                operation.SourceFilePath
+            );
+            ProjectMutationPathSecurity.EnsureNoAliases(
+                fileSystem,
+                projectDirectory,
+                operation.TargetFilePath
+            );
         }
     }
 
@@ -619,6 +641,7 @@ internal sealed class PackLifecycleService(
     private void RemoveEmptyMovedDirectories(string projectDirectory, string sourceDirectory)
     {
         var sourcePath = fileSystem.Path.GetFullPath(sourceDirectory, projectDirectory);
+        ProjectMutationPathSecurity.EnsureNoAliases(fileSystem, projectDirectory, sourcePath);
         if (!fileSystem.Directory.Exists(sourcePath))
         {
             return;
@@ -1665,7 +1688,7 @@ internal sealed class PackLifecycleService(
         }
 
         var mutationStartedAt = Stopwatch.GetTimestamp();
-        var appliedUpdate = updateTransaction.Apply(updatePlan);
+        var appliedUpdate = updateTransaction.Apply(projectDirectory, updatePlan);
         if (appliedUpdate.Value is not { } rollback)
         {
             return _console.Fail(appliedUpdate.Error);
@@ -2005,7 +2028,15 @@ internal sealed class PackLifecycleService(
             return ManifestOperationResult<bool>.Success(true);
         }
 
-        fileSystem.File.WriteAllBytes(snapshot.Path, snapshot.Contents);
+        var projectDirectory =
+            fileSystem.Path.GetDirectoryName(snapshot.Path)
+            ?? throw new IOException("Project manifest has no parent directory.");
+        ProjectMutationPathSecurity.ReplaceFile(
+            fileSystem,
+            projectDirectory,
+            snapshot.Path,
+            snapshot.Contents
+        );
         return ManifestOperationResult<bool>.Failure(
             $"Lifecycle hook changed '{ProjectStateStore.ConfigurationFileName}'; original contents were restored."
         );
@@ -2197,7 +2228,7 @@ internal sealed class PackLifecycleService(
             }
         }
 
-        RestoreManagedFiles(snapshots);
+        RestoreManagedFiles(projectDirectory, snapshots);
     }
 
     private ManifestOperationResult<bool> ApplyRemoval(
@@ -2209,6 +2240,7 @@ internal sealed class PackLifecycleService(
     {
         var managedFile = removal.ManagedFile;
         var targetPath = fileSystem.Path.GetFullPath(managedFile.TargetPath, projectDirectory);
+        ProjectMutationPathSecurity.EnsureNoAliases(fileSystem, projectDirectory, targetPath);
         if (!fileSystem.File.Exists(targetPath))
         {
             _console.Warning(
@@ -2226,11 +2258,18 @@ internal sealed class PackLifecycleService(
             return ManifestOperationResult<bool>.Success(true);
         }
 
-        return ApplySectionRemoval(managedFile, targetPath, targetContents, lockFile);
+        return ApplySectionRemoval(
+            managedFile,
+            projectDirectory,
+            targetPath,
+            targetContents,
+            lockFile
+        );
     }
 
     private ManifestOperationResult<bool> ApplySectionRemoval(
         ProjectLockFile.ManagedFile managedFile,
+        string projectDirectory,
         string targetPath,
         byte[] targetContents,
         ProjectLockFile lockFile
@@ -2244,7 +2283,7 @@ internal sealed class PackLifecycleService(
             );
         }
 
-        fileSystem.File.WriteAllBytes(targetPath, contents);
+        ProjectMutationPathSecurity.ReplaceFile(fileSystem, projectDirectory, targetPath, contents);
         _console.Debug($"Removed managed section from '{managedFile.TargetPath}'.");
         UpdateManagedFileHash(lockFile, managedFile.TargetPath, contents);
         return ManifestOperationResult<bool>.Success(true);
@@ -2667,11 +2706,19 @@ internal sealed class PackLifecycleService(
             fileSystem.Path.GetFullPath(managedFile.TargetPath, projectDirectory)
         );
 
-    private void RestoreManagedFiles(IReadOnlyList<ManagedFileSnapshot> snapshots)
+    private void RestoreManagedFiles(
+        string projectDirectory,
+        IReadOnlyList<ManagedFileSnapshot> snapshots
+    )
     {
         foreach (var snapshot in snapshots)
         {
-            fileSystem.File.WriteAllBytes(snapshot.Path, snapshot.Contents);
+            ProjectMutationPathSecurity.ReplaceFile(
+                fileSystem,
+                projectDirectory,
+                snapshot.Path,
+                snapshot.Contents
+            );
         }
     }
 

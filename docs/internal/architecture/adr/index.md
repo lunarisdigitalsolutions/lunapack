@@ -43,7 +43,7 @@ Create a new architecture decision record from the [MADR-based template](templat
 | [ADR-0037](0037-canonicalize-persisted-project-paths.md)                        | Canonicalize persisted project and lock paths with forward slashes.                     |
 | [ADR-0038](0038-distribute-luna-through-github-npm-and-nuget.md)                | Distribute Luna through GitHub Releases, npm, and NuGet.                                |
 | [ADR-0039](0039-enforce-native-aot-cli-builds.md)                               | Enforce Native AOT publishing with typed manifest validation.                           |
-| [ADR-0040](0040-secure-lifecycle-scripts-with-scoped-trust.md)                  | Secure lifecycle scripts with scoped trust and explicit residual risks.                 |
+| [ADR-0040](0040-secure-lifecycle-scripts-with-scoped-trust.md)                  | Superseded by ADR-0071.                                                                 |
 | [ADR-0041](0041-use-ephemeral-release-identities.md)                            | Use ephemeral identities for release publication.                                       |
 | [ADR-0042](0042-exclude-build-metadata-from-release-tags.md)                    | Exclude SemVer build metadata from cross-registry Luna release tags.                    |
 | [ADR-0043](0043-verify-existing-release-assets-on-rerun.md)                     | Verify immutable GitHub Release assets and notes before resuming a rerun.               |
@@ -74,5 +74,7 @@ Create a new architecture decision record from the [MADR-based template](templat
 | [ADR-0068](0068-publish-nuget-previews-from-main.md)                            | Publish NuGet previews and dispatch CLI releases through channel-owned publishers.      |
 | [ADR-0069](0069-revalidate-git-source-cache-entries.md)                         | Revalidate project-local Git cache entries before using derived pack metadata.          |
 | [ADR-0070][adr-0070]                                                            | Bind privileged workflows to trusted input provenance.                                  |
+| [ADR-0071][adr-0071]                                                            | Reject filesystem aliases at snapshot and project mutation boundaries.                  |
 
 [adr-0070]: 0070-bind-privileged-workflows-to-trusted-provenance.md
+[adr-0071]: 0071-reject-filesystem-aliases-at-mutation-boundaries.md

@@ -14,6 +14,41 @@ public sealed class PackUpdateTransactionTests
     private static readonly string _packsDirectory = Path.GetFullPath("packs");
 
     [Test]
+    public async Task Apply_WhenTargetAncestorIsReparsePoint_RejectsPlanBeforeMutation()
+    {
+        var fileSystem = CreateFileSystem();
+        var aliasDirectory = ProjectPath("linked");
+        fileSystem.Directory.CreateDirectory(aliasDirectory);
+        fileSystem.File.SetAttributes(
+            aliasDirectory,
+            FileAttributes.Directory | FileAttributes.ReparsePoint
+        );
+        var targetPath = ProjectPath("linked", "managed.txt");
+        var transaction = new PackUpdateTransaction(fileSystem, TestConsole.Create());
+
+        var result = transaction.Apply(
+            _projectDirectory,
+            new PackUpdatePlan([
+                new WriteManagedRootFileUpdateAction(
+                    new ManagedRootOwner(ManagedRootKind.Link, "example"),
+                    new ManagedRootFile(
+                        "source.txt",
+                        "linked/managed.txt",
+                        "linked/managed.txt",
+                        new string('0', 64)
+                    ),
+                    targetPath,
+                    "replacement"u8.ToArray()
+                ),
+            ])
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("link or reparse point");
+        await Assert.That(fileSystem.File.Exists(targetPath)).IsFalse();
+    }
+
+    [Test]
     public async Task Apply_WhenBackupCopyRolledBack_RestoresTargetAndRemovesBackup()
     {
         var fileSystem = CreateFileSystem((ProjectPath("target.txt"), "old content"));
@@ -21,6 +56,7 @@ public sealed class PackUpdateTransactionTests
         var transaction = new PackUpdateTransaction(fileSystem, TestConsole.Create());
 
         var result = transaction.Apply(
+            _projectDirectory,
             new PackUpdatePlan([
                 new BackupAndCopyManagedFileUpdateAction(target, null, ProjectPath("target.txt.1")),
             ])
@@ -54,6 +90,7 @@ public sealed class PackUpdateTransactionTests
         var transaction = new PackUpdateTransaction(fileSystem, TestConsole.Create());
 
         var result = transaction.Apply(
+            _projectDirectory,
             new PackUpdatePlan([
                 new CreateManagedFileUpdateAction(createdFile),
                 new DeleteManagedFileUpdateAction(

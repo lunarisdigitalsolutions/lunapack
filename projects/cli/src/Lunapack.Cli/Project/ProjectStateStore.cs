@@ -1,4 +1,5 @@
 using System.IO.Abstractions;
+using System.Text;
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Application.Paths;
 using Lunapack.Cli.Application.Serialization;
@@ -201,7 +202,7 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            RestoreSnapshots(snapshots);
+            RestoreSnapshots(projectDirectory, snapshots);
             return ManifestOperationResult<bool>.Failure(
                 $"Unable to write project state: {exception.Message}"
             );
@@ -661,12 +662,20 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
         return null;
     }
 
-    private void RestoreSnapshots(IReadOnlyList<DocumentSnapshot> snapshots)
+    private void RestoreSnapshots(
+        string projectDirectory,
+        IReadOnlyList<DocumentSnapshot> snapshots
+    )
     {
         foreach (var snapshot in snapshots)
         {
             if (snapshot.Content is null)
             {
+                ProjectMutationPathSecurity.EnsureNoAliases(
+                    _fileSystem,
+                    projectDirectory,
+                    snapshot.Path
+                );
                 if (_fileSystem.File.Exists(snapshot.Path))
                 {
                     _fileSystem.File.Delete(snapshot.Path);
@@ -675,7 +684,12 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
                 continue;
             }
 
-            _fileSystem.File.WriteAllText(snapshot.Path, snapshot.Content);
+            ProjectMutationPathSecurity.ReplaceFile(
+                _fileSystem,
+                projectDirectory,
+                snapshot.Path,
+                Encoding.UTF8.GetBytes(snapshot.Content)
+            );
         }
     }
 

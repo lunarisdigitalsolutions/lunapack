@@ -341,7 +341,7 @@ internal sealed class LinkLifecycleService(
     )
     {
         var mutationStartedAt = Stopwatch.GetTimestamp();
-        var applied = updateTransaction.Apply(updatePlan);
+        var applied = updateTransaction.Apply(projectDirectory, updatePlan);
         if (applied.Value is not { } rollback)
         {
             return console.Fail(applied.Error);
@@ -399,7 +399,7 @@ internal sealed class LinkLifecycleService(
             );
         }
 
-        var applied = updateTransaction.Apply(new PackUpdatePlan(actions));
+        var applied = updateTransaction.Apply(projectDirectory, new PackUpdatePlan(actions));
         if (applied.Value is not { } rollback)
         {
             return console.Fail(applied.Error);
