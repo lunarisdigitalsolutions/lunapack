@@ -10,5 +10,6 @@ Use it when changing implementation, build configuration, schemas, or the
 - [Adding packages](package-management.md)
 - [Canonical project paths](path-handling.md)
 - [Script safety](lifecycle-script-safety.md)
+- [Development threat model](threat-model.md)
 - [Release the CLI](release-cli.md)
 - [Publish the developer website](website-publishing.md)

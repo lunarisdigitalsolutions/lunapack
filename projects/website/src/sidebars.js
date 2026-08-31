@@ -118,7 +118,14 @@ const sidebars = {
     {
       type: 'category',
       label: 'Help and security',
-      items: ['troubleshooting', 'threat-model']
+      items: [
+        'troubleshooting',
+        {
+          type: 'doc',
+          id: 'threat-model',
+          label: 'Usage threat model'
+        }
+      ]
     }
   ]
 }

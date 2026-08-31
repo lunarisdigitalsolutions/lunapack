@@ -1,9 +1,9 @@
-# LunaPack Threat Model
+# LunaPack Usage Threat Model
 
-This explanation describes LunaPack's public trust boundaries, repository-specific
-threats, implemented controls, and residual risks. LunaPack manages files from
-local or Git sources and can run pack-provided lifecycle scripts. It is not a
-sandbox or privilege boundary. Treat every pack and source as publisher code.
+This explanation describes threats, controls, and residual risks when you use
+LunaPack with local or Git sources. LunaPack manages project files and can run
+pack-provided lifecycle scripts. It is not a sandbox or privilege boundary.
+Treat every pack and source as publisher code.
 
 ## Trust Boundaries
 
@@ -12,10 +12,9 @@ sandbox or privilege boundary. Treat every pack and source as publisher code.
   files, and the current workspace.
 - Managed-file transactions cross from resolved pack content into the workspace.
 - Approved lifecycle scripts cross into a process with the current user's authority.
-- Git hosts, npm, NuGet, GitHub Releases, GHCR, and GitHub Actions are external
-  identity, transport, build, and publication boundaries.
-- The operating system, Git client, container runtime, and distribution services
-  remain responsible for their own security boundaries.
+- Git hosts are external identity and transport boundaries.
+- The operating system, Git client, and container runtime remain responsible for
+  their own security boundaries.
 
 ## Spoofing
 
@@ -36,24 +35,6 @@ sandbox or privilege boundary. Treat every pack and source as publisher code.
 | Status | Mitigated for current local and configured Git sources |
 | Verification | Source identity, mutable-ref, conflict, consent, and lock-provenance tests. |
 | Residual risk | A pack ID and locked commit establish provenance, not cryptographic publisher identity. Protected tags remain a Git-host policy. |
-
-### TM-S02: Distribution Substitution
-
-| Field | Assessment |
-| --- | --- |
-| Component | GitHub Releases, npm, NuGet, GHCR, installer packages |
-| Asset | Luna binaries and package identity |
-| Scenario | A compromised registry account, mutable image tag, or unrelated workflow artifact supplies different bytes for an expected version. |
-| Preconditions | Publisher or workflow authority is compromised, or automation trusts a mutable tag without independent verification. |
-| Likelihood | Low |
-| Impact | Consumers execute a substituted CLI with their own authority. |
-| Severity | High |
-| Controls | Workflow-bound npm and NuGet trusted publishing, OIDC publication, npm provenance, temporary NuGet credentials, full-SHA action pins, tag-commit artifact binding, immutable release-asset comparison, and published SHA-256 checksums. |
-| Fix | Publish and validate OCI digests. |
-| Priority | OCI digest verification after release |
-| Status | Partially mitigated |
-| Verification | Exact npm and NuGet trusted-publisher bindings, release workflow contract tests, release dry run, and package inspection. |
-| Residual risk | Checksums hosted beside an artifact do not independently prove publisher identity. Mutable container tags can move. |
 
 ## Tampering
 
@@ -113,22 +94,22 @@ sandbox or privilege boundary. Treat every pack and source as publisher code.
 
 ## Repudiation
 
-### TM-R01: Lifecycle or Release Action Denial
+### TM-R01: Lifecycle Action Denial
 
 | Field | Assessment |
 | --- | --- |
-| Component | Lifecycle trust decisions, lock evidence, CLI diagnostics, release workflows |
-| Asset | Evidence of what source, script, version, and artifact was authorized |
-| Scenario | A publisher or operator disputes which code ran or which artifact was released after an incident. |
-| Preconditions | Local output was not retained, external audit data is unavailable, or mutable source metadata was used. |
+| Component | Lifecycle trust decisions, lock evidence, CLI diagnostics |
+| Asset | Evidence of what source, script, and version was authorized |
+| Scenario | A publisher or operator disputes which pack code ran after an incident. |
+| Preconditions | Local output was not retained or mutable source metadata was used. |
 | Likelihood | Low |
-| Impact | Incident response cannot reconstruct authorization or publication confidently. |
+| Impact | Incident response cannot reconstruct authorization confidently. |
 | Severity | Medium |
-| Controls | Source fingerprints, exact Git commits, rendered hook arguments before consent, lock records, GitHub workflow logs, release provenance, checksums, and immutable asset comparison. |
-| Fix | Retain release evidence and relevant redacted diagnostics. Prefer immutable refs. |
+| Controls | Source fingerprints, exact Git commits, rendered hook arguments before consent, and lock records. |
+| Fix | Retain relevant redacted diagnostics and prefer immutable refs. |
 | Priority | Operational requirement |
 | Status | Mitigated |
-| Verification | Trust, lock-provenance, release-rerun, checksum, and workflow contract tests. |
+| Verification | Trust and lock-provenance tests. |
 | Residual risk | LunaPack collects no telemetry and does not maintain an independent append-only audit log. |
 
 ## Information Disclosure
@@ -208,24 +189,6 @@ sandbox or privilege boundary. Treat every pack and source as publisher code.
 | Status | Accepted by design |
 | Verification | Trust-scope, denial, argument, digest, cancellation, and rollback tests. |
 | Residual risk | Authorized code can create irreversible external effects that no transaction can restore. |
-
-### TM-E02: Website Build Uses Deployment Authority
-
-| Field | Assessment |
-| --- | --- |
-| Component | GitHub Actions website release workflow and npm build dependencies |
-| Asset | GitHub Pages publication and OIDC authority |
-| Scenario | A compromised build dependency executes during site generation in the same job that can deploy Pages content. |
-| Preconditions | Malicious dependency code reaches a push build on the protected default branch. |
-| Likelihood | Low |
-| Impact | Unauthorized website deployment, content substitution, or misuse of job identity. |
-| Severity | High |
-| Controls | Protected branch expectations, full-SHA action pins, static output artifact, and GitHub Pages environment controls. |
-| Fix | Build in a read-only job, upload the artifact, and grant Pages write plus OIDC only to a dependent deployment job. |
-| Priority | Must address before public release |
-| Status | Open |
-| Verification | Workflow contract requires build/deploy separation and currently fails until the workflow is corrected. |
-| Residual risk | Environment protection reduces unauthorized deployment but does not justify giving dependency execution publication credentials. |
 
 ## Safer Operation
 
