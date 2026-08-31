@@ -86,6 +86,3 @@ when consuming packs and running Luna.
 5. Keep dependency builds separate from publication credentials.
 6. Publish and validate immutable OCI digests when digest-centered distribution is
    implemented.
-
-Use the [release security review](security-review.md) for the current release
-verdict, detailed findings, validation evidence, and remediation priorities.

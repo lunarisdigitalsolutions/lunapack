@@ -185,7 +185,9 @@ internal sealed class CliApplication(
                 fileSystem,
                 userProfileDirectory,
                 Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                isWindows
+                Environment.GetEnvironmentVariable("XDG_DATA_HOME"),
+                isWindows,
+                OperatingSystem.IsMacOS()
             ),
             new PowerShellCompletionScriptInstaller(
                 fileSystem,

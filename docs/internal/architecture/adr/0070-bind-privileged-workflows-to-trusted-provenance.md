@@ -36,9 +36,11 @@ bytes or code cross a publication boundary.
 Stable release preparation resolves the selected tag to a commit and accepts
 artifacts only from the CLI release workflow at that commit. A previous run
 must have succeeded. The external-check gate loads its validator from the base
-or default branch and treats skipped or cancelled checks as failures. Website
-dependencies build in an unprivileged job; a dependent `github-pages`
-environment job alone receives Pages write and OIDC permissions.
+or default branch and excludes skipped or cancelled checks from authorization.
+Website dependencies build in an unprivileged job; a dependent deployment job
+alone receives Pages write and OIDC permissions. CLI publication has no
+manual-dispatch entry point. Website deployment and stable and preview CLI
+publishers use the `Release` environment.
 
 ### Consequences
 
@@ -46,16 +48,17 @@ environment job alone receives Pages write and OIDC permissions.
 - Good, because pull-request code cannot replace its own gate implementation.
 - Good, because compromised build dependencies do not receive deployment
   credentials.
+- Good, because release publishers can require protected-environment approval.
 - Bad, because intentionally reusing artifacts requires an exact tag-revision
   match and successful prior run.
-- Bad, because intentionally skipped checks require explicit gate policy rather
-  than implicit success.
+- Bad, because skipped or cancelled checks provide no positive validation and
+  are intentionally ignored by the gate.
 
 ### Confirmation
 
 Workflow contract tests require tag-to-run revision binding, trusted gate
-checkout, failure for skipped and cancelled checks, and job-level Pages
-permission separation.
+checkout, exclusion of skipped and cancelled checks, protected publication
+jobs, no manual CLI release dispatch, and job-level Pages permission separation.
 
 ## More Information
 

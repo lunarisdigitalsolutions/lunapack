@@ -50,9 +50,11 @@ workflow. It never deploys.
 `website.yml` uses the same composite action and path filters for pushes to
 `main`. Its read-only build job uploads only `projects/website/src/build`; a
 dependent deployment job alone receives Pages write and OIDC permissions and
-deploys that artifact to the `github-pages` environment. Before the first
-deployment, configure the repository's Pages source as **GitHub Actions** in
-GitHub repository settings. The initial site address is:
+deploys that artifact to the `Release` environment. Before the first deployment,
+configure the repository's Pages source as **GitHub Actions** and create the
+`Release` environment in GitHub repository settings. Configure required
+reviewers there when website publication requires maintainer approval. The
+initial site address is:
 
 ```text
 https://lunapack.dev/

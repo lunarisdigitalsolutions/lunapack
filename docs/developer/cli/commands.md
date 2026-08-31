@@ -30,13 +30,17 @@ script. Luna prints the script and destination, then asks for confirmation.
 The default response is No. After confirmation, Luna creates the destination
 directory when needed and appends the script unless it is already present.
 
-| Shell      | Installation destination                                                                                                                   |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| Bash       | `~/.bashrc`                                                                                                                                |
-| Fish       | `~/.config/fish/conf.d/luna-completions.fish`                                                                                              |
-| Nushell    | `%APPDATA%/nushell/vendor/autoload/luna-completions.nu` on Windows; `~/.local/share/nushell/vendor/autoload/luna-completions.nu` elsewhere |
-| PowerShell | `Documents/PowerShell/Microsoft.PowerShell_profile.ps1` on Windows; `~/.config/powershell/Microsoft.PowerShell_profile.ps1` elsewhere      |
-| Zsh        | `~/.zshrc`                                                                                                                                 |
+| Shell      | Installation destination                                                                                                              |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Bash       | `~/.bashrc`                                                                                                                           |
+| Fish       | `~/.config/fish/conf.d/luna-completions.fish`                                                                                         |
+| Nushell    | Platform data directory under `nushell/vendor/autoload/luna-completions.nu`; see below                                                |
+| PowerShell | `Documents/PowerShell/Microsoft.PowerShell_profile.ps1` on Windows; `~/.config/powershell/Microsoft.PowerShell_profile.ps1` elsewhere |
+| Zsh        | `~/.zshrc`                                                                                                                            |
+
+Nushell uses `%APPDATA%` on Windows. On other platforms it uses
+`XDG_DATA_HOME` when set, `~/Library/Application Support` by default on macOS,
+or `~/.local/share` by default elsewhere.
 
 ### Bash
 

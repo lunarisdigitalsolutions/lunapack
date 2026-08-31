@@ -60,6 +60,61 @@ public sealed class CompletionScriptInstallerTests
             .IsEqualTo($"# existing{Environment.NewLine}completion script\n");
     }
 
+    [Test]
+    public async Task CreatePlan_WhenNushellRunsOnMacOS_UsesApplicationSupportDataDirectory()
+    {
+        var fileSystem = new MockFileSystem();
+        var profileDirectory = fileSystem.Path.Combine("C:", "profile");
+        var installer = new NushellCompletionScriptInstaller(
+            fileSystem,
+            profileDirectory,
+            fileSystem.Path.Combine("C:", "appdata"),
+            null,
+            isWindows: false,
+            isMacOS: true
+        );
+
+        var plan = installer.CreatePlan("script");
+
+        var expectedPath = fileSystem.Path.Combine(
+            profileDirectory,
+            "Library",
+            "Application Support",
+            "nushell",
+            "vendor",
+            "autoload",
+            "luna-completions.nu"
+        );
+        await Assert.That(plan.DestinationPath).IsEqualTo(expectedPath);
+    }
+
+    [Test]
+    public async Task CreatePlan_WhenXdgDataHomeIsSet_UsesConfiguredDataDirectory()
+    {
+        var fileSystem = new MockFileSystem();
+        var profileDirectory = fileSystem.Path.Combine("C:", "profile");
+        var xdgDataHomeDirectory = fileSystem.Path.Combine("C:", "xdg-data");
+        var installer = new NushellCompletionScriptInstaller(
+            fileSystem,
+            profileDirectory,
+            fileSystem.Path.Combine("C:", "appdata"),
+            xdgDataHomeDirectory,
+            isWindows: false,
+            isMacOS: true
+        );
+
+        var plan = installer.CreatePlan("script");
+
+        var expectedPath = fileSystem.Path.Combine(
+            xdgDataHomeDirectory,
+            "nushell",
+            "vendor",
+            "autoload",
+            "luna-completions.nu"
+        );
+        await Assert.That(plan.DestinationPath).IsEqualTo(expectedPath);
+    }
+
     private static CompletionScriptInstallerResolver CreateResolver(
         MockFileSystem fileSystem,
         Dictionary<string, string> roots,
@@ -72,7 +127,9 @@ public sealed class CompletionScriptInstallerTests
                 fileSystem,
                 roots["profile"],
                 roots["appdata"],
-                isWindows
+                null,
+                isWindows,
+                isMacOS: false
             ),
             new PowerShellCompletionScriptInstaller(
                 fileSystem,

@@ -10,6 +10,17 @@ import {
 const workflow = readFileSync('.github/workflows/cli.yml', 'utf8')
 const websiteWorkflow = readFileSync('.github/workflows/website.yml', 'utf8')
 const previewJobs = workflow.slice(workflow.indexOf('  preview-version:'))
+const stableReleaseJob = workflow.slice(
+  workflow.indexOf('  release:'),
+  workflow.indexOf('  preview-version:')
+)
+const previewRidPublisherJob = workflow.slice(
+  workflow.indexOf('  publish-preview-rid-packages:'),
+  workflow.indexOf('  publish-preview-pointer-package:')
+)
+const previewPointerPublisherJob = workflow.slice(
+  workflow.indexOf('  publish-preview-pointer-package:')
+)
 const buildAction = readFileSync('.github/actions/cli/build/action.yml', 'utf8')
 const dotnetBuildAction = readFileSync(
   '.github/actions/build-dotnet/action.yml',
@@ -201,7 +212,7 @@ test('Scenario_StableRelease_ArtifactRunMustMatchReleaseTagCommit', () => {
   assert.match(releasePrepareAction, /run\.conclusion/)
 })
 
-test('Scenario_PullRequestGate_UsesTrustedScriptAndBlocksSkippedChecks', () => {
+test('Scenario_PullRequestGate_UsesTrustedScriptAndExcludesSkippedChecks', () => {
   assert.match(
     pullRequestGateWorkflow,
     /ref: \$\{\{ github\.event\.pull_request\.base\.sha \|\| github\.event\.repository\.default_branch \}\}/
@@ -242,10 +253,10 @@ test('Scenario_PullRequestGate_UsesTrustedScriptAndBlocksSkippedChecks', () => {
       []
     )
 
-    assert.deepEqual(summary.failed, [
-      'Security tests (skipped)',
-      'Build (cancelled)'
-    ])
+    assert.deepEqual(summary.failed, [])
+    assert.deepEqual(summary.pending, [])
+    assert.equal(summary.relevantCount, 0)
+    assert.equal(summary.skippedCount, 2)
   }
 })
 
@@ -261,6 +272,10 @@ test('Scenario_WebsiteRelease_BuildRunsWithoutDeploymentCredentials', () => {
   assert.match(
     deployJob,
     /name: Deploy website[\s\S]*needs: build[\s\S]*permissions:\s+contents: read\s+pages: write\s+id-token: write/
+  )
+  assert.match(
+    deployJob,
+    /environment:\s+name: Release\s+url: \$\{\{ steps\.deployment\.outputs\.page_url \}\}/
   )
 })
 
@@ -325,10 +340,14 @@ test('Scenario_PreviewWorkflow_PublishesOnlyNuGetForCliChangesOnMain', () => {
     workflow,
     /preview-version:[\s\S]*?if: \$\{\{ github\.event_name == 'push' && github\.ref_type == 'branch' \}\}/
   )
+  assert.doesNotMatch(workflow, /workflow_dispatch/)
   assert.match(
     workflow,
-    /plan:[\s\S]*?github\.event_name == 'workflow_dispatch' \|\| github\.ref_type == 'tag'/
+    /plan:[\s\S]*?if: \$\{\{ github\.ref_type == 'tag' \}\}/
   )
+  assert.match(stableReleaseJob, /environment: Release/)
+  assert.match(previewRidPublisherJob, /environment: Release/)
+  assert.match(previewPointerPublisherJob, /environment: Release/)
   assert.match(workflow, /cancel-in-progress: false/)
   assert.match(
     previewJobs,

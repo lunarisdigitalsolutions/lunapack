@@ -228,4 +228,4 @@ async function validateExternalChecks({
   core.info('All non-skipped external checks and commit statuses succeeded.')
 }
 
-module.exports = { validateExternalChecks }
+module.exports = { collectCheckRunProblems, validateExternalChecks }
