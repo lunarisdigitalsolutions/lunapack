@@ -8,5 +8,7 @@ internal sealed record LifecycleDryRunPlan(
     IReadOnlyList<LifecycleHookInvocation> PreMutation,
     IReadOnlyList<LifecycleHookInvocation> PostMutation,
     IReadOnlyList<PackLifecyclePlan.Entry> Changes,
-    IReadOnlyList<ScriptDenialOrigin>? ScriptDenialScopes = null
+    IReadOnlyList<ScriptDenialOrigin>? ScriptDenialScopes = null,
+    IReadOnlyDictionary<LifecycleHookInvocation, IReadOnlyList<TrustScope>>? ScriptTrustScopes =
+        null
 );

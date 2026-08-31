@@ -24,21 +24,34 @@ internal sealed class DiscoverPacksCommandHandler(
         {
             Description = "Maximum versions to display for each package.",
         };
-        var command = new Command("discover", "List available packs.") { versionCountOption };
+        var allowDraftOption = new Option<bool>("--allow-draft")
+        {
+            Description = "Include draft packs.",
+        };
+        var command = new Command("discover", "List available packs.")
+        {
+            versionCountOption,
+            allowDraftOption,
+        };
         command.SetAction(parseResult =>
             DiscoverAsync(
                 workspaceDirectoryResolver.Resolve(
                     projectDirectory,
                     parseResult.GetValue(workspaceOption)
                 ),
-                parseResult.GetValue(versionCountOption) ?? DefaultVersionCount
+                parseResult.GetValue(versionCountOption) ?? DefaultVersionCount,
+                parseResult.GetValue(allowDraftOption)
             )
         );
 
         return command;
     }
 
-    public async Task<int> DiscoverAsync(string projectDirectory, int versionCount)
+    public async Task<int> DiscoverAsync(
+        string projectDirectory,
+        int versionCount,
+        bool allowDraft = false
+    )
     {
         if (versionCount is < 1 or > PackCatalog.MaximumVersionCount)
         {
@@ -64,7 +77,10 @@ internal sealed class DiscoverPacksCommandHandler(
         }
 
         var packs = PackCatalog
-            .GetRecentReleases(catalogPacks, versionCount)
+            .GetRecentReleases(
+                allowDraft ? catalogPacks : [.. catalogPacks.Where(pack => !pack.Manifest.Draft)],
+                versionCount
+            )
             .OrderBy(pack => pack.Manifest.Id, StringComparer.Ordinal)
             .ThenByDescending(pack => pack.Version, NuGet.Versioning.VersionComparer.VersionRelease)
             .ToList();

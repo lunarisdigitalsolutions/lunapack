@@ -6,6 +6,8 @@ internal sealed record PackManifest
 
     public string? Description { get; set; }
 
+    public bool Draft { get; set; }
+
     public string? Homepage { get; set; }
 
     public PackHooks? Hooks { get; set; }

@@ -1,0 +1,5 @@
+{
+  "lunapack.testing.release": "2.0.0",
+  "lunapack.testing.enabled": true,
+  "lunapack.testing.channel": "major"
+}

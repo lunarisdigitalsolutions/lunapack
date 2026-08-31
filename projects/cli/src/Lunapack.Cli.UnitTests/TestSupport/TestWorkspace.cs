@@ -12,7 +12,8 @@ internal sealed class TestWorkspace : IDisposable
     public TestWorkspace(
         IPackUpdatePrompter? packUpdatePrompter = null,
         IAnsiConsole? ansiConsole = null,
-        IGitProcessRunner? gitProcessRunner = null
+        IGitProcessRunner? gitProcessRunner = null,
+        ITrustConfirmer? trustConfirmer = null
     )
     {
         Path = System.IO.Path.Combine(
@@ -27,6 +28,7 @@ internal sealed class TestWorkspace : IDisposable
             ansiConsole ?? TestConsole.CreateAnsiConsole(),
             packUpdatePrompter,
             gitProcessRunner: gitProcessRunner ?? new StubGitProcessRunner(),
+            trustConfirmer: trustConfirmer,
             userSettingsStore: new UserSettingsStore(
                 FileSystem,
                 System.IO.Path.Combine(Path, "profile")

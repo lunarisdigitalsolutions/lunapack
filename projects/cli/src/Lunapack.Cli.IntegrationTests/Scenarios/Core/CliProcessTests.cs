@@ -228,8 +228,7 @@ public sealed class CliProcessTests
 
         await Assert.That(denied.ExitCode).IsEqualTo(0);
         await Assert.That(listed.StandardOutput).Contains($"{scopeName} script denial");
-        await Assert.That(dryRunOutput).Contains("policy-denied scopes:");
-        await Assert.That(dryRunOutput).Contains(scopeName);
+        await Assert.That(dryRunOutput).Contains($"blocked (policy: {scopeName})");
         await Assert.That(install.ExitCode).IsEqualTo(0);
         await Assert.That(installOutput).Contains("Lifecycle script denied by policy:");
         await Assert.That(installOutput).Contains(scopeName);

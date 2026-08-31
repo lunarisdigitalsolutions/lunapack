@@ -228,11 +228,11 @@ internal sealed class PackUpdateService(
             return preview;
         }
 
-        if (preview.DryRunPlan?.Actions.Count == 0)
+        if (preview.FileChangePlan?.Actions.Count == 0)
         {
             return UpdateResult.Success(
                 [outcome with { IsCurrent = true }],
-                dryRun ? preview.DryRunPlan : null
+                dryRun ? preview.FileChangePlan : null
             );
         }
 
@@ -478,9 +478,9 @@ internal sealed class PackUpdateService(
             return preview;
         }
 
-        if (versionUpdateCount == 0 && preview.DryRunPlan?.Actions.Count == 0)
+        if (versionUpdateCount == 0 && preview.FileChangePlan?.Actions.Count == 0)
         {
-            return UpdateResult.Success([], dryRun ? preview.DryRunPlan : null);
+            return UpdateResult.Success([], dryRun ? preview.FileChangePlan : null);
         }
 
         if (versionUpdateCount == 0)
@@ -489,7 +489,7 @@ internal sealed class PackUpdateService(
         }
 
         return dryRun
-            ? UpdateResult.Success(outcomes, preview.DryRunPlan ?? new PackUpdatePlan([]))
+            ? UpdateResult.Success(outcomes, preview.FileChangePlan ?? new PackUpdatePlan([]))
             : null;
     }
 
@@ -527,19 +527,23 @@ internal sealed class PackUpdateService(
                 : UpdateResult.Failure(plannedUpdate.Error ?? "Unable to plan pack update.");
         }
 
+        PackUpdatePlan? appliedPlan = null;
         var exitCode = await packLifecycleService.UpdateAsync(
             projectDirectory,
             selectedRequestedRoots,
-            updateRequest
+            updateRequest,
+            plan => appliedPlan = plan
         );
-        return exitCode == 0 ? UpdateResult.Success(outcomes) : UpdateResult.LifecycleFailure();
+        return exitCode == 0
+            ? UpdateResult.Success(outcomes, appliedPlan)
+            : UpdateResult.LifecycleFailure();
     }
 
     internal sealed record UpdateResult(
         IReadOnlyList<UpdateOutcome> Outcomes,
         string? Error,
         bool IsLifecycleFailure,
-        PackUpdatePlan? DryRunPlan,
+        PackUpdatePlan? FileChangePlan,
         LockedSourceUpdateSelector.SourceSwitch? ProposedSourceSwitch
     )
     {

@@ -482,6 +482,59 @@ public sealed class CliApplicationTests
     }
 
     [Test]
+    [Arguments("discover")]
+    [Arguments("search")]
+    public async Task CatalogCommand_WhenPackIsDraft_HidesItByDefault(string command)
+    {
+        var ansiConsole = new SpectreTestConsole();
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        await ConfigureDraftPackCatalogAsync(workspace);
+        var arguments = string.Equals(command, "search", StringComparison.Ordinal)
+            ? new[] { command, "example" }
+            : [command];
+
+        var exitCode = await workspace.Application.RunAsync(arguments, workspace.Path);
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(ansiConsole.Output).Contains("public-example");
+        await Assert.That(ansiConsole.Output).DoesNotContain("draft-example");
+    }
+
+    [Test]
+    [Arguments("discover")]
+    [Arguments("search")]
+    public async Task CatalogCommand_WhenAllowDraftSpecified_IncludesDraftPack(string command)
+    {
+        var ansiConsole = new SpectreTestConsole();
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        await ConfigureDraftPackCatalogAsync(workspace);
+        var arguments = string.Equals(command, "search", StringComparison.Ordinal)
+            ? new[] { command, "example", "--allow-draft" }
+            : new[] { command, "--allow-draft" };
+
+        var exitCode = await workspace.Application.RunAsync(arguments, workspace.Path);
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(ansiConsole.Output).Contains("public-example");
+        await Assert.That(ansiConsole.Output).Contains("draft-example");
+    }
+
+    [Test]
+    public async Task Install_WhenPackIsDraftAndSpecifiedDirectly_InstallsPack()
+    {
+        using var workspace = new TestWorkspace();
+        await ConfigureDraftPackCatalogAsync(workspace);
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["install", "draft-example@1.0.0", "--scripts", "skip"],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, "draft-example.txt"))).IsTrue();
+    }
+
+    [Test]
     public async Task CatalogCommands_WhenVersionLimitExceedsTen_ReturnFailure()
     {
         var ansiConsole = new SpectreTestConsole();
@@ -572,6 +625,27 @@ public sealed class CliApplicationTests
             "example-v2",
             "id: example\nversion: 2.0.0\nlicense: MIT\nauthor: Lunaris Digital Solutions <info@lunaris.digital>\nmanagedFiles:\n  - source: templates/content.txt\n    target: example.txt\n",
             "example"
+        );
+        await workspace.Application.RunAsync(["init"], workspace.Path);
+        await workspace.Application.RunAsync(
+            ["sources", "add", "local", "local", "source"],
+            workspace.Path
+        );
+    }
+
+    private static async Task ConfigureDraftPackCatalogAsync(TestWorkspace workspace)
+    {
+        CreatePack(
+            workspace.Path,
+            "public-example",
+            "id: public-example\nversion: 1.0.0\nlicense: MIT\nauthor: Example Author\nmanagedFiles:\n  - source: templates/content.txt\n    target: public-example.txt\n",
+            "public"
+        );
+        CreatePack(
+            workspace.Path,
+            "draft-example",
+            "id: draft-example\nversion: 1.0.0\ndraft: true\nlicense: MIT\nauthor: Example Author\nmanagedFiles:\n  - source: templates/content.txt\n    target: draft-example.txt\n",
+            "draft"
         );
         await workspace.Application.RunAsync(["init"], workspace.Path);
         await workspace.Application.RunAsync(

@@ -74,7 +74,8 @@ internal sealed class PackLifecycleService(
     public async Task<int> InstallAsync(
         string projectDirectory,
         PackInstallationRequest installationRequest,
-        Action<TimeSpan>? onManagedFileChangesApplied = null
+        Action<TimeSpan>? onManagedFileChangesApplied = null,
+        Action<PackUpdatePlan>? onUpdateApplied = null
     )
     {
         _console.Info($"Installing pack '{installationRequest.PackReference.Id}'.");
@@ -112,7 +113,8 @@ internal sealed class PackLifecycleService(
                 projectDirectory,
                 preserveExistingLock: true,
                 authorizedHooks,
-                onManagedFileChangesApplied
+                onManagedFileChangesApplied,
+                onUpdateApplied
             );
         }
     }
@@ -738,7 +740,8 @@ internal sealed class PackLifecycleService(
     public async Task<int> UpdateAsync(
         string projectDirectory,
         IReadOnlyList<ProjectConfiguration.RequestedPack> selectedRequestedRoots,
-        PackInstallationRequest updateRequest
+        PackInstallationRequest updateRequest,
+        Action<PackUpdatePlan>? onUpdateApplied = null
     )
     {
         var preparation = await PrepareUpdateAsync(
@@ -778,7 +781,8 @@ internal sealed class PackLifecycleService(
                 preparedUpdate.InstallationPlan,
                 preparedUpdate.UpdatePlan,
                 projectDirectory,
-                authorizedHooks: authorizedHooks
+                authorizedHooks: authorizedHooks,
+                onUpdateApplied: onUpdateApplied
             );
         }
     }
@@ -1639,7 +1643,8 @@ internal sealed class PackLifecycleService(
         string projectDirectory,
         bool preserveExistingLock = false,
         AuthorizedLifecycleHooks? authorizedHooks = null,
-        Action<TimeSpan>? onManagedFileChangesApplied = null
+        Action<TimeSpan>? onManagedFileChangesApplied = null,
+        Action<PackUpdatePlan>? onUpdateApplied = null
     )
     {
         var manifestSnapshot = CreateManifestSnapshot(projectDirectory);
@@ -1661,6 +1666,7 @@ internal sealed class PackLifecycleService(
         }
 
         onManagedFileChangesApplied?.Invoke(Stopwatch.GetElapsedTime(mutationStartedAt));
+        onUpdateApplied?.Invoke(updatePlan);
 
         var isCheckpointPersisted = false;
         var isPersisted = false;
@@ -1874,8 +1880,14 @@ internal sealed class PackLifecycleService(
             );
         }
 
+        var scriptHooks = plannedPreHooks
+            .Concat(plannedPostHooks)
+            .Where(static hook => hook.IsScript)
+            .ToArray();
         IReadOnlyList<ScriptDenialOrigin> denyingScopes = [];
-        if (plannedPreHooks.Concat(plannedPostHooks).Any(static hook => hook.IsScript))
+        IReadOnlyDictionary<LifecycleHookInvocation, IReadOnlyList<TrustScope>> trustScopes =
+            new Dictionary<LifecycleHookInvocation, IReadOnlyList<TrustScope>>();
+        if (scriptHooks.Length > 0)
         {
             var policy = await _hookAuthorizer.EvaluateScriptPolicyAsync(
                 projectDirectory,
@@ -1889,6 +1901,19 @@ internal sealed class PackLifecycleService(
             }
 
             denyingScopes = evaluation.DenyingScopes;
+            if (scriptMode == ScriptExecutionMode.Prompt && !evaluation.IsDenied)
+            {
+                trustScopes = scriptHooks.ToDictionary(
+                    hook => hook,
+                    hook =>
+                        _hookAuthorizer.GetTrustScopes(
+                            projectDirectory,
+                            configuration,
+                            evaluation,
+                            hook
+                        )
+                );
+            }
         }
 
         return ManifestOperationResult<LifecycleDryRunPlan>.Success(
@@ -1897,7 +1922,8 @@ internal sealed class PackLifecycleService(
                 plannedPreHooks,
                 plannedPostHooks,
                 lifecyclePlan.Changes,
-                denyingScopes
+                denyingScopes,
+                trustScopes
             )
         );
     }

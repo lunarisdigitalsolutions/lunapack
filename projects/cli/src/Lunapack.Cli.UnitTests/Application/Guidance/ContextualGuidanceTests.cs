@@ -154,7 +154,7 @@ public sealed class ContextualGuidanceTests
             ["install", "example", "--dry-run"]
         );
 
-        await Assert.That(output).DoesNotContain("✓ Installed");
+        await Assert.That(output).DoesNotContain("Installed");
         await Assert.That(output).DoesNotContain("luna outdated");
     }
 
@@ -173,7 +173,7 @@ public sealed class ContextualGuidanceTests
 
         var output = await InvokeWithFreshConsoleAsync(workspace, ["update", "--dry-run"]);
 
-        await Assert.That(output).DoesNotContain("✓ Updated");
+        await Assert.That(output).DoesNotContain("Updated");
         await Assert.That(output).DoesNotContain("luna audit");
     }
 
@@ -192,9 +192,9 @@ public sealed class ContextualGuidanceTests
             ["sources", "add", "github", "github", "acme/packs", "--ref", "main"]
         );
 
-        await Assert.That(gitOutput).Contains("✓ Source 'git' added");
+        await Assert.That(gitOutput).Contains("Source 'git' added");
         await Assert.That(gitOutput).Contains("1. Discover available packs");
-        await Assert.That(githubOutput).Contains("✓ Source 'github' added");
+        await Assert.That(githubOutput).Contains("Source 'github' added");
         await Assert.That(githubOutput).Contains("luna install <pack>");
     }
 
@@ -407,7 +407,7 @@ public sealed class ContextualGuidanceTests
         var output = await InvokeWithFreshConsoleAsync(workspace, ["uninstall", "one"]);
         var state = (await workspace.StateStore.LoadAsync(workspace.Path)).RequireValue();
 
-        await Assert.That(output).Contains("✓ Uninstalled 'one'");
+        await Assert.That(output).Contains("Uninstalled 'one'");
         await Assert
             .That(state.Configuration.Packs.Select(pack => pack.Id))
             .IsEquivalentTo(["two"]);

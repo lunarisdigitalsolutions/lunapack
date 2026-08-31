@@ -184,6 +184,24 @@ public sealed class PackCatalogTests
     }
 
     [Test]
+    public async Task Browse_WhenBooleanParameterHasDefault_PreservesTypedValue()
+    {
+        var fileSystem = CreateFileSystem([
+            (
+                PacksPath("example", "pack.yml"),
+                "id: example\nversion: 1.0.0\nlicense: MIT\nauthor: Example Author\nparameters:\n  enabled:\n    type: bool\n    default: true\nmanagedFiles:\n  - source: templates/content.txt\n    target: example.txt\n"
+            ),
+        ]);
+        var catalog = new PackCatalog(fileSystem, TestConsole.Create());
+
+        var result = await catalog.BrowseAsync(_projectDirectory, CreateManifest(_packsDirectory));
+
+        var defaultValue = result.RequireValue().Single().Manifest.Parameters["enabled"].Default;
+        await Assert.That(defaultValue).IsTypeOf<bool>();
+        await Assert.That((bool)defaultValue!).IsTrue();
+    }
+
+    [Test]
     public async Task Browse_WhenSourceEmpty_ReturnsEmptyCatalog()
     {
         var fileSystem = CreateFileSystem([]);
