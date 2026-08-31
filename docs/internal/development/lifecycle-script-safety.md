@@ -49,13 +49,17 @@ must still accept.
   `policy-denied` and all origins without execution warnings. `--scripts skip` and
   `--skip-instructions` suppress only their respective hook types.
 
-## Deferred No-Follow Control
+## Snapshot Object Policy
 
-Operation snapshots currently follow symbolic links, junctions, mount points,
-and other reparse points while copying source content. They do not confine a
-same-user source-tree attacker. ADR-0040 records this exception. Do not claim
-no-follow snapshot protection until traversal, regular-file validation, and
-source-identity checks during copying are implemented and tested.
+Operation snapshot roots must not be links or reparse points. During copying,
+LunaPack emits a warning and skips child links, reparse points, devices, and
+other unsupported entries while retaining regular siblings. Packed hooks or
+managed files that depend on a skipped entry will consequently be unavailable.
+
+This policy blocks deterministic link following but is not race-free. Another
+process running as the same user can replace an entry between inspection and
+copy. ADR-0071 records the implemented boundary and deferred handle-relative
+no-follow control.
 
 ## Residual Risks
 
@@ -66,12 +70,12 @@ source-identity checks during copying are implemented and tested.
    release from a trusted source can execute changed content.
 3. **High: irreversible effects.** LunaPack can restore its own state, not
    external writes, remote changes, spawned processes, or deleted credentials.
-4. **High: deferred link traversal.** A source can include data from outside
-   its apparent tree through links or reparse points before snapshot hashing.
+4. **Medium: skipped source objects.** Unsupported entries are omitted with a
+  warning, so a pack may be incomplete even though regular siblings remain.
 5. **Medium: settings compromise.** A same-user attacker able to alter user
    settings can change persistent execution authority.
-6. **Medium: same-user races.** Digest checks narrow staged-content races but
-   cannot protect every process-visible resource.
+6. **Medium: same-user races.** Object checks and digest verification narrow
+  staged-content races but cannot protect every process-visible resource.
 7. **Medium: mode trade-offs.** Without persistent denial, `--scripts run`
    bypasses consent for one invocation. Either skip control or policy denial can
    omit setup required by a pack. Resetting denial can reactivate retained

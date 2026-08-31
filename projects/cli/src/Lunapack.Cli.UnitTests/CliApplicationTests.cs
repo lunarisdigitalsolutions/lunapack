@@ -130,18 +130,18 @@ public sealed class CliApplicationTests
             (Name: "zsh", Marker: "compdef"),
         };
 
-        foreach (var shell in shells)
+        foreach (var (Name, Marker) in shells)
         {
             await using var output = new StringWriter();
             var exitCode = await workspace.Application.RunAsync(
-                ["completions", "script", shell.Name],
+                ["completions", "script", Name],
                 workspace.Path,
                 output
             );
 
-            await Assert.That(exitCode).IsEqualTo(0).Because(shell.Name);
-            await Assert.That(output.ToString()).Contains(shell.Marker).Because(shell.Name);
-            await Assert.That(output.ToString()).Contains("luna complete").Because(shell.Name);
+            await Assert.That(exitCode).IsEqualTo(0).Because(Name);
+            await Assert.That(output.ToString()).Contains(Marker).Because(Name);
+            await Assert.That(output.ToString()).Contains("luna complete").Because(Name);
         }
     }
 
@@ -756,7 +756,7 @@ public sealed class CliApplicationTests
         await ConfigureDraftPackCatalogAsync(workspace);
         var arguments = string.Equals(command, "search", StringComparison.Ordinal)
             ? new[] { command, "example", "--allow-draft" }
-            : new[] { command, "--allow-draft" };
+            : [command, "--allow-draft"];
 
         var exitCode = await workspace.Application.RunAsync(arguments, workspace.Path);
 

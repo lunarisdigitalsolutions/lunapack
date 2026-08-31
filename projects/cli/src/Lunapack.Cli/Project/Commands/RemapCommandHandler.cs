@@ -299,12 +299,8 @@ internal sealed class RemapCommandHandler(
         IReadOnlyDictionary<string, string> mappings
     )
     {
-        foreach (
-            var (target, newTarget) in mappings.OrderBy(
-                mapping => mapping.Key,
-                StringComparer.Ordinal
-            )
-        )
+        var orderedMappings = mappings.OrderBy(mapping => mapping.Key, StringComparer.Ordinal);
+        foreach (var (target, newTarget) in orderedMappings)
         {
             table.AddRow(Markup.Escape(kind), Markup.Escape(target), Markup.Escape(newTarget));
         }
@@ -314,7 +310,7 @@ internal sealed class RemapCommandHandler(
         IReadOnlyDictionary<string, string> mappings,
         string target,
         string newTarget
-    ) => new Dictionary<string, string>(mappings, StringComparer.Ordinal) { [target] = newTarget };
+    ) => new(mappings, StringComparer.Ordinal) { [target] = newTarget };
 
     private static Dictionary<string, string> RemoveMapping(
         IReadOnlyDictionary<string, string> mappings,

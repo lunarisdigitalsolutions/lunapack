@@ -50,12 +50,11 @@ internal sealed class ExternalSourceRequirementPlanner(GitRefResolver gitRefReso
     {
         var plannedGroups = new List<ExternalSourceRequirementGroup>(groups.Count);
         var proposedIdentifiers = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (
-            var group in groups.Values.OrderBy(
-                group => group.Fingerprint.Value,
-                StringComparer.Ordinal
-            )
-        )
+        var orderedGroups = groups.Values.OrderBy(
+            group => group.Fingerprint.Value,
+            StringComparer.Ordinal
+        );
+        foreach (var group in orderedGroups)
         {
             if (sourceIndex.ByFingerprint.TryGetValue(group.Fingerprint.Value, out var existing))
             {
@@ -91,19 +90,20 @@ internal sealed class ExternalSourceRequirementPlanner(GitRefResolver gitRefReso
     private static ExternalSourceAliasMapping[] CreateMappings(
         IReadOnlyList<ExternalSourceRequirementGroup> plannedGroups
     ) =>
-        plannedGroups
-            .SelectMany(group =>
-                group.Uses.Select(use => new ExternalSourceAliasMapping(
-                    use.PackId,
-                    use.PackVersion,
-                    use.Alias,
-                    group.WorkspaceSourceName,
-                    group.Fingerprint
-                ))
-            )
-            .OrderBy(mapping => mapping.PackId, StringComparer.Ordinal)
-            .ThenBy(mapping => mapping.Alias, StringComparer.Ordinal)
-            .ToArray();
+        [
+            .. plannedGroups
+                .SelectMany(group =>
+                    group.Uses.Select(use => new ExternalSourceAliasMapping(
+                        use.PackId,
+                        use.PackVersion,
+                        use.Alias,
+                        group.WorkspaceSourceName,
+                        group.Fingerprint
+                    ))
+                )
+                .OrderBy(mapping => mapping.PackId, StringComparer.Ordinal)
+                .ThenBy(mapping => mapping.Alias, StringComparer.Ordinal),
+        ];
 
     private async Task<
         ManifestOperationResult<Dictionary<string, RequirementGroupBuilder>>
@@ -135,12 +135,11 @@ internal sealed class ExternalSourceRequirementPlanner(GitRefResolver gitRefReso
         CancellationToken cancellationToken
     )
     {
-        foreach (
-            var groupedFiles in pack.Manifest.ManagedFiles.GroupBy(
-                file => PackManagedFileSelector.Create(file).Value?.SourceAlias,
-                StringComparer.Ordinal
-            )
-        )
+        var filesBySourceAlias = pack.Manifest.ManagedFiles.GroupBy(
+            file => PackManagedFileSelector.Create(file).Value?.SourceAlias,
+            StringComparer.Ordinal
+        );
+        foreach (var groupedFiles in filesBySourceAlias)
         {
             if (groupedFiles.Key is not { } alias)
             {

@@ -151,9 +151,9 @@ internal sealed class PackInstallationPlanner(
         }
 
         return ManifestOperationResult<PackInstallationPlan>.Success(
-            new PackInstallationPlan(
-                plannedTargets.Values.SelectMany(managedFiles => managedFiles).ToList()
-            )
+            new PackInstallationPlan([
+                .. plannedTargets.Values.SelectMany(managedFiles => managedFiles),
+            ])
             {
                 Diagnostics = diagnostics,
                 Remappings = remappings,
@@ -168,13 +168,12 @@ internal sealed class PackInstallationPlanner(
         [
             .. candidates.Where(candidate =>
             {
-                if (
-                    !string.Equals(
-                        candidate.Target,
-                        ManagedFileTargetRemapping.IgnoreTarget,
-                        StringComparison.Ordinal
-                    )
-                )
+                var isIgnoredCandidate = string.Equals(
+                    candidate.Target,
+                    ManagedFileTargetRemapping.IgnoreTarget,
+                    StringComparison.Ordinal
+                );
+                if (!isIgnoredCandidate)
                 {
                     return true;
                 }
@@ -785,9 +784,7 @@ internal sealed class PackInstallationPlanner(
                     $"Target '{target}' already exists and is not managed by LunaPack."
                 );
             }
-            else if (
-                !IsMergeStrategy(strategy) && !RenderedContentMatchesTarget(content, targetPath)
-            )
+            else if (!CanAdoptTarget(strategy, content, targetPath))
             {
                 return ManifestOperationResult<PlannedManagedFile>.Failure(
                     $"Target '{target}' differs from the pack content and cannot be adopted."
@@ -835,11 +832,10 @@ internal sealed class PackInstallationPlanner(
     private string GetGlobBaseDirectory(string packDirectory, string glob)
     {
         var baseDirectory = packDirectory;
-        foreach (
-            var segment in ProjectPath
-                .Normalize(glob)
-                .Split('/', StringSplitOptions.RemoveEmptyEntries)
-        )
+        var segments = ProjectPath
+            .Normalize(glob)
+            .Split('/', StringSplitOptions.RemoveEmptyEntries);
+        foreach (var segment in segments)
         {
             if (segment.IndexOfAny(['*', '?', '[']) >= 0)
             {
@@ -851,6 +847,12 @@ internal sealed class PackInstallationPlanner(
 
         return baseDirectory;
     }
+
+    private bool CanAdoptTarget(
+        PackManifest.PackManagedFileStrategy strategy,
+        byte[] content,
+        string targetPath
+    ) => IsMergeStrategy(strategy) || RenderedContentMatchesTarget(content, targetPath);
 
     private static bool IsMergeStrategy(PackManifest.PackManagedFileStrategy strategy) =>
         string.Equals(strategy.Type, "merge", StringComparison.Ordinal);

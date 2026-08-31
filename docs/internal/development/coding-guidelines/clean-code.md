@@ -30,6 +30,10 @@ is useful only when it makes the code clearer than the simpler alternative.
 - Give compound conditions a named local or predicate when it makes the business
   decision easier to read and test. Do not bury several unrelated checks in one
   conditional expression.
+- Extract a loop source or condition to a descriptively named local when LINQ,
+  chained navigation, or nested method calls would make the `foreach` or `if`
+  header span multiple lines. Keep a simple condition inline when naming it
+  would only restate the code.
 - Use guard clauses for invalid input and failed prerequisites when they keep
   the main workflow direct. Preserve one validation block when readers need to
   understand related failures together.

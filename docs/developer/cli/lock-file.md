@@ -5,8 +5,10 @@ Links. Luna owns this file. Commit it when your project commits generated lock
 state, but do not edit ownership, provenance, or digest fields by hand.
 
 All paths are persisted with `/`. Project targets and local source roots are
-relative to the workspace. Pack paths and selected managed or link source paths
-are relative to their configured source or repository base path.
+non-empty, non-escaping paths relative to the workspace. Pack paths and selected
+managed or link source paths are relative to their configured source or
+repository base path. Luna rejects a lock file whose effective pack or link
+target is rooted or contains a `.` or `..` segment.
 
 This representative local-pack lock shows how identity, ownership, and content
 evidence fit together:

@@ -1,4 +1,5 @@
 using System.IO.Abstractions;
+using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Application.Serialization;
 using Lunapack.Cli.Catalog;
@@ -185,22 +186,13 @@ internal sealed class GitPackDiscovery(
     )
     {
         fileSystem.Directory.CreateDirectory(workspace);
-        foreach (
-            var command in new[]
-            {
-                new[] { "init", "--quiet", workspace },
-                ["-C", workspace, "remote", "add", "origin", source.Url],
-                [
-                    "-C",
-                    workspace,
-                    "fetch",
-                    "--depth=1",
-                    "--filter=blob:none",
-                    "origin",
-                    resolvedCommit,
-                ],
-            }
-        )
+        var commands = new[]
+        {
+            new[] { "init", "--quiet", workspace },
+            ["-C", workspace, "remote", "add", "origin", source.Url],
+            ["-C", workspace, "fetch", "--depth=1", "--filter=blob:none", "origin", resolvedCommit],
+        };
+        foreach (var command in commands)
         {
             var result = await processRunner.RunAsync(command, timeout, cancellationToken);
             if (!result.IsSuccess)
@@ -289,8 +281,8 @@ internal sealed class GitPackDiscovery(
         string resolvedCommit,
         IReadOnlyList<GitCachedPack> packs
     ) =>
-        packs
-            .Select(pack =>
+        [
+            .. packs.Select(pack =>
             {
                 if (!NuGetVersion.TryParse(pack.Version, out var version))
                 {
@@ -316,8 +308,8 @@ internal sealed class GitPackDiscovery(
                     },
                     pack.PackPath
                 );
-            })
-            .ToList();
+            }),
+        ];
 
     private static async Task<GitCachedPack?> TryParseAsync(
         string contents,
@@ -364,10 +356,12 @@ internal sealed class GitPackDiscovery(
         var prefix = string.Equals(packPath, ".", StringComparison.Ordinal)
             ? string.Empty
             : $"{packPath}/";
-        return repositoryPaths
-            .Where(path => path.StartsWith(prefix, StringComparison.Ordinal))
-            .Select(path => path[prefix.Length..])
-            .ToList();
+        return
+        [
+            .. repositoryPaths
+                .Where(path => path.StartsWith(prefix, StringComparison.Ordinal))
+                .Select(path => path[prefix.Length..]),
+        ];
     }
 
     private static bool IsManifestPath(string path) =>

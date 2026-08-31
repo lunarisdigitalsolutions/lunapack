@@ -31,13 +31,12 @@ internal static class ExternalSourceDriftValidator
                     );
                 }
 
-                if (
-                    !string.Equals(
-                        lockedSource.Fingerprint,
-                        fingerprint.Value,
-                        StringComparison.Ordinal
-                    )
-                )
+                var fingerprintHasDrifted = !string.Equals(
+                    lockedSource.Fingerprint,
+                    fingerprint.Value,
+                    StringComparison.Ordinal
+                );
+                if (fingerprintHasDrifted)
                 {
                     return ManifestOperationResult<bool>.Failure(
                         $"Pack '{pack.Id}' locked external source '{alias}' fingerprint '{lockedSource.Fingerprint}' does not match configured source '{lockedSource.SourceName}' fingerprint '{fingerprint.Value}'. Source identity drift requires explicit acceptance."

@@ -371,17 +371,19 @@ internal sealed class PackAuthoringCommandHandler(
             return ManifestOperationResult<string>.Failure($"A {selectorKind} path is required.");
         }
 
-        if (request.Flatten && string.Equals(selectorKind, "file", StringComparison.Ordinal))
+        var fileSelectorCannotFlatten =
+            request.Flatten && string.Equals(selectorKind, "file", StringComparison.Ordinal);
+        if (fileSelectorCannotFlatten)
         {
             return ManifestOperationResult<string>.Failure(
                 "'--flatten' applies to directory and glob selectors only."
             );
         }
 
-        if (
+        var fileSelectorCannotHaveExclusions =
             request.Exclusions.Count > 0
-            && string.Equals(selectorKind, "file", StringComparison.Ordinal)
-        )
+            && string.Equals(selectorKind, "file", StringComparison.Ordinal);
+        if (fileSelectorCannotHaveExclusions)
         {
             return ManifestOperationResult<string>.Failure(
                 "'--exclude' applies to directory and glob selectors only."
@@ -409,11 +411,11 @@ internal sealed class PackAuthoringCommandHandler(
         foreach (var exclusion in exclusions)
         {
             var normalized = ProjectPath.Normalize(exclusion);
-            if (
+            var isInvalidExclusion =
                 normalized.Length == 0
                 || normalized.StartsWith('/')
-                || normalized.Split('/').Contains("..", StringComparer.Ordinal)
-            )
+                || normalized.Split('/').Contains("..", StringComparer.Ordinal);
+            if (isInvalidExclusion)
             {
                 return ManifestOperationResult<IReadOnlyList<string>>.Failure(
                     $"Exclusion '{exclusion}' must be a non-empty relative pattern."
@@ -445,16 +447,15 @@ internal sealed class PackAuthoringCommandHandler(
             return $"Pack source alias '{alias}' is not declared. Run 'luna pack add source git {alias} <repository-url> --ref <ref>' first.";
         }
 
-        if (
-            manifest.ManagedFiles.Any(file =>
-                string.Equals(GetSelector(file), values.Selector, StringComparison.Ordinal)
-                && string.Equals(
-                    GetSelectorSourceAlias(file),
-                    values.SourceAlias,
-                    StringComparison.Ordinal
-                )
+        var selectorAlreadyExists = manifest.ManagedFiles.Any(file =>
+            string.Equals(GetSelector(file), values.Selector, StringComparison.Ordinal)
+            && string.Equals(
+                GetSelectorSourceAlias(file),
+                values.SourceAlias,
+                StringComparison.Ordinal
             )
-        )
+        );
+        if (selectorAlreadyExists)
         {
             return $"Managed selector '{values.Selector}' already exists.";
         }
@@ -474,7 +475,7 @@ internal sealed class PackAuthoringCommandHandler(
     }
 
     private Command CreateHookCommand(string projectDirectory, Option<string?> workspaceOption) =>
-        new Command("hook", "Add a lifecycle hook.")
+        new("hook", "Add a lifecycle hook.")
         {
             CreateScriptCommand(projectDirectory, workspaceOption),
             CreateInstructionCommand(projectDirectory, workspaceOption),
@@ -1193,12 +1194,12 @@ internal sealed class PackAuthoringCommandHandler(
         }
 
         var normalized = ProjectPath.Normalize(value);
-        if (
+        var isInvalidGlob =
             normalized.Length == 0
             || normalized.StartsWith('/')
             || (normalized.Length >= 2 && char.IsAsciiLetter(normalized[0]) && normalized[1] == ':')
-            || normalized.Split('/').Contains("..", StringComparer.Ordinal)
-        )
+            || normalized.Split('/').Contains("..", StringComparer.Ordinal);
+        if (isInvalidGlob)
         {
             return ManifestOperationResult<string>.Failure(
                 "Glob must be a non-empty pattern relative to the pack directory."
@@ -1476,12 +1477,14 @@ internal sealed class PackAuthoringCommandHandler(
     )
     {
         var normalized = ProjectPath.Normalize(value);
-        if (
+        var isInvalidExternalSelector =
             normalized.Length == 0
             || normalized.StartsWith('/')
             || normalized.Split('/').Contains("..", StringComparer.Ordinal)
-            || (normalized.Length >= 2 && char.IsAsciiLetter(normalized[0]) && normalized[1] == ':')
-        )
+            || (
+                normalized.Length >= 2 && char.IsAsciiLetter(normalized[0]) && normalized[1] == ':'
+            );
+        if (isInvalidExternalSelector)
         {
             return ManifestOperationResult<string>.Failure(
                 $"A {kind} selector must be a non-empty path relative to the external source root."
@@ -1604,10 +1607,10 @@ internal sealed class PackAuthoringCommandHandler(
         }
 
         var repositoryUrl = location;
-        if (
+        var isInvalidGitHubRepository =
             string.Equals(variant, "github", StringComparison.Ordinal)
-            && !GitHubShorthand.TryCreateUrl(location, out repositoryUrl)
-        )
+            && !GitHubShorthand.TryCreateUrl(location, out repositoryUrl);
+        if (isInvalidGitHubRepository)
         {
             return console.Fail("A GitHub repository must use the organization/repository format.");
         }

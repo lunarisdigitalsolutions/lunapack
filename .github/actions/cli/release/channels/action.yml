@@ -1,0 +1,93 @@
+name: Release Luna CLI channels
+description: Dispatch Luna CLI publication to selected release channels.
+
+inputs:
+  channels:
+    description: Comma-separated channels selected from github, container, npm, and nuget.
+    required: true
+  release-type:
+    description: Stable or preview release type.
+    required: true
+  version:
+    description: V-prefixed stable tag or plain preview version.
+    required: true
+  runtime-identifier:
+    description: Optional runtime identifier for a preview NuGet package.
+    required: false
+    default: ''
+  nuget-artifact-pattern:
+    description: Pattern used to download RID-specific NuGet packages.
+    required: false
+    default: cli-nuget-*
+  run-id:
+    description: Workflow run ID containing stable release artifacts.
+    required: false
+    default: ''
+  changelog-path:
+    description: Canonical CLI changelog path.
+    required: false
+    default: projects/cli/CHANGELOG.md
+  nuget-user:
+    description: NuGet username used for trusted publishing.
+    required: true
+  dry-run:
+    description: Validate and stage without publishing.
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Validate release channels
+      shell: bash
+      env:
+        CHANNELS: ${{ inputs.channels }}
+      run: |
+        set -euo pipefail
+        IFS=',' read -ra selected_channels <<< "$CHANNELS"
+        declare -A seen=()
+        for channel in "${selected_channels[@]}"; do
+          if [[ ! " github container npm nuget " =~ " $channel " ]]; then
+            echo "Unsupported release channel: $channel" >&2
+            exit 1
+          fi
+          if [[ -n "${seen[$channel]:-}" ]]; then
+            echo "Duplicate release channel: $channel" >&2
+            exit 1
+          fi
+          seen[$channel]=1
+        done
+
+    - name: Release GitHub channel
+      if: ${{ contains(format(',{0},', inputs.channels), ',github,') }}
+      uses: ./.github/actions/cli/release/github
+      with:
+        version: ${{ inputs.version }}
+        dry-run: ${{ inputs.dry-run }}
+
+    - name: Release container channel
+      if: ${{ contains(format(',{0},', inputs.channels), ',container,') }}
+      uses: ./.github/actions/cli/release/container
+      with:
+        version: ${{ inputs.version }}
+        dry-run: ${{ inputs.dry-run }}
+
+    - name: Release npm channel
+      if: ${{ contains(format(',{0},', inputs.channels), ',npm,') }}
+      uses: ./.github/actions/cli/release/npm
+      with:
+        version: ${{ inputs.version }}
+        dry-run: ${{ inputs.dry-run }}
+
+    - name: Release NuGet channel
+      if: ${{ contains(format(',{0},', inputs.channels), ',nuget,') }}
+      uses: ./.github/actions/cli/release/nuget
+      with:
+        release-type: ${{ inputs.release-type }}
+        version: ${{ inputs.version }}
+        runtime-identifier: ${{ inputs.runtime-identifier }}
+        artifact-pattern: ${{ inputs.nuget-artifact-pattern }}
+        run-id: ${{ inputs.run-id || github.run_id }}
+        changelog-path: ${{ inputs.changelog-path }}
+        nuget-user: ${{ inputs.nuget-user }}
+        dry-run: ${{ inputs.dry-run }}

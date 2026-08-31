@@ -492,14 +492,14 @@ internal sealed class LocalSourceCommandHandler(
         foreach (var source in configuration.Sources)
         {
             var existing = SourceIdentityNormalizer.Create(source);
-            if (
+            var matchesFingerprint =
                 existing.Value is { } existingFingerprint
                 && string.Equals(
                     existingFingerprint.Value,
                     fingerprint.Value,
                     StringComparison.Ordinal
-                )
-            )
+                );
+            if (matchesFingerprint)
             {
                 return source.Name;
             }
@@ -621,13 +621,12 @@ internal sealed class LocalSourceCommandHandler(
     {
         for (var index = 0; index < configuration.Trust.Sources.Count; index++)
         {
-            if (
-                string.Equals(
-                    configuration.Trust.Sources[index],
-                    currentName,
-                    StringComparison.Ordinal
-                )
-            )
+            var matchesCurrentName = string.Equals(
+                configuration.Trust.Sources[index],
+                currentName,
+                StringComparison.Ordinal
+            );
+            if (matchesCurrentName)
             {
                 configuration.Trust.Sources[index] = newName;
             }
@@ -688,11 +687,11 @@ internal sealed class LocalSourceCommandHandler(
                 continue;
             }
 
-            if (
-                resolvedPack.ExternalSources.Values.Any(externalSource =>
+            var usesSourceForExternalContent = resolvedPack.ExternalSources.Values.Any(
+                externalSource =>
                     string.Equals(externalSource.SourceName, name, StringComparison.Ordinal)
-                )
-            )
+            );
+            if (usesSourceForExternalContent)
             {
                 consumers.Add($"pack '{resolvedPack.Id}' external content");
             }

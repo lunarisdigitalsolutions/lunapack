@@ -148,17 +148,16 @@ public sealed class CliHelpDocumentationTests
         var exitCode = await workspace.Application.RunAsync(["--help"], workspace.Path, output);
 
         await Assert.That(exitCode).IsEqualTo(0);
-        foreach (
-            var option in new[]
-            {
-                "--workspace",
-                "-w",
-                "--log-level",
-                "-ll",
-                "--suppress-next-steps",
-                "--help",
-            }
-        )
+        var options = new[]
+        {
+            "--workspace",
+            "-w",
+            "--log-level",
+            "-ll",
+            "--suppress-next-steps",
+            "--help",
+        };
+        foreach (var option in options)
         {
             await Assert.That(output.ToString()).Contains(option);
             await Assert.That(documentation).Contains(option);

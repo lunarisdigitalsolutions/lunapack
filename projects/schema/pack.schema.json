@@ -216,8 +216,7 @@
           "default": false
         },
         "target": {
-          "type": "string",
-          "minLength": 1
+          "$ref": "#/definitions/sourceRelativePath"
         }
       }
     },

@@ -18,6 +18,8 @@ Update this section before creating a release tag.
 - Shell completion now handles cursor positions beyond a shell's rendered
   command line when trailing whitespace was stripped. Argument-taking commands
   return value candidates, while command containers return no candidates.
+- Nushell completion installation now uses `XDG_DATA_HOME` when configured and
+  the native macOS application data directory by default.
 
 ### Changed
 

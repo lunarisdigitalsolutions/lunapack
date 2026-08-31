@@ -1,6 +1,20 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 
+export function extractUnreleasedNotes(changelog) {
+  const lines = changelog.replaceAll('\r\n', '\n').split('\n')
+  const start = lines.findIndex((line) => line === '## Unreleased')
+  if (start < 0) {
+    throw new Error('Changelog has no Unreleased section.')
+  }
+
+  const nextVersion = lines.findIndex(
+    (line, index) => index > start && line.startsWith('## Version ')
+  )
+  const end = nextVersion < 0 ? lines.length : nextVersion
+  return `# Changelog\n\n${lines.slice(start, end).join('\n').trimEnd()}\n`
+}
+
 export function extractReleaseNotes(changelog, version) {
   const lines = changelog.replaceAll('\r\n', '\n').split('\n')
   const heading = `## Version ${version} - `
@@ -25,7 +39,11 @@ function main() {
   }
 
   const changelog = readFileSync(changelogPath, 'utf8')
-  writeFileSync(outputPath, extractReleaseNotes(changelog, version), 'utf8')
+  const releaseNotes =
+    version === 'unreleased'
+      ? extractUnreleasedNotes(changelog)
+      : extractReleaseNotes(changelog, version)
+  writeFileSync(outputPath, releaseNotes, 'utf8')
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {

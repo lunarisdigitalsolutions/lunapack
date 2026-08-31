@@ -127,7 +127,7 @@ public sealed class ManagedFileConditionParserTests
     }
 
     private static Dictionary<string, PackParameterDefinition> CreateDeclarations() =>
-        new Dictionary<string, PackParameterDefinition>(StringComparer.Ordinal)
+        new(StringComparer.Ordinal)
         {
             ["environment"] = new(PackParameterType.String, false, []),
             ["includeCi"] = new(PackParameterType.Bool, false, []),
@@ -143,7 +143,7 @@ public sealed class ManagedFileConditionParserTests
         string environment = "development",
         IReadOnlyList<string>? features = null
     ) =>
-        new Dictionary<string, ResolvedPackParameterValue>(StringComparer.Ordinal)
+        new(StringComparer.Ordinal)
         {
             ["environment"] = new(PackParameterType.String, environment, false),
             ["includeCi"] = new(PackParameterType.Bool, string.Empty, includeCi),

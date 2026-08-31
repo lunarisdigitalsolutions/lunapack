@@ -11,6 +11,55 @@ namespace Lunapack.Cli.UnitTests.Application.Serialization;
 public sealed class ManifestSchemaTests
 {
     [Test]
+    public async Task PackSchema_WhenManagedFileTargetDeclared_RequiresSafeRelativePath()
+    {
+        using var schema = JsonDocument.Parse(
+            File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "pack.schema.json"))
+        );
+        var target = schema
+            .RootElement.GetProperty("definitions")
+            .GetProperty("managedFile")
+            .GetProperty("properties")
+            .GetProperty("target")
+            .GetProperty("$ref")
+            .GetString();
+
+        await Assert.That(target).IsEqualTo("#/definitions/sourceRelativePath");
+    }
+
+    [Test]
+    public async Task LockSchema_WhenEffectiveTargetDeclared_RequiresSafeRelativePath()
+    {
+        using var schema = JsonDocument.Parse(
+            File.ReadAllText(
+                Path.Combine(AppContext.BaseDirectory, "TestData", "lunapack-lock.schema.json")
+            )
+        );
+        var definitions = schema.RootElement.GetProperty("definitions");
+
+        await Assert
+            .That(
+                definitions
+                    .GetProperty("managedFile")
+                    .GetProperty("properties")
+                    .GetProperty("targetPath")
+                    .GetProperty("$ref")
+                    .GetString()
+            )
+            .IsEqualTo("#/definitions/repositoryRelativePath");
+        await Assert
+            .That(
+                definitions
+                    .GetProperty("linkFile")
+                    .GetProperty("properties")
+                    .GetProperty("targetPath")
+                    .GetProperty("$ref")
+                    .GetString()
+            )
+            .IsEqualTo("#/definitions/repositoryRelativePath");
+    }
+
+    [Test]
     public async Task ProjectSchema_WhenRequestedPackDeclared_AllowsPackRemapping()
     {
         using var schema = JsonDocument.Parse(
@@ -281,16 +330,13 @@ public sealed class ManifestSchemaTests
         using var schema = JsonDocument.Parse(
             File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "pack.schema.json"))
         );
-        var pattern = schema
-            .RootElement.GetProperty("properties")
-            .GetProperty("id")
-            .GetProperty("pattern")
-            .GetString();
-        if (pattern is null)
-        {
-            throw new InvalidOperationException("Pack ID schema pattern is missing.");
-        }
-
+        var pattern =
+            schema
+                .RootElement.GetProperty("properties")
+                .GetProperty("id")
+                .GetProperty("pattern")
+                .GetString()
+            ?? throw new InvalidOperationException("Pack ID schema pattern is missing.");
         await Assert
             .That(
                 Regex.IsMatch(
@@ -353,16 +399,13 @@ public sealed class ManifestSchemaTests
         using var schema = JsonDocument.Parse(
             File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "pack.schema.json"))
         );
-        var pattern = schema
-            .RootElement.GetProperty("properties")
-            .GetProperty("homepage")
-            .GetProperty("pattern")
-            .GetString();
-        if (pattern is null)
-        {
-            throw new InvalidOperationException("Pack homepage schema pattern is missing.");
-        }
-
+        var pattern =
+            schema
+                .RootElement.GetProperty("properties")
+                .GetProperty("homepage")
+                .GetProperty("pattern")
+                .GetString()
+            ?? throw new InvalidOperationException("Pack homepage schema pattern is missing.");
         await Assert
             .That(
                 Regex.IsMatch(

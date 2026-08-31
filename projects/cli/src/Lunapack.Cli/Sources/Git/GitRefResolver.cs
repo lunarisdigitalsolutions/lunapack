@@ -239,6 +239,9 @@ internal sealed partial class GitRefResolver(IGitProcessRunner processRunner)
         return resolvedCommit;
     }
 
+    internal static bool IsCommit(string? value) =>
+        value is not null && CommitPattern().IsMatch(value);
+
     [GeneratedRegex("^[A-Fa-f0-9]{40}(?:[A-Fa-f0-9]{24})?$", RegexOptions.None, 1000)]
     private static partial Regex CommitPattern();
 }

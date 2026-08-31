@@ -44,7 +44,7 @@
           "$ref": "#/definitions/repositoryRelativePath"
         },
         "targetPath": {
-          "$ref": "#/definitions/relativePath"
+          "$ref": "#/definitions/repositoryRelativePath"
         },
         "sha256": {
           "type": "string",
@@ -329,7 +329,7 @@
           "$ref": "#/definitions/repositoryRelativePath"
         },
         "targetPath": {
-          "$ref": "#/definitions/relativePath"
+          "$ref": "#/definitions/repositoryRelativePath"
         },
         "sha256": {
           "type": "string",

@@ -118,13 +118,12 @@ internal sealed class LocalLinkSourceProvider(IFileSystem fileSystem) : ILinkSou
     )
     {
         var paths = new List<string>();
-        foreach (
-            var filePath in fileSystem.Directory.EnumerateFiles(
-                rootDirectory,
-                "*",
-                SearchOption.AllDirectories
-            )
-        )
+        var filePaths = fileSystem.Directory.EnumerateFiles(
+            rootDirectory,
+            "*",
+            SearchOption.AllDirectories
+        );
+        foreach (var filePath in filePaths)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var fileInfo = fileSystem.FileInfo.New(filePath);

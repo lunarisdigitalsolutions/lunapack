@@ -69,8 +69,9 @@ from the operation snapshot and display without script trust. LunaPack can
 restore managed files and `lunapack.yml` after failure or instruction
 cancellation, but it cannot roll back external process effects. Packed content
 is copied into an operation snapshot and hashed before launch. Snapshot
-traversal currently follows links and reparse points; see lifecycle safety
-guidance before treating a source as trusted.
+roots cannot be links or reparse points. Unsupported child entries are omitted
+with a warning while regular siblings remain available. Snapshot inspection is
+not race-free against another process running as the same user.
 
 LunaPack checkpoints configuration and lock ownership after managed-file
 mutation and before post hooks. A handled post-hook failure restores the prior

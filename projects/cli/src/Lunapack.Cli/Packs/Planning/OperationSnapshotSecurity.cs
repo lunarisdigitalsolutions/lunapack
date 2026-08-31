@@ -13,9 +13,8 @@ internal sealed class OperationSnapshotSecurity : IOperationSnapshotSecurity
 
     public void MakeReadOnly(IFileSystem fileSystem, string root)
     {
-        foreach (
-            var file in fileSystem.Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
-        )
+        var files = fileSystem.Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories);
+        foreach (var file in files)
         {
             if (OperatingSystem.IsWindows())
             {

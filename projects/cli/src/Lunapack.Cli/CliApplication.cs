@@ -185,7 +185,9 @@ internal sealed class CliApplication(
                 fileSystem,
                 userProfileDirectory,
                 Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                isWindows
+                Environment.GetEnvironmentVariable("XDG_DATA_HOME"),
+                isWindows,
+                OperatingSystem.IsMacOS()
             ),
             new PowerShellCompletionScriptInstaller(
                 fileSystem,
@@ -444,7 +446,7 @@ internal sealed class CliApplication(
             new PackUpdateTransaction(fileSystem, console),
             projectStateStore,
             console,
-            new GitPackMaterializer(fileSystem, gitProcessRunner),
+            new GitPackMaterializer(fileSystem, gitProcessRunner, console),
             configuredHookAuthorizer: new LifecycleHookAuthorizer(
                 userSettingsStore,
                 new TrustPolicy(fileSystem),

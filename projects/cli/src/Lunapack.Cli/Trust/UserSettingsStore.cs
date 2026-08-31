@@ -29,7 +29,6 @@ internal sealed class UserSettingsStore
 
     private readonly IFileSystem _fileSystem;
     private readonly string _settingsDirectory;
-    private readonly string _settingsPath;
 
     public UserSettingsStore(IFileSystem fileSystem)
         : this(fileSystem, GetUserProfileDirectory()) { }
@@ -40,10 +39,10 @@ internal sealed class UserSettingsStore
         _fileSystem = fileSystem;
         var profileDirectory = fileSystem.Path.GetFullPath(userProfileDirectory);
         _settingsDirectory = fileSystem.Path.Combine(profileDirectory, DirectoryName);
-        _settingsPath = fileSystem.Path.Combine(_settingsDirectory, FileName);
+        SettingsPath = fileSystem.Path.Combine(_settingsDirectory, FileName);
     }
 
-    public string SettingsPath => _settingsPath;
+    public string SettingsPath { get; }
 
     public ManifestOperationResult<string> GetProjectKey(string projectDirectory) =>
         CanonicalProjectPath.Resolve(_fileSystem, projectDirectory);
@@ -58,19 +57,19 @@ internal sealed class UserSettingsStore
                 return Result(ManifestOperationResult<UserSettings>.Failure(pathError));
             }
 
-            if (!_fileSystem.File.Exists(_settingsPath))
+            if (!_fileSystem.File.Exists(SettingsPath))
             {
                 return Result(ManifestOperationResult<UserSettings>.Success(new UserSettings()));
             }
 
             var settings = _deserializer.Deserialize<UserSettings>(
-                _fileSystem.File.ReadAllText(_settingsPath)
+                _fileSystem.File.ReadAllText(SettingsPath)
             );
             if (settings is null || !IsValid(settings))
             {
                 return Result(
                     ManifestOperationResult<UserSettings>.Failure(
-                        $"Invalid user settings in '{_settingsPath}'."
+                        $"Invalid user settings in '{SettingsPath}'."
                     )
                 );
             }
@@ -119,7 +118,7 @@ internal sealed class UserSettingsStore
                 _serializer.Serialize(Normalize(settings))
             );
             UserSettingsPathSecurity.Apply(temporaryPath, directory: false);
-            _fileSystem.File.Move(temporaryPath, _settingsPath, overwrite: true);
+            _fileSystem.File.Move(temporaryPath, SettingsPath, overwrite: true);
             return Result(ManifestOperationResult<bool>.Success(true));
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
@@ -159,17 +158,13 @@ internal sealed class UserSettingsStore
             }
         }
 
-        if (_fileSystem.Directory.Exists(_settingsPath))
+        if (_fileSystem.Directory.Exists(SettingsPath))
         {
-            return $"User settings path '{_settingsPath}' must be a regular file.";
+            return $"User settings path '{SettingsPath}' must be a regular file.";
         }
 
-        return _fileSystem.File.Exists(_settingsPath)
-            ? UserSettingsPathSecurity.ValidateExisting(
-                _fileSystem,
-                _settingsPath,
-                directory: false
-            )
+        return _fileSystem.File.Exists(SettingsPath)
+            ? UserSettingsPathSecurity.ValidateExisting(_fileSystem, SettingsPath, directory: false)
             : null;
     }
 
@@ -203,10 +198,10 @@ internal sealed class UserSettingsStore
             if (_fileSystem.Directory.Exists(fullPath))
             {
                 var canonicalPath = GetProjectKey(fullPath);
-                if (
-                    canonicalPath.Value is not { } value
-                    || !string.Equals(projectPath, value, StringComparison.Ordinal)
-                )
+                var hasExpectedCanonicalPath =
+                    canonicalPath.Value is { } value
+                    && string.Equals(projectPath, value, StringComparison.Ordinal);
+                if (!hasExpectedCanonicalPath)
                 {
                     return false;
                 }

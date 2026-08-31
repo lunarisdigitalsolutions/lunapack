@@ -7,7 +7,7 @@ using YamlDotNet.Serialization.NamingConventions;
 
 namespace Lunapack.Cli.Project;
 
-internal sealed class ProjectManifestStore
+internal sealed class ProjectManifestStore(IFileSystem fileSystem)
 {
     public const string FileName = "lunapack.yml";
 
@@ -18,7 +18,7 @@ internal sealed class ProjectManifestStore
         .WithTypeConverter(new ScalarValueDictionaryYamlTypeConverter())
         .Build();
 
-    private readonly IFileSystem _fileSystem;
+    private readonly IFileSystem _fileSystem = fileSystem;
 
     private static readonly ISerializer _serializer = new StaticSerializerBuilder(
         new LunapackYamlContext()
@@ -27,11 +27,6 @@ internal sealed class ProjectManifestStore
         .WithNamingConvention(CamelCaseNamingConvention.Instance)
         .WithTypeConverter(new ScalarValueDictionaryYamlTypeConverter())
         .Build();
-
-    public ProjectManifestStore(IFileSystem fileSystem)
-    {
-        this._fileSystem = fileSystem;
-    }
 
     public async Task<ManifestOperationResult<ProjectManifest>> LoadAsync(string projectDirectory)
     {

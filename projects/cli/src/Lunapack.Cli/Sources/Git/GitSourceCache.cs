@@ -4,7 +4,9 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Paths;
 using Lunapack.Cli.Application.Serialization;
+using Lunapack.Cli.Packs.Manifest;
 using Lunapack.Cli.Project;
 using NuGet.Versioning;
 
@@ -39,15 +41,7 @@ internal sealed class GitSourceCache(IFileSystem fileSystem)
                 content,
                 LunapackJsonContext.Default.GitSourceCacheEntry
             );
-            return
-                entry is null
-                || entry.Version != CacheVersion
-                || entry.Packs.Any(pack => !NuGetVersion.TryParse(pack.Version, out _))
-                || !string.Equals(
-                    entry.Source.Fingerprint,
-                    identity.Fingerprint,
-                    StringComparison.Ordinal
-                )
+            return entry is null || !IsValidEntry(projectDirectory, identity, entry)
                 ? ManifestOperationResult<GitSourceCacheEntry?>.Success(null)
                 : ManifestOperationResult<GitSourceCacheEntry?>.Success(entry);
         }
@@ -90,6 +84,44 @@ internal sealed class GitSourceCache(IFileSystem fileSystem)
 
     private string GetCacheDirectory(string projectDirectory) =>
         fileSystem.Path.Combine(projectDirectory, ".lunapack", "git-sources");
+
+    private bool IsValidEntry(
+        string projectDirectory,
+        GitSourceCacheIdentity identity,
+        GitSourceCacheEntry entry
+    ) =>
+        entry.Version == CacheVersion
+        && entry.Source is not null
+        && entry.Packs is not null
+        && GitRefResolver.IsCommit(entry.ResolvedCommit)
+        && string.Equals(entry.Source.Fingerprint, identity.Fingerprint, StringComparison.Ordinal)
+        && entry.Packs.All(pack => IsValidPack(projectDirectory, pack));
+
+    private bool IsValidPack(string projectDirectory, GitCachedPack? pack)
+    {
+        if (
+            pack?.Manifest is null
+            || string.IsNullOrEmpty(pack.Id)
+            || string.IsNullOrEmpty(pack.Version)
+            || string.IsNullOrEmpty(pack.Manifest.Id)
+            || string.IsNullOrEmpty(pack.Manifest.Version)
+            || !string.Equals(pack.Id, pack.Manifest.Id, StringComparison.Ordinal)
+            || !string.Equals(pack.Version, pack.Manifest.Version, StringComparison.Ordinal)
+            || !NuGetVersion.TryParse(pack.Version, out _)
+            || ManifestModelValidator.Validate(pack.Manifest).Count > 0
+        )
+        {
+            return false;
+        }
+
+        var normalizedPath = ProjectPath.NormalizeProjectRelativePath(
+            fileSystem,
+            projectDirectory,
+            pack.PackPath
+        );
+        return normalizedPath.IsSuccess
+            && string.Equals(normalizedPath.Value, pack.PackPath, StringComparison.Ordinal);
+    }
 
     private string GetCachePath(string projectDirectory, GitSourceCacheIdentity identity) =>
         fileSystem.Path.Combine(

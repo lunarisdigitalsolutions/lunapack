@@ -66,13 +66,13 @@ internal static partial class ManifestModelValidator
 
     private static void ValidateHomepage(string? homepage, List<string> issues)
     {
-        if (
+        var hasInvalidHomepage =
             homepage is not null
             && (
                 !Uri.TryCreate(homepage, UriKind.Absolute, out var uri)
                 || uri.Scheme is not ("http" or "https")
-            )
-        )
+            );
+        if (hasInvalidHomepage)
         {
             issues.Add("Pack homepage must be an absolute HTTP or HTTPS URI.");
         }
@@ -117,10 +117,10 @@ internal static partial class ManifestModelValidator
             issues.Add($"Pack cannot define more than {MaximumTagCount} tags.");
         }
 
-        if (
+        var hasInvalidTags =
             tags.Any(string.IsNullOrEmpty)
-            || tags.Distinct(StringComparer.Ordinal).Count() != tags.Count
-        )
+            || tags.Distinct(StringComparer.Ordinal).Count() != tags.Count;
+        if (hasInvalidTags)
         {
             issues.Add("Pack tags must be non-empty and unique.");
         }
@@ -149,32 +149,32 @@ internal static partial class ManifestModelValidator
                 issues.Add($"Parameter '{name}' has an invalid type.");
             }
 
-            if (
+            var hasMultipleForNonEnum =
                 parameter.Multiple is not null
-                && !string.Equals(parameter.Type, "enum", StringComparison.Ordinal)
-            )
+                && !string.Equals(parameter.Type, "enum", StringComparison.Ordinal);
+            if (hasMultipleForNonEnum)
             {
                 issues.Add($"Parameter '{name}' can only set multiple for enum values.");
             }
 
             ValidateParameterDefault(name, parameter, issues);
 
-            if (
+            var hasEmptyMetadata =
                 string.Equals(parameter.Description, string.Empty, StringComparison.Ordinal)
-                || string.Equals(parameter.DisplayName, string.Empty, StringComparison.Ordinal)
-            )
+                || string.Equals(parameter.DisplayName, string.Empty, StringComparison.Ordinal);
+            if (hasEmptyMetadata)
             {
                 issues.Add($"Parameter '{name}' metadata cannot be empty.");
             }
 
             if (string.Equals(parameter.Type, "enum", StringComparison.Ordinal))
             {
-                if (
+                var hasInvalidEnumValues =
                     parameter.Values is not { Count: > 0 }
                     || parameter.Values.Any(string.IsNullOrEmpty)
                     || parameter.Values.Distinct(StringComparer.Ordinal).Count()
-                        != parameter.Values.Count
-                )
+                        != parameter.Values.Count;
+                if (hasInvalidEnumValues)
                 {
                     issues.Add($"Enum parameter '{name}' must define unique values.");
                 }
@@ -195,7 +195,7 @@ internal static partial class ManifestModelValidator
         var isMultiSelect =
             string.Equals(parameter.Type, "enum", StringComparison.Ordinal)
             && parameter.Multiple is true;
-        if (
+        var hasIncompatibleDefault =
             parameter.Default is not null
             && (
                 string.Equals(parameter.Type, "bool", StringComparison.Ordinal)
@@ -206,29 +206,29 @@ internal static partial class ManifestModelValidator
                     && !isMultiSelect
                     && parameter.Default is not string
                 || isMultiSelect && !TryGetUniqueStringValues(parameter.Default, out _)
-            )
-        )
+            );
+        if (hasIncompatibleDefault)
         {
             issues.Add($"Parameter '{name}' has a default value incompatible with its type.");
         }
 
-        if (
+        var hasInvalidEnumDefault =
             string.Equals(parameter.Type, "enum", StringComparison.Ordinal)
             && parameter.Default is string defaultValue
             && parameter.Values is { } values
-            && !values.Contains(defaultValue, StringComparer.Ordinal)
-        )
+            && !values.Contains(defaultValue, StringComparer.Ordinal);
+        if (hasInvalidEnumDefault)
         {
             issues.Add($"Enum parameter '{name}' default must be one of its values.");
         }
 
-        if (
+        var hasInvalidMultiSelectDefaults =
             isMultiSelect
             && parameter.Default is not null
             && TryGetUniqueStringValues(parameter.Default, out var defaultValues)
             && parameter.Values is { } allowedValues
-            && defaultValues.Any(value => !allowedValues.Contains(value, StringComparer.Ordinal))
-        )
+            && defaultValues.Any(value => !allowedValues.Contains(value, StringComparer.Ordinal));
+        if (hasInvalidMultiSelectDefaults)
         {
             issues.Add($"Enum parameter '{name}' defaults must be among its values.");
         }
@@ -321,6 +321,10 @@ internal static partial class ManifestModelValidator
             {
                 issues.Add("Managed file target is required.");
             }
+            else if (!IsSafeProjectRelativePath(managedFile.Target))
+            {
+                issues.Add("Managed file target must stay inside the project.");
+            }
 
             if (managedFile.Condition is "")
             {
@@ -338,12 +342,12 @@ internal static partial class ManifestModelValidator
         List<string> issues
     )
     {
-        if (
+        var hasEmptySelector =
             managedFile.Source is ""
             || managedFile.Glob is ""
             || managedFile.Directory is ""
-            || managedFile.Path is ""
-        )
+            || managedFile.Path is "";
+        if (hasEmptySelector)
         {
             issues.Add("Managed file selector cannot be empty.");
             return;
@@ -391,10 +395,10 @@ internal static partial class ManifestModelValidator
 
     private static void ValidateSelectorPaths(PackManagedFileSelector selector, List<string> issues)
     {
-        if (
+        var hasUnsafeSelectorPath =
             selector.Kind != PackManagedFileSelectorKind.Glob
-            && !IsSafeProjectRelativePath(selector.Value)
-        )
+            && !IsSafeProjectRelativePath(selector.Value);
+        if (hasUnsafeSelectorPath)
         {
             issues.Add($"Managed file selector '{selector.Value}' must stay inside its source.");
         }
@@ -407,10 +411,10 @@ internal static partial class ManifestModelValidator
             }
         }
 
-        if (
+        var hasDuplicateExclusions =
             selector.Exclusions.Distinct(StringComparer.Ordinal).Count()
-            != selector.Exclusions.Count
-        )
+            != selector.Exclusions.Count;
+        if (hasDuplicateExclusions)
         {
             issues.Add("Managed file exclusions must be unique.");
         }
@@ -470,10 +474,10 @@ internal static partial class ManifestModelValidator
 
             foreach (var (name, value) in packReference.Parameters)
             {
-                if (
+                var hasInvalidParameter =
                     !ParameterNameRegex().IsMatch(name)
-                    || value is not string and not bool && !TryGetUniqueStringValues(value, out _)
-                )
+                    || value is not string and not bool && !TryGetUniqueStringValues(value, out _);
+                if (hasInvalidParameter)
                 {
                     issues.Add(
                         $"Pack reference parameter '{name}' must be a named string, Boolean, or unique string array."
@@ -481,13 +485,13 @@ internal static partial class ManifestModelValidator
                 }
             }
 
-            if (
+            var hasInvalidDisabledHooks =
                 packReference.DisabledHooks.Distinct(StringComparer.Ordinal).Count()
                     != packReference.DisabledHooks.Count
                 || packReference.DisabledHooks.Any(hook =>
                     !_lifecycleHookNames.Contains(hook, StringComparer.Ordinal)
-                )
-            )
+                );
+            if (hasInvalidDisabledHooks)
             {
                 issues.Add(
                     $"Pack reference '{packReference.Id}' disabled hooks must be unique lifecycle types."
@@ -593,23 +597,23 @@ internal static partial class ManifestModelValidator
         List<string> issues
     )
     {
-        if (
+        var hasInvalidMarkdownFile =
             string.IsNullOrEmpty(hook.File)
             || !IsSafeProjectRelativePath(hook.File)
-            || !hook.File.EndsWith(".md", StringComparison.Ordinal)
-        )
+            || !hook.File.EndsWith(".md", StringComparison.Ordinal);
+        if (hasInvalidMarkdownFile)
         {
             issues.Add(
                 $"Instruction hook in '{eventName}' file must be a safe relative Markdown path."
             );
         }
 
-        if (
+        var hasUnsupportedProperties =
             hook.Command is not null
             || hook.Runner is not null
             || hook.Arguments.Count > 0
-            || hook.Description is not null
-        )
+            || hook.Description is not null;
+        if (hasUnsupportedProperties)
         {
             issues.Add($"Instruction hook in '{eventName}' has unsupported properties.");
         }
@@ -634,10 +638,10 @@ internal static partial class ManifestModelValidator
         var sourceNames = configuration
             .Sources.Select(source => source.Name)
             .ToHashSet(StringComparer.Ordinal);
-        if (
+        var hasInvalidSourceNames =
             sourceNames.Count != configuration.Sources.Count
-            || sourceNames.Any(string.IsNullOrEmpty)
-        )
+            || sourceNames.Any(string.IsNullOrEmpty);
+        if (hasInvalidSourceNames)
         {
             issues.Add("Project sources must have non-empty unique names.");
         }
@@ -647,10 +651,10 @@ internal static partial class ManifestModelValidator
             switch (source)
             {
                 case ProjectConfiguration.LocalSource localSource:
-                    if (
+                    var isInvalidLocalSource =
                         !string.Equals(localSource.Type, "local", StringComparison.Ordinal)
-                        || !IsRelativePath(localSource.Path)
-                    )
+                        || !IsRelativePath(localSource.Path);
+                    if (isInvalidLocalSource)
                     {
                         issues.Add("Local sources must have type 'local' and a relative path.");
                     }
@@ -666,6 +670,7 @@ internal static partial class ManifestModelValidator
         }
 
         ValidateSourceFingerprintUniqueness(configuration.Sources, issues);
+        ValidateRemapping(configuration.Remap, issues);
         ValidateRequestedPacks(configuration.Packs, issues);
         ValidateLinks(configuration.Links, sourceNames, issues);
         ValidateProjectTrust(configuration.Trust, sourceNames, issues);
@@ -723,20 +728,19 @@ internal static partial class ManifestModelValidator
                 issues.Add($"Link '{name}' must declare at least one non-empty include pattern.");
             }
 
-            if (
-                link
-                    .Includes.Concat(link.Excludes)
-                    .Any(pattern => !IsSafeProjectRelativePath(pattern))
-            )
+            var hasUnsafePatterns = link
+                .Includes.Concat(link.Excludes)
+                .Any(pattern => !IsSafeProjectRelativePath(pattern));
+            if (hasUnsafePatterns)
             {
                 issues.Add($"Link '{name}' patterns must be safe source-relative paths.");
             }
 
-            if (
+            var hasUnsafePaths =
                 (link.Path is not null && !IsSafeProjectRelativePath(link.Path))
                 || (link.Target is not null && !IsSafeProjectRelativePath(link.Target))
-                || (link.StripPrefix is not null && !IsSafeProjectRelativePath(link.StripPrefix))
-            )
+                || (link.StripPrefix is not null && !IsSafeProjectRelativePath(link.StripPrefix));
+            if (hasUnsafePaths)
             {
                 issues.Add($"Link '{name}' paths must be safe relative paths.");
             }
@@ -754,25 +758,25 @@ internal static partial class ManifestModelValidator
         List<string> issues
     )
     {
-        if (
+        var hasInvalidTrustedSources =
             trust.Sources.Any(source =>
                 string.IsNullOrEmpty(source) || !configuredSourceNames.Contains(source)
             )
-            || trust.Sources.Distinct(StringComparer.Ordinal).Count() != trust.Sources.Count
-        )
+            || trust.Sources.Distinct(StringComparer.Ordinal).Count() != trust.Sources.Count;
+        if (hasInvalidTrustedSources)
         {
             issues.Add("Trusted sources must be unique configured source names.");
         }
 
-        if (
+        var hasInvalidTrustedPacks =
             trust.Packs.Any(pack =>
                 string.IsNullOrEmpty(pack.Id)
                 || pack.Id.Contains('@')
                 || !configuredSourceNames.Contains(pack.Source)
             )
             || trust.Packs.Select(pack => (pack.Source, pack.Id)).Distinct().Count()
-                != trust.Packs.Count
-        )
+                != trust.Packs.Count;
+        if (hasInvalidTrustedPacks)
         {
             issues.Add(
                 "Trusted packs must be unique bare pack IDs bound to configured source names."
@@ -831,12 +835,12 @@ internal static partial class ManifestModelValidator
 
         foreach (var file in resolvedLink.Files)
         {
-            if (
+            var hasInvalidFile =
                 !IsSafeProjectRelativePath(file.SourcePath)
                 || !IsSafeProjectRelativePath(file.DeclaredTargetPath)
-                || !IsRelativePath(file.TargetPath)
-                || !IsSha256(file.Sha256)
-            )
+                || !IsSafeProjectRelativePath(file.TargetPath)
+                || !IsSha256(file.Sha256);
+            if (hasInvalidFile)
             {
                 issues.Add(
                     $"Resolved link '{name}' files must define safe source, declared, and effective target paths and a SHA-256 hash."
@@ -888,22 +892,22 @@ internal static partial class ManifestModelValidator
         List<string> issues
     )
     {
-        if (
+        var hasInvalidSources =
             sources.Any(source => !IsValidSourceIdentity(source))
-            || sources.Distinct().Count() != sources.Count
-        )
+            || sources.Distinct().Count() != sources.Count;
+        if (hasInvalidSources)
         {
             issues.Add($"{context} sources must contain unique configured-source identities.");
         }
 
-        if (
+        var hasInvalidPacks =
             packs.Any(pack =>
                 string.IsNullOrEmpty(pack.Id)
                 || pack.Id.Contains('@')
                 || !IsValidSourceIdentity(pack.Source)
             )
-            || packs.Distinct().Count() != packs.Count
-        )
+            || packs.Distinct().Count() != packs.Count;
+        if (hasInvalidPacks)
         {
             issues.Add(
                 $"{context} packs must contain unique bare IDs bound to configured-source identities."
@@ -957,10 +961,10 @@ internal static partial class ManifestModelValidator
 
         foreach (var source in manifest.Sources)
         {
-            if (
+            var isInvalidLocalSource =
                 !string.Equals(source.Type, "local", StringComparison.Ordinal)
-                || !IsRelativePath(source.Path)
-            )
+                || !IsRelativePath(source.Path);
+            if (isInvalidLocalSource)
             {
                 issues.Add("Project manifest sources must be local relative paths.");
             }
@@ -968,11 +972,11 @@ internal static partial class ManifestModelValidator
 
         foreach (var installedPack in manifest.Packs)
         {
-            if (
+            var hasInvalidInstalledPack =
                 string.IsNullOrEmpty(installedPack.Id)
                 || !IsSemanticVersion(installedPack.Version)
-                || !IsRelativePath(installedPack.SourcePath)
-            )
+                || !IsRelativePath(installedPack.SourcePath);
+            if (hasInvalidInstalledPack)
             {
                 issues.Add(
                     "Installed packs must define an ID, semantic version, and relative source path."
@@ -998,15 +1002,21 @@ internal static partial class ManifestModelValidator
         List<string> issues
     )
     {
-        if (
+        var repository = SourceIdentityNormalizer.NormalizeRepository(source.Url);
+        var isInvalidGitSource =
             !string.Equals(source.Type, "git", StringComparison.Ordinal)
             || string.IsNullOrEmpty(source.Url)
             || source.Ref is ""
             || (source.Path is not null && !IsSafeProjectRelativePath(source.Path))
-            || source.TimeoutSeconds is < 1 or > 300
-        )
+            || source.TimeoutSeconds is < 1 or > 300;
+        if (isInvalidGitSource)
         {
             issues.Add("Git sources must define a URL and valid optional ref, path, and timeout.");
+        }
+
+        if (!repository.IsSuccess)
+        {
+            issues.Add($"Git source '{source.Name}' URL is invalid.");
         }
     }
 
@@ -1027,13 +1037,36 @@ internal static partial class ManifestModelValidator
                 issues.Add($"Requested pack '{requestedPack.Id}' has an invalid version.");
             }
 
-            if (
+            var hasUnsafeDestination =
                 requestedPack.Destination is not null
-                && !IsSafeProjectRelativePath(requestedPack.Destination)
-            )
+                && !IsSafeProjectRelativePath(requestedPack.Destination);
+            if (hasUnsafeDestination)
             {
                 issues.Add($"Requested pack '{requestedPack.Id}' has an unsafe destination.");
             }
+
+            ValidateRemapping(requestedPack.Remap, issues);
+        }
+    }
+
+    private static void ValidateRemapping(
+        ProjectConfiguration.Remapping? remapping,
+        List<string> issues
+    )
+    {
+        if (remapping is null)
+        {
+            return;
+        }
+
+        var hasUnsafeMapping = remapping
+            .Directories.Concat(remapping.Files)
+            .Any(mapping =>
+                !IsSafeProjectRelativePath(mapping.Key) || !IsSafeProjectRelativePath(mapping.Value)
+            );
+        if (hasUnsafeMapping)
+        {
+            issues.Add("Managed file remappings must stay inside the project.");
         }
     }
 
@@ -1044,10 +1077,10 @@ internal static partial class ManifestModelValidator
     {
         foreach (var (name, value) in variables)
         {
-            if (
+            var hasInvalidVariable =
                 !ParameterNameRegex().IsMatch(name)
-                || value is not string and not bool && !TryGetUniqueStringValues(value, out _)
-            )
+                || value is not string and not bool && !TryGetUniqueStringValues(value, out _);
+            if (hasInvalidVariable)
             {
                 issues.Add(
                     $"Variable '{name}' must be a named string, Boolean, or unique string array."
@@ -1089,15 +1122,15 @@ internal static partial class ManifestModelValidator
         List<string> issues
     )
     {
-        if (
+        var hasInvalidResolvedPack =
             string.IsNullOrEmpty(resolvedPack.Id)
             || !IsSemanticVersion(resolvedPack.Version)
             || !IsRelativePath(resolvedPack.PackPath)
             || (
                 resolvedPack.Destination is not null
                 && !IsSafeProjectRelativePath(resolvedPack.Destination)
-            )
-        )
+            );
+        if (hasInvalidResolvedPack)
         {
             issues.Add(
                 "Resolved packs must define an ID, semantic version, safe destination, and relative pack path."
@@ -1138,9 +1171,9 @@ internal static partial class ManifestModelValidator
     {
         foreach (var managedFile in resolvedPack.ManagedFiles)
         {
-            if (
+            var hasInvalidManagedFile =
                 !IsSafeProjectRelativePath(managedFile.DeclaredTargetPath)
-                || !IsRelativePath(managedFile.TargetPath)
+                || !IsSafeProjectRelativePath(managedFile.TargetPath)
                 || !IsSha256(managedFile.Sha256)
                 || (
                     managedFile.Strategy is not null
@@ -1148,8 +1181,8 @@ internal static partial class ManifestModelValidator
                         string.IsNullOrEmpty(managedFile.Strategy.Type)
                         || string.IsNullOrEmpty(managedFile.Strategy.Method)
                     )
-                )
-            )
+                );
+            if (hasInvalidManagedFile)
             {
                 issues.Add(
                     "Resolved managed files must define safe declared and effective target paths and a SHA-256 hash."
@@ -1182,12 +1215,12 @@ internal static partial class ManifestModelValidator
                 continue;
             }
 
-            if (
+            var hasInvalidExternalSource =
                 string.IsNullOrEmpty(externalSource.SourceName)
                 || string.IsNullOrEmpty(externalSource.Ref)
                 || !IsSourceFingerprint(externalSource.Fingerprint)
-                || !IsGitCommit(externalSource.ResolvedCommit)
-            )
+                || !IsGitCommit(externalSource.ResolvedCommit);
+            if (hasInvalidExternalSource)
             {
                 issues.Add(
                     $"Resolved pack '{resolvedPack.Id}' external source '{alias}' must record source name, fingerprint, ref, and resolved commit."
@@ -1242,14 +1275,18 @@ internal static partial class ManifestModelValidator
             return;
         }
 
-        if (
+        var hasMismatchedExternalSource =
             !string.Equals(
                 declared.Fingerprint,
                 managedFile.SourceFingerprint,
                 StringComparison.Ordinal
             )
-            || !string.Equals(declared.SourceName, managedFile.SourceName, StringComparison.Ordinal)
-        )
+            || !string.Equals(
+                declared.SourceName,
+                managedFile.SourceName,
+                StringComparison.Ordinal
+            );
+        if (hasMismatchedExternalSource)
         {
             issues.Add(
                 $"Resolved managed file provenance for '{managedFile.SourceAlias}' does not match the recorded external source."
@@ -1274,7 +1311,7 @@ internal static partial class ManifestModelValidator
             issues.Add("Local resolved packs must define a relative source path.");
         }
 
-        if (
+        var hasInvalidSourceIdentity =
             resolvedPack.SourceIdentity is { } identity
             && (
                 !string.Equals(identity.Type, "local", StringComparison.Ordinal)
@@ -1282,8 +1319,8 @@ internal static partial class ManifestModelValidator
                 || identity.Url is not null
                 || identity.Ref is not null
                 || !string.Equals(identity.Path, resolvedPack.SourcePath, StringComparison.Ordinal)
-            )
-        )
+            );
+        if (hasInvalidSourceIdentity)
         {
             issues.Add("Local resolved pack source identity is invalid.");
         }
@@ -1301,7 +1338,7 @@ internal static partial class ManifestModelValidator
         }
 
         ValidateGitSource(provenance, issues);
-        if (
+        var hasInvalidSourceIdentity =
             resolvedPack.SourceIdentity is { } identity
             && (
                 !string.Equals(identity.Type, "git", StringComparison.Ordinal)
@@ -1311,8 +1348,8 @@ internal static partial class ManifestModelValidator
                 || !string.Equals(identity.Url, provenance.Url, StringComparison.Ordinal)
                 || !string.Equals(identity.Ref, provenance.Ref, StringComparison.Ordinal)
                 || !string.Equals(identity.Path, provenance.Path, StringComparison.Ordinal)
-            )
-        )
+            );
+        if (hasInvalidSourceIdentity)
         {
             issues.Add("Git resolved pack source identity is invalid.");
         }
@@ -1320,13 +1357,14 @@ internal static partial class ManifestModelValidator
 
     private static void ValidateGitSource(GitSourceProvenance source, List<string> issues)
     {
-        if (
+        var isInvalidGitSource =
             !string.Equals(source.Type, "git", StringComparison.Ordinal)
             || string.IsNullOrEmpty(source.Url)
+            || !SourceIdentityNormalizer.NormalizeRepository(source.Url).IsSuccess
             || source.Ref is ""
             || (source.Path is not null && !IsSafeProjectRelativePath(source.Path))
-            || !IsGitCommit(source.ResolvedCommit)
-        )
+            || !IsGitCommit(source.ResolvedCommit);
+        if (isInvalidGitSource)
         {
             issues.Add(
                 "Git provenance must define a URL, resolved commit, and valid optional ref and path."

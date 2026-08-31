@@ -350,7 +350,7 @@ public sealed class PackCatalogTests
                 .Contents.Split('\n')
                 .Select(line => line.Trim())
                 .FirstOrDefault(line => line.StartsWith("- source: ", StringComparison.Ordinal));
-            var source = sourceLine is null ? null : sourceLine["- source: ".Length..];
+            var source = sourceLine?["- source: ".Length..];
             if (source is not null)
             {
                 var sourcePath = fileSystem.Path.Combine(

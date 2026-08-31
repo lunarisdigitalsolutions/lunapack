@@ -100,7 +100,8 @@ internal static partial class SourceIdentityNormalizer
     {
         var normalized = ProjectPath.NormalizeOptional(path)?.Trim();
         if (
-            string.IsNullOrEmpty(normalized)
+            normalized is null
+            || normalized.Length == 0
             || string.Equals(normalized, ".", StringComparison.Ordinal)
         )
         {
@@ -153,10 +154,13 @@ internal static partial class SourceIdentityNormalizer
             );
         }
 
-        if (
+        var embedsCredentials =
             location.UserInformation is { } credentials
-            && credentials.Contains(':', StringComparison.Ordinal)
-        )
+            && (
+                credentials.Contains(':', StringComparison.Ordinal)
+                || trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+            );
+        if (embedsCredentials)
         {
             return ManifestOperationResult<string>.Failure(
                 "Repository URL must not embed credentials."

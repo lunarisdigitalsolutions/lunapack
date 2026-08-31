@@ -12,9 +12,15 @@ internal sealed class PackParameterYamlTypeConverter : IYamlTypeConverter
     {
         parser.Consume<MappingStart>();
         var parameter = new PackManifest.PackParameter { Type = string.Empty };
+        var propertyNames = new HashSet<string>(StringComparer.Ordinal);
         while (!parser.Accept<MappingEnd>(out _))
         {
             var propertyName = parser.Consume<Scalar>().Value;
+            if (!propertyNames.Add(propertyName))
+            {
+                throw new YamlException($"Duplicate pack parameter property '{propertyName}'.");
+            }
+
             switch (propertyName)
             {
                 case "default":

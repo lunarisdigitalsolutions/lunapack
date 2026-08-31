@@ -45,6 +45,18 @@ included in that normalization. Pack discovery normalizes manifest path fields
 before validation and planning. Command handlers normalize user-supplied
 project paths before ownership, collision, or filesystem checks.
 
+Before project mutation, `ProjectMutationPathSecurity` applies project-relative
+normalization and inspects each existing path component below the workspace.
+Symbolic links, junctions, and other reparse points abort the operation. Shared
+transactions validate every action before the first mutation; direct move,
+uninstall, rollback, and state-restoration paths apply the same boundary.
+
+Managed writes create a unique sibling file and move it over the destination.
+This gives a replaced hard-linked target a new file identity, preserving content
+reachable through its other names. These checks do not prevent a same-user
+process from replacing a component between inspection and use; ADR-0071 tracks
+that residual race.
+
 Link resolution normalizes base paths, include and exclude selectors, strip
 prefixes, declared targets, selected source paths, and effective lock targets.
 Selection containment is checked against the source snapshot; mapped target

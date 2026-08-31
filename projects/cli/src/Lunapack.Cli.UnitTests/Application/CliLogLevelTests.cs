@@ -1,4 +1,6 @@
-namespace Lunapack.Cli.UnitTests;
+using Lunapack.Cli.Application;
+
+namespace Lunapack.Cli.UnitTests.Application;
 
 public sealed class CliLogLevelTests
 {

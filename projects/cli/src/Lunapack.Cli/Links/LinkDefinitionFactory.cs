@@ -36,10 +36,10 @@ internal sealed class LinkDefinitionFactory(IFileSystem fileSystem)
         var basePath = NormalizeSourcePath(request.Path, "--path");
         var stripPrefix = NormalizeSourcePath(request.StripPrefix, "--strip-prefix");
         var target = NormalizeTarget(projectDirectory, request.Target);
-        if (
-            new[] { basePath, stripPrefix, target }.FirstOrDefault(result => !result.IsSuccess) is
-            { } failure
-        )
+        var pathFailure = new[] { basePath, stripPrefix, target }.FirstOrDefault(result =>
+            !result.IsSuccess
+        );
+        if (pathFailure is { } failure)
         {
             return ManifestOperationResult<ProjectConfiguration.Link>.Failure(
                 failure.Error ?? "Unable to normalize the link definition paths."
@@ -80,11 +80,10 @@ internal sealed class LinkDefinitionFactory(IFileSystem fileSystem)
             return "A source name is required. Use --source <name>.";
         }
 
-        if (
-            !state.Configuration.Sources.Exists(source =>
-                string.Equals(source.Name, request.Source, StringComparison.Ordinal)
-            )
-        )
+        var sourceIsConfigured = state.Configuration.Sources.Exists(source =>
+            string.Equals(source.Name, request.Source, StringComparison.Ordinal)
+        );
+        if (!sourceIsConfigured)
         {
             return $"Source '{request.Source}' is not configured.";
         }

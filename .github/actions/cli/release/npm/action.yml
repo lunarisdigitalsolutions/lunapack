@@ -1,0 +1,60 @@
+name: Release Luna CLI to npm
+description: Publish staged Luna CLI platform and entry packages to npm.
+
+inputs:
+  version:
+    description: V-prefixed stable release version.
+    required: true
+  dry-run:
+    description: Skip npm publication.
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Node.js
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        node-version: 24
+        registry-url: https://registry.npmjs.org
+
+    - name: Publish npm platform packages
+      if: ${{ inputs.dry-run != 'true' }}
+      shell: bash
+      env:
+        TAG: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        version="${TAG#v}"
+        tag=latest
+        if [[ "$version" == *-* ]]; then
+          tag=next
+        fi
+        for package_directory in release-staging/packages/npm/lunapack-win64 release-staging/packages/npm/lunapack-linux-x64 release-staging/packages/npm/lunapack-linux-arm64 release-staging/packages/npm/lunapack-macos-x64 release-staging/packages/npm/lunapack-macos-arm64; do
+          package_name="$(node -p "require('./' + process.argv[1] + '/package.json').name" "$package_directory")"
+          if npm view "$package_name@$version" version --registry=https://registry.npmjs.org/ >/dev/null 2>&1; then
+            echo "npm package already published: $package_name@$version"
+          else
+            npm publish "$package_directory" --access public --provenance --tag "$tag"
+          fi
+        done
+
+    - name: Publish npm entry package
+      if: ${{ inputs.dry-run != 'true' }}
+      shell: bash
+      env:
+        TAG: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        version="${TAG#v}"
+        tag=latest
+        if [[ "$version" == *-* ]]; then
+          tag=next
+        fi
+        package='@lunarisdigitalsolutions/lunapack'
+        if npm view "$package@$version" version --registry=https://registry.npmjs.org/ >/dev/null 2>&1; then
+          echo "npm package already published: $package@$version"
+        else
+          npm publish release-staging/packages/npm/lunapack --access public --provenance --tag "$tag"
+        fi

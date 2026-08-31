@@ -1,3 +1,5 @@
+using Lunapack.Cli.Application;
+
 namespace Lunapack.Cli.Trust;
 
 internal sealed class ConsoleTrustConfirmer(CliConsole console) : ITrustConfirmer

@@ -46,12 +46,11 @@ internal static class CanonicalProjectPath
             ?? throw new IOException("Project directory has no filesystem root.");
         var currentPath = root;
         var relativePath = fileSystem.Path.GetRelativePath(root, fullPath);
-        foreach (
-            var segment in relativePath.Split(
-                [fileSystem.Path.DirectorySeparatorChar, fileSystem.Path.AltDirectorySeparatorChar],
-                StringSplitOptions.RemoveEmptyEntries
-            )
-        )
+        var segments = relativePath.Split(
+            [fileSystem.Path.DirectorySeparatorChar, fileSystem.Path.AltDirectorySeparatorChar],
+            StringSplitOptions.RemoveEmptyEntries
+        );
+        foreach (var segment in segments)
         {
             currentPath = fileSystem.Path.Combine(currentPath, segment);
             if (!IsReparsePoint(fileSystem, currentPath))

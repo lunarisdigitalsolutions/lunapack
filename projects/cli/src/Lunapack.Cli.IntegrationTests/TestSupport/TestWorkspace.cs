@@ -18,9 +18,8 @@ internal sealed class TestWorkspace : IDisposable
     {
         if (Directory.Exists(Path))
         {
-            foreach (
-                var filePath in Directory.EnumerateFiles(Path, "*", SearchOption.AllDirectories)
-            )
+            var filePaths = Directory.EnumerateFiles(Path, "*", SearchOption.AllDirectories);
+            foreach (var filePath in filePaths)
             {
                 File.SetAttributes(filePath, FileAttributes.Normal);
             }

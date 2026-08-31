@@ -76,6 +76,32 @@ public sealed class PackLifecycleTests
     }
 
     [Test]
+    public async Task Install_WhenPackContainsFileLink_WarnsAndCopiesRegularManagedFile()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var sourcePath = CreatePackSource(workspace.Path);
+        var outsidePath = Path.Combine(workspace.Path, "outside.txt");
+        File.WriteAllText(outsidePath, "private");
+        CreateFileLinkOrSkip(
+            Path.Combine(workspace.Path, sourcePath, "dotnet-gitignore", "linked.txt"),
+            outsidePath
+        );
+        await ConfigureSourceAsync(workspace, sourcePath);
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["install", "dotnet-gitignore"],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(0).Because(ansiConsole.Output);
+        await Assert.That(ansiConsole.Output).Contains("Skipping unsupported pack snapshot entry");
+        await Assert
+            .That(File.ReadAllText(Path.Combine(workspace.Path, ".gitignore")))
+            .IsEqualTo("bin/\nobj/\n");
+    }
+
+    [Test]
     public async Task Install_WhenScriptsDenied_WarnsBeforeHooksAndContinuesWithoutScripts()
     {
         var ansiConsole = new SpectreTestConsole();
@@ -391,8 +417,8 @@ public sealed class PackLifecycleTests
         var denyArguments = scopeName switch
         {
             "project" => new[] { "trust", "scripts", "deny", "--project" },
-            "global-user" => new[] { "trust", "scripts", "deny", "--global" },
-            _ => new[] { "trust", "scripts", "deny" },
+            "global-user" => ["trust", "scripts", "deny", "--global"],
+            _ => ["trust", "scripts", "deny"],
         };
         await workspace.Application.RunAsync(denyArguments, workspace.Path);
 
@@ -430,8 +456,8 @@ public sealed class PackLifecycleTests
         var trustArguments = scopeName switch
         {
             "project" => new[] { "trust", "source", "local", "--project" },
-            "global-user" => new[] { "trust", "source", "local", "--global" },
-            _ => new[] { "trust", "source", "local" },
+            "global-user" => ["trust", "source", "local", "--global"],
+            _ => ["trust", "source", "local"],
         };
         var trustExitCode = await workspace.Application.RunAsync(trustArguments, workspace.Path);
         var outputStart = ansiConsole.Output.Length;
@@ -1946,6 +1972,33 @@ public sealed class PackLifecycleTests
     }
 
     [Test]
+    public async Task Update_WhenNextPackContainsFileLink_WarnsAndCopiesRegularManagedFile()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var sourcePath = CreateVersionedPackSource(workspace.Path, "version one", "version two");
+        await ConfigureSourceAsync(workspace, sourcePath);
+        await workspace.Application.RunAsync(["install", "dotnet-gitignore@1.0.0"], workspace.Path);
+        var outsidePath = Path.Combine(workspace.Path, "outside.txt");
+        File.WriteAllText(outsidePath, "private");
+        CreateFileLinkOrSkip(
+            Path.Combine(workspace.Path, sourcePath, "dotnet-gitignore-v2", "linked.txt"),
+            outsidePath
+        );
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["update", "dotnet-gitignore"],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(0).Because(ansiConsole.Output);
+        await Assert.That(ansiConsole.Output).Contains("Skipping unsupported pack snapshot entry");
+        await Assert
+            .That(File.ReadAllText(Path.Combine(workspace.Path, ".gitignore")))
+            .IsEqualTo("version two");
+    }
+
+    [Test]
     public async Task UpdateAndUninstall_WhenScriptsDenied_WarnAndCompleteWithoutScripts()
     {
         var ansiConsole = new SpectreTestConsole();
@@ -2570,6 +2623,18 @@ public sealed class PackLifecycleTests
 
     private static string GetManifestPath(string projectDirectory) =>
         Path.Combine(projectDirectory, ProjectManifestStore.FileName);
+
+    private static void CreateFileLinkOrSkip(string link, string target)
+    {
+        try
+        {
+            File.CreateSymbolicLink(link, target);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            Skip.Test($"File symbolic links are unavailable: {exception.Message}");
+        }
+    }
 
     private static string ShellExecutable => OperatingSystem.IsWindows() ? "cmd" : "/bin/sh";
 

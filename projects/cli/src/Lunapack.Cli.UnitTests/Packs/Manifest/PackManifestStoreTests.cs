@@ -142,6 +142,22 @@ public sealed class PackManifestStoreTests
     }
 
     [Test]
+    public async Task Load_WhenParameterPropertyIsDuplicated_ReturnsFailure()
+    {
+        using var workspace = new TestWorkspace();
+        File.WriteAllText(
+            Path.Combine(workspace.Path, PackManifestStore.FileName),
+            "id: example\nversion: 1.0.0\nauthor: Example\nlicense: MIT\nparameters:\n  environment:\n    type: string\n    type: bool\n"
+        );
+        var store = new PackManifestStore(workspace.FileSystem);
+
+        var result = await store.LoadAsync(workspace.Path);
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("Duplicate pack parameter property 'type'");
+    }
+
+    [Test]
     public async Task Load_WhenCompositeBindingIsStringArray_PreservesOrderedValues()
     {
         using var workspace = new TestWorkspace();

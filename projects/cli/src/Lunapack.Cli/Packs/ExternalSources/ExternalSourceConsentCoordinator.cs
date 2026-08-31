@@ -29,11 +29,11 @@ internal sealed class ExternalSourceConsentCoordinator(
             );
         }
 
-        if (
+        var approvalDeclined =
             requirements.Proposed.Count > 0
             && !acceptSources
-            && !await approver.ApproveAsync(requirements.Proposed, cancellationToken)
-        )
+            && !await approver.ApproveAsync(requirements.Proposed, cancellationToken);
+        if (approvalDeclined)
         {
             return ManifestOperationResult<ApprovedExternalSourcePlan>.Failure(
                 "External source approval was declined."

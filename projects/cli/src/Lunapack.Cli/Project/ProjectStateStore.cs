@@ -1,4 +1,5 @@
 using System.IO.Abstractions;
+using System.Text;
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Application.Paths;
 using Lunapack.Cli.Application.Serialization;
@@ -9,7 +10,7 @@ using YamlDotNet.Serialization.NamingConventions;
 
 namespace Lunapack.Cli.Project;
 
-internal sealed class ProjectStateStore : IProjectStateStore
+internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateStore
 {
     public const string ConfigurationFileName = "lunapack.yml";
 
@@ -32,12 +33,7 @@ internal sealed class ProjectStateStore : IProjectStateStore
         .WithTypeConverter(new ScalarValueDictionaryYamlTypeConverter())
         .Build();
 
-    private readonly IFileSystem _fileSystem;
-
-    public ProjectStateStore(IFileSystem fileSystem)
-    {
-        this._fileSystem = fileSystem;
-    }
+    private readonly IFileSystem _fileSystem = fileSystem;
 
     public async Task<ManifestOperationResult<ProjectState>> LoadAsync(string projectDirectory)
     {
@@ -85,10 +81,10 @@ internal sealed class ProjectStateStore : IProjectStateStore
     {
         var configuration = new ProjectConfiguration { SchemaVersion = 1 };
         var lockFile = new ProjectLockFile { SchemaVersion = 1 };
-        if (
+        var hasInvalidInitialState =
             !await IsValidAsync(configuration, ManifestModelValidator.Validate)
-            || !await IsValidAsync(lockFile, ManifestModelValidator.Validate)
-        )
+            || !await IsValidAsync(lockFile, ManifestModelValidator.Validate);
+        if (hasInvalidInitialState)
         {
             return ManifestOperationResult<bool>.Failure(
                 "Refusing to initialize project state that does not match the schemas."
@@ -162,10 +158,10 @@ internal sealed class ProjectStateStore : IProjectStateStore
     )
     {
         var normalizedState = NormalizeState(state);
-        if (
+        var hasInvalidState =
             !await IsValidAsync(normalizedState.Configuration, ManifestModelValidator.Validate)
-            || !await IsValidAsync(normalizedState.LockFile, ManifestModelValidator.Validate)
-        )
+            || !await IsValidAsync(normalizedState.LockFile, ManifestModelValidator.Validate);
+        if (hasInvalidState)
         {
             return ManifestOperationResult<bool>.Failure(
                 "Refusing to write project state that does not match the schemas."
@@ -206,7 +202,7 @@ internal sealed class ProjectStateStore : IProjectStateStore
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            RestoreSnapshots(snapshots);
+            RestoreSnapshots(projectDirectory, snapshots);
             return ManifestOperationResult<bool>.Failure(
                 $"Unable to write project state: {exception.Message}"
             );
@@ -329,11 +325,10 @@ internal sealed class ProjectStateStore : IProjectStateStore
     {
         foreach (var linkName in configuration.Links.Keys)
         {
-            if (
-                configuration.Packs.Any(pack =>
-                    string.Equals(pack.Id, linkName, StringComparison.Ordinal)
-                )
-            )
+            var duplicatesRequestedPackId = configuration.Packs.Any(pack =>
+                string.Equals(pack.Id, linkName, StringComparison.Ordinal)
+            );
+            if (duplicatesRequestedPackId)
             {
                 return $"Project configuration uses '{linkName}' as both a link name and a requested pack ID.";
             }
@@ -346,13 +341,13 @@ internal sealed class ProjectStateStore : IProjectStateStore
                 return $"Lock file contains link '{linkName}' that is not defined in the project configuration.";
             }
 
-            if (
+            var usesUnconfiguredSource =
                 !allowUnconfiguredLockSources
                 && !configuration.Sources.Any(source =>
                     string.Equals(source.Name, resolvedLink.SourceName, StringComparison.Ordinal)
                     && ConfiguredSourceIdentity.Create(source) == resolvedLink.SourceIdentity
-                )
-            )
+                );
+            if (usesUnconfiguredSource)
             {
                 return "Lock file contains a source that is not configured.";
             }
@@ -540,10 +535,10 @@ internal sealed class ProjectStateStore : IProjectStateStore
                 return $"Lock file contains multiple resolved packs with ID '{resolvedPack.Id}'.";
             }
 
-            if (
+            var usesUnconfiguredSource =
                 !allowUnconfiguredLockSources
-                && !MatchesConfiguredSourceIdentity(configuration.Sources, resolvedPack)
-            )
+                && !MatchesConfiguredSourceIdentity(configuration.Sources, resolvedPack);
+            if (usesUnconfiguredSource)
             {
                 return "Lock file contains a source that is not configured.";
             }
@@ -582,25 +577,24 @@ internal sealed class ProjectStateStore : IProjectStateStore
                 return $"Lock file does not contain requested pack '{requestedPack.Id}'.";
             }
 
-            if (
+            var hasMismatchedVersion =
                 requestedPack.Version is not null
                 && !string.Equals(
                     requestedPack.Version,
                     resolvedPack.Version,
                     StringComparison.Ordinal
-                )
-            )
+                );
+            if (hasMismatchedVersion)
             {
                 return $"Lock file version for '{requestedPack.Id}' does not match the requested version.";
             }
 
-            if (
-                !string.Equals(
-                    requestedPack.Destination,
-                    resolvedPack.Destination,
-                    StringComparison.Ordinal
-                )
-            )
+            var hasMismatchedDestination = !string.Equals(
+                requestedPack.Destination,
+                resolvedPack.Destination,
+                StringComparison.Ordinal
+            );
+            if (hasMismatchedDestination)
             {
                 return $"Lock file destination for '{requestedPack.Id}' does not match the requested destination.";
             }
@@ -668,12 +662,20 @@ internal sealed class ProjectStateStore : IProjectStateStore
         return null;
     }
 
-    private void RestoreSnapshots(IReadOnlyList<DocumentSnapshot> snapshots)
+    private void RestoreSnapshots(
+        string projectDirectory,
+        IReadOnlyList<DocumentSnapshot> snapshots
+    )
     {
         foreach (var snapshot in snapshots)
         {
             if (snapshot.Content is null)
             {
+                ProjectMutationPathSecurity.EnsureNoAliases(
+                    _fileSystem,
+                    projectDirectory,
+                    snapshot.Path
+                );
                 if (_fileSystem.File.Exists(snapshot.Path))
                 {
                     _fileSystem.File.Delete(snapshot.Path);
@@ -682,7 +684,12 @@ internal sealed class ProjectStateStore : IProjectStateStore
                 continue;
             }
 
-            _fileSystem.File.WriteAllText(snapshot.Path, snapshot.Content);
+            ProjectMutationPathSecurity.ReplaceFile(
+                _fileSystem,
+                projectDirectory,
+                snapshot.Path,
+                Encoding.UTF8.GetBytes(snapshot.Content)
+            );
         }
     }
 

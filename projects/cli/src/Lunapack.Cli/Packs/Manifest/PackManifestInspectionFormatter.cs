@@ -48,9 +48,8 @@ internal static class PackManifestInspectionFormatter
         );
         var table = CreateTable("Managed files");
         table.AddColumn("[bold]Target[/]");
-        foreach (
-            var managedFile in managedFiles.OrderBy(file => file.Target, StringComparer.Ordinal)
-        )
+        var orderedManagedFiles = managedFiles.OrderBy(file => file.Target, StringComparer.Ordinal);
+        foreach (var managedFile in orderedManagedFiles)
         {
             var declaredTarget = managedFile.Target;
             var effectiveTarget = targetRemapping.Resolve(declaredTarget, fallbackTargetRemapping);
@@ -177,9 +176,11 @@ internal static class PackManifestInspectionFormatter
         table.AddColumn("[bold]Values[/]");
         table.AddColumn("[bold]Default[/]");
         table.AddColumn("[bold]Required[/]");
-        foreach (
-            var parameter in parameters.OrderBy(parameter => parameter.Key, StringComparer.Ordinal)
-        )
+        var orderedParameters = parameters.OrderBy(
+            parameter => parameter.Key,
+            StringComparer.Ordinal
+        );
+        foreach (var parameter in orderedParameters)
         {
             var declaration = parameter.Value;
             table.AddRow(

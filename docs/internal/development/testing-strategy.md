@@ -59,9 +59,9 @@ Collect attributable line and branch coverage from instrumentable Debug
 binaries. Generated output belongs under `.test-results/` and is ignored:
 
 ```powershell
-dotnet test --project projects/cli/src/Lunapack.Cli.UnitTests/Lunapack.Cli.UnitTests.csproj --configuration Debug --no-restore --results-directory .test-results/coverage/unit --coverage --coverage-output unit.cobertura.xml --coverage-output-format cobertura --coverage-settings projects/cli/src/coverage.settings.xml
-dotnet test --project projects/cli/src/Lunapack.Cli.IntegrationTests/Lunapack.Cli.IntegrationTests.csproj --configuration Debug --no-restore --results-directory .test-results/coverage/integration --coverage --coverage-output integration.cobertura.xml --coverage-output-format cobertura --coverage-settings projects/cli/src/coverage.settings.xml
-dotnet test --project projects/cli/src/Lunapack.Cli.SecurityTests/Lunapack.Cli.SecurityTests.csproj --configuration Debug --no-restore --results-directory .test-results/coverage/security --coverage --coverage-output security.cobertura.xml --coverage-output-format cobertura --coverage-settings projects/cli/src/coverage.settings.xml
+dotnet test --project projects/cli/src/Lunapack.Cli.UnitTests/Lunapack.Cli.UnitTests.csproj --configuration Debug --no-restore --results-directory .test-results/coverage/unit --coverage --coverage-output unit.cobertura.xml --coverage-output-format cobertura
+dotnet test --project projects/cli/src/Lunapack.Cli.IntegrationTests/Lunapack.Cli.IntegrationTests.csproj --configuration Debug --no-restore --results-directory .test-results/coverage/integration --coverage --coverage-output integration.cobertura.xml --coverage-output-format cobertura
+dotnet test --project projects/cli/src/Lunapack.Cli.SecurityTests/Lunapack.Cli.SecurityTests.csproj --configuration Debug --no-restore --results-directory .test-results/coverage/security --coverage --coverage-output security.cobertura.xml --coverage-output-format cobertura
 ```
 
 Run CSharpier, .NET style checks, Markdownlint, and Prettier before review:
@@ -77,8 +77,8 @@ npx prettier --check "**/*.{json,css,scss,html,yml,yaml,md}"
 
 Cobertura root attributes report line and branch rates independently. Treat
 both as evidence: line coverage shows executed statements, while branch
-coverage shows exercised decisions. The checked-in settings include only
-`luna.dll` and exclude generated sources and test assemblies.
+coverage shows exercised decisions. Reports use Microsoft Code Coverage's
+default instrumentation settings.
 
 Review uncovered code by risk. State mutation, rollback, ownership, path
 confinement, trust authorization, process invocation, and external-source
@@ -91,9 +91,11 @@ that assert implementation details.
 
 The CLI action keeps Release validation separate from Debug instrumentation, as
 defined by [ADR-0061](../architecture/adr/0061-separate-release-builds-from-instrumented-tests.md).
-It runs every test project independently, uploads reports for release builds,
-and writes each project's line and branch rates to the GitHub job summary. A
-successful test run with an empty coverage report fails the action.
+It runs every test project independently, publishes TRX results through dorny
+Test Reporter, and writes the combined ReportGenerator coverage report to the
+GitHub job summary. TUnit supplies Microsoft code coverage and emits Cobertura
+reports directly; Coverlet is not installed because it is incompatible with
+TUnit's Microsoft.Testing.Platform runner.
 
 A public coverage badge is not published. GitHub Actions artifacts have no
 stable public metric endpoint, and LunaPack does not depend on an external

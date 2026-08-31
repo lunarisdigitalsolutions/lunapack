@@ -5,15 +5,8 @@ internal static class GitHubShorthand
     public static bool TryCreateUrl(string repository, out string repositoryUrl)
     {
         var segments = repository.Split('/', StringSplitOptions.None);
-        if (
-            segments.Length != 2
-            || segments.Any(segment =>
-                string.IsNullOrEmpty(segment)
-                || segment.Any(character =>
-                    !char.IsLetterOrDigit(character) && character is not '-' and not '_' and not '.'
-                )
-            )
-        )
+        var hasValidCoordinate = segments.Length == 2 && segments.All(IsValidSegment);
+        if (!hasValidCoordinate)
         {
             repositoryUrl = string.Empty;
             return false;
@@ -22,4 +15,10 @@ internal static class GitHubShorthand
         repositoryUrl = $"https://github.com/{repository}.git";
         return true;
     }
+
+    private static bool IsValidSegment(string segment) =>
+        !string.IsNullOrEmpty(segment)
+        && segment.All(character =>
+            char.IsLetterOrDigit(character) || character is '-' or '_' or '.'
+        );
 }

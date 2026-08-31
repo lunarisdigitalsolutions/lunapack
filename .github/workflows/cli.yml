@@ -4,33 +4,10 @@ on:
   push:
     tags:
       - '**'
-  workflow_dispatch:
-    inputs:
-      publish-release:
-        description: Publish GitHub Release for selected v<semantic-version> tag after building.
-        required: false
-        type: boolean
-        default: false
-      run-id:
-        description: Workflow run ID containing release artifacts. Skips build jobs and publishes from that run.
-        required: false
-        type: string
-        default: ''
-      dry-run:
-        description: Dry run. Skips publishing to GitHub and NuGet.
-        required: false
-        type: boolean
-        default: false
-      version:
-        description: Optional v<semantic-version> release tag. Defaults to the selected ref.
-        required: false
-        type: string
-        default: ''
-      targets:
-        description: Comma-separated runtime identifiers to build.
-        required: false
-        type: string
-        default: win-x64,linux-x64,linux-arm64,osx-x64,osx-arm64
+    branches:
+      - main
+    paths:
+      - 'projects/cli/**'
 
 permissions:
   contents: read
@@ -42,7 +19,7 @@ concurrency:
 jobs:
   plan:
     name: Select build targets
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.run-id == '' }}
+    if: ${{ github.ref_type == 'tag' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -52,39 +29,22 @@ jobs:
         id: targets
         shell: pwsh
         env:
-          EVENT_NAME: ${{ github.event_name }}
           REF_NAME: ${{ github.ref_name }}
-          PUBLISH_RELEASE: ${{ inputs.publish-release }}
-          TARGETS: ${{ inputs.targets }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $buildVersion = ''
 
-          if ($env:EVENT_NAME -eq 'push' -or $env:PUBLISH_RELEASE -eq 'true') {
-            if ($env:REF_NAME -cnotmatch '^v(?<version>(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?)$') {
-              throw 'Release builds must run against a v<semantic-version> tag without build metadata.'
-            }
-
-            $buildVersion = $Matches['version']
-            $selectedRuntimeIdentifiers = @(
-              'win-x64',
-              'linux-x64',
-              'linux-arm64',
-              'osx-x64',
-              'osx-arm64'
-            )
-          }
-          else {
-            $selectedRuntimeIdentifiers = @(
-              $env:TARGETS -split ',' |
-                ForEach-Object { $_.Trim() } |
-                Where-Object { $_ }
-            )
+          if ($env:REF_NAME -cnotmatch '^v(?<version>(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?)$') {
+            throw 'Release builds must run against a v<semantic-version> tag without build metadata.'
           }
 
-          if ($selectedRuntimeIdentifiers.Count -eq 0) {
-            throw 'Select at least one runtime identifier.'
-          }
+          $buildVersion = $Matches['version']
+          $selectedRuntimeIdentifiers = @(
+            'win-x64',
+            'linux-x64',
+            'linux-arm64',
+            'osx-x64',
+            'osx-arm64'
+          )
 
           $targets = @{
             'linux-x64' = [PSCustomObject]@{ runner = 'ubuntu-latest'; runtimeIdentifier = 'linux-x64' }
@@ -113,9 +73,11 @@ jobs:
   build:
     name: ${{ matrix.runtimeIdentifier }}
     needs: plan
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.run-id == '' }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
+    permissions:
+      checks: write
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -137,8 +99,9 @@ jobs:
   release:
     name: Publish GitHub Release
     needs: [plan, build]
-    if: ${{ always() && (inputs.run-id != '' || (needs.plan.result == 'success' && needs.build.result == 'success' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish-release)))) }}
+    if: ${{ always() && github.ref_type == 'tag' && needs.plan.result == 'success' && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
+    environment: Release
     timeout-minutes: 30
     permissions:
       actions: read
@@ -155,7 +118,116 @@ jobs:
       - name: Release Luna CLI
         uses: ./.github/actions/cli/release
         with:
-          version: ${{ inputs.version || github.ref_name }}
-          run-id: ${{ inputs.run-id || github.run_id }}
+          release-type: stable
+          version: ${{ github.ref_name }}
+          run-id: ${{ github.run_id }}
           nuget-user: ${{ secrets.NUGET_USER }}
-          dry-run: ${{ inputs.dry-run || 'false' }}
+          dry-run: 'false'
+
+  preview-version:
+    name: Resolve preview version
+    if: ${{ github.event_name == 'push' && github.ref_type == 'branch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      value: ${{ steps.minver.outputs.value }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Restore .NET tools
+        shell: bash
+        run: dotnet tool restore
+
+      - name: Resolve MinVer preview
+        id: minver
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(dotnet minver . --tag-prefix v --default-pre-release-identifiers preview --verbosity error)"
+          if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-preview\.(0|[1-9][0-9]*)$ ]]; then
+            echo "MinVer did not produce a preview version: $version" >&2
+            exit 1
+          fi
+          printf 'value=%s\n' "$version" >> "$GITHUB_OUTPUT"
+
+  preview-validate:
+    name: Validate CLI preview
+    needs: preview-version
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      checks: write
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Build and test Luna CLI
+        uses: ./.github/actions/cli/build
+        with:
+          runtime-identifier: linux-x64
+          version: ${{ needs.preview-version.outputs.value }}
+
+  publish-preview-rid-packages:
+    name: Publish ${{ matrix.runtimeIdentifier }} preview
+    needs: [preview-version, preview-validate]
+    runs-on: ${{ matrix.runner }}
+    environment: Release
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            runtimeIdentifier: win-x64
+          - runner: ubuntu-latest
+            runtimeIdentifier: linux-x64
+          - runner: ubuntu-24.04-arm
+            runtimeIdentifier: linux-arm64
+          - runner: macos-15-intel
+            runtimeIdentifier: osx-x64
+          - runner: macos-15
+            runtimeIdentifier: osx-arm64
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Publish Luna CLI preview
+        uses: ./.github/actions/cli/release
+        with:
+          release-type: preview
+          version: ${{ needs.preview-version.outputs.value }}
+          runtime-identifier: ${{ matrix.runtimeIdentifier }}
+          nuget-user: ${{ secrets.NUGET_USER }}
+
+  publish-preview-pointer-package:
+    name: Publish pointer preview
+    needs: [preview-version, publish-preview-rid-packages]
+    runs-on: ubuntu-latest
+    environment: Release
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Publish Luna CLI preview pointer
+        uses: ./.github/actions/cli/release
+        with:
+          release-type: preview
+          version: ${{ needs.preview-version.outputs.value }}
+          nuget-user: ${{ secrets.NUGET_USER }}

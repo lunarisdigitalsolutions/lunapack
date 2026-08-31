@@ -24,12 +24,11 @@ internal sealed class DiscoverPacksCommandHandler(
         {
             Description = "Maximum versions to display for each package.",
         };
-        versionCountOption.CompletionSources.Add(
-            Enumerable
+        versionCountOption.CompletionSources.Add([
+            .. Enumerable
                 .Range(1, 10)
-                .Select(value => value.ToString(System.Globalization.CultureInfo.InvariantCulture))
-                .ToArray()
-        );
+                .Select(value => value.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+        ]);
         var allowDraftOption = new Option<bool>("--allow-draft")
         {
             Description = "Include draft packs.",

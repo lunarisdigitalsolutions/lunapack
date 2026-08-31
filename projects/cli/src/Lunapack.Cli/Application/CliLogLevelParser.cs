@@ -1,4 +1,4 @@
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Application;
 
 internal static class CliLogLevelParser
 {
@@ -14,10 +14,10 @@ internal static class CliLogLevelParser
         {
             var argument = arguments[index];
             string? value = null;
-            if (
+            var isSeparateOption =
                 string.Equals(argument, "--log-level", StringComparison.Ordinal)
-                || string.Equals(argument, "-ll", StringComparison.Ordinal)
-            )
+                || string.Equals(argument, "-ll", StringComparison.Ordinal);
+            if (isSeparateOption)
             {
                 if (index + 1 == arguments.Count)
                 {
@@ -27,12 +27,15 @@ internal static class CliLogLevelParser
 
                 value = arguments[++index];
             }
-            else if (
-                argument.StartsWith("--log-level=", StringComparison.Ordinal)
-                || argument.StartsWith("-ll=", StringComparison.Ordinal)
-            )
+            else
             {
-                value = argument[(argument.IndexOf('=') + 1)..];
+                var isInlineOption =
+                    argument.StartsWith("--log-level=", StringComparison.Ordinal)
+                    || argument.StartsWith("-ll=", StringComparison.Ordinal);
+                if (isInlineOption)
+                {
+                    value = argument[(argument.IndexOf('=') + 1)..];
+                }
             }
 
             if (value is null)

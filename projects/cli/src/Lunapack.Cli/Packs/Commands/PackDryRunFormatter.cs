@@ -38,8 +38,10 @@ internal static class PackDryRunFormatter
         LockedSourceUpdateSelector.SourceSwitch? proposedSourceSwitch = null
     )
     {
-        var lines = new List<string>(outcomes.Count + updatePlan.Actions.Count);
-        lines.Add("[bold]Update plan[/]");
+        var lines = new List<string>(outcomes.Count + updatePlan.Actions.Count)
+        {
+            "[bold]Update plan[/]",
+        };
         if (outcomes.Count == 0)
         {
             lines.Add("[grey]-[/] No updates are available.");

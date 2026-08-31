@@ -1,4 +1,5 @@
 using System.IO.Abstractions;
+using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources;
@@ -155,9 +156,10 @@ internal sealed class PackCatalog(
     }
 
     public static IReadOnlyList<CatalogPack> GetLatest(IReadOnlyList<CatalogPack> catalog) =>
-        GetRecentReleases(catalog, 1)
-            .OrderBy(pack => pack.Manifest.Id, StringComparer.Ordinal)
-            .ToList();
+        [
+            .. GetRecentReleases(catalog, 1)
+                .OrderBy(pack => pack.Manifest.Id, StringComparer.Ordinal),
+        ];
 
     public static IReadOnlyList<CatalogPack> GetRecentReleases(
         IReadOnlyList<CatalogPack> catalog,
@@ -166,16 +168,18 @@ internal sealed class PackCatalog(
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(versionCount, 1);
 
-        return catalog
-            .GroupBy(pack => pack.Manifest.Id, StringComparer.Ordinal)
-            .SelectMany(group =>
-                group
-                    .GroupBy(pack => pack.Version)
-                    .Select(version => SelectPreferred([.. version], compareVersions: false))
-                    .OrderByDescending(pack => pack.Version, VersionComparer.VersionRelease)
-                    .Take(versionCount)
-            )
-            .ToList();
+        return
+        [
+            .. catalog
+                .GroupBy(pack => pack.Manifest.Id, StringComparer.Ordinal)
+                .SelectMany(group =>
+                    group
+                        .GroupBy(pack => pack.Version)
+                        .Select(version => SelectPreferred([.. version], compareVersions: false))
+                        .OrderByDescending(pack => pack.Version, VersionComparer.VersionRelease)
+                        .Take(versionCount)
+                ),
+        ];
     }
 
     public static IReadOnlyList<CatalogPack> Search(
@@ -189,19 +193,21 @@ internal sealed class PackCatalog(
             .Select(term => term.ToUpperInvariant())
             .ToArray();
 
-        return catalog
-            .Select(pack => new CatalogSearchMatch(
-                pack,
-                GetRelevance(pack, normalizedSearchTerm, normalizedSearchTerms)
-            ))
-            .Where(match => match.Relevance is not null)
-            .OrderBy(match => match.Relevance)
-            .ThenBy(match => match.Pack.Manifest.Id, StringComparer.Ordinal)
-            .ThenByDescending(match => match.Pack.Version, VersionComparer.VersionRelease)
-            .ThenBy(match => match.Pack.SourceOrder)
-            .ThenBy(match => match.Pack.PackDirectory, StringComparer.Ordinal)
-            .Select(match => match.Pack)
-            .ToList();
+        return
+        [
+            .. catalog
+                .Select(pack => new CatalogSearchMatch(
+                    pack,
+                    GetRelevance(pack, normalizedSearchTerm, normalizedSearchTerms)
+                ))
+                .Where(match => match.Relevance is not null)
+                .OrderBy(match => match.Relevance)
+                .ThenBy(match => match.Pack.Manifest.Id, StringComparer.Ordinal)
+                .ThenByDescending(match => match.Pack.Version, VersionComparer.VersionRelease)
+                .ThenBy(match => match.Pack.SourceOrder)
+                .ThenBy(match => match.Pack.PackDirectory, StringComparer.Ordinal)
+                .Select(match => match.Pack),
+        ];
     }
 
     public async Task<ManifestOperationResult<DiscoveredPack>> ResolveAsync(
@@ -333,12 +339,12 @@ internal sealed class PackCatalog(
             return 2;
         }
 
-        if (
+        var matchesDescriptionOrTag =
             normalizedDescription?.Contains(normalizedSearchTerm, StringComparison.Ordinal) is true
             || normalizedTags.Any(tag =>
                 tag.Contains(normalizedSearchTerm, StringComparison.Ordinal)
-            )
-        )
+            );
+        if (matchesDescriptionOrTag)
         {
             return 3;
         }

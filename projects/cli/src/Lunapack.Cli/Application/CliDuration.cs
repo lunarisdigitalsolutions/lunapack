@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace Lunapack.Cli;
+namespace Lunapack.Cli.Application;
 
 internal static class CliDuration
 {

@@ -19,9 +19,7 @@ internal sealed class CliCompletionProvider(
         return CreateItems(
             GetCatalogPacks(context)
                 .Select(pack => pack.Manifest.Id)
-                .Concat(
-                    state?.Configuration.Links.Keys.AsEnumerable() ?? Enumerable.Empty<string>()
-                )
+                .Concat(state?.Configuration.Links.Keys.AsEnumerable() ?? [])
         );
     }
 
@@ -29,26 +27,20 @@ internal sealed class CliCompletionProvider(
         CreateItems(GetCatalogPacks(context).Select(pack => pack.Manifest.Id));
 
     public IEnumerable<CompletionItem> GetConfiguredLinkNames(CompletionContext context) =>
-        CreateItems(
-            LoadState(context)?.Configuration.Links.Keys.AsEnumerable()
-                ?? Enumerable.Empty<string>()
-        );
+        CreateItems(LoadState(context)?.Configuration.Links.Keys.AsEnumerable() ?? []);
 
     public IEnumerable<CompletionItem> GetConfiguredSourceNames(CompletionContext context) =>
         CreateItems(LoadState(context)?.Configuration.Sources.Select(source => source.Name) ?? []);
 
     public IEnumerable<CompletionItem> GetConfiguredVariableNames(CompletionContext context) =>
-        CreateItems(
-            LoadState(context)?.Configuration.Variables.Keys.AsEnumerable()
-                ?? Enumerable.Empty<string>()
-        );
+        CreateItems(LoadState(context)?.Configuration.Variables.Keys.AsEnumerable() ?? []);
 
     public IEnumerable<CompletionItem> GetInstalledReferences(CompletionContext context)
     {
         var state = LoadState(context);
         return CreateItems(
             (state?.Configuration.Packs.Select(pack => pack.Id) ?? []).Concat(
-                state?.LockFile.Links.Keys.AsEnumerable() ?? Enumerable.Empty<string>()
+                state?.LockFile.Links.Keys.AsEnumerable() ?? []
             )
         );
     }

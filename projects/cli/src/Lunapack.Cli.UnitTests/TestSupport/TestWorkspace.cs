@@ -40,7 +40,9 @@ internal sealed class TestWorkspace : IDisposable
                     FileSystem,
                     profileDirectory,
                     System.IO.Path.Combine(profileDirectory, "AppData", "Roaming"),
-                    isWindows: true
+                    null,
+                    isWindows: true,
+                    isMacOS: false
                 ),
                 new PowerShellCompletionScriptInstaller(
                     FileSystem,

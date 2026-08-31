@@ -25,10 +25,6 @@ inputs:
     description: Optional newline-separated test project paths for separate reporting.
     required: false
     default: ''
-  coverage-settings-path:
-    description: Optional Microsoft Code Coverage settings file.
-    required: false
-    default: ''
   should-run-tests:
     description: Whether to run the solution's tests with coverage.
     required: false
@@ -53,10 +49,6 @@ inputs:
     description: Retention period for uploaded artifacts.
     required: false
     default: '3'
-  should-upload-test-results:
-    description: Whether to upload test and coverage artifacts.
-    required: false
-    default: 'false'
   should-upload-build-artifact:
     description: Whether to upload the published project output.
     required: false
@@ -66,7 +58,7 @@ runs:
   using: composite
   steps:
     - name: Set up .NET SDK
-      uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+      uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
       with:
         global-json-file: global.json
         cache: true
@@ -113,7 +105,6 @@ runs:
       if: ${{ inputs.should-run-tests == 'true' }}
       shell: pwsh
       env:
-        COVERAGE_SETTINGS_PATH: ${{ inputs.coverage-settings-path }}
         SOLUTION_PATH: ${{ inputs.solution-path }}
         TEST_BUILD_CONFIGURATION: ${{ inputs.test-build-configuration }}
         TEST_PROJECT_PATHS: ${{ inputs.test-project-paths }}
@@ -161,117 +152,34 @@ runs:
             '--minimum-expected-tests'
             '1'
           )
-          if (-not [string]::IsNullOrWhiteSpace($env:COVERAGE_SETTINGS_PATH)) {
-            $testArguments += @('--coverage-settings', $env:COVERAGE_SETTINGS_PATH)
-          }
-
           dotnet @testArguments
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
           }
         }
 
-    - name: Publish coverage summary
-      if: ${{ always() && inputs.should-run-tests == 'true' }}
-      shell: pwsh
-      env:
-        TEST_OUTCOME: ${{ steps.tests.outcome }}
-        TEST_PROJECT_PATHS: ${{ inputs.test-project-paths }}
-      run: |
-        $ErrorActionPreference = 'Stop'
-        $resultsDirectory = Join-Path $env:RUNNER_TEMP 'dotnet-test-results'
-        $expectedProjects = @(
-          $env:TEST_PROJECT_PATHS -split '\r?\n' |
-            ForEach-Object { $_.Trim() } |
-            Where-Object { $_ } |
-            ForEach-Object { [System.IO.Path]::GetFileNameWithoutExtension($_) }
-        )
-        if ($expectedProjects.Count -eq 0) {
-          $expectedProjects = @('solution')
-        }
-
-        $expectedReportPaths = @(
-          $expectedProjects | ForEach-Object {
-            Join-Path $resultsDirectory "$_/$_.cobertura.xml"
-          }
-        )
-        $reports = @(
-          Get-ChildItem $resultsDirectory -Directory -ErrorAction SilentlyContinue |
-            ForEach-Object {
-              Get-ChildItem $_.FullName -Filter '*.cobertura.xml' -File -ErrorAction SilentlyContinue
-            }
-        )
-        if ($reports.Count -eq 0) {
-          @('## Code coverage', '', 'Coverage reports were not generated.') |
-            Add-Content $env:GITHUB_STEP_SUMMARY
-          if ($env:TEST_OUTCOME -eq 'success') {
-            throw 'Tests passed without generating coverage reports.'
-          }
-
-          return
-        }
-
-        if ($env:TEST_OUTCOME -eq 'success') {
-          $actualReportPaths = @($reports | ForEach-Object { $_.FullName })
-          $reportPathDifference = @(
-            Compare-Object $expectedReportPaths $actualReportPaths
-          )
-          if ($reportPathDifference.Count -ne 0) {
-            throw "Expected exactly one canonical coverage report per configured project. Differences: $($reportPathDifference | Out-String)"
-          }
-        }
-
-        $culture = [System.Globalization.CultureInfo]::InvariantCulture
-        $rows = @(
-          foreach ($report in $reports) {
-            [xml]$document = Get-Content $report.FullName -Raw
-            $coverage = $document.coverage
-            $linesValid = [int]$coverage.'lines-valid'
-            $branchesValid = [int]$coverage.'branches-valid'
-            if ($linesValid -eq 0 -or $branchesValid -eq 0) {
-              throw "Coverage report '$($report.FullName)' contains no instrumented code."
-            }
-
-            $lineRate = [decimal]::Parse($coverage.'line-rate', $culture)
-            $branchRate = [decimal]::Parse($coverage.'branch-rate', $culture)
-            [PSCustomObject]@{
-              Project = $report.Directory.Name
-              Lines = ($lineRate * 100).ToString('0.00', $culture)
-              Branches = ($branchRate * 100).ToString('0.00', $culture)
-            }
-          }
-        )
-
-        $summary = @(
-          '## Code coverage'
-          ''
-          '| Test project | Line coverage | Branch coverage |'
-          '| --- | ---: | ---: |'
-        )
-        $summary += @(
-          $rows |
-            Sort-Object Project |
-            ForEach-Object { "| $($_.Project) | $($_.Lines)% | $($_.Branches)% |" }
-        )
-        $summary | Add-Content $env:GITHUB_STEP_SUMMARY
-
-    - name: Upload test results
-      if: ${{ always() && inputs.should-run-tests == 'true' && inputs.should-upload-test-results == 'true' }}
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+    - name: Upload test report
+      if: ${{ inputs.should-run-tests == 'true' && steps.tests.outcome == 'success' }}
+      uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
       with:
-        name: ${{ inputs.artifact-name }}-test-results
-        path: ${{ runner.temp }}/dotnet-test-results/*/*.trx
-        if-no-files-found: warn
-        retention-days: ${{ inputs.artifact-retention-days }}
+        name: Tests
+        path: '${{ runner.temp }}/dotnet-test-results/**/*.trx'
+        reporter: dotnet-trx
 
-    - name: Upload coverage results
-      if: ${{ always() && inputs.should-run-tests == 'true' && inputs.should-upload-test-results == 'true' }}
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+    - name: Generate test coverage report
+      if: ${{ inputs.should-run-tests == 'true' && steps.tests.outcome == 'success' }}
+      uses: danielpalme/ReportGenerator-GitHub-Action@d3ebf1f760f7d8ab92cc44d9bcfee7ad73722a31 # 5.5.11
       with:
-        name: ${{ inputs.artifact-name }}-coverage
-        path: ${{ runner.temp }}/dotnet-test-results/*/*.cobertura.xml
-        if-no-files-found: warn
-        retention-days: ${{ inputs.artifact-retention-days }}
+        reports: '${{ runner.temp }}/dotnet-test-results/**/*.cobertura.xml'
+        targetdir: TestReports
+        reporttypes: MarkdownSummaryGithub
+        tag: '${{ github.run_number }}_${{ github.run_id }}'
+        toolpath: reportgeneratortool
+
+    - name: Publish test coverage report
+      if: ${{ inputs.should-run-tests == 'true' && steps.tests.outcome == 'success' }}
+      shell: bash
+      run: cat TestReports/SummaryGithub.md >> "$GITHUB_STEP_SUMMARY"
 
     - name: Publish project
       if: ${{ inputs.should-publish == 'true' }}

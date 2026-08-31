@@ -43,4 +43,5 @@ records its requested packs and resolved state so the next change is clear.
 - [Pack guide](packs/index.md) to create, release, and understand packs.
 - [Automation guide](automation.md) for noninteractive validation and installs.
 - [Troubleshooting](troubleshooting.md) for common failures and recovery.
-- [Threat model](threat-model.md) for security boundaries and residual risks.
+- [Usage threat model](threat-model.md) for pack, source, workspace, and lifecycle
+  security boundaries.
