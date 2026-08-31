@@ -1,0 +1,9 @@
+id: madr-template
+
+version: 1.0.0
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Start architecture decisions with the MADR template.
+managedFiles:
+  - source: targets/docs/adr/template.md
+    target: docs/adr/template.md

@@ -55,15 +55,15 @@ public sealed class PackCatalogTests
                     .OrderBy(packId => packId, StringComparer.Ordinal)
             )
             .IsEquivalentTo([
-                "dotnet-csharpier-tool",
-                "dotnet-build-props",
+                "csharpier",
+                "dotnet-build-config",
                 "dotnet-central-package-management",
                 "dotnet-editorconfig",
                 "dotnet-gitignore",
                 "dotnet-project",
                 "dotnet-sdk-10",
                 "license-mit",
-                "madr-adr-template",
+                "madr-template",
             ]);
     }
 
@@ -81,13 +81,10 @@ public sealed class PackCatalogTests
                 PacksPath("dotnet-editorconfig", "pack.yml"),
                 CreatePack("dotnet-editorconfig", "1.0.0", "Apply formatting conventions")
             ),
+            (PacksPath("csharpier", "pack.yml"), CreatePack("csharpier", "1.0.0", "Pin CSharpier")),
             (
-                PacksPath("dotnet-csharpier-tool", "pack.yml"),
-                CreatePack("dotnet-csharpier-tool", "1.0.0", "Pin CSharpier")
-            ),
-            (
-                PacksPath("dotnet-build-props", "pack.yml"),
-                CreatePack("dotnet-build-props", "1.0.0", "Apply build policy")
+                PacksPath("dotnet-build-config", "pack.yml"),
+                CreatePack("dotnet-build-config", "1.0.0", "Apply build policy")
             ),
             (
                 PacksPath("dotnet-central-package-management", "pack.yml"),
@@ -102,8 +99,8 @@ public sealed class PackCatalogTests
                 CreatePack("dotnet-project", "1.0.0", "Apply .NET project policy")
             ),
             (
-                PacksPath("madr-adr-template", "pack.yml"),
-                CreatePack("madr-adr-template", "1.0.0", "Start decisions with MADR")
+                PacksPath("madr-template", "pack.yml"),
+                CreatePack("madr-template", "1.0.0", "Start decisions with MADR")
             ),
             (
                 PacksPath("license-mit", "pack.yml"),
@@ -184,6 +181,24 @@ public sealed class PackCatalogTests
         var strategy = result.RequireValue().Single().Manifest.ManagedFiles.Single().Strategy;
         await Assert.That(strategy.Type).IsEqualTo("copy");
         await Assert.That(strategy.Method).IsEqualTo("overwrite");
+    }
+
+    [Test]
+    public async Task Browse_WhenBooleanParameterHasDefault_PreservesTypedValue()
+    {
+        var fileSystem = CreateFileSystem([
+            (
+                PacksPath("example", "pack.yml"),
+                "id: example\nversion: 1.0.0\nlicense: MIT\nauthor: Example Author\nparameters:\n  enabled:\n    type: bool\n    default: true\nmanagedFiles:\n  - source: templates/content.txt\n    target: example.txt\n"
+            ),
+        ]);
+        var catalog = new PackCatalog(fileSystem, TestConsole.Create());
+
+        var result = await catalog.BrowseAsync(_projectDirectory, CreateManifest(_packsDirectory));
+
+        var defaultValue = result.RequireValue().Single().Manifest.Parameters["enabled"].Default;
+        await Assert.That(defaultValue).IsTypeOf<bool>();
+        await Assert.That((bool)defaultValue!).IsTrue();
     }
 
     [Test]

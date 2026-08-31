@@ -535,7 +535,7 @@ internal sealed class LocalSourceCommandHandler(
             return console.Fail(savedState.Error);
         }
 
-        console.Success($"✓ Source '{name}' removed");
+        console.Success($"Source '{name}' removed");
         if (state.Configuration.Sources.Count == 0)
         {
             console.Info(string.Empty);
@@ -592,7 +592,7 @@ internal sealed class LocalSourceCommandHandler(
             return console.Fail(savedState.Error);
         }
 
-        console.Info($"✓ Source '{currentName}' renamed to '{newName}'");
+        console.Info($"Source '{currentName}' renamed to '{newName}'");
         nextStepRenderer.Render(
             nextStepAdvisor.Recommend(NextStepContext.SourcesRemain),
             "Suggested commands:"
@@ -695,7 +695,7 @@ internal sealed class LocalSourceCommandHandler(
             return console.Fail(savedState.Error);
         }
 
-        console.Success($"✓ Source '{name}' added");
+        console.Success($"Source '{name}' added");
         nextStepRenderer.Render(nextStepAdvisor.Recommend(NextStepContext.SourceAdded));
         return 0;
     }

@@ -32,8 +32,8 @@ public sealed class CliHelpDocumentationTests
             "<id>... --source <name>",
             ["--source", "-s", "--project", "--global"]
         ),
-        new("discover", null, ["--versions", "-v"]),
-        new("search", "<query>", ["--versions", "-v"]),
+        new("discover", null, ["--versions", "-v", "--allow-draft"]),
+        new("search", "<query>", ["--versions", "-v", "--allow-draft"]),
         new("validate", "<pack-reference>"),
         new("inspect", "<pack-reference>"),
         new(
@@ -55,6 +55,7 @@ public sealed class CliHelpDocumentationTests
             [
                 "--dry-run",
                 "-D",
+                "--no-file-change-output",
                 "--destination",
                 "-d",
                 "--adopt-existing",
@@ -77,7 +78,15 @@ public sealed class CliHelpDocumentationTests
         new(
             "update",
             "[<pack-reference>...]",
-            ["--dry-run", "-D", "--prompt", "-p", "--scripts", "--skip-instructions"]
+            [
+                "--dry-run",
+                "-D",
+                "--no-file-change-output",
+                "--prompt",
+                "-p",
+                "--scripts",
+                "--skip-instructions",
+            ]
         ),
         new("mv", "<source> <target>", ["--save-remap"]),
         new("audit"),

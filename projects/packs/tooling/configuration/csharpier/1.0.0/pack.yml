@@ -1,0 +1,19 @@
+id: csharpier
+version: 1.0.0
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Merge the CSharpier local tool configuration into dotnet-tools.json.
+managedFiles:
+  - source: fragments/dotnet-tools.json/csharpier.json
+    target: dotnet-tools.json
+    strategy:
+      type: merge
+      method: json
+hooks:
+  postInstall:
+    - type: script
+      command: dotnet
+      arguments:
+        - tool
+        - restore
+      description: Restore the repository-local CSharpier tool.

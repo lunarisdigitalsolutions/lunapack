@@ -51,7 +51,7 @@ internal sealed class ProjectInitializationCommandHandler(
             return console.Fail(result.Error);
         }
 
-        console.Success("✓ Workspace initialized");
+        console.Success("Workspace initialized");
         nextStepRenderer.Render(nextStepAdvisor.Recommend(NextStepContext.WorkspaceInitialized));
         return 0;
     }

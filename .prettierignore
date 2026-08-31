@@ -1,0 +1,2 @@
+# Pack source artifacts can contain templates that are invalid before rendering.
+projects/packs/**

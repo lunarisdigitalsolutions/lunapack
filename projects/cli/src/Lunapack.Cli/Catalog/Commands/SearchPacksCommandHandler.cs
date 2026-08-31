@@ -27,10 +27,15 @@ internal sealed class SearchPacksCommandHandler(
         {
             Description = "Maximum versions to display for each package.",
         };
+        var allowDraftOption = new Option<bool>("--allow-draft")
+        {
+            Description = "Include draft packs.",
+        };
         var command = new Command("search", "Search available packs.")
         {
             searchTermArgument,
             versionCountOption,
+            allowDraftOption,
         };
         command.SetAction(async parseResult =>
         {
@@ -44,14 +49,20 @@ internal sealed class SearchPacksCommandHandler(
                         parseResult.GetValue(workspaceOption)
                     ),
                     searchTerm,
-                    versionCount
+                    versionCount,
+                    parseResult.GetValue(allowDraftOption)
                 );
         });
 
         return command;
     }
 
-    public async Task<int> SearchAsync(string projectDirectory, string searchTerm, int versionCount)
+    public async Task<int> SearchAsync(
+        string projectDirectory,
+        string searchTerm,
+        int versionCount,
+        bool allowDraft = false
+    )
     {
         if (string.IsNullOrWhiteSpace(searchTerm))
         {
@@ -82,7 +93,10 @@ internal sealed class SearchPacksCommandHandler(
         }
 
         var normalizedSearchTerm = searchTerm.Trim();
-        var packs = PackCatalog.Search(catalogPacks, normalizedSearchTerm);
+        var searchablePacks = allowDraft
+            ? catalogPacks
+            : catalogPacks.Where(pack => !pack.Manifest.Draft).ToList();
+        var packs = PackCatalog.Search(searchablePacks, normalizedSearchTerm);
         var linkSummaries = await linkInspectionService.ListAsync(projectDirectory);
         if (linkSummaries.Value is not { } links)
         {

@@ -186,7 +186,7 @@ delivery-pipeline@1.2.0     .github/workflows/ci.yml
 security-tools@2.1.0        security configuration
 dotnet-sdk-10@1.0.0         global.json
 dotnet-editorconfig@1.0.0   .editorconfig
-madr-adr-template@1.0.0     docs/architecture/adr/
+madr-template@1.0.0     docs/architecture/adr/
 ```
 
 `pack.yml` declares the pack identity, dependencies, content, and copy or merge
@@ -216,7 +216,7 @@ is required to start.
 luna init
 luna sources add github engineering lunarisdigitalsolutions/lunapack --ref main --path projects/packs
 luna install dotnet-project
-luna install madr-adr-template
+luna install madr-template
 ```
 
 `lunapack.yml` records intent. `lunapack-lock.yml` records the resolved graph,

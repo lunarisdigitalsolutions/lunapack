@@ -1,0 +1,11 @@
+id: github-pull-request-quality
+version: 1.0.0
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Validate pull request titles and gate external GitHub checks.
+tags: [github-actions, pull-request, composite]
+packs:
+  - id: github-commitlint-workflow
+    version: 1.0.0
+  - id: github-pull-request-gate-workflow
+    version: 1.0.0

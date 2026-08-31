@@ -78,6 +78,8 @@ The repository SHALL publish a JSON Schema under `projects/schema/` for `lunapac
 
 The repository SHALL publish a JSON Schema under `projects/schema/` for `pack.yml`. The schema SHALL require a pack identity, semantic version, non-empty author, and non-empty license. It SHALL allow empty managed-file and composite-pack collections for incremental authoring. It SHALL allow optional non-empty name and homepage metadata, an optional human-readable package description, and up to 15 unique, non-empty tags. A complete distributable pack MAY declare managed-file entries, composite pack references, or both. Each composite reference SHALL contain a pack ID and an exact Semantic Version and MAY bind identifier-named string or boolean parameters for its referenced pack. Managed-file selectors MAY set `template` to opt into Scriban parsing; it defaults to false.
 
+The schema SHALL allow an optional `draft` Boolean that defaults to false. Discovery and search SHALL omit draft packs unless `--allow-draft` is specified. Commands that resolve a directly specified pack SHALL continue to resolve draft packs.
+
 The schema SHALL allow an optional `sources` mapping whose keys are pack-local aliases and whose values are Git source declarations. Each declaration SHALL require `type: git`, a credential-free repository URL, and an explicit ref, and MAY contain a safe repository-relative base `path` and non-empty `description`. Pack-defined local sources and credential placeholders SHALL be invalid. Managed-file selectors MAY name a declared source alias and MAY select a file, recursive directory, or glob with repeatable exclusion patterns and optional flattening. Source and exclusion paths SHALL be relative and SHALL not escape the resolved source root. A selector without a source alias SHALL continue to resolve from the pack source. Lifecycle scripts SHALL resolve only from the pack source and SHALL not reference an external source.
 
 #### Scenario: Reject a manifest without required attribution
@@ -90,6 +92,16 @@ The schema SHALL allow an optional `sources` mapping whose keys are pack-local a
 - **WHEN** the schema validates a manifest with non-empty name, author, homepage,
   and license values
 - **THEN** validation succeeds
+
+#### Scenario: Hide a draft pack from default catalog output
+
+- **WHEN** discovery or search encounters a manifest with `draft: true`
+- **THEN** the pack is omitted unless `--allow-draft` is specified
+
+#### Scenario: Resolve a directly specified draft pack
+
+- **WHEN** a lifecycle or inspection command directly references a draft pack
+- **THEN** the pack resolves normally
 
 #### Scenario: Reject a pack manifest without attribution
 

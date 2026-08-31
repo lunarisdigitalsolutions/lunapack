@@ -5,6 +5,7 @@ using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Application.Guidance;
 using Lunapack.Cli.Links;
 using Lunapack.Cli.Packs.ManagedFiles;
+using Lunapack.Cli.Packs.Planning;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Trust;
 
@@ -30,6 +31,7 @@ internal sealed class InstallPackCommandHandler(
         var saveRemapOption = CreateSaveRemapOption();
         var adoptExistingOption = CreateAdoptExistingOption();
         var dryRunOption = CreateDryRunOption();
+        var noFileChangeOutputOption = CreateNoFileChangeOutputOption();
         var acceptSourcesOption = CreateAcceptSourcesOption();
         var parameterOption = CreateParameterOption();
         var noVariablesOption = CreateNoVariablesOption();
@@ -45,6 +47,7 @@ internal sealed class InstallPackCommandHandler(
             saveRemapOption,
             adoptExistingOption,
             dryRunOption,
+            noFileChangeOutputOption,
             acceptSourcesOption,
             parameterOption,
             noVariablesOption,
@@ -64,6 +67,7 @@ internal sealed class InstallPackCommandHandler(
                 saveRemapOption,
                 adoptExistingOption,
                 dryRunOption,
+                noFileChangeOutputOption,
                 acceptSourcesOption,
                 parameterOption,
                 noVariablesOption,
@@ -87,6 +91,7 @@ internal sealed class InstallPackCommandHandler(
         Option<bool> saveRemapOption,
         Option<bool> adoptExistingOption,
         Option<bool> dryRunOption,
+        Option<bool> noFileChangeOutputOption,
         Option<bool> acceptSourcesOption,
         Option<string[]> parameterOption,
         Option<bool> noVariablesOption,
@@ -129,6 +134,7 @@ internal sealed class InstallPackCommandHandler(
                 parsedScriptMode,
                 parseResult.GetValue(skipInstructionsOption),
                 parseResult.GetValue(dryRunOption),
+                parseResult.GetValue(noFileChangeOutputOption),
                 parseResult.GetValue(acceptSourcesOption),
                 skipInstalledRoots: packReferences.Length > 1
             );
@@ -181,6 +187,12 @@ internal sealed class InstallPackCommandHandler(
             Description = "Plan the installation without modifying files or state.",
         };
 
+    private static Option<bool> CreateNoFileChangeOutputOption() =>
+        new("--no-file-change-output")
+        {
+            Description = "Do not list managed-file changes after installation.",
+        };
+
     private static Option<bool> CreateAcceptSourcesOption() =>
         new("--accept-sources")
         {
@@ -219,6 +231,7 @@ internal sealed class InstallPackCommandHandler(
         ScriptExecutionMode scriptMode,
         bool skipInstructions,
         bool dryRun,
+        bool noFileChangeOutput,
         bool acceptSources,
         bool skipInstalledRoots
     )
@@ -266,6 +279,7 @@ internal sealed class InstallPackCommandHandler(
             scriptMode,
             skipInstructions,
             dryRun,
+            noFileChangeOutput,
             acceptSources,
             skipInstalledRoots
         );
@@ -313,6 +327,7 @@ internal sealed class InstallPackCommandHandler(
         ScriptExecutionMode scriptMode,
         bool skipInstructions,
         bool dryRun,
+        bool noFileChangeOutput,
         bool acceptSources,
         bool skipInstalledRoots
     )
@@ -341,6 +356,7 @@ internal sealed class InstallPackCommandHandler(
             workspaceDirectory,
             request,
             dryRun,
+            noFileChangeOutput,
             skipInstalledRoots
         );
     }
@@ -349,6 +365,7 @@ internal sealed class InstallPackCommandHandler(
         string workspaceDirectory,
         PackInstallationRequest request,
         bool dryRun,
+        bool noFileChangeOutput,
         bool skipInstalledRoots
     )
     {
@@ -386,21 +403,24 @@ internal sealed class InstallPackCommandHandler(
         request = PromptForRequiredParameters(request, prompts);
         return dryRun
             ? await PreviewInstallAsync(workspaceDirectory, request)
-            : await ExecuteInstallAsync(workspaceDirectory, request);
+            : await ExecuteInstallAsync(workspaceDirectory, request, noFileChangeOutput);
     }
 
     private async Task<int> ExecuteInstallAsync(
         string workspaceDirectory,
-        PackInstallationRequest request
+        PackInstallationRequest request,
+        bool noFileChangeOutput
     )
     {
         TimeSpan? managedFileChangesDuration = null;
+        PackUpdatePlan? appliedPlan = null;
         var exitCode =
             request.ScriptMode == ScriptExecutionMode.Prompt
                 ? await packLifecycleService.InstallAsync(
                     workspaceDirectory,
                     request,
-                    duration => managedFileChangesDuration = duration
+                    duration => managedFileChangesDuration = duration,
+                    plan => appliedPlan = plan
                 )
                 : await console.RunWithStatusAsync(
                     $"Installing {request.PackReference.Id}...",
@@ -408,7 +428,8 @@ internal sealed class InstallPackCommandHandler(
                         packLifecycleService.InstallAsync(
                             workspaceDirectory,
                             request,
-                            duration => managedFileChangesDuration = duration
+                            duration => managedFileChangesDuration = duration,
+                            plan => appliedPlan = plan
                         )
                 );
         if (exitCode == 0)
@@ -424,8 +445,12 @@ internal sealed class InstallPackCommandHandler(
 
             console.Info(string.Empty);
             console.Success(
-                $"✓ Installed '{request.PackReference.Id}' (version '{version}') in {CliDuration.Format(managedFileChangesDuration ?? TimeSpan.Zero)}"
+                $"Installed '{request.PackReference.Id}' (version '{version}') in {CliDuration.Format(managedFileChangesDuration ?? TimeSpan.Zero)}"
             );
+            if (!noFileChangeOutput && appliedPlan is not null)
+            {
+                WriteMarkup(PackDryRunFormatter.FormatAppliedFileChanges(appliedPlan));
+            }
             nextStepRenderer.Render(
                 nextStepAdvisor.Recommend(NextStepContext.PackInstalled, request.PackReference.Id)
             );
@@ -450,10 +475,18 @@ internal sealed class InstallPackCommandHandler(
 
         foreach (var line in PackDryRunFormatter.FormatInstall(preview))
         {
-            console.Info(line);
+            console.MarkupInfo(line);
         }
 
         return 0;
+    }
+
+    private void WriteMarkup(IEnumerable<string> lines)
+    {
+        foreach (var line in lines)
+        {
+            console.MarkupInfo(line);
+        }
     }
 
     private ManifestOperationResult<PackInstallationRequest> CreateInstallationRequest(

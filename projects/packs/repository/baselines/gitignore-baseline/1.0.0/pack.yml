@@ -1,0 +1,11 @@
+id: gitignore-baseline
+version: 1.0.0
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Merge common operating-system and editor ignores into a marked section.
+managedFiles:
+  - source: fragments/.gitignore/gitignore-baseline.gitignore
+    target: .gitignore
+    strategy:
+      type: merge
+      method: section

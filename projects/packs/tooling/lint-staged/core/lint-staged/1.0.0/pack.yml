@@ -1,0 +1,12 @@
+id: lint-staged
+version: 1.0.0
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Add lint-staged as a repository-local development dependency.
+tags: [git, linting, node]
+managedFiles:
+  - source: fragments/package.json/lint-staged.json
+    target: package.json
+    strategy:
+      type: merge
+      method: json

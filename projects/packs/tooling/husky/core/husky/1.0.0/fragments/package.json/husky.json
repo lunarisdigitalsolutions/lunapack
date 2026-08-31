@@ -1,0 +1,8 @@
+{
+  "scripts": {
+    "prepare": "{{ prepareCommand }}"
+  },
+  "devDependencies": {
+    "husky": "9.1.7"
+  }
+}

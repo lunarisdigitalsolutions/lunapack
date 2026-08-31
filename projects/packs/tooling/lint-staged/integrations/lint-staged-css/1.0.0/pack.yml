@@ -1,0 +1,17 @@
+id: lint-staged-css
+version: 1.0.0
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Format staged CSS files with Prettier.
+tags: [lint-staged, css, formatting]
+packs:
+  - id: lint-staged
+    version: 1.0.0
+  - id: prettier-config
+    version: 1.0.0
+managedFiles:
+  - source: fragments/package.json/lint-staged-css.json
+    target: package.json
+    strategy:
+      type: merge
+      method: json

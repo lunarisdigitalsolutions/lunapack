@@ -3,8 +3,9 @@
 `pack.yml` declares a pack. It requires a hyphen-separated alphanumeric `id`,
 non-empty `author` and `license` values, and a semantic `version`. Empty content
 collections remain valid during incremental authoring. `name`, `description`,
-`homepage`, and `tags` are optional metadata. Discovery and search exclude
-manifests missing author or license attribution.
+`homepage`, `tags`, and `draft` are optional metadata. Discovery and search
+exclude manifests missing author or license attribution. They also exclude
+draft packs unless the consumer passes `--allow-draft`.
 
 ```yml
 id: example-documentation-standard
@@ -17,9 +18,35 @@ tags:
   - documentation
   - engineering
 managedFiles:
-  - source: templates/standard.md
+  - source: targets/docs/standard.md
     target: docs/standard.md
 ```
+
+## Release layout
+
+Organize a catalog by pack ID and immutable release version. Keep complete
+managed files under `targets/`, mirroring their default project paths, and keep
+merge inputs under `fragments/<target>/`:
+
+```text
+packs/
+  example-documentation-standard/
+    1.0.0/
+      pack.yml
+      targets/
+        docs/
+          standard.md
+      fragments/
+        package.json/
+          example-documentation-standard.json
+      instructions/
+        setup.md
+```
+
+Omit directories the release does not use. Use `scripts/` for packed lifecycle
+programs, `fixtures/` for isolated lifecycle test workspaces, and `examples/`
+for content that is not installed. Folder names explain purpose; only manifest
+selectors install content.
 
 | Field                  | Rules                                                                                                                                                                           |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -27,6 +54,7 @@ managedFiles:
 | `version`              | Required Semantic Version.                                                                                                                                                      |
 | `name`                 | Optional non-empty human-readable name.                                                                                                                                         |
 | `author`               | Required non-empty author or maintainer attribution.                                                                                                                            |
+| `draft`                | Optional visibility marker. Defaults to `false`; drafts require `--allow-draft` in discovery and search but remain available to direct commands.                                |
 | `homepage`             | Optional absolute HTTP or HTTPS URI.                                                                                                                                            |
 | `license`              | Required non-empty license identifier or expression.                                                                                                                            |
 | `managedFiles`         | Each entry has one `source`, `directory`, or `glob` selector and a project-relative `target`.                                                                                   |
@@ -119,8 +147,9 @@ CLI authoring migration is direct:
 <position>`.
 - Replace `luna pack scripts` with `luna pack hooks`.
 
-The manifest directory is the pack root. Source selectors read from that root;
-directory and glob matches retain their relative paths below the target.
+The version directory containing the manifest is the pack root. Source
+selectors read from that root; directory and glob matches retain their relative
+paths below the target.
 
 Managed-file `target` values are portable pack defaults. Consumers can remap
 them in project-level `lunapack.yml` configuration or through `luna install`

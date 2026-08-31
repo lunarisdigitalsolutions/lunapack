@@ -216,7 +216,8 @@ function Add-ChangelogSection {
 }
 
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$changelogPath = Join-Path $repositoryRoot 'CHANGELOG.md'
+$changelogRepositoryPath = 'projects/cli/CHANGELOG.md'
+$changelogPath = Join-Path $repositoryRoot $changelogRepositoryPath
 $semanticVersionPattern = '(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)'
 $releaseHeadingPattern = "(?m)^## Version (?<version>$semanticVersionPattern) - .+$"
 $unreleasedSectionPattern = '(?ms)^## Unreleased\r?\n(?<content>.*?)(?=^## Version )'
@@ -342,13 +343,13 @@ try {
         throw "Release tag '$releaseTag' already exists on origin."
     }
 
-    if (Test-GitPathChanged -Path 'CHANGELOG.md') {
-        if (-not (Confirm-Action -Action "Create commit 'release: Release version $releaseVersion' containing CHANGELOG.md?")) {
+    if (Test-GitPathChanged -Path $changelogRepositoryPath) {
+        if (-not (Confirm-Action -Action "Create commit 'release: Release version $releaseVersion' containing $changelogRepositoryPath?")) {
             Write-Information 'Release cancelled before commit.'
             return
         }
 
-        Invoke-Git -Arguments @('commit', '--only', 'CHANGELOG.md', '-m', "release: Release version $releaseVersion") | Out-Null
+        Invoke-Git -Arguments @('commit', '--only', $changelogRepositoryPath, '-m', "release: Release version $releaseVersion") | Out-Null
 
         if (-not (Confirm-Action -Action 'Push main to origin?')) {
             Write-Information "Release commit created locally. Push main before creating tag '$releaseTag'."
@@ -358,7 +359,7 @@ try {
         Invoke-Git -Arguments @('push', 'origin', 'main') | Out-Null
     }
     else {
-        Write-Information 'CHANGELOG.md is unchanged; skipping release commit and main push.'
+        Write-Information "$changelogRepositoryPath is unchanged; skipping release commit and main push."
     }
 
     if (-not (Confirm-Action -Action "Create annotated tag '$releaseTag'?")) {

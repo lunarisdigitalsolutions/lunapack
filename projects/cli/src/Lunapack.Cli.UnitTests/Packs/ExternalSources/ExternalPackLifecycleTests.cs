@@ -95,10 +95,10 @@ public sealed class ExternalPackLifecycleTests
         );
 
         await Assert.That(exitCode).IsEqualTo(0);
-        await Assert.That(console.Output).Contains("source mapping: example upstream -> upstream");
-        await Assert.That(console.Output).Contains("source addition: upstream");
-        await Assert.That(console.Output).Contains("approval: required");
-        await Assert.That(console.Output).Contains("create README.md");
+        await Assert.That(console.Output).Contains("Map  example: upstream -> upstream");
+        await Assert.That(console.Output).Contains("Add  upstream");
+        await Assert.That(console.Output).Contains("approval required");
+        await Assert.That(console.Output).Contains("Create  README.md");
         await Assert.That(File.ReadAllText(configurationPath)).IsEqualTo(originalConfiguration);
         await Assert.That(File.ReadAllText(lockPath)).IsEqualTo(originalLock);
         await Assert.That(File.Exists(Path.Combine(workspace.Path, "README.md"))).IsFalse();

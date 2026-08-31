@@ -20,6 +20,22 @@ internal sealed class LifecycleHookAuthorizer(
         ProjectConfiguration configuration
     ) => _policyEvaluator.EvaluateAsync(projectDirectory, configuration);
 
+    public IReadOnlyList<TrustScope> GetTrustScopes(
+        string projectDirectory,
+        ProjectConfiguration configuration,
+        ScriptPolicyEvaluation evaluation,
+        LifecycleHookInvocation invocation
+    ) =>
+        trustPolicy.GetTrustScopes(
+            projectDirectory,
+            evaluation.ProjectKey,
+            configuration,
+            evaluation.Settings,
+            invocation.Pack.SourceName,
+            invocation.Pack.SourceIdentity,
+            invocation.Pack.Manifest.Id
+        );
+
     public async Task<
         ManifestOperationResult<IReadOnlyList<AuthorizedLifecycleHook>>
     > AuthorizeAsync(

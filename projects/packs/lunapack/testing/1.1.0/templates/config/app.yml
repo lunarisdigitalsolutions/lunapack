@@ -1,0 +1,4 @@
+name: '{{ projectName }}'
+profile: '{{ profile }}'
+release: 1.1.0
+status: compatible-minor-update

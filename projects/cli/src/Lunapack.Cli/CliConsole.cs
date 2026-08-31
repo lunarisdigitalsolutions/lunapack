@@ -20,6 +20,14 @@ internal sealed class CliConsole(IAnsiConsole ansiConsole, CliLogLevel minimumLe
 
     public void Info(string message) => Write(CliLogLevel.Info, message);
 
+    public void MarkupInfo(string markup)
+    {
+        if (IsEnabled(CliLogLevel.Info))
+        {
+            ansiConsole.MarkupLine(markup);
+        }
+    }
+
     public void Success(string message) => WriteStyledInfo("green", message);
 
     public void Accent(string message) => WriteStyledInfo("cyan", message);

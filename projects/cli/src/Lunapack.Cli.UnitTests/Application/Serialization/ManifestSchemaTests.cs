@@ -393,6 +393,25 @@ public sealed class ManifestSchemaTests
     }
 
     [Test]
+    public async Task PackSchema_WhenDraftDeclared_DefinesOptionalFalseDefault()
+    {
+        using var schema = JsonDocument.Parse(
+            File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "pack.schema.json"))
+        );
+
+        var draft = schema.RootElement.GetProperty("properties").GetProperty("draft");
+        var requiredProperties = schema
+            .RootElement.GetProperty("required")
+            .EnumerateArray()
+            .Select(property => property.GetString())
+            .ToArray();
+
+        await Assert.That(draft.GetProperty("type").GetString()).IsEqualTo("boolean");
+        await Assert.That(draft.GetProperty("default").GetBoolean()).IsFalse();
+        await Assert.That(requiredProperties).DoesNotContain("draft");
+    }
+
+    [Test]
     public async Task PackSchema_WhenHooksDeclared_DefinesOrderedTypedUnionAndRejectsLegacyProperty()
     {
         using var schema = JsonDocument.Parse(

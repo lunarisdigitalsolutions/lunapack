@@ -6,6 +6,7 @@ using Lunapack.Cli.Packs.ManagedFiles;
 using Lunapack.Cli.Packs.Planning;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources;
+using Lunapack.Cli.Trust;
 using SpectreTestConsole = Spectre.Console.Testing.TestConsole;
 
 namespace Lunapack.Cli.UnitTests.Packs;
@@ -401,8 +402,49 @@ public sealed class PackLifecycleTests
         );
 
         await Assert.That(exitCode).IsEqualTo(0);
-        await Assert.That(ansiConsole.Output).Contains($"policy-denied scopes: {scopeName}");
+        await Assert.That(ansiConsole.Output).Contains($"blocked (policy: {scopeName})");
         await Assert.That(ansiConsole.Output).DoesNotContain("Lifecycle script denied by policy");
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, ".gitignore"))).IsFalse();
+    }
+
+    [Test]
+    [Arguments("local-user")]
+    [Arguments("project")]
+    [Arguments("global-user")]
+    public async Task Scenario_InstallDryRun_ScriptTrustedAtScope_ReportsTrustScope(
+        string scopeName
+    )
+    {
+        var ansiConsole = new SpectreTestConsole();
+        ansiConsole.Profile.Capabilities.Interactive = false;
+        ansiConsole.Profile.Width = 500;
+        using var workspace = new TestWorkspace(
+            ansiConsole: ansiConsole,
+            trustConfirmer: new AcceptingTrustConfirmer()
+        );
+        var sourcePath = CreatePackSource(
+            workspace.Path,
+            "id: dotnet-gitignore\nversion: 1.0.0\nhooks:\n  preInstall:\n    - type: script\n      command: command-that-must-not-be-resolved\nmanagedFiles:\n  - source: templates/dotnet.gitignore\n    target: .gitignore\n"
+        );
+        await ConfigureSourceAsync(workspace, sourcePath);
+        var trustArguments = scopeName switch
+        {
+            "project" => new[] { "trust", "source", "local", "--project" },
+            "global-user" => new[] { "trust", "source", "local", "--global" },
+            _ => new[] { "trust", "source", "local" },
+        };
+        var trustExitCode = await workspace.Application.RunAsync(trustArguments, workspace.Path);
+        var outputStart = ansiConsole.Output.Length;
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["install", "dotnet-gitignore", "--dry-run"],
+            workspace.Path
+        );
+        var output = ansiConsole.Output[outputStart..];
+
+        await Assert.That(trustExitCode).IsEqualTo(0);
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(output).Contains($"allowed (trust: {scopeName})");
         await Assert.That(File.Exists(Path.Combine(workspace.Path, ".gitignore"))).IsFalse();
     }
 
@@ -549,6 +591,48 @@ public sealed class PackLifecycleTests
             .Contains(
                 "warning: Managed file target 'docs/missing.md' could not be resolved while rendering 'docs/index.md'."
             );
+    }
+
+    [Test]
+    public async Task Scenario_InstallSucceeds_ReportsManagedFileChanges()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        ansiConsole.Profile.Width = 500;
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var sourcePath = CreatePackSource(workspace.Path);
+        await ConfigureSourceAsync(workspace, sourcePath);
+        var outputStart = ansiConsole.Output.Length;
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["install", "dotnet-gitignore"],
+            workspace.Path
+        );
+        var output = ansiConsole.Output[outputStart..];
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(output).Contains("File changes");
+        await Assert.That(output).Contains("Create");
+        await Assert.That(output).Contains(".gitignore");
+    }
+
+    [Test]
+    public async Task Scenario_InstallSuppressesFileChanges_HidesManagedFileChanges()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        ansiConsole.Profile.Width = 500;
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var sourcePath = CreatePackSource(workspace.Path);
+        await ConfigureSourceAsync(workspace, sourcePath);
+        var outputStart = ansiConsole.Output.Length;
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["install", "dotnet-gitignore", "--no-file-change-output"],
+            workspace.Path
+        );
+        var output = ansiConsole.Output[outputStart..];
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(output).DoesNotContain("File changes");
     }
 
     [Test]
@@ -1162,7 +1246,7 @@ public sealed class PackLifecycleTests
         await ConfigureSourceAsync(workspace, sourcePath);
         await workspace.Application.RunAsync(["install", "dotnet-gitignore@1.0.0"], workspace.Path);
         await workspace.Application.RunAsync(
-            ["install", "gitignore-general@1.0.0"],
+            ["install", "gitignore-baseline@1.0.0"],
             workspace.Path
         );
 
@@ -1178,7 +1262,7 @@ public sealed class PackLifecycleTests
         await Assert.That(targetContents).Contains("# general:start\n*.temporary\n# general:end");
         await Assert
             .That(state.RequireValue().Configuration.Packs.Select(pack => pack.Id))
-            .IsEquivalentTo(["gitignore-general"]);
+            .IsEquivalentTo(["gitignore-baseline"]);
     }
 
     [Test]
@@ -1757,14 +1841,14 @@ public sealed class PackLifecycleTests
             .DryRunInstallAsync(
                 workspace.Path,
                 new PackInstallationRequest(
-                    new PackReference("gitignore-general", "1.0.0"),
+                    new PackReference("gitignore-baseline", "1.0.0"),
                     null,
                     false
                 )
             );
         await Assert.That(secondInstallDryRun.Error).IsNull();
         var secondInstallExitCode = await workspace.Application.RunAsync(
-            ["install", "gitignore-general@1.0.0"],
+            ["install", "gitignore-baseline@1.0.0"],
             workspace.Path
         );
         var targetPath = Path.Combine(workspace.Path, ".gitignore");
@@ -1791,7 +1875,7 @@ public sealed class PackLifecycleTests
                     },
                     new ProjectConfiguration.RequestedPack
                     {
-                        Id = "gitignore-general",
+                        Id = "gitignore-baseline",
                         Version = "2.0.0",
                     },
                 ],
@@ -2230,6 +2314,11 @@ public sealed class PackLifecycleTests
         );
     }
 
+    private sealed class AcceptingTrustConfirmer : ITrustConfirmer
+    {
+        public bool Confirm(string warning) => true;
+    }
+
     private const string RequiredCompanyParameterManifest =
         "id: dotnet-gitignore\nversion: 1.0.0\nparameters:\n  companyName:\n    type: string\n    required: true\nmanagedFiles:\n  - source: templates/dotnet.gitignore\n    target: .gitignore\n    template: true\n";
 
@@ -2340,14 +2429,14 @@ public sealed class PackLifecycleTests
         );
         CreatePack(
             sourcePath,
-            "gitignore-general-v1",
-            "id: gitignore-general\nversion: 1.0.0\nmanagedFiles:\n  - source: templates/content.txt\n    target: .gitignore\n    strategy:\n      type: merge\n      method: section\n",
+            "gitignore-baseline-v1",
+            "id: gitignore-baseline\nversion: 1.0.0\nmanagedFiles:\n  - source: templates/content.txt\n    target: .gitignore\n    strategy:\n      type: merge\n      method: section\n",
             "# general:start\n*.temporary\n# general:end\n"
         );
         CreatePack(
             sourcePath,
-            "gitignore-general-v2",
-            "id: gitignore-general\nversion: 2.0.0\nmanagedFiles:\n  - source: templates/content.txt\n    target: .gitignore\n    strategy:\n      type: merge\n      method: section\n",
+            "gitignore-baseline-v2",
+            "id: gitignore-baseline\nversion: 2.0.0\nmanagedFiles:\n  - source: templates/content.txt\n    target: .gitignore\n    strategy:\n      type: merge\n      method: section\n",
             "# general:start\n*.temporary-v2\n# general:end\n"
         );
 

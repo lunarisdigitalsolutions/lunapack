@@ -42,7 +42,7 @@ internal static class TrustOutputFormatter
         return lines.Count == 0 ? [$"No {scope} trust entries."] : lines;
     }
 
-    private static string FormatScope(TrustScope scope) =>
+    public static string FormatScope(TrustScope scope) =>
         scope switch
         {
             TrustScope.LocalUser => "local-user",

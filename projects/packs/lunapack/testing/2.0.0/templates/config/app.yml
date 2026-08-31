@@ -1,0 +1,4 @@
+name: '{{ projectName }}'
+profile: '{{ profile }}'
+release: 2.0.0
+status: major-update

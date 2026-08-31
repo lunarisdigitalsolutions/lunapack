@@ -7,6 +7,26 @@ namespace Lunapack.Cli.UnitTests.Packs.Manifest;
 public sealed class PackManifestInspectionFormatterTests
 {
     [Test]
+    public async Task Format_WhenManifestIsDraft_DisplaysDraftStatus()
+    {
+        var manifest = new PackManifest
+        {
+            Id = "example",
+            Version = "1.0.0",
+            Draft = true,
+        };
+        var console = new SpectreTestConsole();
+
+        foreach (var renderable in PackManifestInspectionFormatter.Format(manifest))
+        {
+            console.Write(renderable);
+        }
+
+        await Assert.That(console.Output).Contains("Draft");
+        await Assert.That(console.Output).Contains("yes");
+    }
+
+    [Test]
     public async Task Format_WhenTagsExceedPreviewLimit_DisplaysFirstFiveTags()
     {
         var manifest = new PackManifest

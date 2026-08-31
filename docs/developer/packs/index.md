@@ -24,6 +24,8 @@ Use this guide to author, compose, test, and release versioned LunaPack packs.
 ## Reference and explanation
 
 - [Pack manifest reference](reference/manifest.md)
+- [Pack catalog layout](reference/catalog-layout.md)
 - [Project document reference](reference/project-documents.md)
+- [Pack scope, taxonomy, and naming](explanation/scope-taxonomy-and-naming.md)
 - [Composition and lifecycle](explanation/composition-and-lifecycle.md)
 - [Ownership and safety](explanation/ownership-and-safety.md)
