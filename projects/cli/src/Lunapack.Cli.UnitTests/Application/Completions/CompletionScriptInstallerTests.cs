@@ -93,7 +93,7 @@ public sealed class CompletionScriptInstallerTests
     {
         var fileSystem = new MockFileSystem();
         var profileDirectory = fileSystem.Path.Combine("C:", "profile");
-        var xdgDataHomeDirectory = fileSystem.Path.Combine("C:", "xdg-data");
+        var xdgDataHomeDirectory = fileSystem.Path.GetFullPath("xdg-data");
         var installer = new NushellCompletionScriptInstaller(
             fileSystem,
             profileDirectory,
@@ -107,6 +107,34 @@ public sealed class CompletionScriptInstallerTests
 
         var expectedPath = fileSystem.Path.Combine(
             xdgDataHomeDirectory,
+            "nushell",
+            "vendor",
+            "autoload",
+            "luna-completions.nu"
+        );
+        await Assert.That(plan.DestinationPath).IsEqualTo(expectedPath);
+    }
+
+    [Test]
+    public async Task CreatePlan_WhenXdgDataHomeIsRelative_UsesPlatformDefaultDataDirectory()
+    {
+        var fileSystem = new MockFileSystem();
+        var profileDirectory = fileSystem.Path.Combine("C:", "profile");
+        var installer = new NushellCompletionScriptInstaller(
+            fileSystem,
+            profileDirectory,
+            fileSystem.Path.Combine("C:", "appdata"),
+            "relative-data",
+            isWindows: false,
+            isMacOS: false
+        );
+
+        var plan = installer.CreatePlan("script");
+
+        var expectedPath = fileSystem.Path.Combine(
+            profileDirectory,
+            ".local",
+            "share",
             "nushell",
             "vendor",
             "autoload",

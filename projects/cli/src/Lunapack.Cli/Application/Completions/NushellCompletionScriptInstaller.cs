@@ -29,7 +29,10 @@ internal sealed class NushellCompletionScriptInstaller(
             return applicationDataDirectory;
         }
 
-        if (!string.IsNullOrWhiteSpace(xdgDataHomeDirectory))
+        if (
+            !string.IsNullOrWhiteSpace(xdgDataHomeDirectory)
+            && FileSystem.Path.IsPathFullyQualified(xdgDataHomeDirectory)
+        )
         {
             return xdgDataHomeDirectory;
         }

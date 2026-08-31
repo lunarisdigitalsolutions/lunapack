@@ -39,8 +39,9 @@ directory when needed and appends the script unless it is already present.
 | Zsh        | `~/.zshrc`                                                                                                                            |
 
 Nushell uses `%APPDATA%` on Windows. On other platforms it uses
-`XDG_DATA_HOME` when set, `~/Library/Application Support` by default on macOS,
-or `~/.local/share` by default elsewhere.
+`XDG_DATA_HOME` when set to an absolute path. It ignores empty or relative
+values and defaults to `~/Library/Application Support` on macOS or
+`~/.local/share` elsewhere.
 
 ### Bash
 

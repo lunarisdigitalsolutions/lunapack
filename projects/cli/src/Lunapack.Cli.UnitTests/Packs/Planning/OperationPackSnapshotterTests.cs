@@ -16,7 +16,7 @@ public sealed class OperationPackSnapshotterTests
     public async Task Snapshot_WhenPackContainsReparsePoint_SkipsEntryAndCopiesOtherFiles()
     {
         var fileSystem = new MockFileSystem();
-        const string root = @"C:\workspace";
+        var root = fileSystem.Path.GetFullPath("workspace");
         var packDirectory = fileSystem.Path.Combine(root, "source", "example");
         var linkedFile = fileSystem.Path.Combine(packDirectory, "linked.txt");
         var snapshotRoot = fileSystem.Path.Combine(root, "snapshot");

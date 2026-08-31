@@ -267,6 +267,7 @@ test('Scenario_WebsiteRelease_BuildRunsWithoutDeploymentCredentials', () => {
     websiteWorkflow.indexOf('  deploy:')
   )
   const deployJob = websiteWorkflow.slice(websiteWorkflow.indexOf('  deploy:'))
+  assert.match(buildJob, /permissions:\s+contents: read\s+pages: read/)
   assert.match(buildJob, /uses: \.\/\.github\/actions\/website\/build/)
   assert.doesNotMatch(buildJob, /pages: write|id-token: write|deploy-pages/)
   assert.match(
