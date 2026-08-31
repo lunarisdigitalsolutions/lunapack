@@ -98,7 +98,7 @@ public sealed class ManagedFileTargetRemappingTests
     }
 
     [Test]
-    public async Task Resolve_WhenInvocationDirectoryAndConfiguredFileMatch_PrefersFileMapping()
+    public async Task Resolve_WhenInvocationDirectoryAndConfiguredFileMatch_PrefersInvocationMapping()
     {
         var invocationRemapping = ManagedFileTargetRemapping
             .Create(new MockFileSystem(), "C:\\project", ["docs/adr=docs/invocation"], [])
@@ -112,7 +112,7 @@ public sealed class ManagedFileTargetRemappingTests
 
         var target = invocationRemapping.Resolve("docs/adr/template.md", configuredRemapping);
 
-        await Assert.That(target).IsEqualTo("docs/configured/template.md");
+        await Assert.That(target).IsEqualTo("docs/invocation/template.md");
     }
 
     [Test]

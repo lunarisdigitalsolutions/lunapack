@@ -90,6 +90,11 @@ internal sealed class InspectPackCommandHandler(
         foreach (
             var renderable in PackManifestInspectionFormatter.Format(
                 pack.Manifest,
+                projectConfiguration
+                    .Packs.FirstOrDefault(request =>
+                        string.Equals(request.Id, pack.Manifest.Id, StringComparison.Ordinal)
+                    )
+                    ?.Remap,
                 projectConfiguration.Remap
             )
         )

@@ -8,11 +8,16 @@ Define machine-readable contracts for LunaPack project configuration, lock state
 
 ### Requirement: Publish project-manifest schema
 
-The repository SHALL publish a JSON Schema under `projects/schema/` for `lunapack.yml`. The schema SHALL require schema version `1`, define local and Git source entries, and define requested root pack references. A Git source SHALL require a repository URL and SHALL allow optional `ref`, optional repository-relative `path`, and optional `timeoutSeconds` from 1 through 300. Requested root pack references SHALL include an ID and MAY include an explicit Semantic Version request. The schema SHALL reject absolute local source paths, unsafe Git source paths, unsupported source types, resolved source provenance, managed file ownership, digests, and unknown required-state omissions. Existing valid local-source configuration SHALL remain valid.
+The repository SHALL publish a JSON Schema under `projects/schema/` for `lunapack.yml`. The schema SHALL require schema version `1`, define local and Git source entries, and define requested root pack references. A Git source SHALL require a repository URL and SHALL allow optional `ref`, optional repository-relative `path`, and optional `timeoutSeconds` from 1 through 300. Requested root pack references SHALL include an ID and MAY include an explicit Semantic Version request or managed-file target remapping. The schema SHALL reject absolute local source paths, unsafe Git source paths, unsupported source types, resolved source provenance, managed file ownership, digests, and unknown required-state omissions. Existing valid local-source configuration SHALL remain valid.
 
 #### Scenario: Validate an initialized manifest
 
 - **WHEN** the schema validates a manifest created by `luna init`
+- **THEN** validation succeeds
+
+#### Scenario: Validate pack-specific remapping
+
+- **WHEN** the schema validates a requested pack with file or directory remapping
 - **THEN** validation succeeds
 
 #### Scenario: Validate a Git source

@@ -33,6 +33,67 @@ public sealed class PackDryRunFormatterTests
     }
 
     [Test]
+    public async Task Scenario_PreviewHasRemappings_ReportsDefinitionSources()
+    {
+        var updatePlan = new PackUpdatePlan([])
+        {
+            Remappings =
+            [
+                new ManagedFileRemapping(
+                    "example",
+                    "docs/command.md",
+                    "command/command.md",
+                    ManagedFileRemappingOrigin.Command
+                ),
+                new ManagedFileRemapping(
+                    "example",
+                    "docs/pack.md",
+                    "pack/pack.md",
+                    ManagedFileRemappingOrigin.Pack
+                ),
+                new ManagedFileRemapping(
+                    "example",
+                    "docs/project.md",
+                    "project/project.md",
+                    ManagedFileRemappingOrigin.Project
+                ),
+                new ManagedFileRemapping(
+                    "example",
+                    "docs/locked.md",
+                    "locked/locked.md",
+                    ManagedFileRemappingOrigin.Lock
+                ),
+            ],
+        };
+        var installOutput = PackDryRunFormatter.FormatInstall(
+            new PackInstallDryRunResult(new PackReference("example", "2.0.0"), updatePlan)
+        );
+        var updateOutput = PackDryRunFormatter.FormatUpdate([], updatePlan);
+
+        await Assert
+            .That(installOutput)
+            .Contains("remap: example docs/command.md -> command/command.md source: command line");
+        await Assert
+            .That(installOutput)
+            .Contains(
+                "remap: example docs/pack.md -> pack/pack.md source: pack 'example' in lunapack.yml"
+            );
+        await Assert
+            .That(installOutput)
+            .Contains(
+                "remap: example docs/project.md -> project/project.md source: top-level remap in lunapack.yml"
+            );
+        await Assert
+            .That(installOutput)
+            .Contains(
+                "remap: example docs/locked.md -> locked/locked.md source: lunapack-lock.yml"
+            );
+        await Assert
+            .That(updateOutput)
+            .IsEquivalentTo(["No updates are available.", .. installOutput.Skip(1)]);
+    }
+
+    [Test]
     public async Task Scenario_UpdatePreviewHasDeleteAction_IncludesSelectedReleaseAndAction()
     {
         var previousPack = new ProjectLockFile.ResolvedPack

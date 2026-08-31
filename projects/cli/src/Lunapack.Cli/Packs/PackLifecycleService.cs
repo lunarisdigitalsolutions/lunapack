@@ -85,6 +85,7 @@ internal sealed class PackLifecycleService(
         }
 
         WriteManagedFileTemplateDiagnostics(preparedInstallation.InstallationPlan);
+        WriteManagedFileRemappings(preparedInstallation.UpdatePlan.Remappings);
 
         await using (preparedInstallation.Materialization)
         await using (preparedInstallation.ExternalMaterialization)
@@ -753,6 +754,7 @@ internal sealed class PackLifecycleService(
         }
 
         WriteManagedFileTemplateDiagnostics(preparedUpdate.InstallationPlan);
+        WriteManagedFileRemappings(preparedUpdate.UpdatePlan.Remappings);
 
         await using (preparedUpdate.Materialization)
         await using (preparedUpdate.ExternalMaterialization)
@@ -915,12 +917,12 @@ internal sealed class PackLifecycleService(
                 {
                     Destination = installationRequest.Destination,
                     Id = packReference.Id,
+                    Remap = installationRequest.SaveRemapping
+                        ? installationRequest.TargetRemapping?.MergeInto(null)
+                        : null,
                     Version = packReference.Version,
                 },
             ],
-            Remap = installationRequest.SaveRemapping
-                ? installationRequest.TargetRemapping?.MergeInto(state.Configuration.Remap)
-                : state.Configuration.Remap,
         };
         var graph = await ResolveUninstalledGraphAsync(
             projectDirectory,
@@ -1107,6 +1109,14 @@ internal sealed class PackLifecycleService(
             _console.Warning(
                 $"Managed file target '{diagnostic.ReferencedDeclaredTarget}' could not be resolved while rendering '{diagnostic.CurrentEffectiveTarget}'."
             );
+        }
+    }
+
+    private void WriteManagedFileRemappings(IReadOnlyList<ManagedFileRemapping> remappings)
+    {
+        foreach (var remapping in remappings)
+        {
+            _console.Info(ManagedFileRemappingFormatter.Format(remapping));
         }
     }
 

@@ -441,7 +441,12 @@ internal sealed class ProjectStateStore : IProjectStateStore
 
     private static ProjectConfiguration.RequestedPack NormalizeRequestedPack(
         ProjectConfiguration.RequestedPack pack
-    ) => pack with { Destination = ProjectPath.NormalizeOptional(pack.Destination) };
+    ) =>
+        pack with
+        {
+            Destination = ProjectPath.NormalizeOptional(pack.Destination),
+            Remap = NormalizeRemapping(pack.Remap),
+        };
 
     private static ProjectConfiguration.Remapping? NormalizeRemapping(
         ProjectConfiguration.Remapping? remapping

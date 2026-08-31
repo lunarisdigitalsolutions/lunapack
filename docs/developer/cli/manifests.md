@@ -10,6 +10,26 @@ All documents use version-1 schemas. The former combined-state `lunapack.yml`
 shape is unsupported; recreate project state instead of attempting to migrate
 it. Pack authors should use the pack-manifest reference.
 
+Each requested pack can override project-wide managed-file remapping:
+
+```yml
+packs:
+  - id: architecture-guidance
+    remap:
+      directories:
+        docs: docs/architecture
+  - id: developer-guidance
+    remap:
+      directories:
+        docs: docs/developer
+```
+
+The effective target retained in `lunapack-lock.yml` has highest priority during
+updates, including targets selected by an install remapping that was not saved.
+For new targets, the matching pack entry's `remap` overrides the top-level
+`remap`; command-line install remapping overrides both. `luna install
+--save-remap` writes mappings to the installed pack entry.
+
 Use `luna pack init` and the `luna pack add`, `set`, and `rm` groups to maintain
 the local `pack.yml`. These commands validate the complete candidate before an
 atomic write. Direct YAML edits remain supported; run `luna pack validate`

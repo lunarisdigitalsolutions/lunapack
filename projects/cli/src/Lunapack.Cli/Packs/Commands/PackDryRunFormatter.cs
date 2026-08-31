@@ -16,6 +16,7 @@ internal static class PackDryRunFormatter
             $"Selected release: {dryRun.SelectedRelease.Id}@{dryRun.SelectedRelease.Version}",
         };
         lines.AddRange(FormatExternalSources(dryRun.UpdatePlan.ExternalSources));
+        lines.AddRange(dryRun.UpdatePlan.Remappings.Select(ManagedFileRemappingFormatter.Format));
         lines.AddRange(dryRun.UpdatePlan.Actions.Select(FormatAction));
         lines.AddRange(FormatLifecycle(dryRun.UpdatePlan.Lifecycle));
         return lines;
@@ -38,6 +39,7 @@ internal static class PackDryRunFormatter
         }
 
         lines.AddRange(FormatExternalSources(updatePlan.ExternalSources));
+        lines.AddRange(updatePlan.Remappings.Select(ManagedFileRemappingFormatter.Format));
         lines.AddRange(updatePlan.Actions.Select(FormatAction));
         lines.AddRange(FormatLifecycle(updatePlan.Lifecycle));
         if (proposedSourceSwitch is not null)

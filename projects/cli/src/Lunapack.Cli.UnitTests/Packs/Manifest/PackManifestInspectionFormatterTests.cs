@@ -63,6 +63,47 @@ public sealed class PackManifestInspectionFormatterTests
     }
 
     [Test]
+    public async Task Format_WhenPackAndGlobalRemappingMatch_DisplaysPackEffectiveTarget()
+    {
+        var manifest = new PackManifest
+        {
+            Id = "example",
+            Version = "1.0.0",
+            ManagedFiles =
+            [
+                new PackManifest.PackManagedFile
+                {
+                    Source = "templates/template.md",
+                    Target = "docs/adr/template.md",
+                },
+            ],
+        };
+        var packRemapping = new ProjectConfiguration.Remapping
+        {
+            Directories = { ["docs/adr"] = "docs/pack" },
+        };
+        var globalRemapping = new ProjectConfiguration.Remapping
+        {
+            Files = { ["docs/adr/template.md"] = "docs/global/template.md" },
+        };
+        var console = new SpectreTestConsole();
+
+        foreach (
+            var renderable in PackManifestInspectionFormatter.Format(
+                manifest,
+                packRemapping,
+                globalRemapping
+            )
+        )
+        {
+            console.Write(renderable);
+        }
+
+        await Assert.That(console.Output).Contains("docs/adr/template.md -> docs/pack/template.md");
+        await Assert.That(console.Output).DoesNotContain("docs/global/template.md");
+    }
+
+    [Test]
     public async Task Format_WhenReferencesContainSuppression_DisplaysDisabledHooksAndNone()
     {
         var manifest = new PackManifest
