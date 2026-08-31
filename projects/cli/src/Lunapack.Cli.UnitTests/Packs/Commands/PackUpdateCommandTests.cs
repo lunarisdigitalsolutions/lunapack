@@ -1,6 +1,7 @@
 using Lunapack.Cli.Packs;
 using Lunapack.Cli.Packs.Planning;
 using Lunapack.Cli.Project;
+using SpectreTestConsole = Spectre.Console.Testing.TestConsole;
 
 namespace Lunapack.Cli.UnitTests.Packs.Commands;
 
@@ -66,6 +67,47 @@ public sealed class PackUpdateCommandTests
             .That(projectState.Configuration.Packs.Single().Destination)
             .IsEqualTo("docs/guidance");
         await Assert.That(projectState.LockFile.Packs.Single().Version).IsEqualTo("2.0.0");
+    }
+
+    [Test]
+    public async Task Scenario_UpdateSucceeds_ReportsManagedFileChanges()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        ansiConsole.Profile.Width = 500;
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var sourcePath = CreateVersionedPackSource(workspace.Path, "dotnet", "1.0.0", "2.0.0");
+        await ConfigureSourceAsync(workspace, sourcePath);
+        await workspace.Application.RunAsync(["install", "dotnet@1.0.0"], workspace.Path);
+        var outputStart = ansiConsole.Output.Length;
+
+        var exitCode = await workspace.Application.RunAsync(["update", "dotnet"], workspace.Path);
+        var output = ansiConsole.Output[outputStart..];
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(output).Contains("File changes");
+        await Assert.That(output).Contains("Copy");
+        await Assert.That(output).Contains("dotnet.txt");
+    }
+
+    [Test]
+    public async Task Scenario_UpdateSuppressesFileChanges_HidesManagedFileChanges()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        ansiConsole.Profile.Width = 500;
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var sourcePath = CreateVersionedPackSource(workspace.Path, "dotnet", "1.0.0", "2.0.0");
+        await ConfigureSourceAsync(workspace, sourcePath);
+        await workspace.Application.RunAsync(["install", "dotnet@1.0.0"], workspace.Path);
+        var outputStart = ansiConsole.Output.Length;
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["update", "dotnet", "--no-file-changes"],
+            workspace.Path
+        );
+        var output = ansiConsole.Output[outputStart..];
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(output).DoesNotContain("File changes");
     }
 
     [Test]

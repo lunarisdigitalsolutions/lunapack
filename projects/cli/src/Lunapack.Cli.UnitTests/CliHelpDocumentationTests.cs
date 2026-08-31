@@ -55,6 +55,7 @@ public sealed class CliHelpDocumentationTests
             [
                 "--dry-run",
                 "-D",
+                "--no-file-changes",
                 "--destination",
                 "-d",
                 "--adopt-existing",
@@ -77,7 +78,15 @@ public sealed class CliHelpDocumentationTests
         new(
             "update",
             "[<pack-reference>...]",
-            ["--dry-run", "-D", "--prompt", "-p", "--scripts", "--skip-instructions"]
+            [
+                "--dry-run",
+                "-D",
+                "--no-file-changes",
+                "--prompt",
+                "-p",
+                "--scripts",
+                "--skip-instructions",
+            ]
         ),
         new("mv", "<source> <target>", ["--save-remap"]),
         new("audit"),

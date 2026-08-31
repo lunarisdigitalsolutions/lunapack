@@ -7,6 +7,13 @@ internal maintenance work, such as CI, build, or release-process changes.
 
 Update this section before creating a release tag.
 
+### CLI Workflow
+
+- Install and update dry runs now group source, managed-file, and lifecycle
+  actions under labeled sections with colored action prefixes. Successful
+  installs and updates list managed-file changes by default; use
+  `--no-file-changes` to suppress that list.
+
 ## Version 1.2.0 - 2026-08-29
 
 ### Added

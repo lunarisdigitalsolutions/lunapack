@@ -26,6 +26,7 @@ internal sealed class UpdatePackCommandHandler(
         var packReferenceArgument = CreatePackReferenceArgument();
         var promptOption = CreatePromptOption();
         var dryRunOption = CreateDryRunOption();
+        var noFileChangesOption = CreateNoFileChangesOption();
         var acceptSourcesOption = CreateAcceptSourcesOption();
         var scriptsOption = CreateScriptsOption();
         var skipInstructionsOption = CreateSkipInstructionsOption();
@@ -34,6 +35,7 @@ internal sealed class UpdatePackCommandHandler(
             packReferenceArgument,
             promptOption,
             dryRunOption,
+            noFileChangesOption,
             acceptSourcesOption,
             scriptsOption,
             skipInstructionsOption,
@@ -46,6 +48,7 @@ internal sealed class UpdatePackCommandHandler(
                 packReferenceArgument,
                 promptOption,
                 dryRunOption,
+                noFileChangesOption,
                 acceptSourcesOption,
                 scriptsOption,
                 skipInstructionsOption
@@ -62,6 +65,7 @@ internal sealed class UpdatePackCommandHandler(
         Argument<string[]> packReferenceArgument,
         Option<bool> promptOption,
         Option<bool> dryRunOption,
+        Option<bool> noFileChangesOption,
         Option<bool> acceptSourcesOption,
         Option<string?> scriptsOption,
         Option<bool> skipInstructionsOption
@@ -85,6 +89,7 @@ internal sealed class UpdatePackCommandHandler(
         }
 
         var dryRun = parseResult.GetValue(dryRunOption);
+        var showFileChanges = !parseResult.GetValue(noFileChangesOption);
         var acceptSources = parseResult.GetValue(acceptSourcesOption);
         var scriptMode = ScriptExecutionMode.Parse(
             parseResult.GetValue(scriptsOption) ?? ScriptExecutionMode.Prompt.Value
@@ -111,7 +116,8 @@ internal sealed class UpdatePackCommandHandler(
                     skipInstructions,
                     acceptSources
                 ),
-                dryRun
+                dryRun,
+                showFileChanges
             );
         }
 
@@ -127,7 +133,8 @@ internal sealed class UpdatePackCommandHandler(
                     "Updating packs...",
                     acceptSources
                 ),
-                dryRun
+                dryRun,
+                showFileChanges
             );
         }
 
@@ -136,6 +143,7 @@ internal sealed class UpdatePackCommandHandler(
             referenceValues,
             references,
             dryRun,
+            showFileChanges,
             parsedScriptMode,
             skipInstructions,
             acceptSources
@@ -147,6 +155,7 @@ internal sealed class UpdatePackCommandHandler(
         string[] referenceValues,
         IReadOnlyList<PackReference> references,
         bool dryRun,
+        bool showFileChanges,
         ScriptExecutionMode scriptMode,
         bool skipInstructions,
         bool acceptSources
@@ -180,7 +189,8 @@ internal sealed class UpdatePackCommandHandler(
                     $"Updating {reference.Id}...",
                     acceptSources
                 ),
-                dryRun
+                dryRun,
+                showFileChanges
             );
             if (exitCode != 0)
             {
@@ -203,6 +213,12 @@ internal sealed class UpdatePackCommandHandler(
 
     private static Option<bool> CreateDryRunOption() =>
         new("--dry-run", "-D") { Description = "Plan updates without modifying files or state." };
+
+    private static Option<bool> CreateNoFileChangesOption() =>
+        new("--no-file-changes")
+        {
+            Description = "Do not list managed-file changes after updates.",
+        };
 
     private static Option<bool> CreateAcceptSourcesOption() =>
         new("--accept-sources")
@@ -298,7 +314,11 @@ internal sealed class UpdatePackCommandHandler(
         return ManifestOperationResult<IReadOnlyList<PackReference>>.Success(references);
     }
 
-    private async Task<int> HandleResultAsync(PackUpdateService.UpdateResult result, bool dryRun)
+    private async Task<int> HandleResultAsync(
+        PackUpdateService.UpdateResult result,
+        bool dryRun,
+        bool showFileChanges
+    )
     {
         if (result.Error is not null)
         {
@@ -315,18 +335,27 @@ internal sealed class UpdatePackCommandHandler(
             foreach (
                 var line in PackDryRunFormatter.FormatUpdate(
                     result.Outcomes,
-                    result.DryRunPlan ?? new PackUpdatePlan([]),
+                    result.FileChangePlan ?? new PackUpdatePlan([]),
                     result.ProposedSourceSwitch
                 )
             )
             {
-                console.Info(line);
+                console.MarkupInfo(line);
             }
         }
         else
         {
             console.Info(string.Empty);
             WriteOutcomes(console, result.Outcomes);
+            if (showFileChanges && result.FileChangePlan is not null)
+            {
+                foreach (
+                    var line in PackDryRunFormatter.FormatAppliedFileChanges(result.FileChangePlan)
+                )
+                {
+                    console.MarkupInfo(line);
+                }
+            }
             var updatedCount = result.Outcomes.Count(outcome => !outcome.IsCurrent);
             if (updatedCount > 0)
             {

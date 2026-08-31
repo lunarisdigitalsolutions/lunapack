@@ -552,6 +552,48 @@ public sealed class PackLifecycleTests
     }
 
     [Test]
+    public async Task Scenario_InstallSucceeds_ReportsManagedFileChanges()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        ansiConsole.Profile.Width = 500;
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var sourcePath = CreatePackSource(workspace.Path);
+        await ConfigureSourceAsync(workspace, sourcePath);
+        var outputStart = ansiConsole.Output.Length;
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["install", "dotnet-gitignore"],
+            workspace.Path
+        );
+        var output = ansiConsole.Output[outputStart..];
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(output).Contains("File changes");
+        await Assert.That(output).Contains("Create");
+        await Assert.That(output).Contains(".gitignore");
+    }
+
+    [Test]
+    public async Task Scenario_InstallSuppressesFileChanges_HidesManagedFileChanges()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        ansiConsole.Profile.Width = 500;
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var sourcePath = CreatePackSource(workspace.Path);
+        await ConfigureSourceAsync(workspace, sourcePath);
+        var outputStart = ansiConsole.Output.Length;
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["install", "dotnet-gitignore", "--no-file-changes"],
+            workspace.Path
+        );
+        var output = ansiConsole.Output[outputStart..];
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(output).DoesNotContain("File changes");
+    }
+
+    [Test]
     public async Task InstallDryRun_WhenManagedFileReferenceMissing_WarnsWithoutMutation()
     {
         var ansiConsole = new SpectreTestConsole();

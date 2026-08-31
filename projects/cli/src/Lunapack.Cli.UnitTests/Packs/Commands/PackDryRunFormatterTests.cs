@@ -21,7 +21,12 @@ public sealed class PackDryRunFormatterTests
             new PackInstallDryRunResult(new PackReference("empty", "2.0.0"), new PackUpdatePlan([]))
         );
 
-        await Assert.That(output).IsEquivalentTo(["Selected release: empty@2.0.0"]);
+        await Assert
+            .That(output)
+            .IsEquivalentTo([
+                "[bold]Install plan[/]",
+                "[cyan]◆[/] Selected release  [bold]empty@2.0.0[/]",
+            ]);
     }
 
     [Test]
@@ -29,7 +34,9 @@ public sealed class PackDryRunFormatterTests
     {
         var output = PackDryRunFormatter.FormatUpdate([], new PackUpdatePlan([]));
 
-        await Assert.That(output).IsEquivalentTo(["No updates are available."]);
+        await Assert
+            .That(output)
+            .IsEquivalentTo(["[bold]Update plan[/]", "[grey]•[/] No updates are available."]);
     }
 
     [Test]
@@ -66,7 +73,15 @@ public sealed class PackDryRunFormatterTests
             ])
         );
 
-        await Assert.That(output).IsEquivalentTo(["example 1.0.0 -> 2.0.0", "delete obsolete.txt"]);
+        await Assert
+            .That(output)
+            .IsEquivalentTo([
+                "[bold]Update plan[/]",
+                "[cyan]◆[/] example  1.0.0 → [bold]2.0.0[/]",
+                string.Empty,
+                "[bold]File changes[/]",
+                "[red]-[/] Delete  obsolete.txt",
+            ]);
     }
 
     [Test]
@@ -96,13 +111,14 @@ public sealed class PackDryRunFormatterTests
             )
         );
 
-        await Assert.That(output).Contains("scripts: skip");
+        await Assert.That(output).Contains("[bold]Lifecycle[/]");
+        await Assert.That(output).Contains("[magenta]▶[/] Scripts  skip");
         await Assert
             .That(output)
-            .Contains("pre-hook: example@1.0.0 preInstall script consent: skipped");
+            .Contains("[magenta]▶[/] pre-hook  example@1.0.0 preInstall script consent: skipped");
         await Assert
             .That(output)
-            .Contains("post-hook: example@1.0.0 postInstall script consent: skipped");
+            .Contains("[magenta]▶[/] post-hook  example@1.0.0 postInstall script consent: skipped");
     }
 
     [Test]
@@ -157,7 +173,7 @@ public sealed class PackDryRunFormatterTests
         await Assert
             .That(output)
             .Contains(
-                "post-hook: example@1.0.0 postUpdate instruction file: instructions/setup.md templating: enabled steps: 2"
+                "[magenta]▶[/] post-hook  example@1.0.0 postUpdate instruction file: instructions/setup.md templating: enabled steps: 2"
             );
         await Assert.That(output).DoesNotContain("Press Enter to continue...");
     }
@@ -197,7 +213,7 @@ public sealed class PackDryRunFormatterTests
         await Assert
             .That(output)
             .Contains(
-                "pre-hook: example@1.0.0 preInstall script consent: policy-denied scopes: project, global-user"
+                "[magenta]▶[/] pre-hook  example@1.0.0 preInstall script consent: policy-denied scopes: project, global-user"
             );
     }
 
@@ -216,6 +232,6 @@ public sealed class PackDryRunFormatterTests
 
         await Assert
             .That(output)
-            .Contains("proposed source switch: example local(path=first) -> local(path=second)");
+            .Contains("[yellow]↔[/] example  local(path=first) → local(path=second)");
     }
 }

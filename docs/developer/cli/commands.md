@@ -189,6 +189,11 @@ commands select the latest available release. `install` accepts `--dry-run`
 (`-D`), `--destination` (`-d`),
 `--adopt-existing` (`-a`), repeatable `--parameter` (`-p`),
 `--no-variables` (`-nv`), and repeatable `--skip-variable` (`-sv`).
+Dry runs group release selection, external sources, managed-file changes, and
+lifecycle work into labeled sections with action prefixes. Successful installs
+and updates list each created, copied, replaced, merged, skipped, or deleted
+managed file by default. Pass `--no-file-changes` to either command to suppress
+that success output; it does not hide the plan during `--dry-run`.
 Install also accepts repeatable `--remap-directory <source>=<target>` and
 `--remap-file <source>=<target>` options. Add `--save-remap` to persist those
 mappings after a successful installation. `--save-remap` requires at least one
