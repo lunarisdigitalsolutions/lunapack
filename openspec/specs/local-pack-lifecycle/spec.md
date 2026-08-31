@@ -495,7 +495,9 @@ targets; the destination SHALL not relocate their managed files.
 
 ### Requirement: Remap managed-file targets during installation
 
-LunaPack SHALL resolve a managed file from its manifest-declared target to an effective project-relative target before preflight and mutation. `luna install` SHALL accept repeatable `--remap-directory <declared-directory>=<target-directory>` and `--remap-file <declared-file>=<target-file>` options. Global mappings in `lunapack.yml` SHALL apply to installations that do not have a higher-precedence command-line mapping. Exact file mappings SHALL take precedence over directory mappings; command-line mappings of the same kind SHALL take precedence over global mappings. A directory mapping SHALL retain the matched descendant suffix. `luna install --save-remap` SHALL merge command-line mappings into project configuration only after a successful installation and SHALL require at least one command-line mapping.
+LunaPack SHALL resolve a managed file from its manifest-declared target to an effective project-relative target before preflight and mutation. `luna install` SHALL accept repeatable `--remap-directory <declared-directory>=<target-directory>` and `--remap-file <declared-file>=<target-file>` options. Command-line mappings SHALL take precedence over mappings on the requested pack in `lunapack.yml`, which SHALL take precedence over top-level mappings. Within each level, an exact file mapping SHALL take precedence over a directory mapping. A directory mapping SHALL retain the matched descendant suffix. `luna install --save-remap` SHALL save command-line mappings on the requested pack only after a successful installation and SHALL require at least one command-line mapping.
+
+Whenever `luna install` or `luna update`, including either command's dry run, reports a remapped target, the output SHALL identify the declared target, effective target, owning pack, and definition source. The source SHALL distinguish command-line input, the matching pack entry in `lunapack.yml`, the top-level remap in `lunapack.yml`, and a retained target in `lunapack-lock.yml`.
 
 Every declared and effective target supplied by remapping SHALL be non-empty, project-relative, and contained within the project directory. LunaPack SHALL reject invalid mappings, duplicate mappings of the same scope and source, and target ownership or filesystem conflicts before changing project files, configuration, or lock state. `--destination` SHALL not be combined with either remapping option.
 
@@ -522,7 +524,12 @@ Every declared and effective target supplied by remapping SHALL be non-empty, pr
 #### Scenario: Save installation remapping for later installs
 
 - **WHEN** a consumer installs with a command-line mapping and `--save-remap`
-- **THEN** LunaPack installs at the effective target and persists the mapping in `lunapack.yml` for later installations
+- **THEN** LunaPack installs at the effective target and persists the mapping on that pack's `lunapack.yml` entry
+
+#### Scenario: Report remapping definition source
+
+- **WHEN** install, update, or a dry run reports a remapped managed target
+- **THEN** the output identifies whether its effective target came from the command line, matching pack configuration, top-level project configuration, or lock file
 
 #### Scenario: Preserve mappings after failed installation
 
@@ -569,7 +576,7 @@ to install and manage a previously absent target.
 
 ### Requirement: Preserve effective ownership during lifecycle operations
 
-LunaPack SHALL use the effective managed-file targets recorded in `lunapack-lock.yml` for updates and uninstalls. An update SHALL apply retained managed files at their recorded effective targets and SHALL apply project-level remapping only to newly introduced declared targets. Changing global remapping after installation SHALL not relocate an already managed file; consumers SHALL use `luna mv` to relocate it explicitly.
+LunaPack SHALL use the effective managed-file targets recorded in `lunapack-lock.yml` for updates and uninstalls. An update SHALL apply retained managed files at their recorded effective targets and SHALL apply pack or top-level project remapping only to newly introduced declared targets. Changing configuration remapping after installation SHALL not relocate an already managed file; consumers SHALL use `luna mv` to relocate it explicitly.
 
 #### Scenario: Update a remapped managed file
 
@@ -583,7 +590,7 @@ LunaPack SHALL use the effective managed-file targets recorded in `lunapack-lock
 
 #### Scenario: Do not relocate an existing managed file after configuration change
 
-- **WHEN** a consumer changes a global remap after the matching managed file is already installed and then updates its pack
+- **WHEN** a consumer changes a pack or top-level remap after the matching managed file is already installed and then updates its pack
 - **THEN** LunaPack retains the existing recorded target instead of moving it
 
 ### Requirement: Move managed files while retaining pack ownership

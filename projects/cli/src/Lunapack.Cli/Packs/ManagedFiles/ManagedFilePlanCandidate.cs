@@ -11,4 +11,7 @@ internal sealed record ManagedFilePlanCandidate(
     string DeclaredTarget,
     PackManifest.PackManagedFileStrategy Strategy,
     bool IsTemplate
-);
+)
+{
+    public ManagedFileRemapping? Remapping { get; init; }
+}

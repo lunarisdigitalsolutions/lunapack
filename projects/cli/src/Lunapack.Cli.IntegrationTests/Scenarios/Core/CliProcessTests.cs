@@ -1014,7 +1014,7 @@ public sealed class CliProcessTests
     }
 
     [Test]
-    public async Task PackLifecycle_WhenInstallRemapSaved_ReusesMappingOnFutureInstall()
+    public async Task PackLifecycle_WhenInstallRemapSaved_StoresMappingOnPackEntry()
     {
         using var workspace = new TestWorkspace();
         var sourcePath = CreateRemapSelectorPackSource(workspace.Path, "directory");
@@ -1028,19 +1028,12 @@ public sealed class CliProcessTests
             "docs/development=docs/04-development",
             "--save-remap"
         );
+        var configuration = File.ReadAllText(Path.Combine(workspace.Path, "lunapack.yml"));
+
         await Assert.That(install.ExitCode).IsEqualTo(0);
-        var uninstall = await CliProcess.InvokeAsync(workspace.Path, "uninstall", "example");
-        await Assert
-            .That(uninstall.ExitCode)
-            .IsEqualTo(0)
-            .Because(uninstall.StandardOutput + uninstall.StandardError);
-
-        var reinstall = await CliProcess.InvokeAsync(workspace.Path, "install", "example");
-
-        await Assert.That(reinstall.ExitCode).IsEqualTo(0);
-        await Assert
-            .That(File.Exists(Path.Combine(workspace.Path, "docs", "04-development", "root.txt")))
-            .IsTrue();
+        await Assert.That(configuration).Contains("  remap:");
+        await Assert.That(configuration).Contains("docs/development: docs/04-development");
+        await Assert.That(configuration).DoesNotContain("\nremap:");
     }
 
     [Test]
@@ -1063,8 +1056,31 @@ public sealed class CliProcessTests
 
         await Assert.That(install.ExitCode).IsEqualTo(0);
         await Assert.That(Directory.Exists(Path.Combine(workspace.Path, "docs"))).IsFalse();
+        await Assert.That(configuration).Contains("  remap:");
         await Assert.That(configuration).Contains("docs/development: '@ignore'");
+        await Assert.That(configuration).DoesNotContain("\nremap:");
         await Assert.That(lockFile).DoesNotContain("declaredTargetPath:");
+    }
+
+    [Test]
+    public async Task PackLifecycle_WhenIgnoredRemapDryRun_ReportsDefinitionSource()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreateRemapSelectorPackSource(workspace.Path, "directory");
+        await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
+
+        var dryRun = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "install",
+            "example",
+            "--remap-directory",
+            "docs/development=@ignore",
+            "--dry-run"
+        );
+
+        await Assert.That(dryRun.ExitCode).IsEqualTo(0);
+        await Assert.That(dryRun.StandardOutput).Contains("-> @ignore source: command line");
+        await Assert.That(Directory.Exists(Path.Combine(workspace.Path, "docs"))).IsFalse();
     }
 
     [Test]
@@ -1178,7 +1194,7 @@ public sealed class CliProcessTests
         "docs/development/nested/child.txt=docs/configured/child.txt",
         "--remap-directory",
         "docs/development=docs/invocation",
-        "docs/configured/child.txt;docs/invocation/root.txt"
+        "docs/invocation/nested/child.txt;docs/invocation/root.txt"
     )]
     public async Task PackLifecycle_WhenRemappingVaries_WritesExpectedConcreteTargets(
         string selectorKind,

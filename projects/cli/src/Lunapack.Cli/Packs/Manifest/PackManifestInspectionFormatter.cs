@@ -9,13 +9,16 @@ internal static class PackManifestInspectionFormatter
 {
     public static IReadOnlyList<IRenderable> Format(
         PackManifest manifest,
-        ProjectConfiguration.Remapping? remapping = null
+        ProjectConfiguration.Remapping? remapping = null,
+        ProjectConfiguration.Remapping? fallbackRemapping = null
     )
     {
         var renderables = new List<IRenderable> { CreateDetailsTable(manifest) };
         if (manifest.ManagedFiles.Count > 0)
         {
-            renderables.Add(CreateManagedFilesTable(manifest.ManagedFiles, remapping));
+            renderables.Add(
+                CreateManagedFilesTable(manifest.ManagedFiles, remapping, fallbackRemapping)
+            );
         }
 
         if (manifest.Parameters.Count > 0)
@@ -35,10 +38,14 @@ internal static class PackManifestInspectionFormatter
 
     private static Table CreateManagedFilesTable(
         IReadOnlyList<PackManifest.PackManagedFile> managedFiles,
-        ProjectConfiguration.Remapping? remapping
+        ProjectConfiguration.Remapping? remapping,
+        ProjectConfiguration.Remapping? fallbackRemapping
     )
     {
         var targetRemapping = ManagedFileTargetRemapping.FromConfiguration(remapping);
+        var fallbackTargetRemapping = ManagedFileTargetRemapping.FromConfiguration(
+            fallbackRemapping
+        );
         var table = CreateTable("Managed files");
         table.AddColumn("[bold]Target[/]");
         foreach (
@@ -46,7 +53,7 @@ internal static class PackManifestInspectionFormatter
         )
         {
             var declaredTarget = managedFile.Target;
-            var effectiveTarget = targetRemapping.Resolve(declaredTarget);
+            var effectiveTarget = targetRemapping.Resolve(declaredTarget, fallbackTargetRemapping);
             var target = string.Equals(declaredTarget, effectiveTarget, StringComparison.Ordinal)
                 ? declaredTarget
                 : $"{declaredTarget} -> {effectiveTarget}";

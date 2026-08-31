@@ -307,6 +307,90 @@ public sealed class PackInstallationPlannerTests
     }
 
     [Test]
+    public async Task Plan_WhenAllRemappingLevelsMatch_UsesInvocationThenPackThenGlobalPriority()
+    {
+        var fileSystem = CreateFileSystem(
+            (PacksPath("one", "source.txt"), "one"),
+            (PacksPath("two", "source.txt"), "two"),
+            (PacksPath("three", "source.txt"), "three")
+        );
+        var planner = CreatePlanner(fileSystem);
+        var invocationRemapping = ManagedFileTargetRemapping
+            .Create(
+                fileSystem,
+                _projectDirectory,
+                [],
+                ["docs/one/index.md=docs/invocation/index.md"]
+            )
+            .RequireValue();
+
+        var result = planner.Plan(
+            _projectDirectory,
+            new ResolvedPackGraph([
+                CreatePack("one", PacksPath("one"), "docs/one/index.md"),
+                CreatePack("two", PacksPath("two"), "docs/two/index.md"),
+                CreatePack("three", PacksPath("three"), "docs/three/index.md"),
+            ]),
+            new ProjectLockFile { SchemaVersion = 1 },
+            new ProjectConfiguration
+            {
+                SchemaVersion = 1,
+                Packs =
+                [
+                    new ProjectConfiguration.RequestedPack
+                    {
+                        Id = "one",
+                        Remap = new ProjectConfiguration.Remapping
+                        {
+                            Directories = { ["docs/one"] = "docs/pack-one" },
+                        },
+                    },
+                    new ProjectConfiguration.RequestedPack
+                    {
+                        Id = "two",
+                        Remap = new ProjectConfiguration.Remapping
+                        {
+                            Directories = { ["docs/two"] = "docs/pack-two" },
+                        },
+                    },
+                    new ProjectConfiguration.RequestedPack { Id = "three" },
+                ],
+                Remap = new ProjectConfiguration.Remapping
+                {
+                    Directories = { ["docs"] = "docs/global" },
+                    Files = { ["docs/two/index.md"] = "docs/global-two/index.md" },
+                },
+            },
+            new PackInstallationRequest(new PackReference("one", null), null, false)
+            {
+                TargetRemapping = invocationRemapping,
+            },
+            _emptyParameters
+        );
+
+        var targets = result
+            .RequireValue()
+            .ManagedFiles.ToDictionary(
+                file => file.Pack.Manifest.Id,
+                file => file.TargetPathRelativeToProject,
+                StringComparer.Ordinal
+            );
+        await Assert.That(targets["one"]).IsEqualTo("docs/invocation/index.md");
+        await Assert.That(targets["two"]).IsEqualTo("docs/pack-two/index.md");
+        await Assert.That(targets["three"]).IsEqualTo("docs/global/three/index.md");
+        var origins = result
+            .RequireValue()
+            .Remappings.ToDictionary(
+                remapping => remapping.PackId,
+                remapping => remapping.Origin,
+                StringComparer.Ordinal
+            );
+        await Assert.That(origins["one"]).IsEqualTo(ManagedFileRemappingOrigin.Command);
+        await Assert.That(origins["two"]).IsEqualTo(ManagedFileRemappingOrigin.Pack);
+        await Assert.That(origins["three"]).IsEqualTo(ManagedFileRemappingOrigin.Project);
+    }
+
+    [Test]
     public async Task Plan_WhenTemplateReferencesLaterRemappedFile_ResolvesEffectiveTarget()
     {
         var fileSystem = CreateFileSystem(

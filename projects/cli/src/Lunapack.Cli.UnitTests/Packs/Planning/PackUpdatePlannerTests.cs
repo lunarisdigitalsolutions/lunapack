@@ -120,11 +120,25 @@ public sealed class PackUpdatePlannerTests
             _projectDirectory,
             lockFile,
             new PackInstallationPlan([managedFile])
+            {
+                Remappings =
+                [
+                    new ManagedFileRemapping(
+                        "example",
+                        declaredTarget,
+                        "docs/architecture/decisions/template.md",
+                        ManagedFileRemappingOrigin.Pack
+                    ),
+                ],
+            }
         );
 
         var action = result.RequireValue().Actions.Single();
+        var remapping = result.RequireValue().Remappings.Single();
         await Assert.That(action).IsTypeOf<CopyManagedFileUpdateAction>();
         await Assert.That(action.TargetPathRelativeToProject).IsEqualTo(lockedTarget);
+        await Assert.That(remapping.EffectiveTarget).IsEqualTo(lockedTarget);
+        await Assert.That(remapping.Origin).IsEqualTo(ManagedFileRemappingOrigin.Lock);
     }
 
     [Test]

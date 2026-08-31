@@ -58,7 +58,53 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
             );
         }
 
-        return ManifestOperationResult<PackUpdatePlan>.Success(new PackUpdatePlan(actions));
+        return ManifestOperationResult<PackUpdatePlan>.Success(
+            new PackUpdatePlan(actions)
+            {
+                Remappings = CreateEffectiveRemappings(previousTargetMap, installationPlan),
+            }
+        );
+    }
+
+    private static IReadOnlyList<ManagedFileRemapping> CreateEffectiveRemappings(
+        IReadOnlyDictionary<PackTargetKey, PreviousManagedTarget> previousTargets,
+        PackInstallationPlan installationPlan
+    )
+    {
+        var remappings = installationPlan.Remappings.ToDictionary(remapping => new PackTargetKey(
+            remapping.PackId,
+            ProjectPath.Normalize(remapping.DeclaredTarget)
+        ));
+        foreach (var managedFile in installationPlan.ManagedFiles)
+        {
+            var declaredTarget = ProjectPath.Normalize(managedFile.DeclaredTargetPath);
+            var key = new PackTargetKey(managedFile.Pack.Manifest.Id, declaredTarget);
+            if (!previousTargets.TryGetValue(key, out var previousTarget))
+            {
+                continue;
+            }
+
+            var lockedTarget = ProjectPath.Normalize(previousTarget.ManagedFile.TargetPath);
+            if (string.Equals(declaredTarget, lockedTarget, StringComparison.Ordinal))
+            {
+                remappings.Remove(key);
+                continue;
+            }
+
+            remappings[key] = new ManagedFileRemapping(
+                managedFile.Pack.Manifest.Id,
+                declaredTarget,
+                lockedTarget,
+                ManagedFileRemappingOrigin.Lock
+            );
+        }
+
+        return
+        [
+            .. remappings
+                .Values.OrderBy(remapping => remapping.PackId, StringComparer.Ordinal)
+                .ThenBy(remapping => remapping.DeclaredTarget, StringComparer.Ordinal),
+        ];
     }
 
     private ManifestOperationResult<List<PlannedPackUpdateAction>> CreateActions(

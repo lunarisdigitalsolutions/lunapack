@@ -198,11 +198,20 @@ Pass `--no-file-change-output` to either command to suppress that success output
 it does not hide the plan during `--dry-run`.
 Install also accepts repeatable `--remap-directory <source>=<target>` and
 `--remap-file <source>=<target>` options. Add `--save-remap` to persist those
-mappings after a successful installation. `--save-remap` requires at least one
-remapping option. Use `@ignore` as a target to omit a matching file or directory
-tree from installation and lock ownership. Updates preserve newly ignored
-local files without updating them; removing the mapping allows omitted files to
-be installed by a later update.
+mappings after a successful installation. Pack installation stores them on the
+installed pack's `lunapack.yml` entry; link installation stores them in the
+top-level project remapping. `--save-remap` requires at least one remapping
+option. Use `@ignore` as a target to omit a matching file or directory tree from
+installation and lock ownership. Updates preserve newly ignored local files
+without updating them; removing the mapping allows omitted files to be installed
+by a later update.
+
+Install and update output, including dry runs, reports each effective remapping
+as `remap: <pack> <declared> -> <effective> source: <source>`. The source is
+`command line`, `pack '<pack>' in lunapack.yml`, `top-level remap in
+lunapack.yml`, or `lunapack-lock.yml`. Ignored targets report `@ignore` as the
+effective target.
+
 `update` accepts `--dry-run` (`-D`); update-all also accepts `--prompt` (`-p`).
 Both install and update accept `--accept-sources` for conflict-free proposed
 source additions. `install`, `update`, and `uninstall` accept

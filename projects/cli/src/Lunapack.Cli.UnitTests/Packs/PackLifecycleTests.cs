@@ -1317,7 +1317,9 @@ public sealed class PackLifecycleTests
     [Test]
     public async Task Install_WhenDirectoryRemappingSpecified_WritesRemappedTargetAndLockIdentity()
     {
-        using var workspace = new TestWorkspace();
+        var ansiConsole = new SpectreTestConsole();
+        ansiConsole.Profile.Width = 500;
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
         var sourcePath = CreatePackSource(
             workspace.Path,
             "id: dotnet-gitignore\nversion: 1.0.0\nmanagedFiles:\n  - source: templates/dotnet.gitignore\n    target: docs/adr/template.md\n"
@@ -1346,10 +1348,15 @@ public sealed class PackLifecycleTests
             .IsTrue();
         await Assert.That(managedFile.DeclaredTargetPath).IsEqualTo("docs/adr/template.md");
         await Assert.That(managedFile.TargetPath).IsEqualTo("docs/internal/decisions/template.md");
+        await Assert
+            .That(ansiConsole.Output)
+            .Contains(
+                "remap: dotnet-gitignore docs/adr/template.md -> docs/internal/decisions/template.md source: command line"
+            );
     }
 
     [Test]
-    public async Task Install_WhenSaveRemapSpecified_PersistsProvidedMappings()
+    public async Task Install_WhenSaveRemapSpecified_PersistsMappingsOnRequestedPack()
     {
         using var workspace = new TestWorkspace();
         var sourcePath = CreatePackSource(
@@ -1357,6 +1364,12 @@ public sealed class PackLifecycleTests
             "id: dotnet-gitignore\nversion: 1.0.0\nmanagedFiles:\n  - source: templates/dotnet.gitignore\n    target: docs/development/template.md\n"
         );
         await ConfigureSourceAsync(workspace, sourcePath);
+        var initialState = (await workspace.StateStore.LoadAsync(workspace.Path)).RequireValue();
+        initialState.Configuration.Remap = new ProjectConfiguration.Remapping
+        {
+            Directories = { ["docs"] = "repository-docs" },
+        };
+        await workspace.StateStore.SaveAsync(workspace.Path, initialState);
 
         var exitCode = await workspace.Application.RunAsync(
             [
@@ -1370,9 +1383,10 @@ public sealed class PackLifecycleTests
             ],
             workspace.Path
         );
-        var remapping = (await workspace.StateStore.LoadAsync(workspace.Path))
+        var configuration = (await workspace.StateStore.LoadAsync(workspace.Path))
             .RequireValue()
-            .Configuration.Remap.RequireNotNull();
+            .Configuration;
+        var remapping = configuration.Packs.Single().Remap.RequireNotNull();
 
         await Assert.That(exitCode).IsEqualTo(0);
         await Assert
@@ -1381,6 +1395,14 @@ public sealed class PackLifecycleTests
         await Assert
             .That(remapping.Files["docs/development/template.md"])
             .IsEqualTo("docs/special/template.md");
+        await Assert
+            .That(configuration.Remap.RequireNotNull().Directories)
+            .IsEquivalentTo(
+                new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["docs"] = "repository-docs",
+                }
+            );
     }
 
     [Test]
@@ -1400,7 +1422,7 @@ public sealed class PackLifecycleTests
         await Assert.That(File.Exists(Path.Combine(workspace.Path, ".gitignore"))).IsFalse();
         await Assert.That(state.LockFile.Packs.Single().ManagedFiles).IsEmpty();
         await Assert
-            .That(state.Configuration.Remap.RequireNotNull().Files[".gitignore"])
+            .That(state.Configuration.Packs.Single().Remap.RequireNotNull().Files[".gitignore"])
             .IsEqualTo(ManagedFileTargetRemapping.IgnoreTarget);
     }
 
@@ -1973,60 +1995,64 @@ public sealed class PackLifecycleTests
     }
 
     [Test]
-    public async Task Update_WhenGlobalRemappingChanges_RetainsLockedEffectiveTarget()
+    public async Task Update_WhenPackAndGlobalRemappingConflict_RetainsLockedEffectiveTarget()
     {
-        using var workspace = new TestWorkspace();
+        var ansiConsole = new SpectreTestConsole();
+        ansiConsole.Profile.Width = 500;
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
         var sourcePath = CreateVersionedPackSource(workspace.Path, "version one", "version two");
         await ConfigureSourceAsync(workspace, sourcePath);
-        var initialState = (await workspace.StateStore.LoadAsync(workspace.Path)).RequireValue();
-        initialState.Configuration.Remap = new ProjectConfiguration.Remapping
+        await workspace.Application.RunAsync(
+            [
+                "install",
+                "dotnet-gitignore@1.0.0",
+                "--remap-file",
+                ".gitignore=docs/locked/.gitignore",
+            ],
+            workspace.Path
+        );
+
+        var installedState = (await workspace.StateStore.LoadAsync(workspace.Path)).RequireValue();
+        installedState.Configuration.Packs.Single().Remap = new ProjectConfiguration.Remapping
         {
             Files = new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                [".gitignore"] = "docs/initial/.gitignore",
+                [".gitignore"] = "docs/pack/.gitignore",
             },
         };
-        await workspace.StateStore.SaveAsync(workspace.Path, initialState);
-        await workspace.Application.RunAsync(["install", "dotnet-gitignore@1.0.0"], workspace.Path);
-
-        var installedState = (await workspace.StateStore.LoadAsync(workspace.Path)).RequireValue();
         installedState.Configuration.Remap = new ProjectConfiguration.Remapping
         {
             Files = new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                [".gitignore"] = "docs/current/.gitignore",
+                [".gitignore"] = "docs/global/.gitignore",
             },
         };
         await workspace.StateStore.SaveAsync(workspace.Path, installedState);
 
-        var exitCode = await CreatePackLifecycleService(workspace)
-            .UpdateAsync(
-                workspace.Path,
-                [
-                    new ProjectConfiguration.RequestedPack
-                    {
-                        Id = "dotnet-gitignore",
-                        Version = "2.0.0",
-                    },
-                ],
-                new PackInstallationRequest(
-                    new PackReference("dotnet-gitignore", "2.0.0"),
-                    null,
-                    false
-                )
-            );
+        var exitCode = await workspace.Application.RunAsync(
+            ["update", "dotnet-gitignore"],
+            workspace.Path
+        );
         var updatedState = (await workspace.StateStore.LoadAsync(workspace.Path)).RequireValue();
         var managedFile = updatedState.LockFile.Packs.Single().ManagedFiles.Single();
 
         await Assert.That(exitCode).IsEqualTo(0);
         await Assert
-            .That(File.ReadAllText(Path.Combine(workspace.Path, "docs", "initial", ".gitignore")))
+            .That(File.ReadAllText(Path.Combine(workspace.Path, "docs", "locked", ".gitignore")))
             .IsEqualTo("version two");
         await Assert
-            .That(File.Exists(Path.Combine(workspace.Path, "docs", "current", ".gitignore")))
+            .That(File.Exists(Path.Combine(workspace.Path, "docs", "pack", ".gitignore")))
+            .IsFalse();
+        await Assert
+            .That(File.Exists(Path.Combine(workspace.Path, "docs", "global", ".gitignore")))
             .IsFalse();
         await Assert.That(managedFile.DeclaredTargetPath).IsEqualTo(".gitignore");
-        await Assert.That(managedFile.TargetPath).IsEqualTo("docs/initial/.gitignore");
+        await Assert.That(managedFile.TargetPath).IsEqualTo("docs/locked/.gitignore");
+        await Assert
+            .That(ansiConsole.Output)
+            .Contains(
+                "remap: dotnet-gitignore .gitignore -> docs/locked/.gitignore source: lunapack-lock.yml"
+            );
     }
 
     [Test]

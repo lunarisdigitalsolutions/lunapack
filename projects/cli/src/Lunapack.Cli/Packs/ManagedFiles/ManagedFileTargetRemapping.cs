@@ -87,15 +87,35 @@ internal sealed class ManagedFileTargetRemapping
             );
     }
 
-    public string Resolve(string declaredTarget, ManagedFileTargetRemapping? fallback = null)
+    public string Resolve(
+        string declaredTarget,
+        params ManagedFileTargetRemapping?[] fallbackRemappings
+    )
     {
         var normalizedTarget = NormalizeMappingPath(declaredTarget);
-        return TryResolveFile(normalizedTarget)
-            ?? fallback?.TryResolveFile(normalizedTarget)
-            ?? TryResolveDirectory(normalizedTarget)
-            ?? fallback?.TryResolveDirectory(normalizedTarget)
-            ?? normalizedTarget;
+        var target = TryResolve(normalizedTarget);
+        if (target is not null)
+        {
+            return target;
+        }
+
+        foreach (var fallbackRemapping in fallbackRemappings)
+        {
+            target = fallbackRemapping?.TryResolve(normalizedTarget);
+            if (target is not null)
+            {
+                return target;
+            }
+        }
+
+        return normalizedTarget;
     }
+
+    public string? TryResolve(string declaredTarget) =>
+        TryResolveNormalized(NormalizeMappingPath(declaredTarget));
+
+    private string? TryResolveNormalized(string declaredTarget) =>
+        TryResolveFile(declaredTarget) ?? TryResolveDirectory(declaredTarget);
 
     private static ManifestOperationResult<Dictionary<string, string>> ParseMappings(
         IFileSystem fileSystem,

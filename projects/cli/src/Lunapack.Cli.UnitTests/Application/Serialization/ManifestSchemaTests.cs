@@ -11,6 +11,25 @@ namespace Lunapack.Cli.UnitTests.Application.Serialization;
 public sealed class ManifestSchemaTests
 {
     [Test]
+    public async Task ProjectSchema_WhenRequestedPackDeclared_AllowsPackRemapping()
+    {
+        using var schema = JsonDocument.Parse(
+            File.ReadAllText(
+                Path.Combine(AppContext.BaseDirectory, "TestData", "lunapack.schema.json")
+            )
+        );
+        var remap = schema
+            .RootElement.GetProperty("definitions")
+            .GetProperty("requestedPack")
+            .GetProperty("properties")
+            .GetProperty("remap")
+            .GetProperty("$ref")
+            .GetString();
+
+        await Assert.That(remap).IsEqualTo("#/definitions/remapping");
+    }
+
+    [Test]
     public async Task ProjectSchema_WhenTrustDeclared_AllowsDenialWithoutGrantCollections()
     {
         using var schema = JsonDocument.Parse(

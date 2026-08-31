@@ -7,7 +7,14 @@ pack-package, documentation, CI, build, test, and release-process changes.
 
 Update this section before creating a release tag.
 
-### CLI Workflow
+### Changed
+
+- `luna install --save-remap` now stores mappings on the installed pack's
+  `lunapack.yml` entry. Locked effective targets override pack remapping; pack
+  remapping overrides top-level project remapping.
+- Install, update, and their dry runs now identify whether each reported
+  managed-target remapping came from command-line input, pack configuration,
+  top-level project configuration, or `lunapack-lock.yml`.
 
 - Install and update dry runs now group source, managed-file, and lifecycle
   actions under labeled sections with colored action prefixes. Successful

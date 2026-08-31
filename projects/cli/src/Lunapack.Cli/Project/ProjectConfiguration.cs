@@ -84,6 +84,8 @@ internal sealed record ProjectConfiguration
 
         public required string Id { get; set; }
 
+        public Remapping? Remap { get; set; }
+
         public string? Version { get; set; }
     }
 

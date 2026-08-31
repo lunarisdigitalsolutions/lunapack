@@ -66,7 +66,9 @@ internal static class PackDryRunFormatter
     }
 
     public static IEnumerable<string> FormatFileChanges(PackUpdatePlan updatePlan) =>
-        updatePlan.Actions.Select(FormatAction);
+        updatePlan
+            .Remappings.Select(ManagedFileRemappingFormatter.Format)
+            .Concat(updatePlan.Actions.Select(FormatAction));
 
     public static IReadOnlyList<string> FormatAppliedFileChanges(PackUpdatePlan updatePlan)
     {
