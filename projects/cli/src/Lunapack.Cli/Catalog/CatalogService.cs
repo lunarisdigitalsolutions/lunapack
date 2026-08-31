@@ -38,4 +38,14 @@ internal sealed class CatalogService(PackCatalog packCatalog, ProjectStateStore 
 
         return await packCatalog.BrowseAsync(projectDirectory, state.Configuration);
     }
+
+    public async Task<ManifestOperationResult<IReadOnlyList<CatalogPack>>> LoadCachedAsync(
+        string projectDirectory
+    )
+    {
+        var loadedState = await projectStateStore.LoadAsync(projectDirectory);
+        return loadedState.Value is { } state
+            ? await packCatalog.BrowseCachedAsync(projectDirectory, state.Configuration)
+            : ManifestOperationResult<IReadOnlyList<CatalogPack>>.Success([]);
+    }
 }

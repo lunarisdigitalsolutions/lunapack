@@ -9,6 +9,7 @@ namespace Lunapack.Cli.Catalog.Commands;
 
 internal sealed class InspectPackCommandHandler(
     CatalogService catalogService,
+    CliCompletionProvider completionProvider,
     WorkspaceDirectoryResolver workspaceDirectoryResolver,
     NextStepAdvisor nextStepAdvisor,
     NextStepRenderer nextStepRenderer,
@@ -22,6 +23,7 @@ internal sealed class InspectPackCommandHandler(
         {
             Description = "Pack ID, optionally followed by @version.",
         };
+        packReferenceArgument.CompletionSources.Add(completionProvider.GetAvailablePackIds);
         var command = new Command("inspect", "Show a pack manifest.") { packReferenceArgument };
         command.SetAction(async parseResult =>
         {

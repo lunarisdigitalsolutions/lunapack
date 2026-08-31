@@ -45,6 +45,8 @@ internal sealed class CliConsole(IAnsiConsole ansiConsole, CliLogLevel minimumLe
             $"{Markup.Escape(prompt)} [[{(defaultValue ? "Y/n" : "y/N")}]] ({defaultChoice}) "
         );
         var response = ansiConsole.Input.ReadKey(intercept: false);
+        ansiConsole.WriteLine();
+
         return response is null || response.Value.Key == ConsoleKey.Enter
             ? defaultValue
             : response.Value.KeyChar is 'y' or 'Y';

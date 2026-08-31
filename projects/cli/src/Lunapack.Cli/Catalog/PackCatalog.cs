@@ -80,6 +80,39 @@ internal sealed class PackCatalog(
         return ManifestOperationResult<IReadOnlyList<CatalogPack>>.Success(catalog);
     }
 
+    public async Task<ManifestOperationResult<IReadOnlyList<CatalogPack>>> BrowseCachedAsync(
+        string projectDirectory,
+        ProjectConfiguration configuration
+    )
+    {
+        var catalog = new List<CatalogPack>();
+        for (var sourceOrder = 0; sourceOrder < configuration.Sources.Count; sourceOrder++)
+        {
+            var sourceCatalog = configuration.Sources[sourceOrder] switch
+            {
+                ProjectConfiguration.LocalSource localSource =>
+                    await _localPackDiscovery.BrowseAsync(
+                        _fileSystem.Path.GetFullPath(localSource.Path, projectDirectory),
+                        sourceOrder,
+                        localSource.Name,
+                        ConfiguredSourceIdentity.Create(localSource)
+                    ),
+                ProjectConfiguration.GitSource gitSource => _gitPackDiscovery.BrowseCached(
+                    projectDirectory,
+                    gitSource,
+                    sourceOrder
+                ),
+                _ => ManifestOperationResult<IReadOnlyList<CatalogPack>>.Success([]),
+            };
+            if (sourceCatalog.Value is { } sourcePacks)
+            {
+                catalog.AddRange(sourcePacks);
+            }
+        }
+
+        return ManifestOperationResult<IReadOnlyList<CatalogPack>>.Success(catalog);
+    }
+
     private async Task<ManifestOperationResult<IReadOnlyList<CatalogPack>>> BrowseAsync(
         string projectDirectory,
         IReadOnlyList<ConfiguredSource> sources

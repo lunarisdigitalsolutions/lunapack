@@ -8,6 +8,7 @@ public sealed class CliHelpDocumentationTests
     private static readonly HelpContract[] _commands =
     [
         new("init"),
+        new("completions script", "[<shell>]"),
         new("variables list"),
         new("variables set", "<name> <value>"),
         new("variables rm", "<name>"),

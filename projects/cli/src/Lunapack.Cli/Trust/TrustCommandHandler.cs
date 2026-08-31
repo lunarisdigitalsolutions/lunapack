@@ -5,6 +5,7 @@ namespace Lunapack.Cli.Trust;
 
 internal sealed class TrustCommandHandler(
     TrustService trustService,
+    CliCompletionProvider completionProvider,
     WorkspaceDirectoryResolver workspaceDirectoryResolver,
     CliConsole console
 )
@@ -171,6 +172,7 @@ internal sealed class TrustCommandHandler(
             Arity = ArgumentArity.OneOrMore,
             Description = "Configured source names whose trust will be revoked.",
         };
+        namesArgument.CompletionSources.Add(completionProvider.GetConfiguredSourceNames);
         var projectOption = CreateProjectOption();
         var globalOption = CreateGlobalOption();
         var command = new Command("source", "Revoke source lifecycle script trust.")
@@ -219,6 +221,10 @@ internal sealed class TrustCommandHandler(
         {
             Description = "Configured source name for the pack IDs.",
         };
+        sourceOption.CompletionSources.Add(completionProvider.GetConfiguredSourceNames);
+        idsArgument.CompletionSources.Add(context =>
+            completionProvider.GetPackIdsFromSelectedSource(context, sourceOption)
+        );
         var projectOption = CreateProjectOption();
         var globalOption = CreateGlobalOption();
         var command = new Command("pack", "Revoke pack lifecycle script trust.")
@@ -268,6 +274,7 @@ internal sealed class TrustCommandHandler(
             Arity = ArgumentArity.OneOrMore,
             Description = "Configured source names to trust.",
         };
+        namesArgument.CompletionSources.Add(completionProvider.GetConfiguredSourceNames);
         var projectOption = CreateProjectOption();
         var globalOption = CreateGlobalOption();
         var command = new Command("source", "Trust lifecycle scripts from configured sources.")
@@ -314,6 +321,10 @@ internal sealed class TrustCommandHandler(
         {
             Description = "Configured source name for the pack IDs.",
         };
+        sourceOption.CompletionSources.Add(completionProvider.GetConfiguredSourceNames);
+        idsArgument.CompletionSources.Add(context =>
+            completionProvider.GetPackIdsFromSelectedSource(context, sourceOption)
+        );
         var projectOption = CreateProjectOption();
         var globalOption = CreateGlobalOption();
         var command = new Command("pack", "Trust lifecycle scripts from specific packs.")

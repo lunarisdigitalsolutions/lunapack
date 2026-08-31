@@ -280,8 +280,15 @@ internal sealed class RemapCommandHandler(
         return saved.Value ? 0 : console.Fail(saved.Error);
     }
 
-    private static Argument<string> CreateKindArgument() =>
-        new("kind") { Description = "Remapping kind: directory or file." };
+    private static Argument<string> CreateKindArgument()
+    {
+        var argument = new Argument<string>("kind")
+        {
+            Description = "Remapping kind: directory or file.",
+        };
+        argument.CompletionSources.Add("directory", "file");
+        return argument;
+    }
 
     private static Argument<string> CreateTargetArgument() =>
         new("target") { Description = "Declared project-relative target to remap." };

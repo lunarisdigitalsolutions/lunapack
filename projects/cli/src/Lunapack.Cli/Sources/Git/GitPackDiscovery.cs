@@ -99,6 +99,20 @@ internal sealed class GitPackDiscovery(
             );
     }
 
+    public ManifestOperationResult<IReadOnlyList<CatalogPack>> BrowseCached(
+        string projectDirectory,
+        ProjectConfiguration.GitSource source,
+        int sourceOrder
+    )
+    {
+        var loadedCache = cache.Load(projectDirectory, source);
+        return loadedCache.Value is { } entry
+            ? ManifestOperationResult<IReadOnlyList<CatalogPack>>.Success(
+                CreateCatalog(source, sourceOrder, entry.ResolvedCommit, entry.Packs)
+            )
+            : ManifestOperationResult<IReadOnlyList<CatalogPack>>.Success([]);
+    }
+
     private async Task<ManifestOperationResult<List<GitCachedPack>>> DiscoverAsync(
         ProjectConfiguration.GitSource source,
         string resolvedCommit,

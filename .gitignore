@@ -87,6 +87,7 @@ out/
 # Operating-system files
 .DS_Store
 Thumbs.db
+
 # BEGIN Lunapack .NET ignores
 # .NET build output
 **/bin/
@@ -103,6 +104,7 @@ Thumbs.db
 TestResults/
 *.trx
 # END Lunapack .NET ignores
+
 # BEGIN Lunapack general ignores
 # Operating-system files
 .DS_Store
@@ -118,3 +120,5 @@ Thumbs.db
 !*.code-workspace
 *.vsix
 # END Lunapack general ignores
+
+luna-test/

@@ -18,6 +18,74 @@ commands for the current workspace stage.
 | `--help`, `-h`, `-?`            | Not applicable    | Shows command help and returns success.                    |
 | `--version`                     | Not applicable    | Shows the Luna version and returns success.                |
 
+## Enable Tab Completion
+
+`luna completions script [<shell>]` generates Luna's native Tab-completion
+registration. Supported shell values are `bash`, `fish`, `nushell`, `pwsh`, and
+`zsh`. When omitted, Luna selects PowerShell on Windows or infers the shell from
+`SHELL` on other platforms. Add the command for your shell to its profile:
+
+Use `luna completions script [<shell>] --install` to install the generated
+script. Luna prints the script and destination, then asks for confirmation.
+The default response is No. After confirmation, Luna creates the destination
+directory when needed and appends the script unless it is already present.
+
+| Shell      | Installation destination                                                                                                                   |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Bash       | `~/.bashrc`                                                                                                                                |
+| Fish       | `~/.config/fish/conf.d/luna-completions.fish`                                                                                              |
+| Nushell    | `%APPDATA%/nushell/vendor/autoload/luna-completions.nu` on Windows; `~/.local/share/nushell/vendor/autoload/luna-completions.nu` elsewhere |
+| PowerShell | `Documents/PowerShell/Microsoft.PowerShell_profile.ps1` on Windows; `~/.config/powershell/Microsoft.PowerShell_profile.ps1` elsewhere      |
+| Zsh        | `~/.zshrc`                                                                                                                                 |
+
+### Bash
+
+```bash
+eval "$(luna completions script bash)"
+```
+
+### Fish
+
+```fish
+luna completions script fish | source
+```
+
+### Nushell
+
+```nu
+mkdir ($nu.data-dir | path join "vendor/autoload")
+luna completions script nushell | save --force ($nu.data-dir | path join "vendor/autoload/luna-completions.nu")
+```
+
+### PowerShell
+
+```powershell
+luna completions script pwsh | Out-String | Invoke-Expression
+```
+
+### Zsh
+
+```zsh
+eval "$(luna completions script zsh)"
+```
+
+Start a new shell after updating the profile. No external completion tool is
+required. Windows Command Prompt does not support Luna completion.
+
+After setup, press Tab to complete commands and options. Luna also suggests
+available pack IDs for install, inspect, validate, and pack-trust commands;
+installed pack and link IDs for update and uninstall; configured source, link,
+and variable IDs where those values are accepted; lifecycle script modes; and
+log levels. For example, `luna install dotnet<Tab>` lists matching available
+packs. Contextual suggestions use the workspace selected by `--workspace` or
+`-w`. Git-backed pack suggestions use the latest cached catalog and do not
+contact the remote during completion.
+
+Completion is cursor-aware. Commands that accept a value return value
+suggestions even when the shell strips trailing whitespace or reports a cursor
+position beyond the rendered command line. Command containers return no value
+suggestions until an argument-taking command or option is selected.
+
 ## Project And Sources
 
 - `luna init`: Creates version-1 `lunapack.yml` and `lunapack-lock.yml` with
@@ -192,7 +260,8 @@ commands select the latest available release. `install` accepts `--dry-run`
 Dry runs group release selection, external sources, managed-file changes, and
 lifecycle work into labeled sections with ASCII action prefixes. Lifecycle
 script rows identify whether policy, `--scripts`, persisted trust, or interactive
-confirmation determines consent. Successful installs and updates list each
+confirmation determines consent. Already locked source identities are not
+repeated as lifecycle actions. Successful installs and updates list each
 created, copied, replaced, merged, skipped, or deleted managed file by default.
 Pass `--no-file-change-output` to either command to suppress that success output;
 it does not hide the plan during `--dry-run`.
@@ -272,8 +341,8 @@ resolution conflicts, denied trust, Git failures, and filesystem or state-write
 failures return a nonzero exit code. Luna does not currently provide JSON output
 or stable machine-readable diagnostic codes.
 
-Command and option completion includes the lower-case `verbose`, `debug`,
-`info`, `warning`, and `error` suggestions for `--log-level` and `-ll`.
+Log-level completion uses the lower-case `verbose`, `debug`, `info`, `warning`,
+and `error` values.
 
 Catalog commands ignore invalid packs in an otherwise reachable source. Run
 `validate` for a pack to see its manifest and selected-source-file issues; use

@@ -1,6 +1,7 @@
 ﻿using System.CommandLine;
 using System.IO.Abstractions;
 using Lunapack.Cli.Application;
+using Lunapack.Cli.Application.Completions;
 using Lunapack.Cli.Application.Guidance;
 using Lunapack.Cli.Audit;
 using Lunapack.Cli.Catalog;
@@ -30,7 +31,8 @@ internal sealed class CliApplication(
     IPackUpdatePrompter? packUpdatePrompter = null,
     ITrustConfirmer? trustConfirmer = null,
     UserSettingsStore? userSettingsStore = null,
-    IGitProcessRunner? gitProcessRunner = null
+    IGitProcessRunner? gitProcessRunner = null,
+    CompletionScriptInstallerResolver? completionScriptInstallerResolver = null
 )
 {
     public async Task<int> RunAsync(
@@ -87,6 +89,13 @@ internal sealed class CliApplication(
         rootCommand.Options.Add(logLevelOption);
         rootCommand.Options.Add(suppressNextStepsOption);
         var services = CreateCommandServices(console, nextStepRenderer);
+        var completionProvider = new CliCompletionProvider(
+            services.CatalogService,
+            services.ProjectStateStore,
+            services.WorkspaceDirectoryResolver,
+            projectDirectory,
+            workspaceOption
+        );
         ConfigureRootAction(rootCommand, services, projectDirectory, workspaceOption, console);
 
         AddProjectCommands(
@@ -94,6 +103,7 @@ internal sealed class CliApplication(
             fileSystem,
             services.ProjectStateStore,
             services.TrustService,
+            completionProvider,
             services.WorkspaceDirectoryResolver,
             projectDirectory,
             workspaceOption,
@@ -107,6 +117,7 @@ internal sealed class CliApplication(
             services.CatalogService,
             services.PackValidationService,
             services.LinkServices.LinkInspectionService,
+            completionProvider,
             services.WorkspaceDirectoryResolver,
             projectDirectory,
             workspaceOption,
@@ -118,6 +129,7 @@ internal sealed class CliApplication(
         AddPackAuthoringAndLifecycleCommands(
             rootCommand,
             services,
+            completionProvider,
             projectDirectory,
             workspaceOption,
             console
@@ -133,9 +145,56 @@ internal sealed class CliApplication(
             services.PrerequisiteGuard,
             console
         );
-        AddLinksCommand(rootCommand, services, projectDirectory, workspaceOption, console);
+        AddLinksCommand(
+            rootCommand,
+            services,
+            completionProvider,
+            projectDirectory,
+            workspaceOption,
+            console
+        );
+        AddCompletionCommands(rootCommand, console);
 
         return rootCommand;
+    }
+
+    private void AddCompletionCommands(RootCommand rootCommand, CliConsole console)
+    {
+        var handler = new CompletionCommandHandler(
+            rootCommand,
+            console,
+            CreateCompletionScriptInstallerResolver()
+        );
+        rootCommand.Add(handler.CreateCompleteCommand());
+        rootCommand.Add(handler.CreateCompletionsCommand());
+    }
+
+    private CompletionScriptInstallerResolver CreateCompletionScriptInstallerResolver()
+    {
+        if (completionScriptInstallerResolver is not null)
+        {
+            return completionScriptInstallerResolver;
+        }
+
+        var userProfileDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var isWindows = OperatingSystem.IsWindows();
+        return new CompletionScriptInstallerResolver([
+            new BashCompletionScriptInstaller(fileSystem, userProfileDirectory),
+            new FishCompletionScriptInstaller(fileSystem, userProfileDirectory),
+            new NushellCompletionScriptInstaller(
+                fileSystem,
+                userProfileDirectory,
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                isWindows
+            ),
+            new PowerShellCompletionScriptInstaller(
+                fileSystem,
+                userProfileDirectory,
+                Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                isWindows
+            ),
+            new ZshCompletionScriptInstaller(fileSystem, userProfileDirectory),
+        ]);
     }
 
     private static void ConfigureRootAction(
@@ -215,6 +274,7 @@ internal sealed class CliApplication(
         CatalogService catalogService,
         PackValidationService packValidationService,
         LinkInspectionService linkInspectionService,
+        CliCompletionProvider completionProvider,
         WorkspaceDirectoryResolver workspaceDirectoryResolver,
         string projectDirectory,
         Option<string?> workspaceOption,
@@ -248,6 +308,7 @@ internal sealed class CliApplication(
         rootCommand.Add(
             new ValidatePackCommandHandler(
                 packValidationService,
+                completionProvider,
                 workspaceDirectoryResolver,
                 console
             ).CreateCommand(projectDirectory, workspaceOption)
@@ -255,6 +316,7 @@ internal sealed class CliApplication(
         rootCommand.Add(
             new InspectPackCommandHandler(
                 catalogService,
+                completionProvider,
                 workspaceDirectoryResolver,
                 nextStepAdvisor,
                 nextStepRenderer,
@@ -296,6 +358,7 @@ internal sealed class CliApplication(
     private void AddPackAuthoringAndLifecycleCommands(
         RootCommand rootCommand,
         CommandServices services,
+        CliCompletionProvider completionProvider,
         string projectDirectory,
         Option<string?> workspaceOption,
         CliConsole console
@@ -323,6 +386,7 @@ internal sealed class CliApplication(
                 services.NextStepRenderer,
                 console
             ),
+            completionProvider,
             services.LinkServices.LinkLifecycleService,
             services.LifecycleServices.PackUpdateService,
             services.LifecycleServices.PackUpdateSelectionService,
@@ -426,6 +490,7 @@ internal sealed class CliApplication(
         IFileSystem fileSystem,
         ProjectStateStore projectStateStore,
         TrustService trustService,
+        CliCompletionProvider completionProvider,
         WorkspaceDirectoryResolver workspaceDirectoryResolver,
         string projectDirectory,
         Option<string?> workspaceOption,
@@ -453,12 +518,14 @@ internal sealed class CliApplication(
                 nextStepAdvisor,
                 nextStepRenderer,
                 console,
-                gitRefResolver
+                gitRefResolver,
+                completionProvider
             ).CreateCommand(projectDirectory, workspaceOption)
         );
         rootCommand.Add(
             new TrustCommandHandler(
                 trustService,
+                completionProvider,
                 workspaceDirectoryResolver,
                 console
             ).CreateCommand(projectDirectory, workspaceOption)
@@ -466,6 +533,7 @@ internal sealed class CliApplication(
         rootCommand.Add(
             new VariablesCommandHandler(
                 projectStateStore,
+                completionProvider,
                 workspaceDirectoryResolver,
                 console
             ).CreateCommand(projectDirectory, workspaceOption)
@@ -485,6 +553,7 @@ internal sealed class CliApplication(
         IFileSystem fileSystem,
         PackLifecycleService packLifecycleService,
         LinkCommandDispatcher linkCommandDispatcher,
+        CliCompletionProvider completionProvider,
         LinkLifecycleService linkLifecycleService,
         PackUpdateService packUpdateService,
         PackUpdateSelectionService updateSelectionService,
@@ -503,6 +572,7 @@ internal sealed class CliApplication(
                 fileSystem,
                 packLifecycleService,
                 linkCommandDispatcher,
+                completionProvider,
                 workspaceDirectoryResolver,
                 nextStepAdvisor,
                 nextStepRenderer,
@@ -515,6 +585,7 @@ internal sealed class CliApplication(
                 fileSystem,
                 packLifecycleService,
                 linkCommandDispatcher,
+                completionProvider,
                 workspaceDirectoryResolver,
                 nextStepAdvisor,
                 nextStepRenderer,
@@ -535,6 +606,7 @@ internal sealed class CliApplication(
                 linkCommandDispatcher,
                 updateSelectionService,
                 packUpdatePrompter,
+                completionProvider,
                 workspaceDirectoryResolver,
                 nextStepAdvisor,
                 nextStepRenderer,
@@ -556,6 +628,7 @@ internal sealed class CliApplication(
     private static void AddLinksCommand(
         RootCommand rootCommand,
         CommandServices services,
+        CliCompletionProvider completionProvider,
         string projectDirectory,
         Option<string?> workspaceOption,
         CliConsole console
@@ -566,6 +639,7 @@ internal sealed class CliApplication(
                 services.LinkServices.LinkDefinitionFactory,
                 services.LinkServices.LinkLifecycleService,
                 services.LinkServices.LinkInspectionService,
+                completionProvider,
                 services.WorkspaceDirectoryResolver,
                 services.NextStepAdvisor,
                 services.NextStepRenderer,

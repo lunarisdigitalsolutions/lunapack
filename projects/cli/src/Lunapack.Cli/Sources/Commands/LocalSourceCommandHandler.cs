@@ -16,7 +16,8 @@ internal sealed class LocalSourceCommandHandler(
     NextStepAdvisor nextStepAdvisor,
     NextStepRenderer nextStepRenderer,
     CliConsole console,
-    GitRefResolver? gitRefResolver = null
+    GitRefResolver? gitRefResolver = null,
+    CliCompletionProvider? completionProvider = null
 )
 {
     public Command CreateCommand(string projectDirectory, Option<string?> workspaceOption)
@@ -214,6 +215,12 @@ internal sealed class LocalSourceCommandHandler(
         {
             Description = "Name of the configured source to remove.",
         };
+        if (completionProvider is not null)
+        {
+            removeSourceNameArgument.CompletionSources.Add(
+                completionProvider.GetConfiguredSourceNames
+            );
+        }
         var removeSourceCommand = new Command("rm", "Remove a configured pack source.")
         {
             removeSourceNameArgument,
@@ -242,6 +249,12 @@ internal sealed class LocalSourceCommandHandler(
         {
             Description = "Name of the configured source to rename.",
         };
+        if (completionProvider is not null)
+        {
+            currentSourceNameArgument.CompletionSources.Add(
+                completionProvider.GetConfiguredSourceNames
+            );
+        }
         var newSourceNameArgument = new Argument<string>("new-id")
         {
             Description = "New unique name for the configured source.",

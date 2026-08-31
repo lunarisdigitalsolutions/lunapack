@@ -43,6 +43,27 @@ The saved mappings apply to later installs. A failed installation leaves the
 project mappings unchanged. `--save-remap` requires at least one command-line
 mapping.
 
+For pack installations, `--save-remap` stores mappings on that pack's entry in
+`lunapack.yml`. This keeps pack-specific layout choices separate from the
+top-level mappings used across packs. Luna Links continue to save mappings at
+the top level.
+
+## Understand Mapping Precedence
+
+During a new installation, command-line mappings override configured mappings.
+Without a command-line mapping, a mapping on the pack's `lunapack.yml` entry
+overrides a matching top-level project mapping.
+
+For an already managed target, the effective path recorded in
+`lunapack-lock.yml` controls later updates and uninstall operations. This keeps
+ownership attached to the installed location even if configured mappings
+change. A deliberate `@ignore` mapping is the exception described below.
+
+Install and update output names the source of every effective remapping as the
+command line, the pack entry, top-level project configuration, or the lock
+file. Use this provenance in a dry run to verify which layer won before
+applying changes.
+
 ## Ignore pack targets
 
 Use `@ignore` as the exact mapping value to exclude a declared file or every
