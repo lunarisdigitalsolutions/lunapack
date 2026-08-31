@@ -18,26 +18,60 @@ concurrency:
 
 jobs:
   plan:
-    name: Select build targets
-    if: ${{ github.ref_type == 'tag' }}
+    name: Plan CLI release
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     outputs:
       matrix: ${{ steps.targets.outputs.matrix }}
+      release-type: ${{ steps.targets.outputs.release-type }}
+      version: ${{ steps.targets.outputs.version }}
     steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Restore .NET tools
+        shell: pwsh
+        run: dotnet tool restore
+
       - name: Create target matrix
         id: targets
         shell: pwsh
         env:
           REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
         run: |
           $ErrorActionPreference = 'Stop'
 
-          if ($env:REF_NAME -cnotmatch '^v(?<version>(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?)$') {
-            throw 'Release builds must run against a v<semantic-version> tag without build metadata.'
+          if ($env:REF_TYPE -eq 'tag') {
+            if ($env:REF_NAME -cnotmatch '^v(?<version>(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?)$') {
+              throw 'Release builds must run against a v<semantic-version> tag without build metadata.'
+            }
+
+            $buildVersion = $Matches['version']
+            $releaseType = 'stable'
+            $releaseVersion = $env:REF_NAME
+          }
+          else {
+            $buildVersion = dotnet minver . --tag-prefix v --default-pre-release-identifiers preview --verbosity error
+            if ($LASTEXITCODE -ne 0) {
+              throw 'MinVer failed to resolve a preview version.'
+            }
+            if ($buildVersion -cnotmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-preview\.(0|[1-9][0-9]*)$') {
+              throw "MinVer did not produce a preview version: $buildVersion"
+            }
+
+            $releaseType = 'preview'
+            $releaseVersion = $buildVersion
           }
 
-          $buildVersion = $Matches['version']
           $selectedRuntimeIdentifiers = @(
             'win-x64',
             'linux-x64',
@@ -69,6 +103,8 @@ jobs:
 
           $matrix = ConvertTo-Json -InputObject ([object[]]$selectedTargets) -Compress
           "matrix=$matrix" >> $env:GITHUB_OUTPUT
+          "release-type=$releaseType" >> $env:GITHUB_OUTPUT
+          "version=$releaseVersion" >> $env:GITHUB_OUTPUT
 
   build:
     name: ${{ matrix.runtimeIdentifier }}
@@ -97,9 +133,9 @@ jobs:
           publish-artifacts: 'true'
 
   release:
-    name: Publish GitHub Release
+    name: Publish ${{ needs.plan.outputs.release-type }} release
     needs: [plan, build]
-    if: ${{ always() && github.ref_type == 'tag' && needs.plan.result == 'success' && needs.build.result == 'success' }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     environment: Release
     timeout-minutes: 30
@@ -118,116 +154,8 @@ jobs:
       - name: Release Luna CLI
         uses: ./.github/actions/cli/release
         with:
-          release-type: stable
-          version: ${{ github.ref_name }}
+          release-type: ${{ needs.plan.outputs.release-type }}
+          version: ${{ needs.plan.outputs.version }}
           run-id: ${{ github.run_id }}
           nuget-user: ${{ secrets.NUGET_USER }}
           dry-run: 'false'
-
-  preview-version:
-    name: Resolve preview version
-    if: ${{ github.event_name == 'push' && github.ref_type == 'branch' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    outputs:
-      value: ${{ steps.minver.outputs.value }}
-    steps:
-      - name: Check out
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          fetch-depth: 0
-          fetch-tags: true
-
-      - name: Set up .NET SDK
-        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        with:
-          global-json-file: global.json
-
-      - name: Restore .NET tools
-        shell: bash
-        run: dotnet tool restore
-
-      - name: Resolve MinVer preview
-        id: minver
-        shell: bash
-        run: |
-          set -euo pipefail
-          version="$(dotnet minver . --tag-prefix v --default-pre-release-identifiers preview --verbosity error)"
-          if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-preview\.(0|[1-9][0-9]*)$ ]]; then
-            echo "MinVer did not produce a preview version: $version" >&2
-            exit 1
-          fi
-          printf 'value=%s\n' "$version" >> "$GITHUB_OUTPUT"
-
-  preview-validate:
-    name: Validate CLI preview
-    needs: preview-version
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    permissions:
-      checks: write
-      contents: read
-    steps:
-      - name: Check out
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-
-      - name: Build and test Luna CLI
-        uses: ./.github/actions/cli/build
-        with:
-          runtime-identifier: linux-x64
-          version: ${{ needs.preview-version.outputs.value }}
-
-  publish-preview-rid-packages:
-    name: Publish ${{ matrix.runtimeIdentifier }} preview
-    needs: [preview-version, preview-validate]
-    runs-on: ${{ matrix.runner }}
-    environment: Release
-    timeout-minutes: 45
-    permissions:
-      contents: read
-      id-token: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: windows-latest
-            runtimeIdentifier: win-x64
-          - runner: ubuntu-latest
-            runtimeIdentifier: linux-x64
-          - runner: ubuntu-24.04-arm
-            runtimeIdentifier: linux-arm64
-          - runner: macos-15-intel
-            runtimeIdentifier: osx-x64
-          - runner: macos-15
-            runtimeIdentifier: osx-arm64
-    steps:
-      - name: Check out
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-
-      - name: Publish Luna CLI preview
-        uses: ./.github/actions/cli/release
-        with:
-          release-type: preview
-          version: ${{ needs.preview-version.outputs.value }}
-          runtime-identifier: ${{ matrix.runtimeIdentifier }}
-          nuget-user: ${{ secrets.NUGET_USER }}
-
-  publish-preview-pointer-package:
-    name: Publish pointer preview
-    needs: [preview-version, publish-preview-rid-packages]
-    runs-on: ubuntu-latest
-    environment: Release
-    timeout-minutes: 20
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - name: Check out
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-
-      - name: Publish Luna CLI preview pointer
-        uses: ./.github/actions/cli/release
-        with:
-          release-type: preview
-          version: ${{ needs.preview-version.outputs.value }}
-          nuget-user: ${{ secrets.NUGET_USER }}

@@ -8,9 +8,10 @@ Commits to `main` that change `projects/cli` run the NuGet preview path in the
 `CLI: Release` workflow. MinVer derives the next patch preview from the latest
 `v` tag, such as `1.2.1-preview.1` after `v1.2.0`. Preview versions are not Git
 tags; tagged releases use v-prefixed Semantic Versioning. The preview jobs publish the five
-RID-specific tool packages directly from native runners, then publish the
-pointer package. They do not publish npm packages or containers and do not
-create a GitHub artifact or release. Preview NuGet packages include a generated
+RID-specific tool packages from native-runner artifacts, then publish the
+pointer package centrally. They do not publish npm packages or containers and
+do not create a GitHub Release. Preview builds retain short-lived workflow
+artifacts for three days. Preview NuGet packages include a generated
 `CHANGELOG.md` containing only the canonical `Unreleased` section.
 
 Both paths call the reusable release action. Its `release-type` input accepts
@@ -20,8 +21,9 @@ dispatcher validates that selection and calls one composite publisher per
 channel. Before stable dispatch, the release action prepares the archives,
 release notes, checksums, native files, and npm packages shared by GitHub,
 container, and npm. NuGet downloads and validates its RID packages inside the
-NuGet publisher. Preview runs only NuGet setup, Native AOT packaging,
-authentication, and publication.
+NuGet publisher. Stable and preview runs share one plan, native build matrix,
+and release job. For previews, the release job runs only NuGet staging,
+authentication, and ordered publication.
 
 ## Prerequisites
 

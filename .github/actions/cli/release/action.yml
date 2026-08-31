@@ -9,10 +9,6 @@ inputs:
   version:
     description: Existing v-prefixed stable tag or plain preview package version.
     required: true
-  runtime-identifier:
-    description: Optional runtime identifier for a preview NuGet package. Omit for the pointer package.
-    required: false
-    default: ''
   artifact-pattern:
     description: Pattern used to download CLI distribution artifacts.
     required: false
@@ -85,7 +81,6 @@ runs:
         channels: ${{ steps.release.outputs.channels }}
         release-type: ${{ inputs.release-type }}
         version: ${{ inputs.version }}
-        runtime-identifier: ${{ inputs.runtime-identifier }}
         nuget-artifact-pattern: ${{ inputs.nuget-artifact-pattern }}
         run-id: ${{ inputs.run-id }}
         changelog-path: ${{ inputs.changelog-path }}

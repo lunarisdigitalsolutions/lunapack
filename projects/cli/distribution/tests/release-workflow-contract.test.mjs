@@ -9,18 +9,15 @@ import {
 
 const workflow = readFileSync('.github/workflows/cli.yml', 'utf8')
 const websiteWorkflow = readFileSync('.github/workflows/website.yml', 'utf8')
-const previewJobs = workflow.slice(workflow.indexOf('  preview-version:'))
-const stableReleaseJob = workflow.slice(
-  workflow.indexOf('  release:'),
-  workflow.indexOf('  preview-version:')
+const planJob = workflow.slice(
+  workflow.indexOf('  plan:'),
+  workflow.indexOf('  build:')
 )
-const previewRidPublisherJob = workflow.slice(
-  workflow.indexOf('  publish-preview-rid-packages:'),
-  workflow.indexOf('  publish-preview-pointer-package:')
+const buildJob = workflow.slice(
+  workflow.indexOf('  build:'),
+  workflow.indexOf('  release:')
 )
-const previewPointerPublisherJob = workflow.slice(
-  workflow.indexOf('  publish-preview-pointer-package:')
-)
+const releaseJob = workflow.slice(workflow.indexOf('  release:'))
 const buildAction = readFileSync('.github/actions/cli/build/action.yml', 'utf8')
 const dotnetBuildAction = readFileSync(
   '.github/actions/build-dotnet/action.yml',
@@ -130,7 +127,7 @@ test('Scenario_ReleaseAction_NuGetPublishesRidPackagesBeforePointerPackage', () 
   assert.match(releaseNuGetAction, /default: cli-nuget-\*/)
   assert.match(
     releaseNuGetAction,
-    /- name: Download stable RID-specific \.NET tools[\s\S]*path: release-staging\/nuget/
+    /- name: Download RID-specific \.NET tools[\s\S]*path: release-staging\/nuget/
   )
   assert.match(releaseNuGetAction, /Missing RID package/)
   assert.doesNotMatch(
@@ -143,7 +140,7 @@ test('Scenario_ReleaseAction_NuGetPublishesRidPackagesBeforePointerPackage', () 
   )
   assert.match(
     releaseNuGetAction,
-    /dotnet pack projects\/cli\/src\/Lunapack\.Cli\/Lunapack\.Cli\.csproj[\s\S]*-p:MinVerVersionOverride="\$VERSION"[\s\S]*-p:LunapackPackAsTool=true/
+    /pack_arguments=\([\s\S]*-p:MinVerVersionOverride="\$version"[\s\S]*-p:LunapackPackAsTool=true[\s\S]*dotnet pack projects\/cli\/src\/Lunapack\.Cli\/Lunapack\.Cli\.csproj "\$\{pack_arguments\[@\]\}"/
   )
 
   const ridPackage =
@@ -161,13 +158,13 @@ test('Scenario_ReleaseWorkflow_RegistryPublishingUsesFederatedIdentity', () => {
   assert.equal(
     [...workflow.matchAll(/nuget-user: \$\{\{ secrets\.NUGET_USER \}\}/g)]
       .length,
-    3
+    1
   )
   assert.doesNotMatch(
     releaseNpmAction,
     /npm-token|NPM_CONFIG_USERCONFIG|_authToken/
   )
-  assert.equal([...workflow.matchAll(/id-token: write/g)].length, 3)
+  assert.equal([...workflow.matchAll(/id-token: write/g)].length, 1)
   assert.match(
     workflow,
     /release:[\s\S]*?permissions:\s+actions: read\s+contents: write\s+id-token: write\s+packages: write/
@@ -336,25 +333,26 @@ test('Scenario_PreviewWorkflow_PublishesOnlyNuGetForCliChangesOnMain', () => {
     /push:[\s\S]*?tags:\s+- '\*\*'\s+branches:\s+- main\s+paths:\s+- 'projects\/cli\/\*\*'/
   )
   assert.match(workflow, /name: 'CLI: Release'/)
-  assert.match(workflow, /- name: Release Luna CLI[\s\S]*?release-type: stable/)
   assert.match(
-    workflow,
-    /preview-version:[\s\S]*?if: \$\{\{ github\.event_name == 'push' && github\.ref_type == 'branch' \}\}/
+    planJob,
+    /if \(\$env:REF_TYPE -eq 'tag'\)[\s\S]*\$releaseType = 'stable'[\s\S]*\$releaseType = 'preview'/
   )
   assert.doesNotMatch(workflow, /workflow_dispatch/)
   assert.match(
-    workflow,
-    /plan:[\s\S]*?if: \$\{\{ github\.ref_type == 'tag' \}\}/
-  )
-  assert.match(stableReleaseJob, /environment: Release/)
-  assert.match(previewRidPublisherJob, /environment: Release/)
-  assert.match(previewPointerPublisherJob, /environment: Release/)
-  assert.match(workflow, /cancel-in-progress: false/)
-  assert.match(
-    previewJobs,
+    planJob,
     /dotnet minver \. --tag-prefix v --default-pre-release-identifiers preview/
   )
-  assert.match(previewJobs, /-preview\\\.\(0\|\[1-9\]\[0-9\]\*\)/)
+  assert.match(
+    planJob,
+    /release-type: \$\{\{ steps\.targets\.outputs\.release-type \}\}/
+  )
+  assert.match(planJob, /version: \$\{\{ steps\.targets\.outputs\.version \}\}/)
+  assert.match(buildJob, /needs: plan/)
+  assert.match(buildJob, /publish-artifacts: 'true'/)
+  assert.match(releaseJob, /needs: \[plan, build\]/)
+  assert.match(releaseJob, /environment: Release/)
+  assert.match(workflow, /cancel-in-progress: false/)
+  assert.match(planJob, /-preview\\\.\(0\|\[1-9\]\[0-9\]\*\)/)
   assert.match(
     releaseNuGetAction,
     /extract-release-notes\.mjs[\s\S]*"\$RUNNER_TEMP\/CHANGELOG\.md" unreleased/
@@ -364,20 +362,19 @@ test('Scenario_PreviewWorkflow_PublishesOnlyNuGetForCliChangesOnMain', () => {
     /-p:LunapackChangelogPath="\$RUNNER_TEMP\/CHANGELOG\.md"/
   )
   assert.match(
-    previewJobs,
-    /needs: \[preview-version, publish-preview-rid-packages\]/
+    releaseNuGetAction,
+    /- name: Download RID-specific \.NET tools[\s\S]*pattern: \$\{\{ inputs\.artifact-pattern \}\}/
   )
   assert.equal(
-    [...previewJobs.matchAll(/uses: \.\/\.github\/actions\/cli\/release/g)]
-      .length,
-    2
+    [...workflow.matchAll(/uses: \.\/\.github\/actions\/cli\/release/g)].length,
+    1
   )
-  assert.equal([...previewJobs.matchAll(/release-type: preview/g)].length, 2)
   assert.match(
-    previewJobs,
-    /runtime-identifier: \$\{\{ matrix\.runtimeIdentifier \}\}/
+    releaseJob,
+    /release-type: \$\{\{ needs\.plan\.outputs\.release-type \}\}/
   )
-  assert.match(previewJobs, /nuget-user: \$\{\{ secrets\.NUGET_USER \}\}/)
+  assert.match(releaseJob, /version: \$\{\{ needs\.plan\.outputs\.version \}\}/)
+  assert.match(releaseJob, /nuget-user: \$\{\{ secrets\.NUGET_USER \}\}/)
   assert.match(releaseNuGetAction, /uses: NuGet\/login@[0-9a-f]{40}/)
   assert.match(releaseNuGetAction, /user: \$\{\{ inputs\.nuget-user \}\}/)
   assert.match(
@@ -424,14 +421,14 @@ test('Scenario_PreviewWorkflow_PublishesOnlyNuGetForCliChangesOnMain', () => {
     'osx-arm64'
   ]) {
     assert.match(
-      previewJobs,
-      new RegExp(`runtimeIdentifier: ${runtimeIdentifier}`)
+      workflow,
+      new RegExp(`'${runtimeIdentifier}' = \\[PSCustomObject\\]@\\{ runner =`)
     )
   }
 
   assert.doesNotMatch(
-    previewJobs,
-    /actions\/upload-artifact|npm publish|docker|gh release/
+    releaseNuGetAction,
+    /dotnet publish|runtime-identifier|Publish Native AOT preview/
   )
 })
 
@@ -483,7 +480,7 @@ test('Scenario_ReleaseWorkflow_RunsAreBoundedAndSerialized', () => {
     /concurrency:\s+group: cli-release-\$\{\{ github\.ref \}\}/
   )
   assert.match(workflow, /cancel-in-progress: false/)
-  assert.equal([...workflow.matchAll(/timeout-minutes:/g)].length, 7)
+  assert.equal([...workflow.matchAll(/timeout-minutes:/g)].length, 3)
   assert.match(buildAction, /default: '3'/)
   assert.match(
     buildAction,
@@ -570,11 +567,7 @@ test('Scenario_ReleaseAction_DryRunSkipsEveryPublishingStep', () => {
   )
   assert.match(
     releaseNuGetAction,
-    /- name: Publish stable \.NET tools\r?\n\s+if: \$\{\{ inputs\.release-type == 'stable' && inputs\.dry-run != 'true' \}\}/
-  )
-  assert.match(
-    releaseNuGetAction,
-    /- name: Publish preview \.NET tool\r?\n\s+if: \$\{\{ inputs\.release-type == 'preview' && inputs\.dry-run != 'true' \}\}/
+    /- name: Publish \.NET tools\r?\n\s+if: \$\{\{ inputs\.dry-run != 'true' \}\}/
   )
 })
 

@@ -11,10 +11,6 @@ inputs:
   version:
     description: V-prefixed stable tag or plain preview version.
     required: true
-  runtime-identifier:
-    description: Optional runtime identifier for a preview NuGet package.
-    required: false
-    default: ''
   nuget-artifact-pattern:
     description: Pattern used to download RID-specific NuGet packages.
     required: false
@@ -85,7 +81,6 @@ runs:
       with:
         release-type: ${{ inputs.release-type }}
         version: ${{ inputs.version }}
-        runtime-identifier: ${{ inputs.runtime-identifier }}
         artifact-pattern: ${{ inputs.nuget-artifact-pattern }}
         run-id: ${{ inputs.run-id || github.run_id }}
         changelog-path: ${{ inputs.changelog-path }}

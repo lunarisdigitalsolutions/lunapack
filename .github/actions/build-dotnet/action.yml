@@ -165,6 +165,7 @@ runs:
         name: Tests
         path: '${{ runner.temp }}/dotnet-test-results/**/*.trx'
         reporter: dotnet-trx
+        path-replace-backslashes: true
 
     - name: Generate test coverage report
       if: ${{ inputs.should-run-tests == 'true' && steps.tests.outcome == 'success' }}
