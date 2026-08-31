@@ -218,7 +218,7 @@ internal sealed class LinksCommandHandler(
                 return console.Fail(savedState.Error);
             }
 
-            console.Success($"✓ Link '{name}' added");
+            console.Success($"Link '{name}' added");
             nextStepRenderer.Render(nextStepAdvisor.Recommend(NextStepContext.LinkAdded, name));
             return 0;
         }
@@ -237,7 +237,7 @@ internal sealed class LinksCommandHandler(
         }
 
         console.Success(
-            $"✓ Link '{name}' installed in {CliDuration.Format(managedFileChangesDuration ?? TimeSpan.Zero)}"
+            $"Link '{name}' installed in {CliDuration.Format(managedFileChangesDuration ?? TimeSpan.Zero)}"
         );
         nextStepRenderer.Render(nextStepAdvisor.Recommend(NextStepContext.LinkInstalled, name));
         return 0;

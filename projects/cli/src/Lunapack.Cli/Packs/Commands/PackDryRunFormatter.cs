@@ -20,7 +20,7 @@ internal static class PackDryRunFormatter
         var lines = new List<string>(dryRun.UpdatePlan.Actions.Count + 1)
         {
             "[bold]Install plan[/]",
-            $"[cyan]◆[/] Selected release  [bold]{Markup.Escape(dryRun.SelectedRelease.Id)}@{Markup.Escape(selectedVersion)}[/]",
+            $"[cyan]*[/] Selected release  [bold]{Markup.Escape(dryRun.SelectedRelease.Id)}@{Markup.Escape(selectedVersion)}[/]",
         };
         AddSection(
             lines,
@@ -42,7 +42,7 @@ internal static class PackDryRunFormatter
         lines.Add("[bold]Update plan[/]");
         if (outcomes.Count == 0)
         {
-            lines.Add("[grey]•[/] No updates are available.");
+            lines.Add("[grey]-[/] No updates are available.");
         }
         else
         {
@@ -58,7 +58,7 @@ internal static class PackDryRunFormatter
                 lines,
                 "Source switch",
                 [
-                    $"[yellow]↔[/] {Markup.Escape(proposedSourceSwitch.PackId)}  {Markup.Escape(SourceOutputFormatter.FormatIdentity(proposedSourceSwitch.CurrentSource))} → {Markup.Escape(SourceOutputFormatter.FormatIdentity(proposedSourceSwitch.SelectedSource))}",
+                    $"[yellow]~[/] {Markup.Escape(proposedSourceSwitch.PackId)}  {Markup.Escape(SourceOutputFormatter.FormatIdentity(proposedSourceSwitch.CurrentSource))} -> {Markup.Escape(SourceOutputFormatter.FormatIdentity(proposedSourceSwitch.SelectedSource))}",
                 ]
             );
         }
@@ -99,7 +99,7 @@ internal static class PackDryRunFormatter
 
         return externalSources
             .Mappings.Select(mapping =>
-                $"[cyan]→[/] Map  {Markup.Escape(mapping.PackId)}: {Markup.Escape(mapping.Alias)} → {Markup.Escape(mapping.WorkspaceSourceName)}"
+                $"[cyan]>[/] Map  {Markup.Escape(mapping.PackId)}: {Markup.Escape(mapping.Alias)} -> {Markup.Escape(mapping.WorkspaceSourceName)}"
             )
             .Concat(
                 externalSources.Proposed.Select(group =>
@@ -110,8 +110,8 @@ internal static class PackDryRunFormatter
 
     private static string FormatOutcome(PackUpdateService.UpdateOutcome outcome) =>
         outcome.IsCurrent
-            ? $"[grey]•[/] {Markup.Escape(outcome.Id)}  {Markup.Escape(outcome.CurrentVersion)} is current"
-            : $"[cyan]◆[/] {Markup.Escape(outcome.Id)}  {Markup.Escape(outcome.CurrentVersion)} → [bold]{Markup.Escape(outcome.SelectedVersion)}[/]";
+            ? $"[grey]-[/] {Markup.Escape(outcome.Id)}  {Markup.Escape(outcome.CurrentVersion)} is current"
+            : $"[cyan]*[/] {Markup.Escape(outcome.Id)}  {Markup.Escape(outcome.CurrentVersion)} -> [bold]{Markup.Escape(outcome.SelectedVersion)}[/]";
 
     private static string FormatAction(PlannedPackUpdateAction action) =>
         action switch
@@ -119,9 +119,9 @@ internal static class PackDryRunFormatter
             CreateManagedFileUpdateAction =>
                 $"[green]+[/] Create  {Markup.Escape(action.TargetPathRelativeToProject)}",
             CopyManagedFileUpdateAction =>
-                $"[cyan]→[/] Copy    {Markup.Escape(action.TargetPathRelativeToProject)}",
+                $"[cyan]>[/] Copy    {Markup.Escape(action.TargetPathRelativeToProject)}",
             BackupAndCopyManagedFileUpdateAction backupAndCopy =>
-                $"[yellow]~[/] Replace {Markup.Escape(action.TargetPathRelativeToProject)}  [grey](backup: {Markup.Escape(backupAndCopy.BackupPath)})[/]",
+                $"[yellow]![/] Replace {Markup.Escape(action.TargetPathRelativeToProject)}  [grey](backup: {Markup.Escape(backupAndCopy.BackupPath)})[/]",
             MergeLinesManagedFileUpdateAction =>
                 $"[yellow]~[/] Merge   {Markup.Escape(action.TargetPathRelativeToProject)} [grey](lines)[/]",
             MergeSectionManagedFileUpdateAction =>
@@ -129,7 +129,7 @@ internal static class PackDryRunFormatter
             MergeJsonManagedFileUpdateAction =>
                 $"[yellow]~[/] Merge   {Markup.Escape(action.TargetPathRelativeToProject)} [grey](JSON)[/]",
             SkipManagedFileUpdateAction =>
-                $"[grey]•[/] Skip    {Markup.Escape(action.TargetPathRelativeToProject)}",
+                $"[grey]=[/] Skip    {Markup.Escape(action.TargetPathRelativeToProject)}",
             DeleteManagedFileUpdateAction =>
                 $"[red]-[/] Delete  {Markup.Escape(action.TargetPathRelativeToProject)}",
             _ => throw new ArgumentOutOfRangeException(
@@ -146,12 +146,12 @@ internal static class PackDryRunFormatter
             return [];
         }
 
-        var lines = new List<string> { $"[magenta]▶[/] Scripts  {lifecycle.ScriptMode.Value}" };
+        var lines = new List<string> { $"[magenta]>[/] Scripts    {lifecycle.ScriptMode.Value}" };
         lines.AddRange(
-            lifecycle.PreMutation.Select(hook => FormatHook("pre-hook", hook, lifecycle))
+            lifecycle.PreMutation.SelectMany(hook => FormatHook("Pre-hook ", hook, lifecycle))
         );
         lines.AddRange(
-            lifecycle.PostMutation.Select(hook => FormatHook("post-hook", hook, lifecycle))
+            lifecycle.PostMutation.SelectMany(hook => FormatHook("Post-hook", hook, lifecycle))
         );
         foreach (var change in lifecycle.Changes)
         {
@@ -167,14 +167,7 @@ internal static class PackDryRunFormatter
                     change.DisabledHooks.OrderBy(value => value, StringComparer.Ordinal)
                 );
                 lines.Add(
-                    $"[grey]•[/] Suppressed  {Markup.Escape(incomingPack.Manifest.Id)}@{Markup.Escape(incomingPack.Manifest.Version)} {Markup.Escape(disabledHooks)}"
-                );
-            }
-
-            if (change.PreviousPack is { SourceIdentity: { } sourceIdentity } previousPack)
-            {
-                lines.Add(
-                    $"[grey]•[/] Locked source  {Markup.Escape(previousPack.Id)} {Markup.Escape(SourceOutputFormatter.FormatIdentity(sourceIdentity))}"
+                    $"[grey]-[/] Suppressed  {Markup.Escape(incomingPack.Manifest.Id)}@{Markup.Escape(incomingPack.Manifest.Version)} {Markup.Escape(disabledHooks)}"
                 );
             }
         }
@@ -182,23 +175,35 @@ internal static class PackDryRunFormatter
         return lines;
     }
 
-    private static string FormatHook(
+    private static IEnumerable<string> FormatHook(
         string phase,
         LifecycleHookInvocation hook,
         LifecycleDryRunPlan lifecycle
     )
     {
-        var prefix =
-            $"[magenta]▶[/] {phase}  {Markup.Escape(hook.Pack.Manifest.Id)}@{Markup.Escape(hook.Pack.Manifest.Version)} {LifecycleHookPlanner.ToManifestValue(hook.Hook)}";
-        return hook.Instruction is { } instruction
-            ? $"{prefix} instruction file: {instruction.PackedFile.RelativePath} templating: {(instruction.Templating ? "enabled" : "disabled")} steps: {instruction.Document.Steps.Count}"
-            : $"{prefix} script consent: {GetConsentStatus(lifecycle)}";
+        yield return $"[magenta]>[/] {phase}  {Markup.Escape(hook.Pack.Manifest.Id)}@{Markup.Escape(hook.Pack.Manifest.Version)}";
+        if (hook.Instruction is { } instruction)
+        {
+            yield return $"    Instruction  {Markup.Escape(instruction.PackedFile.RelativePath)}";
+            yield return $"    Templating   {(instruction.Templating ? "enabled" : "disabled")}";
+            yield return $"    Steps        {instruction.Document.Steps.Count}";
+        }
+        else
+        {
+            yield return $"    Script       {GetConsentStatus(lifecycle, hook)}";
+        }
     }
 
-    private static string GetConsentStatus(LifecycleDryRunPlan lifecycle) =>
+    private static string GetConsentStatus(
+        LifecycleDryRunPlan lifecycle,
+        LifecycleHookInvocation hook
+    ) =>
         lifecycle.ScriptDenialScopes is { Count: > 0 } denyingScopes
-            ? $"policy-denied scopes: {string.Join(", ", denyingScopes.Select(ScriptDenialOriginFormatter.Format))}"
-        : lifecycle.ScriptMode == ScriptExecutionMode.Skip ? "skipped"
-        : lifecycle.ScriptMode == ScriptExecutionMode.Run ? "invocation-approved"
-        : "trust-or-confirm";
+            ? $"blocked (policy: {string.Join(", ", denyingScopes.Select(ScriptDenialOriginFormatter.Format))})"
+        : lifecycle.ScriptMode == ScriptExecutionMode.Skip ? "skipped (--scripts skip)"
+        : lifecycle.ScriptMode == ScriptExecutionMode.Run ? "allowed (--scripts run)"
+        : lifecycle.ScriptTrustScopes?.TryGetValue(hook, out var trustScopes) == true
+        && trustScopes.Count > 0
+            ? $"allowed (trust: {string.Join(", ", trustScopes.Select(TrustOutputFormatter.FormatScope))})"
+        : "confirmation required";
 }

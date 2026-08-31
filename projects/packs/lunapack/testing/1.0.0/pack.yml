@@ -1,0 +1,106 @@
+id: lunapack-testing
+name: LunaPack testing fixture
+version: 1.0.0
+draft: true
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Exercise LunaPack features and the initial testing-pack lifecycle.
+homepage: https://lunapack.dev/
+tags:
+  - testing
+  - draft
+  - manual
+parameters:
+  projectName:
+    type: string
+    default: Sample Project
+    displayName: Project name
+    description: Name rendered into testing files and hook arguments.
+  includeOptional:
+    type: bool
+    default: true
+    displayName: Include optional file
+  profile:
+    type: enum
+    values:
+      - basic
+      - full
+    default: full
+  features:
+    type: enum
+    multiple: true
+    values:
+      - docs
+      - ci
+      - scripts
+    default:
+      - docs
+      - scripts
+managedFiles:
+  - source: templates/README.md
+    target: .lunapack-testing/README.md
+    template: true
+  - directory: templates/config
+    target: .lunapack-testing/config
+    template: true
+  - glob: templates/snippets/**/*.txt
+    exclude:
+      - templates/snippets/excluded/**
+    target: .lunapack-testing/snippets
+    flatten: true
+    condition: '"docs" in features'
+  - source: templates/optional.txt
+    target: .lunapack-testing/optional.txt
+    condition: includeOptional
+  - source: templates/gitignore
+    target: .gitignore
+    strategy:
+      type: merge
+      method: lines
+  - source: templates/section.md
+    target: .lunapack-testing/sections.md
+    strategy:
+      type: merge
+      method: section
+  - source: templates/settings.json
+    target: .vscode/settings.json
+    strategy:
+      type: merge
+      method: json
+hooks:
+  preInstall:
+    - type: instruction
+      file: instructions/pre-install.md
+      templating: true
+  postInstall:
+    - type: script
+      file: scripts/echo.ps1
+      runner: pwsh
+      arguments:
+        - post-install
+        - '{{ projectName }}'
+      description: Echo completed install phase.
+  preUpdate:
+    - type: script
+      file: scripts/echo.ps1
+      runner: pwsh
+      arguments:
+        - pre-update
+        - '{{ projectName }}'
+      description: Echo starting update phase.
+  postUpdate:
+    - type: instruction
+      file: instructions/post-update.md
+      templating: true
+  preUninstall:
+    - type: instruction
+      file: instructions/pre-uninstall.md
+      templating: true
+  postUninstall:
+    - type: script
+      file: scripts/echo.ps1
+      runner: pwsh
+      arguments:
+        - post-uninstall
+        - '{{ projectName }}'
+      description: Echo completed uninstall phase.

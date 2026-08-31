@@ -190,10 +190,12 @@ commands select the latest available release. `install` accepts `--dry-run`
 `--adopt-existing` (`-a`), repeatable `--parameter` (`-p`),
 `--no-variables` (`-nv`), and repeatable `--skip-variable` (`-sv`).
 Dry runs group release selection, external sources, managed-file changes, and
-lifecycle work into labeled sections with action prefixes. Successful installs
-and updates list each created, copied, replaced, merged, skipped, or deleted
-managed file by default. Pass `--no-file-changes` to either command to suppress
-that success output; it does not hide the plan during `--dry-run`.
+lifecycle work into labeled sections with ASCII action prefixes. Lifecycle
+script rows identify whether policy, `--scripts`, persisted trust, or interactive
+confirmation determines consent. Successful installs and updates list each
+created, copied, replaced, merged, skipped, or deleted managed file by default.
+Pass `--no-file-change-output` to either command to suppress that success output;
+it does not hide the plan during `--dry-run`.
 Install also accepts repeatable `--remap-directory <source>=<target>` and
 `--remap-file <source>=<target>` options. Add `--save-remap` to persist those
 mappings after a successful installation. `--save-remap` requires at least one
@@ -233,7 +235,10 @@ display name and description when available.
 up to that many distinct releases for each package. Both commands show the
 latest release by default, use separate Pack and Version columns, and order
 requested releases by descending Semantic Version. The count must be from one
-through 10.
+through 10. Packs whose manifests set `draft: true` are hidden from both
+commands by default. Pass `--allow-draft` to include them. Draft packs remain
+available to install, update, uninstall, validate, and inspect when referenced
+directly.
 
 LunaPack writes output through Spectre.Console on standard output; info output
 is plain, while

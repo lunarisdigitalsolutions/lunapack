@@ -101,7 +101,7 @@ public sealed class PackUpdateCommandTests
         var outputStart = ansiConsole.Output.Length;
 
         var exitCode = await workspace.Application.RunAsync(
-            ["update", "dotnet", "--no-file-changes"],
+            ["update", "dotnet", "--no-file-change-output"],
             workspace.Path
         );
         var output = ansiConsole.Output[outputStart..];

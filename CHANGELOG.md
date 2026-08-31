@@ -12,7 +12,13 @@ Update this section before creating a release tag.
 - Install and update dry runs now group source, managed-file, and lifecycle
   actions under labeled sections with colored action prefixes. Successful
   installs and updates list managed-file changes by default; use
-  `--no-file-changes` to suppress that list.
+  `--no-file-change-output` to suppress that list.
+- Install and update dry runs no longer list locked source identities under
+  lifecycle actions.
+- CLI status and dry-run actions now use distinct ASCII markers for consistent
+  terminal rendering without relying on color to identify file operations.
+  Lifecycle dry runs group hook details by phase and report whether policy,
+  command arguments, persisted trust, or confirmation controls script consent.
 
 ## Version 1.2.0 - 2026-08-29
 

@@ -64,7 +64,7 @@ internal sealed class LifecycleHookExecutor(IFileSystem fileSystem, CliConsole c
             }
 
             console.Success(
-                $"✓ Lifecycle command completed in {CliDuration.Format(Stopwatch.GetElapsedTime(startedAt))}"
+                $"Lifecycle command completed in {CliDuration.Format(Stopwatch.GetElapsedTime(startedAt))}"
             );
             console.Info(string.Empty);
             return ManifestOperationResult<bool>.Success(true);

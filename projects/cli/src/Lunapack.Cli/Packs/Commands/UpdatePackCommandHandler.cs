@@ -26,7 +26,7 @@ internal sealed class UpdatePackCommandHandler(
         var packReferenceArgument = CreatePackReferenceArgument();
         var promptOption = CreatePromptOption();
         var dryRunOption = CreateDryRunOption();
-        var noFileChangesOption = CreateNoFileChangesOption();
+        var noFileChangeOutputOption = CreateNoFileChangeOutputOption();
         var acceptSourcesOption = CreateAcceptSourcesOption();
         var scriptsOption = CreateScriptsOption();
         var skipInstructionsOption = CreateSkipInstructionsOption();
@@ -35,7 +35,7 @@ internal sealed class UpdatePackCommandHandler(
             packReferenceArgument,
             promptOption,
             dryRunOption,
-            noFileChangesOption,
+            noFileChangeOutputOption,
             acceptSourcesOption,
             scriptsOption,
             skipInstructionsOption,
@@ -48,7 +48,7 @@ internal sealed class UpdatePackCommandHandler(
                 packReferenceArgument,
                 promptOption,
                 dryRunOption,
-                noFileChangesOption,
+                noFileChangeOutputOption,
                 acceptSourcesOption,
                 scriptsOption,
                 skipInstructionsOption
@@ -65,7 +65,7 @@ internal sealed class UpdatePackCommandHandler(
         Argument<string[]> packReferenceArgument,
         Option<bool> promptOption,
         Option<bool> dryRunOption,
-        Option<bool> noFileChangesOption,
+        Option<bool> noFileChangeOutputOption,
         Option<bool> acceptSourcesOption,
         Option<string?> scriptsOption,
         Option<bool> skipInstructionsOption
@@ -89,7 +89,7 @@ internal sealed class UpdatePackCommandHandler(
         }
 
         var dryRun = parseResult.GetValue(dryRunOption);
-        var showFileChanges = !parseResult.GetValue(noFileChangesOption);
+        var showFileChanges = !parseResult.GetValue(noFileChangeOutputOption);
         var acceptSources = parseResult.GetValue(acceptSourcesOption);
         var scriptMode = ScriptExecutionMode.Parse(
             parseResult.GetValue(scriptsOption) ?? ScriptExecutionMode.Prompt.Value
@@ -214,8 +214,8 @@ internal sealed class UpdatePackCommandHandler(
     private static Option<bool> CreateDryRunOption() =>
         new("--dry-run", "-D") { Description = "Plan updates without modifying files or state." };
 
-    private static Option<bool> CreateNoFileChangesOption() =>
-        new("--no-file-changes")
+    private static Option<bool> CreateNoFileChangeOutputOption() =>
+        new("--no-file-change-output")
         {
             Description = "Do not list managed-file changes after updates.",
         };
@@ -384,7 +384,7 @@ internal sealed class UpdatePackCommandHandler(
         {
             var message = outcome.IsCurrent
                 ? $"{outcome.Id} {outcome.CurrentVersion} is current."
-                : $"✓ Updated '{outcome.Id}' (version '{outcome.SelectedVersion}')";
+                : $"Updated '{outcome.Id}' (version '{outcome.SelectedVersion}')";
             if (outcome.IsCurrent)
             {
                 console.Info(message);

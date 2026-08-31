@@ -3,8 +3,9 @@
 `pack.yml` declares a pack. It requires a hyphen-separated alphanumeric `id`,
 non-empty `author` and `license` values, and a semantic `version`. Empty content
 collections remain valid during incremental authoring. `name`, `description`,
-`homepage`, and `tags` are optional metadata. Discovery and search exclude
-manifests missing author or license attribution.
+`homepage`, `tags`, and `draft` are optional metadata. Discovery and search
+exclude manifests missing author or license attribution. They also exclude
+draft packs unless the consumer passes `--allow-draft`.
 
 ```yml
 id: example-documentation-standard
@@ -27,6 +28,7 @@ managedFiles:
 | `version`              | Required Semantic Version.                                                                                                                                                      |
 | `name`                 | Optional non-empty human-readable name.                                                                                                                                         |
 | `author`               | Required non-empty author or maintainer attribution.                                                                                                                            |
+| `draft`                | Optional visibility marker. Defaults to `false`; drafts require `--allow-draft` in discovery and search but remain available to direct commands.                                |
 | `homepage`             | Optional absolute HTTP or HTTPS URI.                                                                                                                                            |
 | `license`              | Required non-empty license identifier or expression.                                                                                                                            |
 | `managedFiles`         | Each entry has one `source`, `directory`, or `glob` selector and a project-relative `target`.                                                                                   |

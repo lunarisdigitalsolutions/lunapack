@@ -31,7 +31,7 @@ internal sealed class InstallPackCommandHandler(
         var saveRemapOption = CreateSaveRemapOption();
         var adoptExistingOption = CreateAdoptExistingOption();
         var dryRunOption = CreateDryRunOption();
-        var noFileChangesOption = CreateNoFileChangesOption();
+        var noFileChangeOutputOption = CreateNoFileChangeOutputOption();
         var acceptSourcesOption = CreateAcceptSourcesOption();
         var parameterOption = CreateParameterOption();
         var noVariablesOption = CreateNoVariablesOption();
@@ -47,7 +47,7 @@ internal sealed class InstallPackCommandHandler(
             saveRemapOption,
             adoptExistingOption,
             dryRunOption,
-            noFileChangesOption,
+            noFileChangeOutputOption,
             acceptSourcesOption,
             parameterOption,
             noVariablesOption,
@@ -67,7 +67,7 @@ internal sealed class InstallPackCommandHandler(
                 saveRemapOption,
                 adoptExistingOption,
                 dryRunOption,
-                noFileChangesOption,
+                noFileChangeOutputOption,
                 acceptSourcesOption,
                 parameterOption,
                 noVariablesOption,
@@ -91,7 +91,7 @@ internal sealed class InstallPackCommandHandler(
         Option<bool> saveRemapOption,
         Option<bool> adoptExistingOption,
         Option<bool> dryRunOption,
-        Option<bool> noFileChangesOption,
+        Option<bool> noFileChangeOutputOption,
         Option<bool> acceptSourcesOption,
         Option<string[]> parameterOption,
         Option<bool> noVariablesOption,
@@ -134,7 +134,7 @@ internal sealed class InstallPackCommandHandler(
                 parsedScriptMode,
                 parseResult.GetValue(skipInstructionsOption),
                 parseResult.GetValue(dryRunOption),
-                parseResult.GetValue(noFileChangesOption),
+                parseResult.GetValue(noFileChangeOutputOption),
                 parseResult.GetValue(acceptSourcesOption),
                 skipInstalledRoots: packReferences.Length > 1
             );
@@ -187,8 +187,8 @@ internal sealed class InstallPackCommandHandler(
             Description = "Plan the installation without modifying files or state.",
         };
 
-    private static Option<bool> CreateNoFileChangesOption() =>
-        new("--no-file-changes")
+    private static Option<bool> CreateNoFileChangeOutputOption() =>
+        new("--no-file-change-output")
         {
             Description = "Do not list managed-file changes after installation.",
         };
@@ -231,7 +231,7 @@ internal sealed class InstallPackCommandHandler(
         ScriptExecutionMode scriptMode,
         bool skipInstructions,
         bool dryRun,
-        bool noFileChanges,
+        bool noFileChangeOutput,
         bool acceptSources,
         bool skipInstalledRoots
     )
@@ -279,7 +279,7 @@ internal sealed class InstallPackCommandHandler(
             scriptMode,
             skipInstructions,
             dryRun,
-            noFileChanges,
+            noFileChangeOutput,
             acceptSources,
             skipInstalledRoots
         );
@@ -327,7 +327,7 @@ internal sealed class InstallPackCommandHandler(
         ScriptExecutionMode scriptMode,
         bool skipInstructions,
         bool dryRun,
-        bool noFileChanges,
+        bool noFileChangeOutput,
         bool acceptSources,
         bool skipInstalledRoots
     )
@@ -356,7 +356,7 @@ internal sealed class InstallPackCommandHandler(
             workspaceDirectory,
             request,
             dryRun,
-            noFileChanges,
+            noFileChangeOutput,
             skipInstalledRoots
         );
     }
@@ -365,7 +365,7 @@ internal sealed class InstallPackCommandHandler(
         string workspaceDirectory,
         PackInstallationRequest request,
         bool dryRun,
-        bool noFileChanges,
+        bool noFileChangeOutput,
         bool skipInstalledRoots
     )
     {
@@ -403,13 +403,13 @@ internal sealed class InstallPackCommandHandler(
         request = PromptForRequiredParameters(request, prompts);
         return dryRun
             ? await PreviewInstallAsync(workspaceDirectory, request)
-            : await ExecuteInstallAsync(workspaceDirectory, request, noFileChanges);
+            : await ExecuteInstallAsync(workspaceDirectory, request, noFileChangeOutput);
     }
 
     private async Task<int> ExecuteInstallAsync(
         string workspaceDirectory,
         PackInstallationRequest request,
-        bool noFileChanges
+        bool noFileChangeOutput
     )
     {
         TimeSpan? managedFileChangesDuration = null;
@@ -445,9 +445,9 @@ internal sealed class InstallPackCommandHandler(
 
             console.Info(string.Empty);
             console.Success(
-                $"✓ Installed '{request.PackReference.Id}' (version '{version}') in {CliDuration.Format(managedFileChangesDuration ?? TimeSpan.Zero)}"
+                $"Installed '{request.PackReference.Id}' (version '{version}') in {CliDuration.Format(managedFileChangesDuration ?? TimeSpan.Zero)}"
             );
-            if (!noFileChanges && appliedPlan is not null)
+            if (!noFileChangeOutput && appliedPlan is not null)
             {
                 WriteMarkup(PackDryRunFormatter.FormatAppliedFileChanges(appliedPlan));
             }

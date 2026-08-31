@@ -178,7 +178,7 @@ internal sealed class UninstallPackCommandHandler(
 
         console.Info(string.Empty);
         console.Success(
-            $"✓ Uninstalled '{reference.Id}' in {CliDuration.Format(managedFileChangesDuration ?? TimeSpan.Zero)}"
+            $"Uninstalled '{reference.Id}' in {CliDuration.Format(managedFileChangesDuration ?? TimeSpan.Zero)}"
         );
         return 0;
     }

@@ -1880,8 +1880,14 @@ internal sealed class PackLifecycleService(
             );
         }
 
+        var scriptHooks = plannedPreHooks
+            .Concat(plannedPostHooks)
+            .Where(static hook => hook.IsScript)
+            .ToArray();
         IReadOnlyList<ScriptDenialOrigin> denyingScopes = [];
-        if (plannedPreHooks.Concat(plannedPostHooks).Any(static hook => hook.IsScript))
+        IReadOnlyDictionary<LifecycleHookInvocation, IReadOnlyList<TrustScope>> trustScopes =
+            new Dictionary<LifecycleHookInvocation, IReadOnlyList<TrustScope>>();
+        if (scriptHooks.Length > 0)
         {
             var policy = await _hookAuthorizer.EvaluateScriptPolicyAsync(
                 projectDirectory,
@@ -1895,6 +1901,19 @@ internal sealed class PackLifecycleService(
             }
 
             denyingScopes = evaluation.DenyingScopes;
+            if (scriptMode == ScriptExecutionMode.Prompt && !evaluation.IsDenied)
+            {
+                trustScopes = scriptHooks.ToDictionary(
+                    hook => hook,
+                    hook =>
+                        _hookAuthorizer.GetTrustScopes(
+                            projectDirectory,
+                            configuration,
+                            evaluation,
+                            hook
+                        )
+                );
+            }
         }
 
         return ManifestOperationResult<LifecycleDryRunPlan>.Success(
@@ -1903,7 +1922,8 @@ internal sealed class PackLifecycleService(
                 plannedPreHooks,
                 plannedPostHooks,
                 lifecyclePlan.Changes,
-                denyingScopes
+                denyingScopes,
+                trustScopes
             )
         );
     }

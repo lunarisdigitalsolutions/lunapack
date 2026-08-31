@@ -40,7 +40,7 @@ internal sealed class LinkCommandDispatcher(
         }
 
         console.Success(
-            $"✓ Installed link {name} in {CliDuration.Format(managedFileChangesDuration ?? TimeSpan.Zero)}"
+            $"Installed link {name} in {CliDuration.Format(managedFileChangesDuration ?? TimeSpan.Zero)}"
         );
         nextStepRenderer.Render(nextStepAdvisor.Recommend(NextStepContext.LinkInstalled, name));
         return 0;
@@ -56,7 +56,7 @@ internal sealed class LinkCommandDispatcher(
         var exitCode = await linkLifecycleService.UpdateAsync(projectDirectory, name);
         if (exitCode == 0)
         {
-            console.Success($"✓ Updated link {name}");
+            console.Success($"Updated link {name}");
         }
 
         return exitCode;
@@ -73,7 +73,7 @@ internal sealed class LinkCommandDispatcher(
         var exitCode = await linkLifecycleService.UninstallAsync(projectDirectory, name);
         if (exitCode == 0)
         {
-            console.Success($"✓ Uninstalled link {name}");
+            console.Success($"Uninstalled link {name}");
         }
 
         return exitCode;

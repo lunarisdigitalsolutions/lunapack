@@ -1,6 +1,7 @@
 using System.IO.Abstractions;
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Application.Serialization;
+using Lunapack.Cli.Packs.Authoring;
 using Lunapack.Cli.Packs.Manifest;
 using Lunapack.Cli.Sources;
 using NuGet.Versioning;
@@ -15,6 +16,8 @@ internal sealed class LocalPackDiscovery
         new LunapackYamlContext()
     )
         .WithNamingConvention(CamelCaseNamingConvention.Instance)
+        .WithTypeConverter(new PackParameterYamlTypeConverter())
+        .WithTypeConverter(new ScalarValueDictionaryYamlTypeConverter())
         .Build();
 
     private readonly IFileSystem _fileSystem;

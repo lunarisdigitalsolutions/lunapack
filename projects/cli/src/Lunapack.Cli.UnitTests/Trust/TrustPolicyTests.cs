@@ -29,6 +29,30 @@ public sealed class TrustPolicyTests
     }
 
     [Test]
+    public async Task GetTrustScopes_WhenMultipleGrantsMatch_ReturnsEveryScope()
+    {
+        using var workspace = new TestWorkspace();
+        Directory.CreateDirectory(Path.Combine(workspace.Path, "source"));
+        var fixture = CreateFixture(workspace.Path, "source");
+        fixture.Settings.Projects[fixture.ProjectKey].Sources.Add(fixture.Identity);
+        fixture.Settings.Global.Sources.Add(fixture.Identity);
+
+        var scopes = fixture.Policy.GetTrustScopes(
+            workspace.Path,
+            fixture.ProjectKey,
+            fixture.Configuration,
+            fixture.Settings,
+            "local",
+            fixture.Identity,
+            "sdk"
+        );
+
+        await Assert
+            .That(scopes)
+            .IsEquivalentTo([TrustScope.Project, TrustScope.LocalUser, TrustScope.GlobalUser]);
+    }
+
+    [Test]
     public async Task IsTrusted_WhenSourceNameRebound_ReturnsFalse()
     {
         using var workspace = new TestWorkspace();

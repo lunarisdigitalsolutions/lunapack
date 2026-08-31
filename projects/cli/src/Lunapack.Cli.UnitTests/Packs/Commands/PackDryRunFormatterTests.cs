@@ -25,7 +25,7 @@ public sealed class PackDryRunFormatterTests
             .That(output)
             .IsEquivalentTo([
                 "[bold]Install plan[/]",
-                "[cyan]◆[/] Selected release  [bold]empty@2.0.0[/]",
+                "[cyan]*[/] Selected release  [bold]empty@2.0.0[/]",
             ]);
     }
 
@@ -36,7 +36,7 @@ public sealed class PackDryRunFormatterTests
 
         await Assert
             .That(output)
-            .IsEquivalentTo(["[bold]Update plan[/]", "[grey]•[/] No updates are available."]);
+            .IsEquivalentTo(["[bold]Update plan[/]", "[grey]-[/] No updates are available."]);
     }
 
     [Test]
@@ -77,10 +77,64 @@ public sealed class PackDryRunFormatterTests
             .That(output)
             .IsEquivalentTo([
                 "[bold]Update plan[/]",
-                "[cyan]◆[/] example  1.0.0 → [bold]2.0.0[/]",
+                "[cyan]*[/] example  1.0.0 -> [bold]2.0.0[/]",
                 string.Empty,
                 "[bold]File changes[/]",
                 "[red]-[/] Delete  obsolete.txt",
+            ]);
+    }
+
+    [Test]
+    public async Task Scenario_FileChangesContainEveryOperation_UsesUniqueSymbols()
+    {
+        var pack = new DiscoveredPack(
+            "source",
+            "source/example",
+            new PackManifest { Id = "example", Version = "1.0.0" },
+            "local",
+            ConfiguredSourceIdentity.CreateLocal("source")
+        );
+        PlannedManagedFile CreateFile(string targetPath) =>
+            new(
+                pack,
+                "source.txt",
+                targetPath,
+                [],
+                $"C:\\project\\{targetPath}",
+                targetPath,
+                PackManifest.PackManagedFileStrategy.CopyOverwrite
+            );
+        var previousOwner = new ManagedRootOwner(ManagedRootKind.Pack, "example", "1.0.0");
+        var output = PackDryRunFormatter
+            .FormatFileChanges(
+                new PackUpdatePlan([
+                    new CreateManagedFileUpdateAction(CreateFile("create.txt")),
+                    new CopyManagedFileUpdateAction(CreateFile("copy.txt"), null),
+                    new BackupAndCopyManagedFileUpdateAction(
+                        CreateFile("replace.txt"),
+                        null,
+                        "replace.txt.bak"
+                    ),
+                    new MergeLinesManagedFileUpdateAction(CreateFile("merge.txt"), null, []),
+                    new SkipManagedFileUpdateAction(CreateFile("skip.txt"), null, []),
+                    new DeleteManagedFileUpdateAction(
+                        previousOwner,
+                        new ManagedRootFile("example", "delete.txt", "delete.txt", "sha256"),
+                        "C:\\project\\delete.txt"
+                    ),
+                ])
+            )
+            .ToArray();
+
+        await Assert
+            .That(output)
+            .IsEquivalentTo([
+                "[green]+[/] Create  create.txt",
+                "[cyan]>[/] Copy    copy.txt",
+                "[yellow]![/] Replace replace.txt  [grey](backup: replace.txt.bak)[/]",
+                "[yellow]~[/] Merge   merge.txt [grey](lines)[/]",
+                "[grey]=[/] Skip    skip.txt",
+                "[red]-[/] Delete  delete.txt",
             ]);
     }
 
@@ -112,13 +166,12 @@ public sealed class PackDryRunFormatterTests
         );
 
         await Assert.That(output).Contains("[bold]Lifecycle[/]");
-        await Assert.That(output).Contains("[magenta]▶[/] Scripts  skip");
-        await Assert
-            .That(output)
-            .Contains("[magenta]▶[/] pre-hook  example@1.0.0 preInstall script consent: skipped");
-        await Assert
-            .That(output)
-            .Contains("[magenta]▶[/] post-hook  example@1.0.0 postInstall script consent: skipped");
+        await Assert.That(output).Contains("[magenta]>[/] Scripts    skip");
+        await Assert.That(output).Contains("[magenta]>[/] Pre-hook   example@1.0.0");
+        await Assert.That(output).Contains("    Script       skipped (--scripts skip)");
+        await Assert.That(output).Contains("[magenta]>[/] Post-hook  example@1.0.0");
+        await Assert.That(output).DoesNotContain("preInstall");
+        await Assert.That(output).DoesNotContain("postInstall");
     }
 
     [Test]
@@ -170,11 +223,11 @@ public sealed class PackDryRunFormatterTests
             )
         );
 
-        await Assert
-            .That(output)
-            .Contains(
-                "[magenta]▶[/] post-hook  example@1.0.0 postUpdate instruction file: instructions/setup.md templating: enabled steps: 2"
-            );
+        await Assert.That(output).Contains("[magenta]>[/] Post-hook  example@1.0.0");
+        await Assert.That(output).Contains("    Instruction  instructions/setup.md");
+        await Assert.That(output).Contains("    Templating   enabled");
+        await Assert.That(output).Contains("    Steps        2");
+        await Assert.That(output).DoesNotContain("postUpdate");
         await Assert.That(output).DoesNotContain("Press Enter to continue...");
     }
 
@@ -212,9 +265,80 @@ public sealed class PackDryRunFormatterTests
 
         await Assert
             .That(output)
-            .Contains(
-                "[magenta]▶[/] pre-hook  example@1.0.0 preInstall script consent: policy-denied scopes: project, global-user"
-            );
+            .Contains("    Script       blocked (policy: project, global-user)");
+    }
+
+    [Test]
+    public async Task Scenario_InstallPreviewHasTrustedScript_ReportsTrustScopes()
+    {
+        var pack = new DiscoveredPack(
+            "source",
+            "source/example",
+            new PackManifest { Id = "example", Version = "1.0.0" },
+            "local",
+            ConfiguredSourceIdentity.CreateLocal("source")
+        );
+        var hook = new LifecycleHookInvocation(
+            pack,
+            LifecycleHook.PreInstall,
+            new PackManifest.PackHook { Type = "script", Command = "cmd" },
+            null
+        );
+        var output = PackDryRunFormatter.FormatInstall(
+            new PackInstallDryRunResult(
+                new PackReference("example", "1.0.0"),
+                new PackUpdatePlan(
+                    [],
+                    new LifecycleDryRunPlan(
+                        ScriptExecutionMode.Prompt,
+                        [hook],
+                        [],
+                        [],
+                        ScriptTrustScopes: new Dictionary<
+                            LifecycleHookInvocation,
+                            IReadOnlyList<TrustScope>
+                        >
+                        {
+                            [hook] = [TrustScope.Project, TrustScope.LocalUser],
+                        }
+                    )
+                )
+            )
+        );
+
+        await Assert.That(output).Contains("    Script       allowed (trust: project, local-user)");
+    }
+
+    [Test]
+    public async Task Scenario_InstallPreviewHasPreviousPack_OmitsLockedSource()
+    {
+        var previousPack = new ProjectLockFile.ResolvedPack
+        {
+            Id = "existing",
+            Version = "1.0.0",
+            PackPath = "existing",
+            SourceIdentity = ConfiguredSourceIdentity.CreateLocal("source"),
+        };
+        var change = new PackLifecyclePlan.Entry(
+            PackLifecyclePlan.ChangeKind.Removed,
+            null,
+            previousPack,
+            false,
+            new HashSet<string>(StringComparer.Ordinal)
+        );
+        var output = PackDryRunFormatter.FormatInstall(
+            new PackInstallDryRunResult(
+                new PackReference("new", "1.0.0"),
+                new PackUpdatePlan(
+                    [],
+                    new LifecycleDryRunPlan(ScriptExecutionMode.Prompt, [], [], [change])
+                )
+            )
+        );
+
+        await Assert
+            .That(output)
+            .DoesNotContain("[grey]-[/] Locked source  existing local(path=source)");
     }
 
     [Test]
@@ -232,6 +356,6 @@ public sealed class PackDryRunFormatterTests
 
         await Assert
             .That(output)
-            .Contains("[yellow]↔[/] example  local(path=first) → local(path=second)");
+            .Contains("[yellow]~[/] example  local(path=first) -> local(path=second)");
     }
 }
