@@ -25,6 +25,19 @@ registration. Supported shell values are `bash`, `fish`, `nushell`, `pwsh`, and
 `zsh`. When omitted, Luna selects PowerShell on Windows or infers the shell from
 `SHELL` on other platforms. Add the command for your shell to its profile:
 
+Use `luna completions script [<shell>] --install` to install the generated
+script. Luna prints the script and destination, then asks for confirmation.
+The default response is No. After confirmation, Luna creates the destination
+directory when needed and appends the script unless it is already present.
+
+| Shell      | Installation destination                                                                                                                   |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Bash       | `~/.bashrc`                                                                                                                                |
+| Fish       | `~/.config/fish/conf.d/luna-completions.fish`                                                                                              |
+| Nushell    | `%APPDATA%/nushell/vendor/autoload/luna-completions.nu` on Windows; `~/.local/share/nushell/vendor/autoload/luna-completions.nu` elsewhere |
+| PowerShell | `Documents/PowerShell/Microsoft.PowerShell_profile.ps1` on Windows; `~/.config/powershell/Microsoft.PowerShell_profile.ps1` elsewhere      |
+| Zsh        | `~/.zshrc`                                                                                                                                 |
+
 ### Bash
 
 ```bash

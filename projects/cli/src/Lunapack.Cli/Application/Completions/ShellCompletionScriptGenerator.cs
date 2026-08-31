@@ -1,10 +1,10 @@
-namespace Lunapack.Cli.Application;
+namespace Lunapack.Cli.Application.Completions;
 
 internal static class ShellCompletionScriptGenerator
 {
     public static string? Generate(string? shell)
     {
-        var selectedShell = shell ?? InferShell();
+        var selectedShell = ResolveShell(shell);
         return selectedShell switch
         {
             "bash" => """
@@ -60,6 +60,8 @@ internal static class ShellCompletionScriptGenerator
             _ => null,
         };
     }
+
+    public static string? ResolveShell(string? shell) => shell ?? InferShell();
 
     private static string? InferShell()
     {

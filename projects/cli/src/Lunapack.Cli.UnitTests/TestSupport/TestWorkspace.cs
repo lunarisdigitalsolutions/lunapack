@@ -1,4 +1,6 @@
 using System.IO.Abstractions;
+using Lunapack.Cli.Application;
+using Lunapack.Cli.Application.Completions;
 using Lunapack.Cli.Packs;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources.Git;
@@ -23,16 +25,31 @@ internal sealed class TestWorkspace : IDisposable
         );
         Directory.CreateDirectory(Path);
         FileSystem = new FileSystem();
+        var profileDirectory = System.IO.Path.Combine(Path, "profile");
         Application = new CliApplication(
             FileSystem,
             ansiConsole ?? TestConsole.CreateAnsiConsole(),
             packUpdatePrompter,
             gitProcessRunner: gitProcessRunner ?? new StubGitProcessRunner(),
             trustConfirmer: trustConfirmer,
-            userSettingsStore: new UserSettingsStore(
-                FileSystem,
-                System.IO.Path.Combine(Path, "profile")
-            )
+            userSettingsStore: new UserSettingsStore(FileSystem, profileDirectory),
+            completionScriptInstallerResolver: new CompletionScriptInstallerResolver([
+                new BashCompletionScriptInstaller(FileSystem, profileDirectory),
+                new FishCompletionScriptInstaller(FileSystem, profileDirectory),
+                new NushellCompletionScriptInstaller(
+                    FileSystem,
+                    profileDirectory,
+                    System.IO.Path.Combine(profileDirectory, "AppData", "Roaming"),
+                    isWindows: true
+                ),
+                new PowerShellCompletionScriptInstaller(
+                    FileSystem,
+                    profileDirectory,
+                    System.IO.Path.Combine(profileDirectory, "Documents"),
+                    isWindows: true
+                ),
+                new ZshCompletionScriptInstaller(FileSystem, profileDirectory),
+            ])
         );
         ManifestStore = new ProjectManifestStore(FileSystem);
         StateStore = new ProjectStateStore(FileSystem);

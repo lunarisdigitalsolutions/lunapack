@@ -61,6 +61,63 @@ public sealed class CliApplicationTests
     }
 
     [Test]
+    public async Task Complete_WhenPositionExceedsCommandLine_ReturnsNoSuggestions()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        await using var output = new StringWriter();
+        const string commandLine = "luna sources";
+
+        var exitCode = await workspace.Application.RunAsync(
+            [
+                "complete",
+                "--position",
+                (commandLine.Length + 1).ToString(CultureInfo.InvariantCulture),
+                commandLine,
+            ],
+            workspace.Path,
+            output
+        );
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(output.ToString()).IsEmpty();
+        await Assert.That(ansiConsole.Output).IsEmpty();
+    }
+
+    [Test]
+    public async Task Complete_WhenInstallPositionIncludesStrippedSpace_ReturnsAvailablePacks()
+    {
+        using var workspace = new TestWorkspace();
+        CreatePack(
+            workspace.Path,
+            "dotnet-sdk",
+            "id: dotnet-sdk\nversion: 1.0.0\nlicense: MIT\nauthor: Lunaris Digital Solutions <info@lunaris.digital>\nmanagedFiles:\n  - source: templates/content.txt\n    target: sdk.txt\n",
+            "sdk"
+        );
+        await workspace.Application.RunAsync(["init"], workspace.Path);
+        await workspace.Application.RunAsync(
+            ["sources", "add", "local", "local", "source"],
+            workspace.Path
+        );
+        await using var output = new StringWriter();
+        const string commandLine = "luna install";
+
+        var exitCode = await workspace.Application.RunAsync(
+            [
+                "complete",
+                "--position",
+                (commandLine.Length + 1).ToString(CultureInfo.InvariantCulture),
+                commandLine,
+            ],
+            workspace.Path,
+            output
+        );
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(output.ToString()).Contains("dotnet-sdk");
+    }
+
+    [Test]
     public async Task CompletionsScript_WhenSupportedShellRequested_EmitsNativeRegistration()
     {
         using var workspace = new TestWorkspace();
@@ -102,7 +159,8 @@ public sealed class CliApplicationTests
         );
 
         await Assert.That(exitCode).IsEqualTo(0);
-        await Assert.That(ansiConsole.Output).Contains(profilePath);
+        await Assert.That(ansiConsole.Output).Contains("Destination:");
+        await Assert.That(ansiConsole.Output).Contains(".bashrc");
         await Assert.That(ansiConsole.Output).Contains("complete -f -F");
         await Assert.That(File.Exists(profilePath)).IsFalse();
     }

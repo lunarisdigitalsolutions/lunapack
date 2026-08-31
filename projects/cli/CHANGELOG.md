@@ -11,8 +11,13 @@ Update this section before creating a release tag.
 
 - `luna completions script` now generates native Bash, Fish, Nushell,
   PowerShell, and Zsh Tab-completion registration without an external tool.
+  Pass `--install` to preview and append registration to the shell's user
+  configuration after an explicit confirmation that defaults to No.
   Completion includes commands, options, valid finite values, available and
   installed pack or link IDs, and configured source, link, and variable IDs.
+- Shell completion now handles cursor positions beyond a shell's rendered
+  command line when trailing whitespace was stripped. Argument-taking commands
+  return value candidates, while command containers return no candidates.
 
 ### Changed
 

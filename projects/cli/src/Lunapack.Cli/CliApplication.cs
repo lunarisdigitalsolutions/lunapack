@@ -1,6 +1,7 @@
 ﻿using System.CommandLine;
 using System.IO.Abstractions;
 using Lunapack.Cli.Application;
+using Lunapack.Cli.Application.Completions;
 using Lunapack.Cli.Application.Guidance;
 using Lunapack.Cli.Audit;
 using Lunapack.Cli.Catalog;
@@ -30,7 +31,8 @@ internal sealed class CliApplication(
     IPackUpdatePrompter? packUpdatePrompter = null,
     ITrustConfirmer? trustConfirmer = null,
     UserSettingsStore? userSettingsStore = null,
-    IGitProcessRunner? gitProcessRunner = null
+    IGitProcessRunner? gitProcessRunner = null,
+    CompletionScriptInstallerResolver? completionScriptInstallerResolver = null
 )
 {
     public async Task<int> RunAsync(
@@ -151,11 +153,48 @@ internal sealed class CliApplication(
             workspaceOption,
             console
         );
-        var completionCommandHandler = new CompletionCommandHandler(rootCommand, console);
-        rootCommand.Add(completionCommandHandler.CreateCompleteCommand());
-        rootCommand.Add(completionCommandHandler.CreateCompletionsCommand());
+        AddCompletionCommands(rootCommand, console);
 
         return rootCommand;
+    }
+
+    private void AddCompletionCommands(RootCommand rootCommand, CliConsole console)
+    {
+        var handler = new CompletionCommandHandler(
+            rootCommand,
+            console,
+            CreateCompletionScriptInstallerResolver()
+        );
+        rootCommand.Add(handler.CreateCompleteCommand());
+        rootCommand.Add(handler.CreateCompletionsCommand());
+    }
+
+    private CompletionScriptInstallerResolver CreateCompletionScriptInstallerResolver()
+    {
+        if (completionScriptInstallerResolver is not null)
+        {
+            return completionScriptInstallerResolver;
+        }
+
+        var userProfileDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var isWindows = OperatingSystem.IsWindows();
+        return new CompletionScriptInstallerResolver([
+            new BashCompletionScriptInstaller(fileSystem, userProfileDirectory),
+            new FishCompletionScriptInstaller(fileSystem, userProfileDirectory),
+            new NushellCompletionScriptInstaller(
+                fileSystem,
+                userProfileDirectory,
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                isWindows
+            ),
+            new PowerShellCompletionScriptInstaller(
+                fileSystem,
+                userProfileDirectory,
+                Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                isWindows
+            ),
+            new ZshCompletionScriptInstaller(fileSystem, userProfileDirectory),
+        ]);
     }
 
     private static void ConfigureRootAction(
