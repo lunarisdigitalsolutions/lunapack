@@ -81,6 +81,11 @@ packs. Contextual suggestions use the workspace selected by `--workspace` or
 `-w`. Git-backed pack suggestions use the latest cached catalog and do not
 contact the remote during completion.
 
+Completion is cursor-aware. Commands that accept a value return value
+suggestions even when the shell strips trailing whitespace or reports a cursor
+position beyond the rendered command line. Command containers return no value
+suggestions until an argument-taking command or option is selected.
+
 ## Project And Sources
 
 - `luna init`: Creates version-1 `lunapack.yml` and `lunapack-lock.yml` with
@@ -255,7 +260,8 @@ commands select the latest available release. `install` accepts `--dry-run`
 Dry runs group release selection, external sources, managed-file changes, and
 lifecycle work into labeled sections with ASCII action prefixes. Lifecycle
 script rows identify whether policy, `--scripts`, persisted trust, or interactive
-confirmation determines consent. Successful installs and updates list each
+confirmation determines consent. Already locked source identities are not
+repeated as lifecycle actions. Successful installs and updates list each
 created, copied, replaced, merged, skipped, or deleted managed file by default.
 Pass `--no-file-change-output` to either command to suppress that success output;
 it does not hide the plan during `--dry-run`.

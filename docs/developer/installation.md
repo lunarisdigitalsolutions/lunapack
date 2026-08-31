@@ -66,5 +66,18 @@ Confirm the executable is available before starting a project:
 luna --help
 ```
 
+## Enable Tab Completion
+
+Install native completion for your current shell:
+
+```powershell
+luna completions script --install
+```
+
+Luna previews the profile change and asks for confirmation, defaulting to No.
+Restart the shell after accepting it. See
+[Enable Tab completion](cli/commands.md#enable-tab-completion) for supported
+shells, manual setup, installation destinations, and available suggestions.
+
 When seeking help, include the binary version, operating system and
 architecture, workspace path, command, and complete error output.

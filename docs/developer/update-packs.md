@@ -16,6 +16,11 @@ luna update dotnet-project
 Run `luna update --dry-run` to plan updates for every installed root. Use
 `luna update --prompt` when selecting which available updates to apply.
 
+Dry runs group source changes, managed-file actions, and lifecycle actions
+under labeled sections with ASCII action markers. A successful update lists
+managed-file changes by default. Pass `--no-file-change-output` to suppress
+that success list without hiding the dry-run plan.
+
 ## Understand version intent
 
 An update without an explicit version selects the latest available release and

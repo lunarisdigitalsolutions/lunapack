@@ -23,6 +23,17 @@ The dry run resolves the pack and preflights the target changes without
 modifying project files or LunaPack state. Remove `--dry-run` when the plan is
 ready to apply.
 
+## Read the Result
+
+Dry runs group source changes, managed-file actions, and lifecycle actions
+under labeled sections. Their ASCII action markers remain meaningful when
+terminal color is unavailable. Lifecycle script details also identify whether
+policy, command arguments, persisted trust, or confirmation controls consent.
+
+A successful install lists its managed-file changes. Use
+`--no-file-change-output` to hide that list in routine or automated runs. This
+option does not hide managed-file actions from `--dry-run`.
+
 ## Continue from the basic install
 
 - Use [parameters and variables](parameters-and-variables.md) when a pack asks
