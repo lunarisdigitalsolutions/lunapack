@@ -1,4 +1,4 @@
-name: PR External Check Gate
+name: 'PR: External Check Gate'
 
 on:
   workflow_dispatch:

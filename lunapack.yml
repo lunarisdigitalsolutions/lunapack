@@ -32,7 +32,4 @@ trust:
   sources: []
 variables:
   companyName: Lunaris Digital Solutions
-  installRipgrep: true
-  installRtk: true
-  prepareCommand: husky && dotnet tool restore
   solutionPath: projects/cli/src/Lunapack.slnx

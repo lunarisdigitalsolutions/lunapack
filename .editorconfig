@@ -1,13 +1,22 @@
 # This file is the top-most EditorConfig file
 root = true
 
-# All Files
+# BEGIN LunaPack general EditorConfig
 [*]
 charset = utf-8
-indent_style = space
-indent_size = 4
+end_of_line = lf
 insert_final_newline = true
+indent_style = space
+indent_size = 2
 trim_trailing_whitespace = true
+
+[*.{md,mdx}]
+max_line_length = off
+trim_trailing_whitespace = false
+
+[*.{json,xml,yml,yaml}]
+indent_size = 2
+# END LunaPack general EditorConfig
 
 # Visual Studio Solution Files
 [*.sln]
@@ -15,11 +24,6 @@ indent_style = tab
 
 [*.{razor,cshtml}]
 charset = utf-8-bom
-
-# Markdown Files
-[*.{md,mdx}]
-trim_trailing_whitespace = false
-max_line_length = off
 
 # Yaml files
 [*.{yml,yaml}]
@@ -43,8 +47,14 @@ indent_style = tab
 [*.ts]
 quote_type = single
 
-# CSharp
+# BEGIN LunaPack CSharp EditorConfig
 [*.cs]
+indent_size = 4
+dotnet_separate_import_directive_groups = false
+dotnet_sort_system_directives_first = true
+csharp_style_namespace_declarations = file_scoped:suggestion
+csharp_using_directive_placement = outside_namespace:suggestion
+# END LunaPack CSharp EditorConfig
 
 # New line preferences
 csharp_new_line_before_open_brace = all
@@ -97,8 +107,6 @@ dotnet_naming_style.camel_case_underscore_style.required_prefix = _
 dotnet_naming_style.camel_case_underscore_style.capitalization = camel_case
 
 # Code style defaults
-csharp_using_directive_placement = outside_namespace:suggestion
-dotnet_sort_system_directives_first = true
 csharp_prefer_braces = true:suggestion
 csharp_preserve_single_line_blocks = true:none
 csharp_preserve_single_line_statements = false:none
@@ -174,27 +182,3 @@ csharp_space_between_square_brackets = false
 
 MA0051.maximum_lines_per_method = 80
 MA0051.skip_local_functions = true # skip local functions when counting statements
-# BEGIN LunaPack general EditorConfig
-[*]
-charset = utf-8
-end_of_line = lf
-insert_final_newline = true
-indent_style = space
-indent_size = 2
-trim_trailing_whitespace = true
-
-[*.{md,mdx}]
-max_line_length = off
-trim_trailing_whitespace = false
-
-[*.{json,xml,yml,yaml}]
-indent_size = 2
-# END LunaPack general EditorConfig
-# BEGIN LunaPack CSharp EditorConfig
-[*.cs]
-indent_size = 4
-dotnet_separate_import_directive_groups = false
-dotnet_sort_system_directives_first = true
-csharp_style_namespace_declarations = file_scoped:suggestion
-csharp_using_directive_placement = outside_namespace:suggestion
-# END LunaPack CSharp EditorConfig

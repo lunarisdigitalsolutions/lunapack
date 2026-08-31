@@ -14,11 +14,7 @@ module.exports = {
       2,
       'always',
       {
-        scopes: [
-          null,
-          'backend',
-          'frontend'
-        ],
+        scopes: [null, 'cli', 'website', 'pack'],
         delimiters: [',']
       }
     ]

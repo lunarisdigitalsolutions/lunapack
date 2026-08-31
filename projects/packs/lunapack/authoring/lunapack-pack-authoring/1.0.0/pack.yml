@@ -1,5 +1,5 @@
 id: lunapack-pack-authoring
-version: 1.1.0
+version: 1.0.0
 license: MIT
 author: Lunaris Digital Solutions <info@lunaris.digital>
 description: Scaffold a versioned LunaPack pack with managed content, a section fragment, lifecycle guidance, a script, and authoring agents.
@@ -8,7 +8,7 @@ tags:
   - authoring
   - starter
 managedFiles:
-  - source: starter/pack.yml
+  - source: starter/_pack.yml
     target: examples/starter-pack/pack.yml
   - source: starter/targets/examples/example.txt
     target: examples/starter-pack/targets/examples/example.txt

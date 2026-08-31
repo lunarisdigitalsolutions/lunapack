@@ -98,7 +98,12 @@ LunaPack SHALL reject a composite graph that contains a dependency cycle, resolv
 
 ### Requirement: Discover and install bundled managed-file packs
 
-LunaPack SHALL provide versioned `dotnet-gitignore`, `dotnet-sdk-10`, `dotnet-editorconfig`, `csharpier`, `dotnet-quality-baseline`, and `madr-template` packs in the repository's local pack source. Each pack SHALL declare one or more managed files containing complete reusable engineering-convention content.
+LunaPack SHALL provide versioned `dotnet-gitignore`, `dotnet-sdk-10`,
+`editorconfig-baseline`, `dotnet-csharp-editorconfig`, `csharpier`,
+`dotnet-build-config`, `dotnet-central-package-management`, and `madr-template`
+managed-file packs in the repository's local pack source. It SHALL also provide
+the `dotnet-editorconfig` and `dotnet-project` composite packs with exact
+references to their component packs.
 
 The `luna install <pack-id>` command SHALL discover each bundled pack from configured local sources, create each declared target when it does not already exist, and record the pack identity, resolved version, source, managed target paths, and installed content digests in `lunapack-lock.yml`.
 
@@ -107,10 +112,10 @@ The `luna install <pack-id>` command SHALL discover each bundled pack from confi
 - **WHEN** a user initializes an otherwise empty project, adds the repository local pack source, and runs `luna install dotnet-editorconfig`
 - **THEN** the project contains the pack's `.editorconfig` content and `lunapack.yml` records the installed pack and managed file
 
-#### Scenario: Install the multi-file quality baseline
+#### Scenario: Install the .NET project profile
 
-- **WHEN** a user installs `dotnet-quality-baseline` into a project where both declared targets are absent
-- **THEN** LunaPack creates `Directory.Build.props` and `Directory.Packages.props` and records both managed files for the installed pack
+- **WHEN** a user installs `dotnet-project` into a project where both component targets are absent
+- **THEN** LunaPack creates `Directory.Build.props` through `dotnet-build-config`, creates `Directory.Packages.props` through `dotnet-central-package-management`, and records the composite and both component owners
 
 #### Scenario: Install a documentation template into an existing directory
 
@@ -442,10 +447,10 @@ The `luna uninstall <pack-id>` command SHALL remove every managed target and the
 - **WHEN** a user uninstalls `dotnet-gitignore` after its installed `.gitignore` remains unchanged
 - **THEN** LunaPack removes `.gitignore`, its requested-root record, and its resolved lock record
 
-#### Scenario: Uninstall an unmodified multi-file pack
+#### Scenario: Uninstall an unmodified composite profile
 
-- **WHEN** a user uninstalls `dotnet-quality-baseline` after both managed files remain unchanged
-- **THEN** LunaPack removes both managed files and the corresponding pack record
+- **WHEN** a user uninstalls `dotnet-project` after both component-managed files remain unchanged and no other requested root references its components
+- **THEN** LunaPack removes both managed files and the composite and component pack records
 
 #### Scenario: Preserve a modified managed file
 

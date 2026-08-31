@@ -165,7 +165,7 @@ packs:
         strategy:
           method: overwrite
           type: copy
-        targetPath: docs/adr/template.md
+        targetPath: docs/internal/architecture/adr/template.md
     packPath: repository/documentation/madr-template/1.0.0
     sourcePath: projects/packs
     version: 1.0.0

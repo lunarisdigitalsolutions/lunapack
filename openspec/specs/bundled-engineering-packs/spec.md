@@ -8,20 +8,24 @@ Publish reusable engineering conventions from LunaPack's local source and let th
 
 ### Requirement: Publish bundled engineering convention packs
 
-The repository SHALL publish schema-valid versioned packs in its local pack
-source for `dotnet-gitignore`, `gitignore-baseline`, `dotnet-sdk-10`,
-`dotnet-editorconfig`, `csharpier`, `dotnet-quality-baseline`, and
-`madr-template`. Each pack SHALL provide a concise description suitable for
-catalog discovery and SHALL manage only complete files.
+The repository SHALL publish schema-valid versioned managed-file packs in its
+local pack source for `dotnet-gitignore`, `gitignore-baseline`,
+`dotnet-sdk-10`, `editorconfig-baseline`, `dotnet-csharp-editorconfig`,
+`csharpier`, `dotnet-build-config`, `dotnet-central-package-management`, and
+`madr-template`. It SHALL also publish the `dotnet-editorconfig` and
+`dotnet-project` composite packs with exact references to their component
+packs. Each pack SHALL provide a concise description suitable for catalog
+discovery.
 
-The packs SHALL target `.gitignore`, `global.json`, `.editorconfig`,
-`dotnet-tools.json`, the pair `Directory.Build.props` and
-`Directory.Packages.props`, and `docs/adr/template.md`, respectively. The
-`dotnet-gitignore` and `gitignore-baseline` packs SHALL declare section merge
-strategies for their `.gitignore` targets. `dotnet-sdk-10` and
-`csharpier` SHALL declare JSON merge strategies. A consumer of
-`madr-template` SHALL create its `docs/adr` target directory before
-installation.
+The managed-file packs SHALL target `.gitignore`, `global.json`,
+`.editorconfig`, `dotnet-tools.json`, `Directory.Build.props`,
+`Directory.Packages.props`, and `docs/adr/template.md` according to their
+declared concerns. The `dotnet-gitignore` and `gitignore-baseline` packs SHALL
+declare section merge strategies for their `.gitignore` targets.
+`editorconfig-baseline` and `dotnet-csharp-editorconfig` SHALL declare section
+merge strategies for `.editorconfig`. `dotnet-sdk-10` and `csharpier` SHALL
+declare JSON merge strategies. A consumer of `madr-template` SHALL create its
+`docs/adr` target directory before installation.
 
 #### Scenario: Discover the bundled catalog
 
