@@ -365,17 +365,39 @@ parameters or `multiple` SHALL remain valid.
   duplicate, or contains a value outside its declared values
 - **THEN** the pack manifest is invalid
 
-### Requirement: Define conditional managed files
+### Requirement: Define conditional pack declarations
 
 The `pack.yml` schema SHALL allow an optional string `condition` on each
-managed-file declaration. Existing manifests that omit `condition` SHALL
-remain valid.
+managed-file and lifecycle-hook declaration. LunaPack SHALL evaluate both with
+one parameter expression grammar. That grammar SHALL support
+`isDefault(identifier)` for parameters with an explicit default, including
+negation and composition with existing logical operators. Existing manifests
+that omit `condition` SHALL remain valid.
 
 #### Scenario: Validate a managed file without a condition
 
 - **WHEN** schema validation receives an existing managed-file declaration
   without a condition
 - **THEN** the pack manifest is valid
+
+#### Scenario: Select a lifecycle instruction for a default value
+
+- **WHEN** an instruction hook condition uses `isDefault(identifier)` and the
+  resolved value equals that parameter's declared default
+- **THEN** LunaPack includes the instruction in lifecycle planning
+
+#### Scenario: Omit a lifecycle hook for an overridden default
+
+- **WHEN** a lifecycle hook condition uses `isDefault(identifier)` and the
+  consumer overrides that parameter
+- **THEN** LunaPack omits the hook before instruction loading or script
+  authorization
+
+#### Scenario: Reject a default predicate without a default
+
+- **WHEN** a condition uses `isDefault(identifier)` for a parameter without an
+  explicit default
+- **THEN** LunaPack rejects the condition before project mutation
 
 ### Requirement: Define project variables
 
@@ -419,7 +441,7 @@ parameter or any selected value outside the referenced declaration.
 
 ### Requirement: Define typed lifecycle hooks
 
-The `pack.yml` schema SHALL allow an optional `hooks` mapping with `preInstall`, `postInstall`, `preUpdate`, `postUpdate`, `preUninstall`, and `postUninstall` properties. Each event SHALL contain a non-empty ordered list of typed hook declarations. A `script` hook SHALL select exactly one execution form: a non-empty pack-relative `file` with a non-empty `runner`, or a non-empty external `command`; both forms MAY contain an ordered `arguments` array of strings and a non-empty `description`. An `instruction` hook SHALL contain a non-empty safe pack-relative `.md` file and MAY set `templating`, which SHALL default to false. The schema SHALL reject unknown events, hook types, and properties; unsafe file paths; mixed or incomplete hook variants; and the removed top-level `scripts` property. Existing pack manifests that omit both `scripts` and `hooks` SHALL remain valid.
+The `pack.yml` schema SHALL allow an optional `hooks` mapping with `preInstall`, `postInstall`, `preUpdate`, `postUpdate`, `preUninstall`, and `postUninstall` properties. Each event SHALL contain a non-empty ordered list of typed hook declarations. A `script` hook SHALL select exactly one execution form: a non-empty pack-relative `file` with a non-empty `runner`, or a non-empty external `command`; both forms MAY contain an ordered `arguments` array of strings, a non-empty `description`, and a non-empty `condition`. An `instruction` hook SHALL contain a non-empty safe pack-relative `.md` file and MAY set `templating`, which SHALL default to false, and a non-empty `condition`. The schema SHALL reject unknown events, hook types, and properties; unsafe file paths; mixed or incomplete hook variants; and the removed top-level `scripts` property. Existing pack manifests that omit both `scripts` and `hooks` SHALL remain valid.
 
 #### Scenario: Validate mixed hooks in declared order
 

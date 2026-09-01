@@ -61,7 +61,7 @@ selectors install content.
 | `packs`                | Each composite reference has a hyphen-separated alphanumeric ID and an exact version.                                                                                           |
 | `parameters`           | Identifier-named `string`, `bool`, or `enum` declarations. Enums require unique values and may set `multiple: true`; multi-select defaults are unique arrays of allowed values. |
 | Reference `parameters` | String, Boolean, or unique string-array bindings for a referenced pack. Runtime validation checks arrays against the target multi-select enum.                                  |
-| `condition`            | A Boolean name or negation, a scalar string or enum equality comparison, or `"literal" in identifier` membership joined with logical AND, logical OR, and parentheses.          |
+| `condition`            | Boolean, comparison, membership, and `isDefault(identifier)` expressions joined with logical operators.                                                                         |
 | `strategy`             | `copy` with `overwrite`, `fail-if-exists`, `skip-if-exists`, or `backup-and-overwrite`; or `merge` with `lines`, `section`, or `json`.                                          |
 | `tags`                 | Optional list of up to 15 unique, non-empty tags. Search matches tags; discover lists them, and inspect previews the first five.                                                |
 | `template`             | Enables Scriban parsing. Defaults to `false`; set `true` only when this source uses parameters or Scriban functions.                                                            |
@@ -82,6 +82,7 @@ hooks:
     - type: instruction
       file: instructions/setup.md
       templating: true
+      condition: isDefault(projectType)
     - type: script
       file: scripts/setup.ps1
       runner: pwsh
@@ -105,8 +106,11 @@ Supported hook names are `preInstall`, `postInstall`, `preUpdate`, `postUpdate`,
 both `file` and `runner`; direct scripts require `command`. Instruction items
 require `type: instruction` and a pack-relative Markdown `file`; optional
 `templating: true` enables Scriban before display. Hook order within each event
-is significant. A composite reference can set `disabledHooks` to suppress every
-typed hook in selected events for that transient pack.
+is significant. Optional `condition` uses the same parameter expressions as a
+managed file and omits the hook when false. `isDefault(parameterName)` compares
+the resolved value with an explicitly declared default. A composite reference
+can set `disabledHooks` to suppress every typed hook in selected events for that
+transient pack.
 
 ```yml
 id: example-application-foundation

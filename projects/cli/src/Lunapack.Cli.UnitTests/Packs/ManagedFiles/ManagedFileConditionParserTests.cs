@@ -73,6 +73,53 @@ public sealed class ManagedFileConditionParserTests
     }
 
     [Test]
+    public async Task Parse_WhenValueMatchesDeclaredDefault_EvaluatesTrue()
+    {
+        var result = ManagedFileConditionParser.Parse(
+            "isDefault(environment) && isDefault(includeCi) && isDefault(features)",
+            CreateDeclarations()
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert
+            .That(
+                result
+                    .RequireValue()
+                    .Evaluate(
+                        CreateValues(includeCi: true, environment: "development", features: ["api"])
+                    )
+            )
+            .IsTrue();
+    }
+
+    [Test]
+    public async Task Parse_WhenValueOverridesDeclaredDefault_EvaluatesNegatedPredicate()
+    {
+        var result = ManagedFileConditionParser.Parse(
+            "!isDefault(environment)",
+            CreateDeclarations()
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert
+            .That(
+                result.RequireValue().Evaluate(CreateValues(includeCi: true, environment: "test"))
+            )
+            .IsTrue();
+    }
+
+    [Test]
+    public async Task Parse_WhenDefaultPredicateReferencesParameterWithoutDefault_ReturnsFailure()
+    {
+        var result = ManagedFileConditionParser.Parse(
+            "isDefault(licenseKind)",
+            CreateDeclarations()
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+    }
+
+    [Test]
     public async Task Parse_WhenMembershipUsesScalarEnum_ReturnsFailure()
     {
         var result = ManagedFileConditionParser.Parse(
@@ -129,11 +176,17 @@ public sealed class ManagedFileConditionParserTests
     private static Dictionary<string, PackParameterDefinition> CreateDeclarations() =>
         new(StringComparer.Ordinal)
         {
-            ["environment"] = new(PackParameterType.String, false, []),
-            ["includeCi"] = new(PackParameterType.Bool, false, []),
+            ["environment"] = new(PackParameterType.String, false, [], Default: "development"),
+            ["includeCi"] = new(PackParameterType.Bool, false, [], Default: true),
             ["includeSecurity"] = new(PackParameterType.Bool, false, []),
             ["licenseKind"] = new(PackParameterType.Enum, false, ["mit", "apache-2.0"]),
-            ["features"] = new(PackParameterType.Enum, false, ["api", "docker"], Multiple: true),
+            ["features"] = new(
+                PackParameterType.Enum,
+                false,
+                ["api", "docker"],
+                Default: new object[] { "api" },
+                Multiple: true
+            ),
         };
 
     private static Dictionary<string, ResolvedPackParameterValue> CreateValues(

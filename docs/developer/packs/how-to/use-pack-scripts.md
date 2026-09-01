@@ -51,6 +51,23 @@ hooks:
 Rendered arguments are shown before authorization and remain separate argv
 values.
 
+## Run hooks conditionally
+
+Set `condition` to use the same parameter expression grammar as managed files.
+False conditions omit scripts before authorization and omit instructions before
+their files are loaded:
+
+```yml
+hooks:
+  postInstall:
+    - type: instruction
+      file: instructions/customize-security.md
+      condition: isDefault(securityUrl)
+```
+
+The `luna pack add hook script command`, `script file`, and `instruction`
+commands accept `--condition` or `-c`.
+
 ## Inspect and test hooks
 
 ```powershell

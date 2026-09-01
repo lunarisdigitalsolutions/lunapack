@@ -8,10 +8,12 @@ parameters:
   installRipgrep:
     type: bool
     required: true
+    default: true
     displayName: Install ripgrep
   installRtk:
     type: bool
     required: true
+    default: true
     displayName: Install RTK
 managedFiles:
   - source: targets/.github/workflows/copilot-setup-steps.yml

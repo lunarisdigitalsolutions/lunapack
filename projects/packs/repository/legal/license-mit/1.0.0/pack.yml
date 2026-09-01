@@ -7,7 +7,7 @@ description: Manage a parameterized MIT license with explicit overwrite behavior
 parameters:
   companyName:
     type: string
-    default: Your Organization
+    required: true
     displayName: Company name
     description: Legal entity name for the license notice.
 managedFiles:
@@ -17,7 +17,3 @@ managedFiles:
     strategy:
       type: copy
       method: overwrite
-hooks:
-  postInstall:
-    - type: instruction
-      file: instructions/customize.md

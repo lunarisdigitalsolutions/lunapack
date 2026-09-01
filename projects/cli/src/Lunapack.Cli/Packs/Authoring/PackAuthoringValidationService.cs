@@ -20,11 +20,24 @@ internal sealed class PackAuthoringValidationService(
     {
         var graph = CreateValidationGraph(packDirectory, manifest);
         var configuration = CreateValidationConfiguration(manifest);
-        var parameters = new ResolvedPackParameters(
-            new Dictionary<string, PackParameterDefinition>(StringComparer.Ordinal),
-            new Dictionary<string, ResolvedPackParameterValue>(StringComparer.Ordinal)
+        var request = new PackInstallationRequest(
+            new PackReference(manifest.Id, manifest.Version),
+            null,
+            false
         );
-        var requirements = await requirementPlanner.PlanAsync(graph, configuration, parameters);
+        var parameters = PackParameterResolver.Resolve(graph, configuration, request);
+        if (parameters.Value is not { } resolvedParameters)
+        {
+            return ManifestOperationResult<bool>.Failure(
+                parameters.Error ?? "Unable to resolve validation parameters."
+            );
+        }
+
+        var requirements = await requirementPlanner.PlanAsync(
+            graph,
+            configuration,
+            resolvedParameters
+        );
         if (requirements.Value is not { } sourcePlan)
         {
             return ManifestOperationResult<bool>.Failure(
@@ -55,12 +68,8 @@ internal sealed class PackAuthoringValidationService(
                 graph,
                 new ProjectLockFile { SchemaVersion = 1 },
                 approvedPlan.CandidateConfiguration,
-                new PackInstallationRequest(
-                    new PackReference(manifest.Id, manifest.Version),
-                    null,
-                    false
-                ),
-                parameters,
+                request,
+                resolvedParameters,
                 externalSources.Roots
             );
             return planned.Value is not null
@@ -94,10 +103,21 @@ internal sealed class PackAuthoringValidationService(
         );
     }
 
-    private static ProjectConfiguration CreateValidationConfiguration(PackManifest manifest) =>
-        new()
+    private static ProjectConfiguration CreateValidationConfiguration(PackManifest manifest)
+    {
+        var variables = manifest
+            .Parameters.Where(parameter =>
+                parameter.Value.Required && parameter.Value.Default is null
+            )
+            .ToDictionary(
+                parameter => parameter.Key,
+                parameter => CreateValidationValue(parameter.Value),
+                StringComparer.Ordinal
+            );
+        return new ProjectConfiguration
         {
             SchemaVersion = 1,
+            Variables = variables,
             Packs =
             [
                 new ProjectConfiguration.RequestedPack
@@ -107,4 +127,17 @@ internal sealed class PackAuthoringValidationService(
                 },
             ],
         };
+
+        static object CreateValidationValue(PackManifest.PackParameter parameter) =>
+            parameter.Type switch
+            {
+                "bool" => false,
+                "enum" when parameter.Multiple is true => new object[]
+                {
+                    parameter.Values?[0] ?? "validation",
+                },
+                "enum" => parameter.Values?[0] ?? "validation",
+                _ => "validation",
+            };
+    }
 }

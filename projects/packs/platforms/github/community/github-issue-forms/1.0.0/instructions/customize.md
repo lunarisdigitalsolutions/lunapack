@@ -1,4 +1,5 @@
-# Customize issue forms
+# Customize the issue form
 
-Replace the placeholder version command and example security and support URLs
-before enabling these issue forms for contributors.
+The default security and
+support links expect `SECURITY.md` and `SUPPORT.md` at the repository root;
+update those links when the policies live elsewhere or do not exist.

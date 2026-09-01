@@ -7,15 +7,15 @@ tags: [github, issues, community]
 parameters:
   versionCommand:
     type: string
-    default: TODO - add version command
+    required: true
     displayName: Version command
   securityUrl:
     type: string
-    default: https://example.com/security
-    displayName: Security reporting URL
+    default: SECURITY.md
+    displayName: Security policy URL
   supportUrl:
     type: string
-    default: https://example.com/support
+    default: SUPPORT.md
     displayName: Support URL
 managedFiles:
   - directory: targets/.github/ISSUE_TEMPLATE
@@ -25,3 +25,4 @@ hooks:
   postInstall:
     - type: instruction
       file: instructions/customize.md
+      condition: isDefault(securityUrl) || isDefault(supportUrl)

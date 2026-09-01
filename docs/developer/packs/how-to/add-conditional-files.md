@@ -46,15 +46,23 @@ luna pack add file targets/docker.yml `
 
 Conditions support Boolean names, `!` negation, `==` and `!=` comparisons with
 quoted scalar string or enum values, multi-select membership as `"literal" in
-identifier`, `&&`, `||`, and parentheses. Membership requires a declared
-multi-select enum on the right. Boolean parameters cannot be compared to
-strings, and multi-select parameters cannot use scalar equality.
+identifier`, `isDefault(identifier)`, `&&`, `||`, and parentheses. The default
+predicate requires an explicit parameter default and can be negated as
+`!isDefault(identifier)`. Membership requires a declared multi-select enum on
+the right. Boolean parameters cannot be compared to strings, and multi-select
+parameters cannot use scalar equality.
 
 Operator precedence evaluates `&&` before `||`. Use parentheses when intent is
 not immediate:
 
 ```yml
 condition: includeCi && (projectType == "service" || projectType == "library")
+```
+
+Use a default predicate when optional values are usable but need follow-up:
+
+```yml
+condition: isDefault(securityUrl) || isDefault(supportUrl)
 ```
 
 ## Validate both branches

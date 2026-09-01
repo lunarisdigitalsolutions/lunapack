@@ -24,6 +24,7 @@ jobs:
     outputs:
       matrix: ${{ steps.targets.outputs.matrix }}
       release-type: ${{ steps.targets.outputs.release-type }}
+      should-release: ${{ steps.trigger.outputs.should-release }}
       version: ${{ steps.targets.outputs.version }}
     steps:
       - name: Check out
@@ -41,8 +42,21 @@ jobs:
         shell: pwsh
         run: dotnet tool restore
 
+      - name: Select release trigger
+        id: trigger
+        shell: pwsh
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          $stableTagPattern = '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$'
+          $hasStableTag = $env:REF_TYPE -eq 'branch' -and @(
+            git tag --points-at HEAD | Where-Object { $_ -cmatch $stableTagPattern }
+          ).Count -gt 0
+          "should-release=$(!$hasStableTag)".ToLowerInvariant() >> $env:GITHUB_OUTPUT
+
       - name: Create target matrix
         id: targets
+        if: ${{ steps.trigger.outputs.should-release == 'true' }}
         shell: pwsh
         env:
           REF_NAME: ${{ github.ref_name }}
@@ -109,6 +123,7 @@ jobs:
   build:
     name: ${{ matrix.runtimeIdentifier }}
     needs: plan
+    if: ${{ needs.plan.outputs.should-release == 'true' }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     permissions:
@@ -135,7 +150,7 @@ jobs:
   release:
     name: Publish ${{ needs.plan.outputs.release-type }} release
     needs: [plan, build]
-    if: ${{ always() && needs.plan.result == 'success' && needs.build.result == 'success' }}
+    if: ${{ always() && needs.plan.outputs.should-release == 'true' && needs.plan.result == 'success' && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     environment: Release
     timeout-minutes: 30

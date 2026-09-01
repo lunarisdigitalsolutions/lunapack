@@ -1,0 +1,27 @@
+name: 'Packs: Validate'
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'projects/packs/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: packs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate packs
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Validate packs
+        uses: ./.github/actions/packs/validate
