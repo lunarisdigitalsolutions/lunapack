@@ -328,6 +328,10 @@
           "type": "boolean",
           "default": false
         },
+        "requiredWhen": {
+          "type": "string",
+          "minLength": 1
+        },
         "type": {
           "enum": ["string", "bool", "enum"]
         },
@@ -340,6 +344,13 @@
           }
         }
       },
+      "allOf": [
+        {
+          "not": {
+            "required": ["required", "requiredWhen"]
+          }
+        }
+      ],
       "oneOf": [
         {
           "properties": {
@@ -402,6 +413,10 @@
       "additionalProperties": false,
       "required": ["id", "version"],
       "properties": {
+        "condition": {
+          "type": "string",
+          "minLength": 1
+        },
         "disabledHooks": {
           "type": "array",
           "uniqueItems": true,

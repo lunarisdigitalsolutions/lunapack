@@ -176,11 +176,8 @@ internal static class PackManifestInspectionFormatter
         table.AddColumn("[bold]Values[/]");
         table.AddColumn("[bold]Default[/]");
         table.AddColumn("[bold]Required[/]");
-        var orderedParameters = parameters.OrderBy(
-            parameter => parameter.Key,
-            StringComparer.Ordinal
-        );
-        foreach (var parameter in orderedParameters)
+        table.AddColumn("[bold]Required when[/]");
+        foreach (var parameter in parameters)
         {
             var declaration = parameter.Value;
             table.AddRow(
@@ -195,7 +192,8 @@ internal static class PackManifestInspectionFormatter
                         : "-"
                 ),
                 Markup.Escape(FormatParameterDefault(declaration.Default)),
-                declaration.Required ? "yes" : "no"
+                declaration.Required is true ? "yes" : "no",
+                Markup.Escape(declaration.RequiredWhen ?? "-")
             );
         }
 
@@ -217,12 +215,14 @@ internal static class PackManifestInspectionFormatter
         var table = CreateTable("Referenced packs");
         table.AddColumn("[bold]ID[/]");
         table.AddColumn("[bold]Version[/]");
+        table.AddColumn("[bold]Condition[/]");
         table.AddColumn("[bold]Disabled hooks[/]");
         foreach (var reference in references)
         {
             table.AddRow(
                 Markup.Escape(reference.Id),
                 Markup.Escape(reference.Version),
+                Markup.Escape(reference.Condition ?? "-"),
                 Markup.Escape(
                     reference.DisabledHooks.Count == 0
                         ? "none"

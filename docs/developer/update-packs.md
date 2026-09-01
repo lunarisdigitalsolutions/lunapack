@@ -15,11 +15,16 @@ luna update dotnet-project
 
 Run `luna update --dry-run` to plan updates for every installed root. Use
 `luna update --prompt` when selecting which available updates to apply.
+Dry runs ask for every configurable pack parameter before planning. Pass
+`--prompt-parameters` on a real update to answer optional parameters as well;
+each prompt offers its declared default.
 
 Dry runs group source changes, managed-file actions, and lifecycle actions
 under labeled sections with ASCII action markers. A successful update lists
 managed-file changes by default. Pass `--no-file-change-output` to suppress
-that success list without hiding the dry-run plan.
+that success list without hiding the dry-run plan. When the selected pack ID
+and version exist in multiple configured sources, both forms identify the
+chosen source by name and type.
 
 ## Understand version intent
 

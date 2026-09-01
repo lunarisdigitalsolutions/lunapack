@@ -16,6 +16,15 @@ siblings retain declaration order; and a shared node keeps the position of its
 first visit. This order also controls cross-pack hooks and managed-file merge
 contributions. There is no separate consumer ordering override.
 
+Parameter prompting and reference selection proceed together. Luna prompts a
+pack's parameters in manifest order, evaluates its reference conditions, then
+walks active references in manifest order. A false reference removes parameters
+and descendants reachable only through that branch. A shared dependency remains
+active when another selected path reaches it. The final active graph controls
+source, file, hook, ownership, and lock planning. Candidate references still
+resolve first so exact versions and graph-wide parameter contracts can be
+validated.
+
 ## Resolve graph-wide parameters
 
 Parameter names form one namespace across the graph. Every pack declaring the
@@ -42,6 +51,11 @@ compatible project variable, then the winning declaration's default. Optional
 unresolved strings and scalar enums render as empty strings, optional
 multi-select enums render as empty arrays, and optional Booleans render as
 false.
+
+Parameter declarations are ordered. `requiredWhen` can make one parameter
+required from an expression over parameters declared earlier in the same pack;
+it cannot be combined with `required`. This ordering ensures every conditional
+requiredness decision has resolved inputs before Luna decides whether to prompt.
 
 ## Apply files and lifecycle events
 

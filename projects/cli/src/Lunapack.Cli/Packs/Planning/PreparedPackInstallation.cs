@@ -1,4 +1,5 @@
-﻿using Lunapack.Cli.Packs.ExternalSources;
+﻿using Lunapack.Cli.Catalog;
+using Lunapack.Cli.Packs.ExternalSources;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources.Git;
 
@@ -12,6 +13,7 @@ internal sealed record PreparedPackInstallation(
     PackUpdatePlan UpdatePlan,
     ResolvedPackParameters Parameters,
     PackReference SelectedRelease,
+    PackSourceSelection? SourceSelection,
     GitPackMaterialization Materialization,
     ExternalSourceMaterialization ExternalMaterialization,
     ExternalSourceRequirementPlan ExternalSources

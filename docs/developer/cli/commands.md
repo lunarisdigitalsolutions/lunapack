@@ -205,15 +205,19 @@ project. Pack trust and pack-trust revocation require `--source` or `-s`. See
   paths, and managed-selector reference counts.
 - `luna pack add reference <id> <version>`: Adds an exact composite reference.
   Repeat `--parameter <name>=<value>` (`-p`) and `--disable-hook <hook>` as
-  needed; `--replace` updates an existing ID.
+  needed. `--condition <expression>` (`-c`) makes the reference conditional;
+  `--replace` updates an existing ID.
 - `luna pack add tag <value>`: Adds one unique tag.
 - `luna pack set <property> <value>`: Sets `id`, `name`, `version`,
   `description`, `author`, `homepage`, or `license`.
-- `luna pack set parameter <name> <string|bool|enum>`: Creates or replaces a
-  parameter. Use `--required`, repeatable enum `--value` (`-v`),
+- `luna pack set parameter <name> <type>`: Creates or replaces a parameter.
+  `<type>` accepts `string`, `bool`, or `enum`. Use either `--required` or
+  `--required-when <expression>`, repeatable enum `--value` (`-v`),
   `--display-name`, and `--description` (`-d`); `--default` supplies a typed
   prompt or optional binding default. For a multi-select enum, add `--multiple`
-  and repeat `--default` to preserve an ordered default selection.
+  and repeat `--default` to preserve an ordered default selection. Parameters
+  prompt in manifest order; `--required-when` may reference only earlier
+  parameters.
 - `luna pack set reference <id> <version>`: Creates or replaces a composite
   reference.
 - `luna pack rm <selector>` (`luna pack remove`): Removes one exact managed
@@ -261,13 +265,16 @@ adding content, viewing the manifest, or validating it.
 commands select the latest available release. `install` accepts `--dry-run`
 (`-D`), `--destination` (`-d`),
 `--adopt-existing` (`-a`), repeatable `--parameter` (`-p`),
-`--no-variables` (`-nv`), and repeatable `--skip-variable` (`-sv`).
+`--prompt-parameters`, `--no-variables` (`-nv`), and repeatable
+`--skip-variable` (`-sv`).
 Dry runs group release selection, external sources, managed-file changes, and
 lifecycle work into labeled sections with ASCII action prefixes. Lifecycle
 script rows identify whether policy, `--scripts`, persisted trust, or interactive
 confirmation determines consent. Already locked source identities are not
 repeated as lifecycle actions. Successful installs and updates list each
 created, copied, replaced, merged, skipped, or deleted managed file by default.
+When the selected pack ID and version are available from multiple configured
+sources, install and update output identifies the selected source name and type.
 Pass `--no-file-change-output` to either command to suppress that success output;
 it does not hide the plan during `--dry-run`.
 Install also accepts repeatable `--remap-directory <source>=<target>` and
@@ -286,7 +293,11 @@ as `remap: <pack> <declared> -> <effective> source: <source>`. The source is
 lunapack.yml`, or `lunapack-lock.yml`. Ignored targets report `@ignore` as the
 effective target.
 
-`update` accepts `--dry-run` (`-D`); update-all also accepts `--prompt` (`-p`).
+`update` accepts `--dry-run` (`-D`) and `--prompt-parameters`; update-all also
+accepts `--prompt` (`-p`). Install and update dry runs prompt for every
+configurable parameter on an active graph path before planning. For real operations,
+`--prompt-parameters` extends prompting from unresolved required parameters to
+all configurable parameters and offers declared defaults.
 Both install and update accept `--accept-sources` for conflict-free proposed
 source additions. `install`, `update`, and `uninstall` accept
 `--scripts <prompt|run|skip>`; `prompt` is the default and requires effective

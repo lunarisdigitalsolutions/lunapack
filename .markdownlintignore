@@ -1,4 +1,5 @@
 # Pack source artifacts include templates and files governed by target conventions
 
+projects/cli/CHANGELOG.md
 projects/packs/**
 LICENSE.md

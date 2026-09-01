@@ -26,6 +26,7 @@ internal sealed class UninstallPackCommandHandler(
         {
             Arity = ArgumentArity.OneOrMore,
             Description = "Pack IDs, optionally followed by @version.",
+            HelpName = "pack-reference",
         };
         packReferenceArgument.CompletionSources.Add(completionProvider.GetInstalledReferences);
         var parameterOption = new Option<string[]>("--parameter", "-p")

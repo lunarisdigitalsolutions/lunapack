@@ -24,6 +24,7 @@ internal sealed class GitPackDiscovery(
     private static readonly IDeserializer _deserializer = new StaticDeserializerBuilder(
         new LunapackYamlContext()
     )
+        .IgnoreUnmatchedProperties()
         .WithNamingConvention(CamelCaseNamingConvention.Instance)
         .Build();
 

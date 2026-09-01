@@ -14,6 +14,7 @@ internal sealed class ProjectManifestStore(IFileSystem fileSystem)
     private static readonly IDeserializer _deserializer = new StaticDeserializerBuilder(
         new LunapackYamlContext()
     )
+        .IgnoreUnmatchedProperties()
         .WithNamingConvention(CamelCaseNamingConvention.Instance)
         .WithTypeConverter(new ScalarValueDictionaryYamlTypeConverter())
         .Build();

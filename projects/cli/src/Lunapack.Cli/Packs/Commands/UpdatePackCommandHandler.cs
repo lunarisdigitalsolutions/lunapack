@@ -29,6 +29,7 @@ internal sealed class UpdatePackCommandHandler(
         var dryRunOption = CreateDryRunOption();
         var noFileChangeOutputOption = CreateNoFileChangeOutputOption();
         var acceptSourcesOption = CreateAcceptSourcesOption();
+        var promptParametersOption = CreatePromptParametersOption();
         var scriptsOption = CreateScriptsOption();
         var skipInstructionsOption = CreateSkipInstructionsOption();
         var command = new Command("update", "Update installed packs.")
@@ -38,6 +39,7 @@ internal sealed class UpdatePackCommandHandler(
             dryRunOption,
             noFileChangeOutputOption,
             acceptSourcesOption,
+            promptParametersOption,
             scriptsOption,
             skipInstructionsOption,
         };
@@ -51,6 +53,7 @@ internal sealed class UpdatePackCommandHandler(
                 dryRunOption,
                 noFileChangeOutputOption,
                 acceptSourcesOption,
+                promptParametersOption,
                 scriptsOption,
                 skipInstructionsOption
             )
@@ -68,6 +71,7 @@ internal sealed class UpdatePackCommandHandler(
         Option<bool> dryRunOption,
         Option<bool> noFileChangeOutputOption,
         Option<bool> acceptSourcesOption,
+        Option<bool> promptParametersOption,
         Option<string?> scriptsOption,
         Option<bool> skipInstructionsOption
     )
@@ -92,30 +96,58 @@ internal sealed class UpdatePackCommandHandler(
         var dryRun = parseResult.GetValue(dryRunOption);
         var showFileChanges = !parseResult.GetValue(noFileChangeOutputOption);
         var acceptSources = parseResult.GetValue(acceptSourcesOption);
-        var scriptMode = ScriptExecutionMode.Parse(
-            parseResult.GetValue(scriptsOption) ?? ScriptExecutionMode.Prompt.Value
+        var promptParameters = CreateParameterPrompt(
+            parseResult.GetValue(promptParametersOption) || dryRun
         );
+        var scriptMode = ParseScriptMode(parseResult, scriptsOption);
         if (scriptMode.Value is not { } parsedScriptMode)
         {
             return console.Fail(scriptMode.Error);
         }
 
         var prompt = parseResult.GetValue(promptOption);
-        if (prompt && references.Count > 0)
+        if (GetPromptOptionError(prompt, references.Count) is { } promptOptionError)
         {
-            return console.Fail("The --prompt option is only available when updating all packs.");
+            return console.Fail(promptOptionError);
         }
 
-        var skipInstructions = parseResult.GetValue(skipInstructionsOption);
+        return await ExecuteUpdateAsync(
+            workspaceDirectory,
+            referenceValues,
+            references,
+            prompt,
+            dryRun,
+            showFileChanges,
+            parsedScriptMode,
+            parseResult.GetValue(skipInstructionsOption),
+            acceptSources,
+            promptParameters
+        );
+    }
+
+    private async Task<int> ExecuteUpdateAsync(
+        string workspaceDirectory,
+        string[] referenceValues,
+        IReadOnlyList<PackReference> references,
+        bool prompt,
+        bool dryRun,
+        bool showFileChanges,
+        ScriptExecutionMode scriptMode,
+        bool skipInstructions,
+        bool acceptSources,
+        PackParameterPromptCallback? promptParameters
+    )
+    {
         if (prompt)
         {
             return await HandleResultAsync(
                 await PromptAndUpdateAsync(
                     workspaceDirectory,
                     dryRun,
-                    parsedScriptMode,
+                    scriptMode,
                     skipInstructions,
-                    acceptSources
+                    acceptSources,
+                    promptParameters
                 ),
                 dryRun,
                 showFileChanges
@@ -129,10 +161,11 @@ internal sealed class UpdatePackCommandHandler(
                     workspaceDirectory,
                     null,
                     dryRun,
-                    parsedScriptMode,
+                    scriptMode,
                     skipInstructions,
                     "Updating packs...",
-                    acceptSources
+                    acceptSources,
+                    promptParameters
                 ),
                 dryRun,
                 showFileChanges
@@ -145,11 +178,25 @@ internal sealed class UpdatePackCommandHandler(
             references,
             dryRun,
             showFileChanges,
-            parsedScriptMode,
+            scriptMode,
             skipInstructions,
-            acceptSources
+            acceptSources,
+            promptParameters
         );
     }
+
+    private static ManifestOperationResult<ScriptExecutionMode> ParseScriptMode(
+        ParseResult parseResult,
+        Option<string?> scriptsOption
+    ) =>
+        ScriptExecutionMode.Parse(
+            parseResult.GetValue(scriptsOption) ?? ScriptExecutionMode.Prompt.Value
+        );
+
+    private static string? GetPromptOptionError(bool prompt, int referenceCount) =>
+        prompt && referenceCount > 0
+            ? "The --prompt option is only available when updating all packs."
+            : null;
 
     private async Task<int> UpdateRequestedPacksAsync(
         string workspaceDirectory,
@@ -159,7 +206,8 @@ internal sealed class UpdatePackCommandHandler(
         bool showFileChanges,
         ScriptExecutionMode scriptMode,
         bool skipInstructions,
-        bool acceptSources
+        bool acceptSources,
+        PackParameterPromptCallback? promptParameters
     )
     {
         for (var index = 0; index < referenceValues.Length; index++)
@@ -188,7 +236,8 @@ internal sealed class UpdatePackCommandHandler(
                     scriptMode,
                     skipInstructions,
                     $"Updating {reference.Id}...",
-                    acceptSources
+                    acceptSources,
+                    promptParameters
                 ),
                 dryRun,
                 showFileChanges
@@ -210,6 +259,7 @@ internal sealed class UpdatePackCommandHandler(
         {
             Arity = ArgumentArity.ZeroOrMore,
             Description = "Pack IDs, optionally followed by @version.",
+            HelpName = "pack-reference",
         };
         argument.CompletionSources.Add(completionProvider.GetInstalledReferences);
         return argument;
@@ -233,6 +283,12 @@ internal sealed class UpdatePackCommandHandler(
             Description = "Approve conflict-free external source additions.",
         };
 
+    private static Option<bool> CreatePromptParametersOption() =>
+        new("--prompt-parameters")
+        {
+            Description = "Prompt for every configurable pack parameter.",
+        };
+
     private static Option<string?> CreateScriptsOption()
     {
         var option = new Option<string?>("--scripts")
@@ -253,7 +309,8 @@ internal sealed class UpdatePackCommandHandler(
         ScriptExecutionMode scriptMode,
         bool skipInstructions,
         string status,
-        bool acceptSources
+        bool acceptSources,
+        PackParameterPromptCallback? promptParameters
     ) =>
         scriptMode == ScriptExecutionMode.Prompt
             ? packUpdateService.UpdateAsync(
@@ -262,7 +319,8 @@ internal sealed class UpdatePackCommandHandler(
                 dryRun,
                 scriptMode,
                 skipInstructions,
-                acceptSources
+                acceptSources,
+                promptParameters
             )
             : console.RunWithStatusAsync(
                 status,
@@ -273,7 +331,8 @@ internal sealed class UpdatePackCommandHandler(
                         dryRun,
                         scriptMode,
                         skipInstructions,
-                        acceptSources
+                        acceptSources,
+                        promptParameters
                     )
             );
 
@@ -282,7 +341,8 @@ internal sealed class UpdatePackCommandHandler(
         bool dryRun,
         ScriptExecutionMode scriptMode,
         bool skipInstructions,
-        bool acceptSources
+        bool acceptSources,
+        PackParameterPromptCallback? promptParameters
     )
     {
         var availableUpdates = await updateSelectionService.GetAvailableAsync(projectDirectory);
@@ -303,8 +363,35 @@ internal sealed class UpdatePackCommandHandler(
             dryRun,
             scriptMode,
             skipInstructions,
-            acceptSources
+            acceptSources,
+            promptParameters
         );
+    }
+
+    private PackParameterPromptCallback? CreateParameterPrompt(bool enabled)
+    {
+        Dictionary<string, IReadOnlyList<string>>? promptedParameters = null;
+        return enabled ? prompts => PromptForParameters(prompts, promptedParameters ??= []) : null;
+    }
+
+    private Dictionary<string, IReadOnlyList<string>> PromptForParameters(
+        IReadOnlyList<PackParameterPrompt> prompts,
+        IDictionary<string, IReadOnlyList<string>> promptedParameters
+    )
+    {
+        var selected = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+        foreach (var prompt in prompts)
+        {
+            if (!promptedParameters.TryGetValue(prompt.Id, out var values))
+            {
+                values = console.PromptValues(prompt);
+                promptedParameters.Add(prompt.Id, values);
+            }
+
+            selected.Add(prompt.Id, values);
+        }
+
+        return selected;
     }
 
     private static ManifestOperationResult<IReadOnlyList<PackReference>> ParseReferences(
@@ -405,6 +492,13 @@ internal sealed class UpdatePackCommandHandler(
             else
             {
                 console.Success(message);
+            }
+
+            if (outcome.SourceSelection is not null)
+            {
+                console.MarkupInfo(
+                    PackDryRunFormatter.FormatSourceSelection(outcome.SourceSelection)
+                );
             }
         }
     }

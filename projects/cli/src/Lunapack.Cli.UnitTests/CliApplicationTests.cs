@@ -118,6 +118,68 @@ public sealed class CliApplicationTests
     }
 
     [Test]
+    [Arguments("install")]
+    [Arguments("inspect")]
+    [Arguments("uninstall")]
+    [Arguments("update")]
+    [Arguments("validate")]
+    public async Task PackCommandHelp_WhenPackCompletionsExist_ShowsStableArgumentName(
+        string command
+    )
+    {
+        using var workspace = new TestWorkspace();
+        CreatePack(
+            workspace.Path,
+            "dotnet-sdk",
+            "id: dotnet-sdk\nversion: 1.0.0\nlicense: MIT\nauthor: Lunaris Digital Solutions <info@lunaris.digital>\nmanagedFiles:\n  - source: templates/content.txt\n    target: sdk.txt\n",
+            "sdk"
+        );
+        await workspace.Application.RunAsync(["init"], workspace.Path);
+        await workspace.Application.RunAsync(
+            ["sources", "add", "local", "local", "source"],
+            workspace.Path
+        );
+        await workspace.Application.RunAsync(
+            ["install", "dotnet-sdk", "--scripts", "skip"],
+            workspace.Path
+        );
+        await using var output = new StringWriter();
+
+        var exitCode = await workspace.Application.RunAsync(
+            [command, "--help"],
+            workspace.Path,
+            output
+        );
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(output.ToString()).Contains("<pack-reference>");
+        await Assert.That(output.ToString()).DoesNotContain("<dotnet-sdk>");
+    }
+
+    [Test]
+    public async Task SourceCommandHelp_WhenSourceCompletionsExist_ShowsStableArgumentName()
+    {
+        using var workspace = new TestWorkspace();
+        await workspace.Application.RunAsync(["init"], workspace.Path);
+        Directory.CreateDirectory(Path.Combine(workspace.Path, "source"));
+        await workspace.Application.RunAsync(
+            ["sources", "add", "local", "local", "source"],
+            workspace.Path
+        );
+        await using var output = new StringWriter();
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["sources", "rm", "--help"],
+            workspace.Path,
+            output
+        );
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(output.ToString()).Contains("<name>");
+        await Assert.That(output.ToString()).DoesNotContain("<local>");
+    }
+
+    [Test]
     public async Task CompletionsScript_WhenSupportedShellRequested_EmitsNativeRegistration()
     {
         using var workspace = new TestWorkspace();
@@ -283,6 +345,43 @@ public sealed class CliApplicationTests
         await Assert
             .That(File.ReadAllText(Path.Combine(workspace.Path, "LICENSE.md")))
             .IsEqualTo("Prompted Corporation");
+    }
+
+    [Test]
+    public async Task InstallDryRun_WhenOptionalParameterControlsReference_PromptsBeforePlanning()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        ansiConsole.Input.PushTextWithEnter("n");
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var sourceDirectory = Path.Combine(workspace.Path, "source");
+        var rootDirectory = Path.Combine(sourceDirectory, "root");
+        var dependencyDirectory = Path.Combine(sourceDirectory, "dependency");
+        Directory.CreateDirectory(rootDirectory);
+        Directory.CreateDirectory(dependencyDirectory);
+        File.WriteAllText(
+            Path.Combine(rootDirectory, "pack.yml"),
+            "id: root\nversion: 1.0.0\nlicense: MIT\nauthor: Example Author\nparameters:\n  includeDependency:\n    type: bool\n    default: true\n    displayName: Include dependency\npacks:\n  - id: dependency\n    version: 1.0.0\n    condition: includeDependency\n"
+        );
+        File.WriteAllText(
+            Path.Combine(dependencyDirectory, "pack.yml"),
+            "id: dependency\nversion: 1.0.0\nlicense: MIT\nauthor: Example Author\nparameters:\n  branchDetail:\n    type: string\n    required: true\n    displayName: Branch detail\nmanagedFiles:\n  - source: dependency.txt\n    target: dependency.txt\n"
+        );
+        File.WriteAllText(Path.Combine(dependencyDirectory, "dependency.txt"), "dependency");
+        await workspace.Application.RunAsync(["init"], workspace.Path);
+        await workspace.Application.RunAsync(
+            ["sources", "add", "local", "local", "source"],
+            workspace.Path
+        );
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["install", "root", "--dry-run"],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(ansiConsole.Output).Contains("Include dependency");
+        await Assert.That(ansiConsole.Output).DoesNotContain("Branch detail");
+        await Assert.That(ansiConsole.Output).DoesNotContain("dependency.txt");
     }
 
     [Test]

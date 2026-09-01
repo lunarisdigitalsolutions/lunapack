@@ -8,6 +8,38 @@ namespace Lunapack.Cli.UnitTests.Packs.Commands;
 public sealed class PackUpdateCommandTests
 {
     [Test]
+    public async Task CachePromptedParameters_WhenPromptRepeated_ReusesFirstAnswer()
+    {
+        var callbackCount = 0;
+        var prompt = new PackParameterPrompt(
+            "includeDependency",
+            new PackParameterDefinition(
+                PackParameterType.Bool,
+                false,
+                [],
+                "Include dependency",
+                null
+            )
+        );
+        var cached = PackUpdateService.CachePromptedParameters(prompts =>
+        {
+            callbackCount++;
+            return prompts.ToDictionary(
+                requested => requested.Id,
+                _ => (IReadOnlyList<string>)["false"],
+                StringComparer.Ordinal
+            );
+        });
+
+        var previewAnswer = cached!([prompt]);
+        var applyAnswer = cached([prompt]);
+
+        await Assert.That(callbackCount).IsEqualTo(1);
+        await Assert.That(previewAnswer["includeDependency"]).IsEquivalentTo(["false"]);
+        await Assert.That(applyAnswer["includeDependency"]).IsEquivalentTo(["false"]);
+    }
+
+    [Test]
     public async Task Update_PromptDeclinesOneAvailableRoot_UpdatesOnlyConfirmedRoot()
     {
         var packUpdatePrompter = new TestPackUpdatePrompter([false, true]);
@@ -87,6 +119,46 @@ public sealed class PackUpdateCommandTests
         await Assert.That(output).Contains("File changes");
         await Assert.That(output).Contains("Copy");
         await Assert.That(output).Contains("dotnet.txt");
+    }
+
+    [Test]
+    public async Task Scenario_UpdateReleaseExistsInMultipleSources_ReportsSelectedSource()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        ansiConsole.Profile.Width = 500;
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var primarySource = CreateNamedVersionedPackSource(
+            workspace.Path,
+            "primary-source",
+            "dotnet",
+            "1.0.0",
+            "2.0.0"
+        );
+        var secondarySource = CreateNamedVersionedPackSource(
+            workspace.Path,
+            "secondary-source",
+            "dotnet",
+            "1.0.0",
+            "2.0.0"
+        );
+        await workspace.Application.RunAsync(["init"], workspace.Path);
+        await workspace.Application.RunAsync(
+            ["sources", "add", "local", "primary", primarySource],
+            workspace.Path
+        );
+        await workspace.Application.RunAsync(
+            ["sources", "add", "local", "secondary", secondarySource],
+            workspace.Path
+        );
+        await workspace.Application.RunAsync(["install", "dotnet@1.0.0"], workspace.Path);
+        var outputStart = ansiConsole.Output.Length;
+
+        var exitCode = await workspace.Application.RunAsync(["update", "dotnet"], workspace.Path);
+        var output = ansiConsole.Output[outputStart..];
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(output).Contains("Selected source");
+        await Assert.That(output).Contains("primary (local)");
     }
 
     [Test]
@@ -342,6 +414,54 @@ public sealed class PackUpdateCommandTests
         await Assert.That(await ReadStateAsync(workspace.Path)).IsEqualTo(initialState);
     }
 
+    [Test]
+    public async Task UpdateDryRun_WhenOptionalParameterControlsReference_PromptsBeforePlanning()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var sourcePath = Path.Combine(workspace.Path, "source");
+        var rootOne = Path.Combine(sourcePath, "root-1.0.0");
+        var rootTwo = Path.Combine(sourcePath, "root-2.0.0");
+        var dependency = Path.Combine(sourcePath, "dependency-1.0.0");
+        Directory.CreateDirectory(rootOne);
+        Directory.CreateDirectory(rootTwo);
+        Directory.CreateDirectory(dependency);
+        const string parameter =
+            "parameters:\n  includeDependency:\n    type: bool\n    default: true\n    displayName: Include dependency\n";
+        const string reference = "packs:\n  - id: dependency\n    version: 1.0.0\n";
+        File.WriteAllText(
+            Path.Combine(rootOne, "pack.yml"),
+            $"id: root\nversion: 1.0.0\nlicense: MIT\nauthor: Example Author\n{parameter}{reference}"
+        );
+        File.WriteAllText(
+            Path.Combine(rootTwo, "pack.yml"),
+            $"id: root\nversion: 2.0.0\nlicense: MIT\nauthor: Example Author\n{parameter}{reference}    condition: includeDependency\n"
+        );
+        File.WriteAllText(
+            Path.Combine(dependency, "pack.yml"),
+            "id: dependency\nversion: 1.0.0\nlicense: MIT\nauthor: Example Author\nparameters:\n  branchDetail:\n    type: string\n    required: true\n    displayName: Branch detail\nmanagedFiles:\n  - source: dependency.txt\n    target: dependency.txt\n"
+        );
+        File.WriteAllText(Path.Combine(dependency, "dependency.txt"), "dependency");
+        await ConfigureSourceAsync(workspace, "source");
+        await workspace.Application.RunAsync(
+            ["install", "root@1.0.0", "--parameter", "branchDetail=initial"],
+            workspace.Path
+        );
+        var initialState = await ReadStateAsync(workspace.Path);
+        ansiConsole.Input.PushTextWithEnter("n");
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["update", "root@2.0.0", "--dry-run"],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(ansiConsole.Output).Contains("Include dependency");
+        await Assert.That(ansiConsole.Output).DoesNotContain("Branch detail");
+        await Assert.That(ansiConsole.Output).Contains("dependency.txt");
+        await Assert.That(await ReadStateAsync(workspace.Path)).IsEqualTo(initialState);
+    }
+
     private static async Task ConfigureSourceAsync(TestWorkspace workspace, string sourcePath)
     {
         await workspace.Application.RunAsync(["init"], workspace.Path);
@@ -355,9 +475,16 @@ public sealed class PackUpdateCommandTests
         string projectDirectory,
         string id,
         params string[] versions
+    ) => CreateNamedVersionedPackSource(projectDirectory, "source", id, versions);
+
+    private static string CreateNamedVersionedPackSource(
+        string projectDirectory,
+        string sourceDirectory,
+        string id,
+        params string[] versions
     )
     {
-        var sourcePath = Path.Combine(projectDirectory, "source");
+        var sourcePath = Path.Combine(projectDirectory, sourceDirectory);
         foreach (var version in versions)
         {
             var packDirectory = Path.Combine(sourcePath, $"{id}-{version}");
@@ -370,7 +497,7 @@ public sealed class PackUpdateCommandTests
             File.WriteAllText(Path.Combine(templateDirectory, "content.txt"), version);
         }
 
-        return "source";
+        return sourceDirectory;
     }
 
     private static void SetManagedFileStrategy(

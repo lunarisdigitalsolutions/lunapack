@@ -57,6 +57,40 @@ public sealed class GitSourceTransportTests
     }
 
     [Test]
+    public async Task Cache_WhenParameterHasMultipleDefaults_PreservesDefaults()
+    {
+        var fileSystem = new MockFileSystem();
+        var cache = new GitSourceCache(fileSystem);
+        var source = CreateSource();
+        var manifest = new PackManifest
+        {
+            Id = "example",
+            Version = "1.0.0",
+            Author = "Example Author",
+            License = "MIT",
+            Parameters = new Dictionary<string, PackManifest.PackParameter>(StringComparer.Ordinal)
+            {
+                ["features"] = new()
+                {
+                    Type = "enum",
+                    Multiple = true,
+                    Default = new List<object> { "api", "docker" },
+                    Values = ["api", "docker"],
+                },
+            },
+        };
+        var entry = CreateCacheEntry(source, manifest, "packs/example");
+
+        var saved = cache.Save(@"C:\project", entry);
+        var loaded = cache.Load(@"C:\project", source);
+
+        await Assert.That(saved.IsSuccess).IsTrue();
+        await Assert
+            .That(loaded.Value?.Packs.Single().Manifest.Parameters["features"].Default)
+            .IsEquivalentTo(new List<object> { "api", "docker" });
+    }
+
+    [Test]
     public async Task Cache_WhenEntryCorrupt_TreatsEntryAsCacheMiss()
     {
         var fileSystem = new MockFileSystem();

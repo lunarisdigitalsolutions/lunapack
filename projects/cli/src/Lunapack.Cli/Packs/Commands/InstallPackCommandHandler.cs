@@ -3,6 +3,7 @@ using System.IO.Abstractions;
 using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Application.Guidance;
+using Lunapack.Cli.Catalog;
 using Lunapack.Cli.Links;
 using Lunapack.Cli.Packs.ManagedFiles;
 using Lunapack.Cli.Packs.Planning;
@@ -35,6 +36,7 @@ internal sealed class InstallPackCommandHandler(
         var noFileChangeOutputOption = CreateNoFileChangeOutputOption();
         var acceptSourcesOption = CreateAcceptSourcesOption();
         var parameterOption = CreateParameterOption();
+        var promptParametersOption = CreatePromptParametersOption();
         var noVariablesOption = CreateNoVariablesOption();
         var skipVariableOption = CreateSkipVariableOption(completionProvider);
         var scriptsOption = CreateScriptsOption();
@@ -51,6 +53,7 @@ internal sealed class InstallPackCommandHandler(
             noFileChangeOutputOption,
             acceptSourcesOption,
             parameterOption,
+            promptParametersOption,
             noVariablesOption,
             skipVariableOption,
             scriptsOption,
@@ -71,6 +74,7 @@ internal sealed class InstallPackCommandHandler(
                 noFileChangeOutputOption,
                 acceptSourcesOption,
                 parameterOption,
+                promptParametersOption,
                 noVariablesOption,
                 skipVariableOption,
                 scriptsOption,
@@ -95,6 +99,7 @@ internal sealed class InstallPackCommandHandler(
         Option<bool> noFileChangeOutputOption,
         Option<bool> acceptSourcesOption,
         Option<string[]> parameterOption,
+        Option<bool> promptParametersOption,
         Option<bool> noVariablesOption,
         Option<string[]> skipVariableOption,
         Option<string?> scriptsOption,
@@ -130,6 +135,7 @@ internal sealed class InstallPackCommandHandler(
                 parseResult.GetValue(saveRemapOption),
                 parseResult.GetValue(adoptExistingOption),
                 parseResult.GetValue(parameterOption) ?? [],
+                parseResult.GetValue(promptParametersOption),
                 parseResult.GetValue(noVariablesOption),
                 parseResult.GetValue(skipVariableOption) ?? [],
                 parsedScriptMode,
@@ -156,6 +162,7 @@ internal sealed class InstallPackCommandHandler(
         {
             Arity = ArgumentArity.OneOrMore,
             Description = "Pack IDs, optionally followed by @version.",
+            HelpName = "pack-reference",
         };
         argument.CompletionSources.Add(completionProvider.GetInstallReferences);
         return argument;
@@ -209,6 +216,12 @@ internal sealed class InstallPackCommandHandler(
     private static Option<string[]> CreateParameterOption() =>
         new("--parameter", "-p") { Description = "Template parameter in <name>=<value> form." };
 
+    private static Option<bool> CreatePromptParametersOption() =>
+        new("--prompt-parameters")
+        {
+            Description = "Prompt for every configurable pack parameter.",
+        };
+
     private static Option<bool> CreateNoVariablesOption() =>
         new("--no-variables", "-nv") { Description = "Do not bind matching project variables." };
 
@@ -246,6 +259,7 @@ internal sealed class InstallPackCommandHandler(
         bool saveRemapping,
         bool adoptExisting,
         string[] parameters,
+        bool promptParameters,
         bool noVariables,
         string[] skippedVariables,
         ScriptExecutionMode scriptMode,
@@ -294,6 +308,7 @@ internal sealed class InstallPackCommandHandler(
             saveRemapping,
             adoptExisting,
             parameters,
+            promptParameters,
             noVariables,
             skippedVariables,
             scriptMode,
@@ -342,6 +357,7 @@ internal sealed class InstallPackCommandHandler(
         bool saveRemapping,
         bool adoptExisting,
         string[] parameters,
+        bool promptParameters,
         bool noVariables,
         string[] skippedVariables,
         ScriptExecutionMode scriptMode,
@@ -377,7 +393,8 @@ internal sealed class InstallPackCommandHandler(
             request,
             dryRun,
             noFileChangeOutput,
-            skipInstalledRoots
+            skipInstalledRoots,
+            promptParameters || dryRun
         );
     }
 
@@ -386,7 +403,8 @@ internal sealed class InstallPackCommandHandler(
         PackInstallationRequest request,
         bool dryRun,
         bool noFileChangeOutput,
-        bool skipInstalledRoots
+        bool skipInstalledRoots,
+        bool promptParameters
     )
     {
         var skippedInstall = await WarnWhenRootAlreadyInstalledAsync(
@@ -399,14 +417,16 @@ internal sealed class InstallPackCommandHandler(
             return skippedInstall.Value;
         }
 
-        var unresolvedParameters = await packLifecycleService.FindUnresolvedRequiredParametersAsync(
+        var promptedParameters = await packLifecycleService.PromptInstallParametersAsync(
             workspaceDirectory,
-            request
+            request,
+            promptParameters,
+            PromptForParameters
         );
-        if (unresolvedParameters.Value is not { } prompts)
+        if (promptedParameters.Value is not { } parameters)
         {
-            var exitCode = console.Fail(unresolvedParameters.Error);
-            if (unresolvedParameters.ErrorKind == ManifestOperationErrorKind.PackNotFound)
+            var exitCode = console.Fail(promptedParameters.Error);
+            if (promptedParameters.ErrorKind == ManifestOperationErrorKind.PackNotFound)
             {
                 nextStepRenderer.Render(
                     nextStepAdvisor.Recommend(
@@ -420,7 +440,7 @@ internal sealed class InstallPackCommandHandler(
             return exitCode;
         }
 
-        request = PromptForRequiredParameters(request, prompts);
+        request = request with { ParameterValues = parameters };
         return dryRun
             ? await PreviewInstallAsync(workspaceDirectory, request)
             : await ExecuteInstallAsync(workspaceDirectory, request, noFileChangeOutput);
@@ -434,13 +454,15 @@ internal sealed class InstallPackCommandHandler(
     {
         TimeSpan? managedFileChangesDuration = null;
         PackUpdatePlan? appliedPlan = null;
+        PackSourceSelection? sourceSelection = null;
         var exitCode =
             request.ScriptMode == ScriptExecutionMode.Prompt
                 ? await packLifecycleService.InstallAsync(
                     workspaceDirectory,
                     request,
                     duration => managedFileChangesDuration = duration,
-                    plan => appliedPlan = plan
+                    plan => appliedPlan = plan,
+                    selection => sourceSelection = selection
                 )
                 : await console.RunWithStatusAsync(
                     $"Installing {request.PackReference.Id}...",
@@ -449,7 +471,8 @@ internal sealed class InstallPackCommandHandler(
                             workspaceDirectory,
                             request,
                             duration => managedFileChangesDuration = duration,
-                            plan => appliedPlan = plan
+                            plan => appliedPlan = plan,
+                            selection => sourceSelection = selection
                         )
                 );
         if (exitCode == 0)
@@ -467,6 +490,10 @@ internal sealed class InstallPackCommandHandler(
             console.Success(
                 $"Installed '{request.PackReference.Id}' (version '{version}') in {CliDuration.Format(managedFileChangesDuration ?? TimeSpan.Zero)}"
             );
+            if (sourceSelection is not null)
+            {
+                console.MarkupInfo(PackDryRunFormatter.FormatSourceSelection(sourceSelection));
+            }
             if (!noFileChangeOutput && appliedPlan is not null)
             {
                 WriteMarkup(PackDryRunFormatter.FormatAppliedFileChanges(appliedPlan));
@@ -568,31 +595,14 @@ internal sealed class InstallPackCommandHandler(
         return 0;
     }
 
-    private PackInstallationRequest PromptForRequiredParameters(
-        PackInstallationRequest request,
+    private IReadOnlyDictionary<string, IReadOnlyList<string>> PromptForParameters(
         IReadOnlyList<PackParameterPrompt> prompts
     )
     {
-        if (prompts.Count == 0)
-        {
-            return request;
-        }
-
-        var parameters = request
-            .GetParameterValues()
-            .ToDictionary(
-                parameter => parameter.Key,
-                parameter => parameter.Value,
-                StringComparer.Ordinal
-            );
-        foreach (var prompt in prompts)
-        {
-            parameters.Add(prompt.Id, console.PromptValues(prompt));
-        }
-
-        return request with
-        {
-            ParameterValues = parameters,
-        };
+        return prompts.ToDictionary(
+            prompt => prompt.Id,
+            prompt => console.PromptValues(prompt),
+            StringComparer.Ordinal
+        );
     }
 }

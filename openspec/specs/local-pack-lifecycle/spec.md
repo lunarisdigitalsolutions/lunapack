@@ -36,7 +36,7 @@ Define installation and safe removal of versioned packs from configured local Lu
 
 ### Requirement: Resolve composite pack references from configured sources
 
-LunaPack SHALL recursively resolve every composite pack reference from the local and Git sources configured in the consuming project's `lunapack.yml`. Each composite reference SHALL resolve the declared ID and exact version using the same source-precedence rules as direct installation. After resolving the complete pack graph, LunaPack SHALL read each selected pack's external Git source declarations only to resolve managed content declared by that pack; pack-local aliases SHALL not be inherited or used for pack discovery.
+LunaPack SHALL recursively resolve every composite pack reference from the local and Git sources configured in the consuming project's `lunapack.yml`. Each composite reference SHALL resolve the declared ID and exact version using the same source-precedence rules as direct installation. A reference MAY declare a parameter condition. After graph-wide parameters resolve, LunaPack SHALL omit false references and descendants reachable only through them from managed files, hooks, ownership, lock state, and external-source requirements. Pack-local aliases SHALL not be inherited or used for pack discovery.
 
 #### Scenario: Install a composite pack from configured sources
 
@@ -62,6 +62,11 @@ LunaPack SHALL recursively resolve every composite pack reference from the local
 
 - **WHEN** a composite pack references an ID and version absent from configured sources
 - **THEN** LunaPack returns a non-success result without changing project files, configuration, or lock state
+
+#### Scenario: Omit a conditional composite reference
+
+- **WHEN** a composite reference condition evaluates to false
+- **THEN** LunaPack omits that pack and dependencies reachable only through it, including their pack-defined external-source requirements
 
 ### Requirement: Install and update Git-sourced packs transactionally
 
@@ -218,7 +223,7 @@ link outdated.
 
 ### Requirement: Preview and confirm package changes
 
-LunaPack SHALL accept `--dry-run` on `luna install` and every form of `luna update`. A dry run SHALL perform dependency, source mapping, source resolution, selection, and target preflight; report reused source mappings, proposed source additions, whether approval would be required, selected pack versions, and each planned target action; and SHALL not prompt for final approval or modify project files, `lunapack.yml`, or `lunapack-lock.yml`.
+LunaPack SHALL accept `--dry-run` on `luna install` and every form of `luna update`. Before planning, a dry run SHALL prompt for every consumer-configurable graph parameter and offer declared defaults. It SHALL then perform dependency, source mapping, source resolution, selection, and target preflight; report reused source mappings, proposed source additions, whether approval would be required, selected pack versions, and each planned target action; and SHALL not prompt for final approval or modify project files, `lunapack.yml`, or `lunapack-lock.yml`.
 
 LunaPack SHALL accept `--prompt` on `luna update` without a pack reference. It SHALL show each eligible pack and newest version or external-content reason, request confirmation before that pack's update, update only confirmed packs, and leave declined packs unchanged.
 
@@ -231,6 +236,11 @@ LunaPack SHALL accept `--prompt` on `luna update` without a pack reference. It S
 
 - **WHEN** a user runs `luna update dotnet-sdk-10 --dry-run`
 - **THEN** LunaPack reports source mappings, source additions, version changes, and file additions, removals, and strategy-driven changes without modifying files or state
+
+#### Scenario: Choose conditional content before a dry run
+
+- **WHEN** an install or update dry run resolves optional parameters used by conditions
+- **THEN** LunaPack prompts for those parameters before source and lifecycle planning and previews the branches selected by the answers
 
 #### Scenario: Confirm updates individually
 
@@ -679,6 +689,18 @@ uses that default. A required multi-select enum SHALL require an explicit,
 variable, composite-binding, default, or prompted value source; an array source
 MAY be empty.
 
+`luna install` and `luna update` SHALL accept `--prompt-parameters`. When set,
+LunaPack SHALL prompt for every consumer-configurable graph parameter not
+already supplied explicitly, including optional parameters, and SHALL offer
+declared defaults. Hidden composite bindings SHALL remain fixed and unprompted.
+LunaPack SHALL prompt parameters in their manifest declaration order. It SHALL
+prompt a pack's parameters before evaluating that pack's outgoing reference
+conditions, then traverse selected references in declaration order. A parameter
+with `requiredWhen` SHALL be required exactly when its shared parameter
+condition evaluates true. Parameters reachable only through inactive references
+SHALL not be prompted. A pack reachable through any other active path SHALL
+remain eligible for prompting.
+
 #### Scenario: Supply a required string parameter
 
 - **WHEN** a user runs `luna install license-mit -p companyName=Lunaris`
@@ -696,6 +718,11 @@ MAY be empty.
 - **WHEN** an optional multi-select enum has no explicit input, variable,
   composite binding, or default
 - **THEN** LunaPack resolves it as an empty array
+
+#### Scenario: Prompt for optional configuration
+
+- **WHEN** a user runs install or update with `--prompt-parameters`
+- **THEN** LunaPack prompts for optional consumer-configurable parameters and offers each declared default
 
 #### Scenario: Reject an invalid enum value
 
@@ -715,6 +742,24 @@ MAY be empty.
 - **WHEN** a required parameter declares a valid default and the consumer
   submits an empty prompt response
 - **THEN** LunaPack resolves the declared default for that installation
+
+#### Scenario: Prompt a conditionally required parameter
+
+- **WHEN** a parameter's `requiredWhen` expression evaluates true from earlier
+  prompted values, including membership or `isDefault` predicates
+- **THEN** LunaPack prompts for that parameter in declaration order
+
+#### Scenario: Skip parameters on an inactive branch
+
+- **WHEN** a prompted answer makes one composite reference false
+- **THEN** LunaPack does not prompt parameters reachable only through that
+  reference
+
+#### Scenario: Retain a shared pack reached by another branch
+
+- **WHEN** one reference to a pack is false but another active reference reaches
+  the same pack
+- **THEN** LunaPack prompts that pack's unresolved consumer parameters once
 
 ### Requirement: Resolve project variables for pack parameters
 

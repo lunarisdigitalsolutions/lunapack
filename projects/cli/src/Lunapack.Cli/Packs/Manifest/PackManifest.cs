@@ -1,3 +1,5 @@
+using YamlDotNet.Serialization;
+
 namespace Lunapack.Cli.Packs.Manifest;
 
 internal sealed record PackManifest
@@ -15,6 +17,9 @@ internal sealed record PackManifest
     public required string Id { get; set; }
 
     public string? License { get; set; }
+
+    [YamlMember(Alias = "scripts")]
+    public Dictionary<string, PackHook>? LegacyScripts { get; set; }
 
     public List<PackManagedFile> ManagedFiles { get; set; } = [];
 
@@ -86,7 +91,9 @@ internal sealed record PackManifest
 
         public bool? Multiple { get; set; }
 
-        public bool Required { get; set; }
+        public bool? Required { get; set; }
+
+        public string? RequiredWhen { get; set; }
 
         public required string Type { get; set; }
 
@@ -129,6 +136,8 @@ internal sealed record PackManifest
 
     internal sealed record PackReference
     {
+        public string? Condition { get; set; }
+
         public List<string> DisabledHooks { get; set; } = [];
 
         public required string Id { get; set; }

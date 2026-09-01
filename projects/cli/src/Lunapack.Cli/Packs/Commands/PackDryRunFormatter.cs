@@ -1,3 +1,4 @@
+using Lunapack.Cli.Catalog;
 using Lunapack.Cli.Packs.ExternalSources;
 using Lunapack.Cli.Packs.Lifecycle;
 using Lunapack.Cli.Packs.ManagedFiles;
@@ -22,6 +23,10 @@ internal static class PackDryRunFormatter
             "[bold]Install plan[/]",
             $"[cyan]*[/] Selected release  [bold]{Markup.Escape(dryRun.SelectedRelease.Id)}@{Markup.Escape(selectedVersion)}[/]",
         };
+        if (dryRun.SourceSelection is not null)
+        {
+            lines.Add(FormatSourceSelection(dryRun.SourceSelection));
+        }
         AddSection(
             lines,
             "External sources",
@@ -48,7 +53,14 @@ internal static class PackDryRunFormatter
         }
         else
         {
-            lines.AddRange(outcomes.Select(FormatOutcome));
+            foreach (var outcome in outcomes)
+            {
+                lines.Add(FormatOutcome(outcome));
+                if (outcome.SourceSelection is not null)
+                {
+                    lines.Add(FormatSourceSelection(outcome.SourceSelection));
+                }
+            }
         }
 
         AddSection(lines, "External sources", FormatExternalSources(updatePlan.ExternalSources));
@@ -78,6 +90,9 @@ internal static class PackDryRunFormatter
         AddSection(lines, "File changes", FormatFileChanges(updatePlan));
         return lines;
     }
+
+    internal static string FormatSourceSelection(PackSourceSelection selection) =>
+        $"[cyan]>[/] Selected source   [bold]{Markup.Escape(selection.SourceName)}[/] ({Markup.Escape(selection.SourceType)})";
 
     private static void AddSection(List<string> lines, string heading, IEnumerable<string> content)
     {

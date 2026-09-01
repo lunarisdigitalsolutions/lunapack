@@ -107,7 +107,8 @@ internal sealed class PackAuthoringValidationService(
     {
         var variables = manifest
             .Parameters.Where(parameter =>
-                parameter.Value.Required && parameter.Value.Default is null
+                (parameter.Value.Required is true || parameter.Value.RequiredWhen is not null)
+                && parameter.Value.Default is null
             )
             .ToDictionary(
                 parameter => parameter.Key,

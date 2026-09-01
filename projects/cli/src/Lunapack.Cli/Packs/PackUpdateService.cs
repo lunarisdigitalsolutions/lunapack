@@ -22,7 +22,8 @@ internal sealed class PackUpdateService(
         bool dryRun = false,
         ScriptExecutionMode? scriptMode = null,
         bool skipInstructions = false,
-        bool acceptSources = false
+        bool acceptSources = false,
+        PackParameterPromptCallback? promptParameters = null
     ) =>
         await UpdateAsync(
             projectDirectory,
@@ -31,7 +32,8 @@ internal sealed class PackUpdateService(
             dryRun,
             scriptMode ?? ScriptExecutionMode.Prompt,
             skipInstructions,
-            acceptSources
+            acceptSources,
+            promptParameters
         );
 
     public async Task<UpdateResult> UpdateSelectedAsync(
@@ -40,7 +42,8 @@ internal sealed class PackUpdateService(
         bool dryRun = false,
         ScriptExecutionMode? scriptMode = null,
         bool skipInstructions = false,
-        bool acceptSources = false
+        bool acceptSources = false,
+        PackParameterPromptCallback? promptParameters = null
     ) =>
         await UpdateAsync(
             projectDirectory,
@@ -49,7 +52,8 @@ internal sealed class PackUpdateService(
             dryRun,
             scriptMode ?? ScriptExecutionMode.Prompt,
             skipInstructions,
-            acceptSources
+            acceptSources,
+            promptParameters
         );
 
     private async Task<UpdateResult> UpdateAsync(
@@ -59,7 +63,8 @@ internal sealed class PackUpdateService(
         bool dryRun,
         ScriptExecutionMode scriptMode,
         bool skipInstructions,
-        bool acceptSources
+        bool acceptSources,
+        PackParameterPromptCallback? promptParameters
     )
     {
         var loadedState = await projectStateStore.LoadAsync(projectDirectory);
@@ -79,6 +84,8 @@ internal sealed class PackUpdateService(
             return UpdateResult.Failure(catalog.Error ?? "Unable to browse pack sources.");
         }
 
+        var cachedPromptParameters = CachePromptedParameters(promptParameters);
+
         return packReference is { } reference
             ? await UpdateNamedAsync(
                 projectDirectory,
@@ -88,7 +95,8 @@ internal sealed class PackUpdateService(
                 dryRun,
                 scriptMode,
                 skipInstructions,
-                acceptSources
+                acceptSources,
+                cachedPromptParameters
             )
             : await UpdateAllAsync(
                 projectDirectory,
@@ -98,8 +106,40 @@ internal sealed class PackUpdateService(
                 dryRun,
                 scriptMode,
                 skipInstructions,
-                acceptSources
+                acceptSources,
+                cachedPromptParameters
             );
+    }
+
+    internal static PackParameterPromptCallback? CachePromptedParameters(
+        PackParameterPromptCallback? promptParameters
+    )
+    {
+        if (promptParameters is null)
+        {
+            return null;
+        }
+
+        var cached = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+        return prompts =>
+        {
+            var missing = prompts.Where(prompt => !cached.ContainsKey(prompt.Id)).ToList();
+            if (missing.Count > 0)
+            {
+                foreach (var (name, values) in promptParameters(missing))
+                {
+                    cached[name] = values;
+                }
+            }
+
+            return prompts
+                .Where(prompt => cached.ContainsKey(prompt.Id))
+                .ToDictionary(
+                    prompt => prompt.Id,
+                    prompt => cached[prompt.Id],
+                    StringComparer.Ordinal
+                );
+        };
     }
 
     private async Task<UpdateResult> UpdateNamedAsync(
@@ -110,7 +150,8 @@ internal sealed class PackUpdateService(
         bool dryRun,
         ScriptExecutionMode scriptMode,
         bool skipInstructions,
-        bool acceptSources
+        bool acceptSources,
+        PackParameterPromptCallback? promptParameters
     )
     {
         var selectedUpdate = SelectNamedUpdate(state, catalog, packReference);
@@ -138,7 +179,8 @@ internal sealed class PackUpdateService(
             update.RequestedRoot.Id,
             update.CurrentPack.Version,
             update.SelectedPack.Manifest.Version,
-            IsCurrent: false
+            IsCurrent: false,
+            update.SourceSelection
         );
         if (update.IsCurrent)
         {
@@ -150,7 +192,8 @@ internal sealed class PackUpdateService(
                 dryRun,
                 scriptMode,
                 skipInstructions,
-                acceptSources
+                acceptSources,
+                promptParameters
             );
             if (previewResult is not null)
             {
@@ -167,6 +210,7 @@ internal sealed class PackUpdateService(
             scriptMode,
             skipInstructions,
             acceptSources,
+            promptParameters,
             update.SourceSwitch
         );
     }
@@ -181,7 +225,8 @@ internal sealed class PackUpdateService(
                         update.RequestedRoot.Id,
                         update.CurrentPack.Version,
                         update.SelectedPack.Manifest.Version,
-                        IsCurrent: true
+                        IsCurrent: true,
+                        update.SourceSelection
                     ),
                 ],
                 dryRun ? new PackUpdatePlan([]) : null
@@ -212,7 +257,8 @@ internal sealed class PackUpdateService(
         bool dryRun,
         ScriptExecutionMode scriptMode,
         bool skipInstructions,
-        bool acceptSources
+        bool acceptSources,
+        PackParameterPromptCallback? promptParameters
     )
     {
         var preview = await ApplyAsync(
@@ -223,7 +269,8 @@ internal sealed class PackUpdateService(
             dryRun: true,
             scriptMode,
             skipInstructions,
-            acceptSources
+            acceptSources,
+            promptParameters
         );
         if (preview.Error is not null || preview.IsLifecycleFailure)
         {
@@ -300,7 +347,8 @@ internal sealed class PackUpdateService(
                 selection.Candidate,
                 nextRequestedRoot,
                 isCurrent.Value,
-                selection.SourceSwitch
+                selection.SourceSwitch,
+                PackCatalog.GetSourceSelection(catalog, selection.Candidate)
             )
         );
     }
@@ -328,7 +376,8 @@ internal sealed class PackUpdateService(
         bool dryRun,
         ScriptExecutionMode scriptMode,
         bool skipInstructions,
-        bool acceptSources
+        bool acceptSources,
+        PackParameterPromptCallback? promptParameters
     )
     {
         var selectedUpdates = SelectVersionUpdates(state, catalog, selectedUpdateIds);
@@ -360,7 +409,7 @@ internal sealed class PackUpdateService(
                 versionUpdateIds.Contains(root.Id) ? root with { Version = null } : root
             )
             .ToList();
-        var outcomes = CreateUpdateOutcomes(updates);
+        var outcomes = CreateUpdateOutcomes(updates, catalog);
         if (externalRefreshRoots.Count > 0)
         {
             var previewResult = await PreviewExternalRefreshAsync(
@@ -373,7 +422,8 @@ internal sealed class PackUpdateService(
                 dryRun,
                 scriptMode,
                 skipInstructions,
-                acceptSources
+                acceptSources,
+                promptParameters
             );
             if (previewResult is not null)
             {
@@ -389,7 +439,8 @@ internal sealed class PackUpdateService(
             dryRun,
             scriptMode,
             skipInstructions,
-            acceptSources
+            acceptSources,
+            promptParameters
         );
     }
 
@@ -417,14 +468,16 @@ internal sealed class PackUpdateService(
     }
 
     private static List<UpdateOutcome> CreateUpdateOutcomes(
-        IEnumerable<AvailablePackUpdate> updates
+        IEnumerable<AvailablePackUpdate> updates,
+        IReadOnlyList<CatalogPack> catalog
     ) =>
         [
             .. updates.Select(update => new UpdateOutcome(
                 update.RequestedRoot.Id,
                 update.Current.Version,
                 update.Latest.Manifest.Version,
-                IsCurrent: false
+                IsCurrent: false,
+                PackCatalog.GetSourceSelection(catalog, update.Latest)
             )),
         ];
 
@@ -453,7 +506,8 @@ internal sealed class PackUpdateService(
         bool dryRun,
         ScriptExecutionMode scriptMode,
         bool skipInstructions,
-        bool acceptSources
+        bool acceptSources,
+        PackParameterPromptCallback? promptParameters
     )
     {
         var externalOutcomes = externalRefreshRoots
@@ -473,7 +527,8 @@ internal sealed class PackUpdateService(
             dryRun: true,
             scriptMode,
             skipInstructions,
-            acceptSources
+            acceptSources,
+            promptParameters
         );
         if (preview.Error is not null || preview.IsLifecycleFailure)
         {
@@ -504,6 +559,7 @@ internal sealed class PackUpdateService(
         ScriptExecutionMode scriptMode,
         bool skipInstructions,
         bool acceptSources,
+        PackParameterPromptCallback? promptParameters,
         LockedSourceUpdateSelector.SourceSwitch? proposedSourceSwitch = null
     )
     {
@@ -517,6 +573,24 @@ internal sealed class PackUpdateService(
             SkipInstructions = skipInstructions,
             AcceptSources = acceptSources,
         };
+        if (promptParameters is not null)
+        {
+            var parameters = await packLifecycleService.PromptUpdateParametersAsync(
+                projectDirectory,
+                selectedRequestedRoots,
+                updateRequest,
+                promptParameters
+            );
+            if (parameters.Value is not { } promptedValues)
+            {
+                return UpdateResult.Failure(
+                    parameters.Error ?? "Unable to resolve update parameters."
+                );
+            }
+
+            updateRequest = updateRequest with { ParameterValues = promptedValues };
+        }
+
         if (dryRun)
         {
             var plannedUpdate = await packLifecycleService.DryRunUpdateAsync(
@@ -564,7 +638,8 @@ internal sealed class PackUpdateService(
         string Id,
         string CurrentVersion,
         string SelectedVersion,
-        bool IsCurrent
+        bool IsCurrent,
+        PackSourceSelection? SourceSelection = null
     );
 
     private sealed record NamedPackUpdate(
@@ -573,6 +648,7 @@ internal sealed class PackUpdateService(
         CatalogPack SelectedPack,
         ProjectConfiguration.RequestedPack NextRequestedRoot,
         bool IsCurrent,
-        LockedSourceUpdateSelector.SourceSwitch? SourceSwitch
+        LockedSourceUpdateSelector.SourceSwitch? SourceSwitch,
+        PackSourceSelection? SourceSelection
     );
 }

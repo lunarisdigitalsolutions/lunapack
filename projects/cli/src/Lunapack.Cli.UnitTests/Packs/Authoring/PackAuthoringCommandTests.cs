@@ -564,6 +564,21 @@ public sealed class PackAuthoringCommandTests
     }
 
     [Test]
+    public async Task SetReference_WhenConditionProvided_PersistsCondition()
+    {
+        using var workspace = await CreateInitializedWorkspaceAsync();
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["pack", "set", "reference", "dependency", "1.0.0", "--condition", "includeDependency"],
+            workspace.Path
+        );
+        var manifest = await LoadAsync(workspace);
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(manifest.Packs.Single().Condition).IsEqualTo("includeDependency");
+    }
+
+    [Test]
     public async Task HookCommands_WhenCommandAndFileScriptsAdded_PreserveLiteralArguments()
     {
         using var workspace = await CreateInitializedWorkspaceAsync();
@@ -880,6 +895,52 @@ public sealed class PackAuthoringCommandTests
             .IsEquivalentTo(new List<string> { "docker", "api" });
         await Assert.That(console.Output).Contains("docker, api");
         await Assert.That(console.Output).Contains("[docker, api]");
+    }
+
+    [Test]
+    public async Task Parameter_WhenRequiredWhenAuthored_PersistsExpressionInDefinitionOrder()
+    {
+        using var workspace = await CreateInitializedWorkspaceAsync();
+        var firstExit = await workspace.Application.RunAsync(
+            ["pack", "set", "parameter", "includeApi", "bool", "--default", "true"],
+            workspace.Path
+        );
+        var secondExit = await workspace.Application.RunAsync(
+            ["pack", "set", "parameter", "apiName", "string", "--required-when", "includeApi"],
+            workspace.Path
+        );
+        var manifest = await LoadAsync(workspace);
+
+        await Assert.That(firstExit).IsEqualTo(0);
+        await Assert.That(secondExit).IsEqualTo(0);
+        await Assert.That(manifest.Parameters.Keys).IsEquivalentTo(["includeApi", "apiName"]);
+        await Assert.That(manifest.Parameters["apiName"].Required).IsNull();
+        await Assert.That(manifest.Parameters["apiName"].RequiredWhen).IsEqualTo("includeApi");
+    }
+
+    [Test]
+    public async Task Parameter_WhenRequiredAndRequiredWhenSpecified_PreservesManifestBytes()
+    {
+        using var workspace = await CreateInitializedWorkspaceAsync();
+        var manifestPath = Path.Combine(workspace.Path, PackManifestStore.FileName);
+        var original = File.ReadAllText(manifestPath);
+
+        var exitCode = await workspace.Application.RunAsync(
+            [
+                "pack",
+                "set",
+                "parameter",
+                "apiName",
+                "string",
+                "--required",
+                "--required-when",
+                "includeApi",
+            ],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(File.ReadAllText(manifestPath)).IsEqualTo(original);
     }
 
     [Test]

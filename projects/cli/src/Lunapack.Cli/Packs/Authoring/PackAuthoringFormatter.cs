@@ -34,12 +34,16 @@ internal static class PackAuthoringFormatter
             hooks.AddRow(Markup.Escape(eventName));
         }
 
-        var parameters = CreateTable("Parameters", "ID", "Type", "Values", "Default");
-        var orderedParameters = manifest.Parameters.OrderBy(
-            item => item.Key,
-            StringComparer.Ordinal
+        var parameters = CreateTable(
+            "Parameters",
+            "ID",
+            "Type",
+            "Values",
+            "Default",
+            "Required",
+            "Required when"
         );
-        foreach (var (name, parameter) in orderedParameters)
+        foreach (var (name, parameter) in manifest.Parameters)
         {
             parameters.AddRow(
                 Markup.Escape(name),
@@ -47,7 +51,9 @@ internal static class PackAuthoringFormatter
                 Markup.Escape(
                     parameter.Values is { Count: > 0 } ? string.Join(", ", parameter.Values) : "-"
                 ),
-                Markup.Escape(FormatParameterDefault(parameter.Default))
+                Markup.Escape(FormatParameterDefault(parameter.Default)),
+                parameter.Required is true ? "yes" : "no",
+                Markup.Escape(parameter.RequiredWhen ?? "-")
             );
         }
 

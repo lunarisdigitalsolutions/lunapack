@@ -16,6 +16,7 @@ internal sealed class ValidatePackCommandHandler(
         var packReferenceArgument = new Argument<string>("pack-reference")
         {
             Description = "Pack ID, optionally followed by @version.",
+            HelpName = "pack-reference",
         };
         packReferenceArgument.CompletionSources.Add(completionProvider.GetAvailablePackIds);
         var command = new Command("validate", "Validate a pack in configured sources.")
