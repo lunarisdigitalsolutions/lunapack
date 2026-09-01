@@ -61,7 +61,7 @@ public sealed class PackTemplateRendererTests
     [Test]
     public async Task Render_WhenTemplateUsesCurrentDate_RendersCurrentYear()
     {
-        var fileSystem = CreateFileSystem("{{ date.now.year }}");
+        var fileSystem = CreateFileSystem("{{ date.now | date.to_string \"%Y\" }}");
         var result = new PackTemplateRenderer(fileSystem).Render(
             TemplatePath,
             true,

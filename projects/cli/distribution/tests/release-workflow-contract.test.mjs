@@ -352,6 +352,19 @@ test('Scenario_PreviewWorkflow_PublishesOnlyNuGetForCliChangesOnMain', () => {
   assert.match(releaseJob, /needs: \[plan, build\]/)
   assert.match(releaseJob, /environment: Release/)
   assert.match(workflow, /cancel-in-progress: false/)
+  assert.match(
+    planJob,
+    /git tag --points-at HEAD \| Where-Object \{ \$_ -cmatch \$stableTagPattern \}/
+  )
+  assert.match(
+    planJob,
+    /should-release: \$\{\{ steps\.trigger\.outputs\.should-release \}\}/
+  )
+  assert.match(
+    buildJob,
+    /if: \$\{\{ needs\.plan\.outputs\.should-release == 'true' \}\}/
+  )
+  assert.match(releaseJob, /needs\.plan\.outputs\.should-release == 'true'/)
   assert.match(planJob, /-preview\\\.\(0\|\[1-9\]\[0-9\]\*\)/)
   assert.match(
     releaseNuGetAction,

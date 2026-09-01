@@ -75,6 +75,10 @@ Create a new architecture decision record from the [MADR-based template](templat
 | [ADR-0069](0069-revalidate-git-source-cache-entries.md)                         | Revalidate project-local Git cache entries before using derived pack metadata.          |
 | [ADR-0070][adr-0070]                                                            | Bind privileged workflows to trusted input provenance.                                  |
 | [ADR-0071][adr-0071]                                                            | Reject filesystem aliases at snapshot and project mutation boundaries.                  |
+| [ADR-0072][adr-0072]                                                            | Share parameter conditions across managed files and lifecycle hooks.                    |
+| [ADR-0073][adr-0073]                                                            | Prefer stable tag releases over same-commit previews.                                   |
 
 [adr-0070]: 0070-bind-privileged-workflows-to-trusted-provenance.md
 [adr-0071]: 0071-reject-filesystem-aliases-at-mutation-boundaries.md
+[adr-0072]: 0072-share-conditions-across-pack-declarations.md
+[adr-0073]: 0073-prefer-stable-tags-over-same-commit-previews.md

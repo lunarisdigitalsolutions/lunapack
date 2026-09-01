@@ -130,6 +130,59 @@ public sealed class LifecycleHookPlannerTests
     }
 
     [Test]
+    public async Task Plan_WhenHookConditionsCheckDefault_SelectsMatchingDeclarations()
+    {
+        using var workspace = new TestWorkspace();
+        var pack = CreatePack(
+            workspace.Path,
+            "example",
+            new PackManifest.PackHooks
+            {
+                PreInstall =
+                [
+                    new PackManifest.PackHook
+                    {
+                        Type = "script",
+                        Command = "customized",
+                        Condition = "!isDefault(companyName)",
+                    },
+                    new PackManifest.PackHook
+                    {
+                        Type = "instruction",
+                        File = "instructions/customize.md",
+                        Condition = "isDefault(companyName)",
+                    },
+                ],
+            }
+        );
+        AddInstructionFiles(pack, "customize.md");
+        var entry = CreateEntry(PackLifecyclePlan.ChangeKind.Install, pack);
+        var parameters = new ResolvedPackParameters(
+            new Dictionary<string, PackParameterDefinition>(StringComparer.Ordinal)
+            {
+                ["companyName"] = new(
+                    PackParameterType.String,
+                    false,
+                    [],
+                    Default: "Your Organization"
+                ),
+            },
+            new Dictionary<string, ResolvedPackParameterValue>(StringComparer.Ordinal)
+            {
+                ["companyName"] = new(PackParameterType.String, "Your Organization", false),
+            }
+        );
+
+        var result = new LifecycleHookPlanner(new FileSystem()).PlanPreMutation(
+            new PackLifecyclePlan([entry], [entry], []),
+            parameters
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue().Because(result.Error ?? string.Empty);
+        await Assert.That(result.RequireValue().Single().Instruction).IsNotNull();
+    }
+
+    [Test]
     public async Task Plan_WhenEventDisabled_SuppressesAllTypedHooks()
     {
         using var workspace = new TestWorkspace();

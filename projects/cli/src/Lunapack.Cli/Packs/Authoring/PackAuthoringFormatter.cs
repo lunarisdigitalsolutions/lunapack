@@ -71,9 +71,7 @@ internal static class PackAuthoringFormatter
                 position.ToString(CultureInfo.InvariantCulture),
                 Markup.Escape(hook.Type),
                 Markup.Escape(
-                    isInstruction
-                        ? $"{hook.File ?? "-"}; templating: {(hook.Templating == true ? "enabled" : "disabled")}"
-                        : $"{FormatInvocation(hook)}; description: {hook.Description ?? "-"}"
+                    $"{(isInstruction ? $"{hook.File ?? "-"}; templating: {(hook.Templating == true ? "enabled" : "disabled")}" : $"{FormatInvocation(hook)}; description: {hook.Description ?? "-"}")}; condition: {hook.Condition ?? "-"}"
                 )
             );
         }

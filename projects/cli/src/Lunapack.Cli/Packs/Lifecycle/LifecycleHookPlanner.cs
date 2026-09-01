@@ -48,6 +48,20 @@ internal sealed class LifecycleHookPlanner(IFileSystem fileSystem)
             for (var index = 0; index < declarations.Count; index++)
             {
                 var declaration = declarations[index];
+                var included = IsIncluded(declaration, parameters);
+                if (!included.IsSuccess)
+                {
+                    return ManifestOperationResult<IReadOnlyList<LifecycleHookInvocation>>.Failure(
+                        included.Error
+                            ?? $"Unable to evaluate {ToManifestValue(hook.Value)} hook condition."
+                    );
+                }
+
+                if (!included.Value)
+                {
+                    continue;
+                }
+
                 if (string.Equals(declaration.Type, "instruction", StringComparison.Ordinal))
                 {
                     if (skipInstructions)
@@ -69,6 +83,24 @@ internal sealed class LifecycleHookPlanner(IFileSystem fileSystem)
         }
 
         return ManifestOperationResult<IReadOnlyList<LifecycleHookInvocation>>.Success(invocations);
+    }
+
+    private static ManifestOperationResult<bool> IsIncluded(
+        PackManifest.PackHook declaration,
+        ResolvedPackParameters parameters
+    )
+    {
+        if (declaration.Condition is not { } condition)
+        {
+            return ManifestOperationResult<bool>.Success(true);
+        }
+
+        var parsed = ManagedFileConditionParser.Parse(condition, parameters.Declarations);
+        return parsed.Value is { } parsedCondition
+            ? ManifestOperationResult<bool>.Success(parsedCondition.Evaluate(parameters.Values))
+            : ManifestOperationResult<bool>.Failure(
+                parsed.Error ?? "Unable to parse lifecycle hook condition."
+            );
     }
 
     private ManifestOperationResult<LifecycleHookInvocation> PlanDeclaration(

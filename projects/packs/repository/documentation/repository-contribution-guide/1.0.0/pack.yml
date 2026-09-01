@@ -7,15 +7,17 @@ tags: [contributing, documentation, governance]
 parameters:
   projectName:
     type: string
-    default: Your project
+    required: true
     displayName: Project name
   setupCommand:
     type: string
-    default: TODO - add setup command
+    required: false
+    default: TODO
     displayName: Setup command
   validationCommand:
     type: string
-    default: TODO - add validation command
+    required: false
+    default: TODO
     displayName: Validation command
   securityUrl:
     type: string
@@ -33,3 +35,4 @@ hooks:
   postInstall:
     - type: instruction
       file: instructions/customize.md
+      condition: isDefault(securityUrl) || isDefault(supportUrl)

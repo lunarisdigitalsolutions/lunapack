@@ -69,7 +69,7 @@ managedFiles:
 A template can use resolved parameter names and Scriban date functions:
 
 ```scriban
-Copyright {{ date.now.year }} {{ companyName }}
+Copyright {{ date.now | date.to_string "%Y" }} {{ companyName }}
 Project type: {{ projectType }}
 {{ if features contains "docker" }}Docker support enabled{{ end }}
 ```

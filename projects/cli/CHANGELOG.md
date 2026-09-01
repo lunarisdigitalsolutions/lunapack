@@ -7,6 +7,13 @@ pack-package, documentation, CI, build, test, and release-process changes.
 
 Update this section before creating a release tag.
 
+### Conditional Hooks
+
+- Managed-file selectors and lifecycle hooks now support
+  `isDefault(parameterName)` conditions. Conditional hooks are omitted before
+  instruction loading or script authorization, and `luna pack add hook`
+  accepts `--condition` or `-c`.
+
 ## Version 1.3.0 - 2026-08-31
 
 ### Completions

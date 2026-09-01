@@ -7,20 +7,22 @@ tags: [github, community, governance]
 parameters:
   projectName:
     type: string
-    default: Your project
+    required: true
     displayName: Project name
-  contact:
+  projectEmail:
     type: string
-    default: maintainers@example.com
-    displayName: Community contact
+    required: true
+    displayName: Project contact
   securityUrl:
     type: string
-    default: https://example.com/security
+    required: true
     displayName: Private security reporting URL
+    description: Private URL for security researchers to report vulnerabilities.
   supportUrl:
     type: string
-    default: https://example.com/support
+    required: true
     displayName: Support URL
+    description: Public support URL for users to report issues or request help.
 managedFiles:
   - source: targets/CODE_OF_CONDUCT.md
     target: CODE_OF_CONDUCT.md
@@ -31,7 +33,3 @@ managedFiles:
   - source: targets/SUPPORT.md
     target: SUPPORT.md
     template: true
-hooks:
-  postInstall:
-    - type: instruction
-      file: instructions/customize.md

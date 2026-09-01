@@ -569,7 +569,18 @@ public sealed class PackAuthoringCommandTests
         using var workspace = await CreateInitializedWorkspaceAsync();
 
         var commandExit = await workspace.Application.RunAsync(
-            ["pack", "add", "hook", "script", "command", "postInstall", "npm", "install"],
+            [
+                "pack",
+                "add",
+                "hook",
+                "script",
+                "command",
+                "postInstall",
+                "npm",
+                "install",
+                "--condition",
+                "includeNode",
+            ],
             workspace.Path
         );
         var fileExit = await workspace.Application.RunAsync(
@@ -583,6 +594,8 @@ public sealed class PackAuthoringCommandTests
                 @"scripts\setup.ps1",
                 "pwsh",
                 "-NoProfile",
+                "--condition",
+                "includeSetup",
             ],
             workspace.Path
         );
@@ -600,8 +613,10 @@ public sealed class PackAuthoringCommandTests
             ?? throw new InvalidOperationException("Pre-install hooks were not persisted.");
         await Assert.That(postInstall.Single().Command).IsEqualTo("npm");
         await Assert.That(postInstall.Single().Arguments).IsEquivalentTo(["install"]);
+        await Assert.That(postInstall.Single().Condition).IsEqualTo("includeNode");
         await Assert.That(preInstall.Single().File).IsEqualTo("scripts/setup.ps1");
         await Assert.That(preInstall.Single().Runner).IsEqualTo("pwsh");
+        await Assert.That(preInstall.Single().Condition).IsEqualTo("includeSetup");
     }
 
     [Test]
@@ -621,6 +636,8 @@ public sealed class PackAuthoringCommandTests
                 "preInstall",
                 @"instructions\setup.md",
                 "--templating",
+                "--condition",
+                "isDefault(securityUrl)",
             ],
             workspace.Path
         );
@@ -652,6 +669,7 @@ public sealed class PackAuthoringCommandTests
         await Assert.That(preInstall[0].File).IsEqualTo("scripts/setup.ps1");
         await Assert.That(preInstall[1].File).IsEqualTo("instructions/setup.md");
         await Assert.That(preInstall[1].Templating).IsTrue();
+        await Assert.That(preInstall[1].Condition).IsEqualTo("isDefault(securityUrl)");
     }
 
     [Test]
@@ -972,6 +990,21 @@ public sealed class PackAuthoringCommandTests
 
         await Assert.That(exitCode).IsEqualTo(1);
         await Assert.That(console.Output).Contains("source file 'missing.md' is unavailable");
+    }
+
+    [Test]
+    public async Task Validate_WhenTemplateUsesRequiredParameter_SucceedsWithValidationValue()
+    {
+        using var workspace = new TestWorkspace();
+        File.WriteAllText(
+            Path.Combine(workspace.Path, PackManifestStore.FileName),
+            "id: example\nversion: 1.0.0\nauthor: Example\nlicense: MIT\nparameters:\n  companyName:\n    type: string\n    required: true\nmanagedFiles:\n  - source: NOTICE.md\n    target: generated/NOTICE.md\n    template: true\n"
+        );
+        File.WriteAllText(Path.Combine(workspace.Path, "NOTICE.md"), "{{ companyName }}");
+
+        var exitCode = await workspace.Application.RunAsync(["pack", "validate"], workspace.Path);
+
+        await Assert.That(exitCode).IsEqualTo(0);
     }
 
     [Test]

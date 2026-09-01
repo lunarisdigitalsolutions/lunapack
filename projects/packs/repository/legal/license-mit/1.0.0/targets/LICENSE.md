@@ -1,6 +1,6 @@
 The MIT License (MIT)
 
-Copyright (c) {{ date.now.year }} {{ companyName }}
+Copyright (c) {{ date.now | date.to_string "%Y" }} {{ companyName }}
 
 All rights reserved.
 

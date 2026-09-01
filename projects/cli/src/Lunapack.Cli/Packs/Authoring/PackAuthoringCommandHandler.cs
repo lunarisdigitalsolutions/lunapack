@@ -503,6 +503,10 @@ internal sealed class PackAuthoringCommandHandler(
             Arity = ArgumentArity.ZeroOrMore,
         };
         var descriptionOption = new Option<string?>("--description", "-d");
+        var conditionOption = new Option<string?>("--condition", "-c")
+        {
+            Description = "Include the hook only when the parameter condition is true.",
+        };
         var replaceOption = new Option<int?>("--replace")
         {
             Description = "One-based event position to replace.",
@@ -513,6 +517,7 @@ internal sealed class PackAuthoringCommandHandler(
             executableArgument,
             argumentsArgument,
             descriptionOption,
+            conditionOption,
             replaceOption,
         };
         command.SetAction(async parseResult =>
@@ -532,6 +537,7 @@ internal sealed class PackAuthoringCommandHandler(
                     Type = "script",
                     Command = executable,
                     Arguments = [.. parseResult.GetValue(argumentsArgument) ?? []],
+                    Condition = parseResult.GetValue(conditionOption),
                     Description = parseResult.GetValue(descriptionOption),
                 },
                 parseResult.GetValue(replaceOption)
@@ -554,6 +560,10 @@ internal sealed class PackAuthoringCommandHandler(
             Arity = ArgumentArity.ZeroOrMore,
         };
         var descriptionOption = new Option<string?>("--description", "-d");
+        var conditionOption = new Option<string?>("--condition", "-c")
+        {
+            Description = "Include the hook only when the parameter condition is true.",
+        };
         var replaceOption = new Option<int?>("--replace")
         {
             Description = "One-based event position to replace.",
@@ -565,6 +575,7 @@ internal sealed class PackAuthoringCommandHandler(
             runnerArgument,
             argumentsArgument,
             descriptionOption,
+            conditionOption,
             replaceOption,
         };
         command.SetAction(async parseResult =>
@@ -596,6 +607,7 @@ internal sealed class PackAuthoringCommandHandler(
                     File = normalizedFile,
                     Runner = runner,
                     Arguments = [.. parseResult.GetValue(argumentsArgument) ?? []],
+                    Condition = parseResult.GetValue(conditionOption),
                     Description = parseResult.GetValue(descriptionOption),
                 },
                 parseResult.GetValue(replaceOption)
@@ -616,6 +628,10 @@ internal sealed class PackAuthoringCommandHandler(
         {
             Description = "Render instruction content with Scriban.",
         };
+        var conditionOption = new Option<string?>("--condition", "-c")
+        {
+            Description = "Include the hook only when the parameter condition is true.",
+        };
         var replaceOption = new Option<int?>("--replace")
         {
             Description = "One-based event position to replace.",
@@ -625,6 +641,7 @@ internal sealed class PackAuthoringCommandHandler(
             hookArgument,
             fileArgument,
             templatingOption,
+            conditionOption,
             replaceOption,
         };
         command.SetAction(async parseResult =>
@@ -650,6 +667,7 @@ internal sealed class PackAuthoringCommandHandler(
                 {
                     Type = "instruction",
                     File = normalizedFile,
+                    Condition = parseResult.GetValue(conditionOption),
                     Templating = parseResult.GetValue(templatingOption),
                 },
                 parseResult.GetValue(replaceOption)

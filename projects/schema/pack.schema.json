@@ -96,6 +96,10 @@
           "minLength": 1,
           "pattern": "^(?![\\\\/])(?![A-Za-z]:[\\\\/])(?!.*(?:^|[\\\\/])\\.\\.(?:[\\\\/]|$)).+\\.md$"
         },
+        "condition": {
+          "type": "string",
+          "minLength": 1
+        },
         "templating": {
           "type": "boolean",
           "default": false
@@ -457,6 +461,10 @@
           }
         },
         "command": {
+          "type": "string",
+          "minLength": 1
+        },
+        "condition": {
           "type": "string",
           "minLength": 1
         },

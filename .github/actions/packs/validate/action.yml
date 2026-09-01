@@ -1,0 +1,111 @@
+name: Validate packs
+description: Build the Luna CLI and validate every pack in the repository.
+
+runs:
+  using: composite
+  steps:
+    - name: Set up .NET SDK
+      uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      with:
+        global-json-file: global.json
+
+    - name: Build Luna CLI
+      shell: bash
+      run: |
+        set -euo pipefail
+        dotnet restore projects/cli/src/Lunapack.Cli/Lunapack.Cli.csproj \
+          --locked-mode
+        dotnet publish projects/cli/src/Lunapack.Cli/Lunapack.Cli.csproj \
+          --configuration Release \
+          --no-restore \
+          --runtime linux-x64 \
+          --self-contained \
+          -p:PublishAot=true \
+          --output "$RUNNER_TEMP/luna-cli"
+
+    - name: Validate packs
+      shell: bash
+      run: |
+        set -euo pipefail
+        luna="$RUNNER_TEMP/luna-cli/luna"
+        workspace="$RUNNER_TEMP/pack-validation"
+
+        mkdir -p "$workspace"
+        ln -s "$GITHUB_WORKSPACE/projects/packs" "$workspace/packs"
+
+        cd "$workspace"
+        "$luna" init
+        "$luna" sources add local repository packs
+
+        manifest_list="$RUNNER_TEMP/pack-manifests"
+        reference_list="$RUNNER_TEMP/pack-references"
+        find "$GITHUB_WORKSPACE/projects/packs" -name pack.yml -print0 | sort -z > "$manifest_list"
+        ruby -ryaml -e '
+          STDIN.read.split("\0").reject(&:empty?).each do |path|
+            begin
+              manifest = YAML.safe_load_file(path, aliases: false)
+              id = manifest.fetch("id")
+              version = manifest.fetch("version")
+              error = ""
+            rescue StandardError => exception
+              id = path.delete_prefix(ENV.fetch("GITHUB_WORKSPACE") + "/")
+              version = "-"
+              error = exception.message
+            end
+
+            printf("%s\0%s\0%s\0", id, version, error)
+          end
+        ' < "$manifest_list" > "$reference_list"
+
+        {
+          printf '## Pack validation\n\n'
+          printf '| Pack | Version | Status | Failure |\n'
+          printf '| --- | --- | --- | --- |\n'
+        } >> "$GITHUB_STEP_SUMMARY"
+
+        pack_count=0
+        green_count=0
+        failed_count=0
+        while IFS= read -r -d '' pack_id \
+          && IFS= read -r -d '' pack_version \
+          && IFS= read -r -d '' parse_error; do
+          pack_count=$((pack_count + 1))
+          pack_reference="$pack_id@$pack_version"
+          printf 'Validating %s\n' "$pack_reference"
+
+          if [[ -n "$parse_error" ]]; then
+            validation_error="$parse_error"
+          elif validation_output=$("$luna" validate "$pack_reference" 2>&1); then
+            green_count=$((green_count + 1))
+            printf '| `%s` | `%s` | 🟢 | |\n' \
+              "$pack_id" "$pack_version" >> "$GITHUB_STEP_SUMMARY"
+            continue
+          else
+            validation_error="$validation_output"
+          fi
+
+          failed_count=$((failed_count + 1))
+          printf '%s\n' "$validation_error" >&2
+          summary_error="${validation_error//$'\r'/}"
+          summary_error="${summary_error//|/\\|}"
+          summary_error="${summary_error//$'\n'/<br>}"
+          printf '| `%s` | `%s` | 🔴 | %s |\n' \
+            "$pack_id" "$pack_version" "$summary_error" >> "$GITHUB_STEP_SUMMARY"
+        done < "$reference_list"
+
+        if [[ "$pack_count" -eq 0 ]]; then
+          failed_count=1
+          printf '| - | - | 🔴 | No pack manifests found. |\n' >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+        {
+          printf '\n**Total:** %d packs, %d green, %d red.\n' \
+            "$pack_count" "$green_count" "$failed_count"
+        } >> "$GITHUB_STEP_SUMMARY"
+
+        if [[ "$failed_count" -gt 0 ]]; then
+          printf 'Pack validation failed for %d pack(s).\n' "$failed_count" >&2
+          exit 1
+        fi
+
+        printf 'Validated %d packs.\n' "$pack_count"

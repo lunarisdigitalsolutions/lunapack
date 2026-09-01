@@ -478,6 +478,22 @@ public sealed class ManifestSchemaTests
         await Assert
             .That(string.Join(",", hookVariants))
             .IsEqualTo("#/definitions/scriptHook,#/definitions/instructionHook");
+        await Assert
+            .That(
+                definitions
+                    .GetProperty("scriptHook")
+                    .GetProperty("properties")
+                    .TryGetProperty("condition", out _)
+            )
+            .IsTrue();
+        await Assert
+            .That(
+                definitions
+                    .GetProperty("instructionHook")
+                    .GetProperty("properties")
+                    .TryGetProperty("condition", out _)
+            )
+            .IsTrue();
     }
 
     [Test]

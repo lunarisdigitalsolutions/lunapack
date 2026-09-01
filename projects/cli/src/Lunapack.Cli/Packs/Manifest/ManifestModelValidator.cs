@@ -539,6 +539,11 @@ internal static partial class ManifestModelValidator
                 continue;
             }
 
+            if (hook.Condition is "")
+            {
+                issues.Add($"Lifecycle hook in '{eventName}' condition cannot be empty.");
+            }
+
             switch (hook.Type)
             {
                 case "script":

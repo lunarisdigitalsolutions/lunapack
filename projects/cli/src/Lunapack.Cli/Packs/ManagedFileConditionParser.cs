@@ -242,6 +242,14 @@ internal static class ManagedFileConditionParser
             }
 
             var negated = Match(TokenKind.Not);
+            if (
+                Current.Kind == TokenKind.Identifier
+                && string.Equals(Current.Text, "isDefault", StringComparison.Ordinal)
+            )
+            {
+                return ParseDefaultPredicate(negated);
+            }
+
             if (Current.Kind != TokenKind.Identifier)
             {
                 _error = $"Condition requires a parameter name at position {Current.Position}.";
@@ -262,6 +270,71 @@ internal static class ManagedFileConditionParser
             }
 
             return ParseBooleanParameter(parameter, negated);
+        }
+
+        private ManagedFileCondition? ParseDefaultPredicate(bool negated)
+        {
+            _position++;
+            if (!Match(TokenKind.OpenParenthesis) || Current.Kind != TokenKind.Identifier)
+            {
+                _error =
+                    $"Condition requires a parameter name in 'isDefault' at position {Current.Position}.";
+                return null;
+            }
+
+            var parameter = Current;
+            _position++;
+            if (!Match(TokenKind.CloseParenthesis))
+            {
+                _error = $"Condition requires ')' at position {Current.Position}.";
+                return null;
+            }
+
+            if (!TryGetDeclaration(parameter, null, out var declaration))
+            {
+                return null;
+            }
+
+            if (declaration.Default is null)
+            {
+                _error =
+                    $"Condition default check requires parameter '{parameter.Text}' to declare a default value.";
+                return null;
+            }
+
+            return new ManagedFileCondition(values =>
+            {
+                var isDefault =
+                    values.TryGetValue(parameter.Text, out var value)
+                    && IsDefaultValue(value, declaration);
+                return negated ? !isDefault : isDefault;
+            });
+        }
+
+        private static bool IsDefaultValue(
+            ResolvedPackParameterValue value,
+            PackParameterDefinition declaration
+        )
+        {
+            if (declaration.Type == PackParameterType.Bool)
+            {
+                return declaration.Default is bool defaultValue
+                    && value.BooleanValue == defaultValue;
+            }
+
+            if (!declaration.Multiple)
+            {
+                return declaration.Default is string defaultValue
+                    && string.Equals(value.StringValue, defaultValue, StringComparison.Ordinal);
+            }
+
+            return declaration.Default is IEnumerable<object> defaultValues
+                && value.StringValues is { } resolvedValues
+                && resolvedValues.SequenceEqual(
+                    defaultValues.OfType<string>(),
+                    StringComparer.Ordinal
+                )
+                && defaultValues.All(defaultValue => defaultValue is string);
         }
 
         private ManagedFileCondition? ParseMembership()
