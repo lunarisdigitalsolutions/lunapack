@@ -344,7 +344,7 @@ try {
     }
 
     if (Test-GitPathChanged -Path $changelogRepositoryPath) {
-        if (-not (Confirm-Action -Action "Create commit 'release: Release version $releaseVersion' containing $changelogRepositoryPath?")) {
+        if (-not (Confirm-Action -Action "Create commit 'release: Release version $releaseVersion' containing $changelogRepositoryPath")) {
             Write-Information 'Release cancelled before commit.'
             return
         }

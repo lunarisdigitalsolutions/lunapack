@@ -7,6 +7,8 @@ pack-package, documentation, CI, build, test, and release-process changes.
 
 Update this section before creating a release tag.
 
+## Version 1.4.0 - 2026-09-01
+
 ### Conditional Hooks
 
 - Managed-file selectors and lifecycle hooks now support
