@@ -20,6 +20,12 @@ Update this section before creating a release tag.
   inactive references are skipped while shared packs reached by an active path
   remain promptable.
 
+- Install and update dry runs now accept `--skip-parameters` for noninteractive
+  previews that use declared defaults and supplied values.
+- Updates now accept explicit parameters, project-variable exclusions, and
+  command target remappings. Named updates can persist provided remappings with
+  `--save-remap`.
+
 ### Source Selection
 
 - Install and update output now identifies the selected source name and type

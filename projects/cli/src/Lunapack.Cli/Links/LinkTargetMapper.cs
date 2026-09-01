@@ -42,8 +42,9 @@ internal sealed class LinkTargetMapper(IFileSystem fileSystem)
                 return Failure($"Link '{linkName}': {normalizedTarget.Error}");
             }
 
+            var invocationTarget = targetRemapping?.TryResolve(effectiveTarget);
             var configuredTarget =
-                targetRemapping?.Resolve(effectiveTarget, configuredRemapping)
+                invocationTarget
                 ?? configuredRemapping?.Resolve(effectiveTarget)
                 ?? effectiveTarget;
             var targetIsIgnored = string.Equals(
@@ -56,7 +57,10 @@ internal sealed class LinkTargetMapper(IFileSystem fileSystem)
                 continue;
             }
 
-            var remappedTarget = retainedTargets?.GetValueOrDefault(sourcePath) ?? configuredTarget;
+            var remappedTarget =
+                invocationTarget
+                ?? retainedTargets?.GetValueOrDefault(sourcePath)
+                ?? configuredTarget;
             if (claimedTargets.TryGetValue(remappedTarget, out var claimingSourcePath))
             {
                 return Failure(

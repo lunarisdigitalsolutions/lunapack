@@ -439,7 +439,7 @@ public sealed class PackUpdateCommandTests
         );
         File.WriteAllText(
             Path.Combine(dependency, "pack.yml"),
-            "id: dependency\nversion: 1.0.0\nlicense: MIT\nauthor: Example Author\nparameters:\n  branchDetail:\n    type: string\n    required: true\n    displayName: Branch detail\nmanagedFiles:\n  - source: dependency.txt\n    target: dependency.txt\n"
+            "id: dependency\nversion: 1.0.0\nlicense: MIT\nauthor: Example Author\nparameters:\n  branchDetail:\n    type: string\n    displayName: Branch detail\nmanagedFiles:\n  - source: dependency.txt\n    target: dependency.txt\n"
         );
         File.WriteAllText(Path.Combine(dependency, "dependency.txt"), "dependency");
         await ConfigureSourceAsync(workspace, "source");
@@ -460,6 +460,183 @@ public sealed class PackUpdateCommandTests
         await Assert.That(ansiConsole.Output).DoesNotContain("Branch detail");
         await Assert.That(ansiConsole.Output).Contains("dependency.txt");
         await Assert.That(await ReadStateAsync(workspace.Path)).IsEqualTo(initialState);
+        var skippedOutputStart = ansiConsole.Output.Length;
+
+        var skippedExitCode = await workspace.Application.RunAsync(
+            [
+                "update",
+                "root@2.0.0",
+                "--dry-run",
+                "--skip-parameters",
+                "--parameter",
+                "includeDependency=false",
+            ],
+            workspace.Path
+        );
+        var skippedOutput = ansiConsole.Output[skippedOutputStart..];
+
+        await Assert.That(skippedExitCode).IsEqualTo(0);
+        await Assert.That(skippedOutput).DoesNotContain("Include dependency");
+        await Assert.That(skippedOutput).DoesNotContain("Branch detail");
+        await Assert.That(skippedOutput).Contains("Delete");
+        await Assert.That(skippedOutput).Contains("dependency.txt");
+        await Assert.That(await ReadStateAsync(workspace.Path)).IsEqualTo(initialState);
+    }
+
+    [Test]
+    public async Task UpdateDryRun_WhenRequiredWhenActiveAndPromptsSkipped_ReturnsFailure()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var sourcePath = Path.Combine(workspace.Path, "source");
+        foreach (var version in new[] { "1.0.0", "2.0.0" })
+        {
+            var packDirectory = Path.Combine(sourcePath, $"root-{version}");
+            Directory.CreateDirectory(packDirectory);
+            File.WriteAllText(
+                Path.Combine(packDirectory, "pack.yml"),
+                $"id: root\nversion: {version}\nlicense: MIT\nauthor: Example Author\nparameters:\n  enabled:\n    type: bool\n    default: true\n  detail:\n    type: string\n    requiredWhen: enabled\nmanagedFiles: []\n"
+            );
+        }
+
+        await ConfigureSourceAsync(workspace, "source");
+        await workspace.Application.RunAsync(
+            ["install", "root@1.0.0", "--parameter", "detail=initial"],
+            workspace.Path
+        );
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["update", "root@2.0.0", "--dry-run", "--skip-parameters"],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(ansiConsole.Output).Contains("detail");
+    }
+
+    [Test]
+    public async Task Update_WhenNoVariablesSpecified_UsesDeclaredDefault()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = Path.Combine(workspace.Path, "source");
+        foreach (var version in new[] { "1.0.0", "2.0.0" })
+        {
+            var packDirectory = Path.Combine(sourcePath, $"root-{version}");
+            Directory.CreateDirectory(packDirectory);
+            File.WriteAllText(
+                Path.Combine(packDirectory, "pack.yml"),
+                $"id: root\nversion: {version}\nlicense: MIT\nauthor: Example Author\nparameters:\n  label:\n    type: string\n    default: fallback\nmanagedFiles:\n  - source: content.txt\n    target: output.txt\n    template: true\n"
+            );
+            File.WriteAllText(Path.Combine(packDirectory, "content.txt"), "{{ label }}");
+        }
+
+        await ConfigureSourceAsync(workspace, "source");
+        await workspace.Application.RunAsync(
+            ["variables", "set", "label", "configured"],
+            workspace.Path
+        );
+        await workspace.Application.RunAsync(["install", "root@1.0.0"], workspace.Path);
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["update", "root@2.0.0", "--no-variables"],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert
+            .That(File.ReadAllText(Path.Combine(workspace.Path, "output.txt")))
+            .IsEqualTo("fallback");
+    }
+
+    [Test]
+    public async Task Update_WhenVariableSkipped_UsesDefaultForOnlyThatParameter()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = Path.Combine(workspace.Path, "source");
+        foreach (var version in new[] { "1.0.0", "2.0.0" })
+        {
+            var packDirectory = Path.Combine(sourcePath, $"root-{version}");
+            Directory.CreateDirectory(packDirectory);
+            File.WriteAllText(
+                Path.Combine(packDirectory, "pack.yml"),
+                $"id: root\nversion: {version}\nlicense: MIT\nauthor: Example Author\nparameters:\n  first:\n    type: string\n    default: first-default\n  second:\n    type: string\n    default: second-default\nmanagedFiles:\n  - source: content.txt\n    target: output.txt\n    template: true\n"
+            );
+            File.WriteAllText(
+                Path.Combine(packDirectory, "content.txt"),
+                "{{ first }} {{ second }}"
+            );
+        }
+
+        await ConfigureSourceAsync(workspace, "source");
+        await workspace.Application.RunAsync(
+            ["variables", "set", "first", "configured-first"],
+            workspace.Path
+        );
+        await workspace.Application.RunAsync(
+            ["variables", "set", "second", "configured-second"],
+            workspace.Path
+        );
+        await workspace.Application.RunAsync(["install", "root@1.0.0"], workspace.Path);
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["update", "root@2.0.0", "--skip-variable", "first"],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert
+            .That(File.ReadAllText(Path.Combine(workspace.Path, "output.txt")))
+            .IsEqualTo("first-default configured-second");
+    }
+
+    [Test]
+    public async Task Update_WhenRemappingSaved_PersistsOnRequestedRoot()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreateVersionedPackSource(workspace.Path, "dotnet", "1.0.0", "2.0.0");
+        await ConfigureSourceAsync(workspace, sourcePath);
+        await workspace.Application.RunAsync(["install", "dotnet@1.0.0"], workspace.Path);
+
+        var exitCode = await workspace.Application.RunAsync(
+            [
+                "update",
+                "dotnet@2.0.0",
+                "--remap-file",
+                "dotnet.txt=docs/dotnet.txt",
+                "--save-remap",
+            ],
+            workspace.Path
+        );
+        var state = (await workspace.StateStore.LoadAsync(workspace.Path)).RequireValue();
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert
+            .That(File.ReadAllText(Path.Combine(workspace.Path, "docs", "dotnet.txt")))
+            .IsEqualTo("2.0.0");
+        await Assert
+            .That(state.Configuration.Packs.Single().Remap?.Files["dotnet.txt"])
+            .IsEqualTo("docs/dotnet.txt");
+    }
+
+    [Test]
+    [Arguments(new[] { "update", "dotnet", "--skip-parameters" }, "--dry-run")]
+    [Arguments(new[] { "update", "--save-remap" }, "requires")]
+    [Arguments(new[] { "update", "--remap-file", "a=b" }, "exactly one")]
+    public async Task Update_WhenConfigurationOptionsInvalid_ReturnsFailure(
+        string[] arguments,
+        string expectedError
+    )
+    {
+        var ansiConsole = new SpectreTestConsole();
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var sourcePath = CreateVersionedPackSource(workspace.Path, "dotnet", "1.0.0", "2.0.0");
+        await ConfigureSourceAsync(workspace, sourcePath);
+        await workspace.Application.RunAsync(["install", "dotnet@1.0.0"], workspace.Path);
+
+        var exitCode = await workspace.Application.RunAsync(arguments, workspace.Path);
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(ansiConsole.Output).Contains(expectedError);
     }
 
     private static async Task ConfigureSourceAsync(TestWorkspace workspace, string sourcePath)

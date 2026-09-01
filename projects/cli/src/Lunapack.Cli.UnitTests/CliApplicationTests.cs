@@ -382,6 +382,41 @@ public sealed class CliApplicationTests
         await Assert.That(ansiConsole.Output).Contains("Include dependency");
         await Assert.That(ansiConsole.Output).DoesNotContain("Branch detail");
         await Assert.That(ansiConsole.Output).DoesNotContain("dependency.txt");
+        var skippedOutputStart = ansiConsole.Output.Length;
+
+        var skippedExitCode = await workspace.Application.RunAsync(
+            [
+                "install",
+                "root",
+                "--dry-run",
+                "--skip-parameters",
+                "--parameter",
+                "branchDetail=provided",
+            ],
+            workspace.Path
+        );
+        var skippedOutput = ansiConsole.Output[skippedOutputStart..];
+
+        await Assert.That(skippedExitCode).IsEqualTo(0);
+        await Assert.That(skippedOutput).DoesNotContain("Include dependency");
+        await Assert.That(skippedOutput).DoesNotContain("Branch detail");
+        await Assert.That(skippedOutput).Contains("dependency.txt");
+    }
+
+    [Test]
+    public async Task InstallDryRun_WhenSkipAndPromptParametersSpecified_ReturnsFailure()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["install", "example", "--dry-run", "--skip-parameters", "--prompt-parameters"],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(ansiConsole.Output).Contains("--skip-parameters");
+        await Assert.That(ansiConsole.Output).Contains("--prompt-parameters");
     }
 
     [Test]

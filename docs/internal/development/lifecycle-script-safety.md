@@ -44,10 +44,11 @@ must still accept.
   lock ownership aligned with the applied mutation.
 - Uninstall hooks resolve from exact installed releases. Source-resolution
   failure emits a warning and skips hooks so removal can continue.
-- Dry runs prepare and report hooks without launching scripts, prompting for
-  trust, or entering guided instruction display. Denied rows report
-  `policy-denied` and all origins without execution warnings. `--scripts skip` and
-  `--skip-instructions` suppress only their respective hook types.
+- Dry runs prepare and report hooks without launching scripts, requesting hook
+  consent, or entering guided instruction display. Parameter prompts still run
+  before planning unless `--skip-parameters` is set. Denied rows report
+  `policy-denied` and all origins without execution warnings. `--scripts skip`
+  and `--skip-instructions` suppress only their respective hook types.
 
 ## Snapshot Object Policy
 

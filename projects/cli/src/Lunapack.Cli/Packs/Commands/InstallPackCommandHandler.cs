@@ -1,4 +1,4 @@
-﻿using System.CommandLine;
+using System.CommandLine;
 using System.IO.Abstractions;
 using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.CommandExecution;
@@ -37,6 +37,7 @@ internal sealed class InstallPackCommandHandler(
         var acceptSourcesOption = CreateAcceptSourcesOption();
         var parameterOption = CreateParameterOption();
         var promptParametersOption = CreatePromptParametersOption();
+        var skipParametersOption = CreateSkipParametersOption();
         var noVariablesOption = CreateNoVariablesOption();
         var skipVariableOption = CreateSkipVariableOption(completionProvider);
         var scriptsOption = CreateScriptsOption();
@@ -54,6 +55,7 @@ internal sealed class InstallPackCommandHandler(
             acceptSourcesOption,
             parameterOption,
             promptParametersOption,
+            skipParametersOption,
             noVariablesOption,
             skipVariableOption,
             scriptsOption,
@@ -75,6 +77,7 @@ internal sealed class InstallPackCommandHandler(
                 acceptSourcesOption,
                 parameterOption,
                 promptParametersOption,
+                skipParametersOption,
                 noVariablesOption,
                 skipVariableOption,
                 scriptsOption,
@@ -100,6 +103,7 @@ internal sealed class InstallPackCommandHandler(
         Option<bool> acceptSourcesOption,
         Option<string[]> parameterOption,
         Option<bool> promptParametersOption,
+        Option<bool> skipParametersOption,
         Option<bool> noVariablesOption,
         Option<string[]> skipVariableOption,
         Option<string?> scriptsOption,
@@ -120,6 +124,17 @@ internal sealed class InstallPackCommandHandler(
             return console.Fail(scriptMode.Error);
         }
 
+        var dryRun = parseResult.GetValue(dryRunOption);
+        var promptParameters = parseResult.GetValue(promptParametersOption);
+        var skipParameters = parseResult.GetValue(skipParametersOption);
+        if (
+            GetParameterPromptOptionError(dryRun, promptParameters, skipParameters) is
+            { } parameterPromptOptionError
+        )
+        {
+            return console.Fail(parameterPromptOptionError);
+        }
+
         var workspaceDirectory = workspaceDirectoryResolver.Resolve(
             projectDirectory,
             parseResult.GetValue(workspaceOption)
@@ -135,12 +150,12 @@ internal sealed class InstallPackCommandHandler(
                 parseResult.GetValue(saveRemapOption),
                 parseResult.GetValue(adoptExistingOption),
                 parseResult.GetValue(parameterOption) ?? [],
-                parseResult.GetValue(promptParametersOption),
+                promptParameters || (dryRun && !skipParameters),
                 parseResult.GetValue(noVariablesOption),
                 parseResult.GetValue(skipVariableOption) ?? [],
                 parsedScriptMode,
                 parseResult.GetValue(skipInstructionsOption),
-                parseResult.GetValue(dryRunOption),
+                dryRun,
                 parseResult.GetValue(noFileChangeOutputOption),
                 parseResult.GetValue(acceptSourcesOption),
                 skipInstalledRoots: packReferences.Length > 1
@@ -220,6 +235,12 @@ internal sealed class InstallPackCommandHandler(
         new("--prompt-parameters")
         {
             Description = "Prompt for every configurable pack parameter.",
+        };
+
+    private static Option<bool> CreateSkipParametersOption() =>
+        new("--skip-parameters")
+        {
+            Description = "Do not prompt for pack parameters during a dry run.",
         };
 
     private static Option<bool> CreateNoVariablesOption() =>
@@ -394,9 +415,19 @@ internal sealed class InstallPackCommandHandler(
             dryRun,
             noFileChangeOutput,
             skipInstalledRoots,
-            promptParameters || dryRun
+            promptParameters
         );
     }
+
+    private static string? GetParameterPromptOptionError(
+        bool dryRun,
+        bool promptParameters,
+        bool skipParameters
+    ) =>
+        skipParameters && !dryRun ? "The --skip-parameters option is only available with --dry-run."
+        : skipParameters && promptParameters
+            ? "The --skip-parameters and --prompt-parameters options are mutually exclusive."
+        : null;
 
     private async Task<int> RunPreparedInstallAsync(
         string workspaceDirectory,

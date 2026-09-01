@@ -168,33 +168,33 @@ internal static class PackManifestInspectionFormatter
     )
     {
         var table = CreateTable("Parameters");
-        table.AddColumn("[bold]ID[/]");
-        table.AddColumn("[bold]Display name[/]");
-        table.AddColumn("[bold]Description[/]");
-        table.AddColumn("[bold]Type[/]");
-        table.AddColumn("[bold]Multiple[/]");
-        table.AddColumn("[bold]Values[/]");
-        table.AddColumn("[bold]Default[/]");
-        table.AddColumn("[bold]Required[/]");
-        table.AddColumn("[bold]Required when[/]");
+        table.AddColumn(new TableColumn("[bold]ID[/]").NoWrap());
+        table.AddColumn(new TableColumn("[bold]Field[/]").NoWrap());
+        table.AddColumn("[bold]Value[/]");
         foreach (var parameter in parameters)
         {
             var declaration = parameter.Value;
+            var id = Markup.Escape(parameter.Key);
             table.AddRow(
-                Markup.Escape(parameter.Key),
-                Markup.Escape(declaration.DisplayName ?? parameter.Key),
-                Markup.Escape(declaration.Description ?? "-"),
-                Markup.Escape(declaration.Type),
-                declaration.Multiple == true ? "yes" : "no",
+                id,
+                "Display name",
+                Markup.Escape(declaration.DisplayName ?? parameter.Key)
+            );
+            table.AddRow(id, "Description", Markup.Escape(declaration.Description ?? "-"));
+            table.AddRow(id, "Type", Markup.Escape(declaration.Type));
+            table.AddRow(id, "Multiple", declaration.Multiple == true ? "yes" : "no");
+            table.AddRow(
+                id,
+                "Values",
                 Markup.Escape(
                     declaration.Values is { Count: > 0 }
                         ? string.Join(", ", declaration.Values)
                         : "-"
-                ),
-                Markup.Escape(FormatParameterDefault(declaration.Default)),
-                declaration.Required is true ? "yes" : "no",
-                Markup.Escape(declaration.RequiredWhen ?? "-")
+                )
             );
+            table.AddRow(id, "Default", Markup.Escape(FormatParameterDefault(declaration.Default)));
+            table.AddRow(id, "Required", declaration.Required is true ? "yes" : "no");
+            table.AddRow(id, "Required when", Markup.Escape(declaration.RequiredWhen ?? "-"));
         }
 
         return table;
@@ -213,7 +213,7 @@ internal static class PackManifestInspectionFormatter
     )
     {
         var table = CreateTable("Referenced packs");
-        table.AddColumn("[bold]ID[/]");
+        table.AddColumn(new TableColumn("[bold]ID[/]").NoWrap());
         table.AddColumn("[bold]Version[/]");
         table.AddColumn("[bold]Condition[/]");
         table.AddColumn("[bold]Disabled hooks[/]");

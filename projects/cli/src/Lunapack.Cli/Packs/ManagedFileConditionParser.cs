@@ -444,7 +444,7 @@ internal static class ManagedFileConditionParser
                 .ToHashSet(StringComparer.Ordinal);
 
         private static HashSet<string> CreateReferences(string parameter) =>
-            new HashSet<string>([parameter], StringComparer.Ordinal);
+            new([parameter], StringComparer.Ordinal);
 
         private bool TryGetDeclaration(
             Token parameter,

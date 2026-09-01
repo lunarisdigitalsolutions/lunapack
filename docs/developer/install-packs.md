@@ -22,7 +22,11 @@ luna install dotnet-project@1.0.0 --dry-run
 The dry run resolves the pack and preflights the target changes without
 modifying project files or LunaPack state. It asks for every configurable pack
 parameter before planning so conditional references, files, hooks, and sources
-reflect the selected values. Remove `--dry-run` when the plan is ready to apply.
+reflect the selected values. For a noninteractive preview, add
+`--skip-parameters`. Luna still uses declared defaults, variables, composite
+bindings, and explicit `--parameter` values; the preview fails when a required
+parameter remains unresolved. Remove `--dry-run` when the plan is ready to
+apply.
 
 Pass `--prompt-parameters` on a real install to answer every configurable
 parameter instead of only unresolved required parameters. Optional prompts

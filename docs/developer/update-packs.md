@@ -15,9 +15,23 @@ luna update dotnet-project
 
 Run `luna update --dry-run` to plan updates for every installed root. Use
 `luna update --prompt` when selecting which available updates to apply.
-Dry runs ask for every configurable pack parameter before planning. Pass
+Dry runs ask for every configurable pack parameter before planning. Add
+`--skip-parameters` for a noninteractive preview. Luna still resolves declared
+defaults, variables, composite bindings, and explicit `--parameter` values; an
+unresolved required or active `requiredWhen` parameter fails preflight. Pass
 `--prompt-parameters` on a real update to answer optional parameters as well;
 each prompt offers its declared default.
+
+Repeat `--parameter <name>=<value>` to override values during an update. Update
+reserves `-p` for selecting updates, so parameter inputs have no short alias.
+Use `--no-variables` to disable project variables or repeat
+`--skip-variable <name>` to ignore selected variables.
+
+For one named root, `--remap-directory` and `--remap-file` relocate matching
+managed targets. Add `--save-remap` to store those mappings on the root's
+`lunapack.yml` entry. Remapping requires exactly one pack reference, and
+`--save-remap` requires a provided mapping. Updates keep the installed
+destination and ownership; destination and adoption options remain install-only.
 
 Dry runs group source changes, managed-file actions, and lifecycle actions
 under labeled sections with ASCII action markers. A successful update lists

@@ -80,6 +80,8 @@ Create a new architecture decision record from the [MADR-based template](templat
 | [ADR-0074][adr-0074]                                                            | Evolve persisted YAML through tolerant optional fields and versioned migrations.        |
 | [ADR-0075][adr-0075]                                                            | Superseded by ADR-0076.                                                                 |
 | [ADR-0076][adr-0076]                                                            | Prompt parameters incrementally across active composite paths.                          |
+| [ADR-0077][adr-0077]                                                            | Allow explicit noninteractive parameter resolution for dry-run previews.                |
+| [ADR-0078][adr-0078]                                                            | Align configurable update inputs and target remapping with installation.                |
 
 [adr-0070]: 0070-bind-privileged-workflows-to-trusted-provenance.md
 [adr-0071]: 0071-reject-filesystem-aliases-at-mutation-boundaries.md
@@ -88,3 +90,5 @@ Create a new architecture decision record from the [MADR-based template](templat
 [adr-0074]: 0074-evolve-yaml-schemas-compatibly.md
 [adr-0075]: 0075-select-conditional-pack-references-before-source-planning.md
 [adr-0076]: 0076-prompt-parameters-across-active-composite-paths.md
+[adr-0077]: 0077-allow-noninteractive-dry-run-parameter-resolution.md
+[adr-0078]: 0078-align-update-input-and-remapping-options.md

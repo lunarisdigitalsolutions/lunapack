@@ -87,4 +87,6 @@ luna install example-dotnet-foundation@1.0.0 --dry-run
 
 The consumer operation rejects missing releases, cycles, incompatible
 parameter declarations, and target collisions before writing project files.
-Dry runs ask for configurable parameter values before producing the plan.
+Dry runs ask for configurable parameter values before producing the plan. Use
+`--skip-parameters` when the preview must use available defaults and explicit
+values without prompting.

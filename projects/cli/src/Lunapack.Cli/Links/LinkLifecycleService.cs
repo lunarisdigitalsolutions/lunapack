@@ -80,6 +80,8 @@ internal sealed class LinkLifecycleService(
     public async Task<int> UpdateAsync(
         string projectDirectory,
         string? linkName = null,
+        ManagedFileTargetRemapping? targetRemapping = null,
+        bool saveRemapping = false,
         CancellationToken cancellationToken = default
     )
     {
@@ -95,6 +97,17 @@ internal sealed class LinkLifecycleService(
             return console.Fail(names.Error);
         }
 
+        if (saveRemapping && targetRemapping is not null)
+        {
+            state = state with
+            {
+                Configuration = state.Configuration with
+                {
+                    Remap = targetRemapping.MergeInto(state.Configuration.Remap),
+                },
+            };
+        }
+
         foreach (var name in linkNames)
         {
             console.Info($"Updating link '{name}'.");
@@ -104,6 +117,8 @@ internal sealed class LinkLifecycleService(
                 state.Configuration.Links[name],
                 adoptExisting: false,
                 useLockedIdentity: true,
+                preparedState: state,
+                targetRemapping: targetRemapping,
                 cancellationToken: cancellationToken
             );
             if (updated != 0)

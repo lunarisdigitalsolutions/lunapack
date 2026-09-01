@@ -265,8 +265,8 @@ adding content, viewing the manifest, or validating it.
 commands select the latest available release. `install` accepts `--dry-run`
 (`-D`), `--destination` (`-d`),
 `--adopt-existing` (`-a`), repeatable `--parameter` (`-p`),
-`--prompt-parameters`, `--no-variables` (`-nv`), and repeatable
-`--skip-variable` (`-sv`).
+`--prompt-parameters`, `--skip-parameters`, `--no-variables` (`-nv`), and
+repeatable `--skip-variable` (`-sv`).
 Dry runs group release selection, external sources, managed-file changes, and
 lifecycle work into labeled sections with ASCII action prefixes. Lifecycle
 script rows identify whether policy, `--scripts`, persisted trust, or interactive
@@ -293,11 +293,27 @@ as `remap: <pack> <declared> -> <effective> source: <source>`. The source is
 lunapack.yml`, or `lunapack-lock.yml`. Ignored targets report `@ignore` as the
 effective target.
 
-`update` accepts `--dry-run` (`-D`) and `--prompt-parameters`; update-all also
-accepts `--prompt` (`-p`). Install and update dry runs prompt for every
-configurable parameter on an active graph path before planning. For real operations,
-`--prompt-parameters` extends prompting from unresolved required parameters to
-all configurable parameters and offers declared defaults.
+`update` accepts `--dry-run` (`-D`), repeatable `--parameter`,
+`--prompt-parameters`, `--skip-parameters`, `--no-variables` (`-nv`), repeatable
+`--skip-variable` (`-sv`), repeatable `--remap-directory` and `--remap-file`,
+and `--save-remap`; update-all also accepts `--prompt` (`-p`). Unlike install,
+update reserves `-p` for update selection, so parameter values require the long
+`--parameter` form. Install and
+update dry runs prompt for every configurable parameter on an active graph path
+before planning. Add `--skip-parameters` to a dry run for noninteractive
+planning. It cannot be combined with `--prompt-parameters` or used without
+`--dry-run`. Skipping prompts still resolves declared defaults, variables,
+composite bindings, and explicit `--parameter` values; an unresolved required or
+active `requiredWhen` parameter fails preflight. For real operations,
+`--prompt-parameters` extends
+prompting from unresolved required parameters to all configurable parameters
+and offers declared defaults.
+Update parameter and variable options use install precedence and validation.
+Update remapping options require exactly one pack reference. Command remappings
+relocate matching managed targets during that update. `--save-remap` persists
+provided mappings on that installed root and requires at least one remapping.
+Update keeps the installed destination and ownership, so `--destination` and
+`--adopt-existing` remain install-only.
 Both install and update accept `--accept-sources` for conflict-free proposed
 source additions. `install`, `update`, and `uninstall` accept
 `--scripts <prompt|run|skip>`; `prompt` is the default and requires effective

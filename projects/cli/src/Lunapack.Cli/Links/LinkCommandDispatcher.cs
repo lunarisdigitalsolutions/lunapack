@@ -47,14 +47,24 @@ internal sealed class LinkCommandDispatcher(
         return 0;
     }
 
-    public async Task<int?> TryUpdateAsync(string projectDirectory, string name)
+    public async Task<int?> TryUpdateAsync(
+        string projectDirectory,
+        string name,
+        ManagedFileTargetRemapping targetRemapping,
+        bool saveRemapping
+    )
     {
         if (!await IsConfiguredLinkAsync(projectDirectory, name))
         {
             return null;
         }
 
-        var exitCode = await linkLifecycleService.UpdateAsync(projectDirectory, name);
+        var exitCode = await linkLifecycleService.UpdateAsync(
+            projectDirectory,
+            name,
+            targetRemapping,
+            saveRemapping
+        );
         if (exitCode == 0)
         {
             console.Success($"Updated link {name}");

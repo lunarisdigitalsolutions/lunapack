@@ -223,9 +223,18 @@ link outdated.
 
 ### Requirement: Preview and confirm package changes
 
-LunaPack SHALL accept `--dry-run` on `luna install` and every form of `luna update`. Before planning, a dry run SHALL prompt for every consumer-configurable graph parameter and offer declared defaults. It SHALL then perform dependency, source mapping, source resolution, selection, and target preflight; report reused source mappings, proposed source additions, whether approval would be required, selected pack versions, and each planned target action; and SHALL not prompt for final approval or modify project files, `lunapack.yml`, or `lunapack-lock.yml`.
+LunaPack SHALL accept `--dry-run` on `luna install` and every form of `luna update`. Before planning, a dry run SHALL prompt for every consumer-configurable graph parameter and offer declared defaults unless the user passes `--skip-parameters`. The skip option SHALL be valid only with `--dry-run`, SHALL conflict with `--prompt-parameters`, and SHALL suppress prompts without disabling declared defaults, variables, composite bindings, explicit parameter values, or required-parameter validation. The dry run SHALL then perform dependency, source mapping, source resolution, selection, and target preflight; report reused source mappings, proposed source additions, whether approval would be required, selected pack versions, and each planned target action; and SHALL not prompt for final approval or modify project files, `lunapack.yml`, or `lunapack-lock.yml`.
 
 LunaPack SHALL accept `--prompt` on `luna update` without a pack reference. It SHALL show each eligible pack and newest version or external-content reason, request confirmation before that pack's update, update only confirmed packs, and leave declined packs unchanged.
+
+LunaPack SHALL accept explicit parameter values, project-variable controls, and
+target remappings during update where their installation semantics remain
+valid. `--parameter`, `--no-variables`, and repeatable `--skip-variable` SHALL
+use installation precedence and validation for named and update-all operations.
+Repeatable `--remap-directory` and `--remap-file` SHALL require exactly one pack
+reference and SHALL override retained lock targets for that update. `--save-remap`
+SHALL require a provided remapping and SHALL persist it on the selected root.
+Update SHALL retain the installed destination and SHALL not provide adoption.
 
 #### Scenario: Preview an install
 
@@ -241,6 +250,39 @@ LunaPack SHALL accept `--prompt` on `luna update` without a pack reference. It S
 
 - **WHEN** an install or update dry run resolves optional parameters used by conditions
 - **THEN** LunaPack prompts for those parameters before source and lifecycle planning and previews the branches selected by the answers
+
+#### Scenario: Skip parameter prompts during a dry run
+
+- **WHEN** a user runs an install or update dry run with `--skip-parameters`
+  and available defaults and explicit values resolve every required parameter
+- **THEN** LunaPack plans the selected conditional content without requesting
+  parameter input or modifying files or state
+
+#### Scenario: Reject unresolved required parameters when prompts are skipped
+
+- **WHEN** a dry run uses `--skip-parameters` and a required parameter has no
+  default, variable, composite binding, or explicit value
+- **THEN** LunaPack fails preflight without requesting parameter input
+
+#### Scenario: Reject an active conditionally required parameter
+
+- **WHEN** an update uses `--skip-parameters` and a parameter's `requiredWhen`
+  condition is true without an explicit, variable, composite, or default value
+- **THEN** LunaPack fails preflight without requesting parameter input
+
+#### Scenario: Override update parameters without selected project variables
+
+- **WHEN** a user updates with explicit `--parameter` values and
+  `--no-variables` or repeatable `--skip-variable` controls
+- **THEN** LunaPack resolves the update graph with installation precedence and
+  applies the selected conditional content
+
+#### Scenario: Save a target remapping during a named update
+
+- **WHEN** a user updates one named root with `--remap-file` or
+  `--remap-directory` and `--save-remap`
+- **THEN** LunaPack relocates matching managed targets transactionally and
+  persists the mapping on that root
 
 #### Scenario: Confirm updates individually
 

@@ -53,8 +53,9 @@ controls:
 luna install dotnet-project --skip-instructions
 ```
 
-Dry runs validate and summarize scripts and instructions without prompting,
-starting a process, or entering guided display. Denied script rows show
+Dry runs validate and summarize scripts and instructions without requesting hook
+consent, starting a process, or entering guided display. Parameter prompts still
+occur before planning unless `--skip-parameters` is set. Denied script rows show
 `policy-denied` and every applicable scope without execution warnings.
 
 See the [script and trust reference](cli/trust-and-scripts.md) for lifecycle

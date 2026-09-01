@@ -26,6 +26,8 @@ internal sealed class GitPackDiscovery(
     )
         .IgnoreUnmatchedProperties()
         .WithNamingConvention(CamelCaseNamingConvention.Instance)
+        .WithTypeConverter(new PackParameterYamlTypeConverter())
+        .WithTypeConverter(new ScalarValueDictionaryYamlTypeConverter())
         .Build();
 
     private readonly CliConsole _console = console;
