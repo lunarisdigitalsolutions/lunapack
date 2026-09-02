@@ -147,10 +147,42 @@ jobs:
           version: ${{ matrix.buildVersion }}
           publish-artifacts: 'true'
 
+  sanity-check:
+    name: Sanity check Linux CLI
+    needs: [plan, build]
+    if: ${{ needs.plan.outputs.should-release == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download Linux x64 CLI
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: cli-linux-x64
+          path: ${{ runner.temp }}/luna-cli
+
+      - name: Run CLI sanity check
+        shell: bash
+        env:
+          LUNA: ${{ runner.temp }}/luna-cli/luna
+          WORKSPACE: ${{ runner.temp }}/luna-sanity-check
+        run: |
+          set -euo pipefail
+          chmod +x "$LUNA"
+          mkdir -p "$WORKSPACE"
+          cd "$WORKSPACE"
+
+          "$LUNA" init
+          "$LUNA" sources add github lunapack lunarisdigitalsolutions/lunapack --ref main --path projects/packs
+          "$LUNA" discover
+          "$LUNA" search luna
+          "$LUNA" install lunapack-testing@1.0.0 --scripts skip
+          "$LUNA" update lunapack-testing --scripts skip
+          "$LUNA" uninstall lunapack-testing --scripts skip
+
   release:
     name: Publish ${{ needs.plan.outputs.release-type }} release
-    needs: [plan, build]
-    if: ${{ always() && needs.plan.outputs.should-release == 'true' && needs.plan.result == 'success' && needs.build.result == 'success' }}
+    needs: [plan, build, sanity-check]
+    if: ${{ always() && needs.plan.outputs.should-release == 'true' && needs.plan.result == 'success' && needs.build.result == 'success' && needs.sanity-check.result == 'success' }}
     runs-on: ubuntu-latest
     environment: Release
     timeout-minutes: 30

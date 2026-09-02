@@ -15,6 +15,10 @@ const planJob = workflow.slice(
 )
 const buildJob = workflow.slice(
   workflow.indexOf('  build:'),
+  workflow.indexOf('  sanity-check:')
+)
+const sanityCheckJob = workflow.slice(
+  workflow.indexOf('  sanity-check:'),
   workflow.indexOf('  release:')
 )
 const releaseJob = workflow.slice(workflow.indexOf('  release:'))
@@ -349,7 +353,8 @@ test('Scenario_PreviewWorkflow_PublishesOnlyNuGetForCliChangesOnMain', () => {
   assert.match(planJob, /version: \$\{\{ steps\.targets\.outputs\.version \}\}/)
   assert.match(buildJob, /needs: plan/)
   assert.match(buildJob, /publish-artifacts: 'true'/)
-  assert.match(releaseJob, /needs: \[plan, build\]/)
+  assert.match(releaseJob, /needs: \[plan, build, sanity-check\]/)
+  assert.match(releaseJob, /needs\.sanity-check\.result == 'success'/)
   assert.match(releaseJob, /environment: Release/)
   assert.match(workflow, /cancel-in-progress: false/)
   assert.match(
@@ -445,6 +450,26 @@ test('Scenario_PreviewWorkflow_PublishesOnlyNuGetForCliChangesOnMain', () => {
   )
 })
 
+test('Scenario_ReleaseWorkflow_SanityChecksLinuxPackLifecycleWithoutScripts', () => {
+  assert.match(sanityCheckJob, /needs: \[plan, build\]/)
+  assert.match(sanityCheckJob, /runs-on: ubuntu-latest/)
+  assert.match(sanityCheckJob, /name: cli-linux-x64/)
+
+  for (const command of [
+    '"$LUNA" init',
+    '"$LUNA" sources add github lunapack lunarisdigitalsolutions/lunapack --ref main --path projects/packs',
+    '"$LUNA" discover',
+    '"$LUNA" search luna',
+    '"$LUNA" install lunapack-testing@1.0.0 --scripts skip',
+    '"$LUNA" update lunapack-testing --scripts skip',
+    '"$LUNA" uninstall lunapack-testing --scripts skip'
+  ]) {
+    assert.ok(sanityCheckJob.includes(command))
+  }
+
+  assert.doesNotMatch(sanityCheckJob, /--scripts (?:prompt|run)/)
+})
+
 test('Scenario_ReleaseWorkflow_AcceptsOnlyOciSafeSemanticVersions', () => {
   assert.match(workflow, /-cnotmatch/)
   const workflowPattern = workflow.match(/-cnotmatch '([^']+)'/)[1]
@@ -493,7 +518,7 @@ test('Scenario_ReleaseWorkflow_RunsAreBoundedAndSerialized', () => {
     /concurrency:\s+group: cli-release-\$\{\{ github\.ref \}\}/
   )
   assert.match(workflow, /cancel-in-progress: false/)
-  assert.equal([...workflow.matchAll(/timeout-minutes:/g)].length, 3)
+  assert.equal([...workflow.matchAll(/timeout-minutes:/g)].length, 4)
   assert.match(buildAction, /default: '3'/)
   assert.match(
     buildAction,
