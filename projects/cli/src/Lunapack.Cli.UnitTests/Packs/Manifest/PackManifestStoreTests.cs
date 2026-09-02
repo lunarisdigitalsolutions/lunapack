@@ -5,6 +5,52 @@ namespace Lunapack.Cli.UnitTests.Packs.Manifest;
 public sealed class PackManifestStoreTests
 {
     [Test]
+    public async Task Load_WhenUnknownOptionalPropertiesDeclared_IgnoresValuesAndUsesDefaults()
+    {
+        using var workspace = new TestWorkspace();
+        File.WriteAllText(
+            Path.Combine(workspace.Path, PackManifestStore.FileName),
+            "id: example\nversion: 1.0.0\nauthor: Example\nlicense: MIT\nfutureOptions:\n  enabled: true\nparameters:\n  environment:\n    type: string\n    futureValues: [one, two]\n"
+        );
+        var store = new PackManifestStore(workspace.FileSystem);
+
+        var result = await store.LoadAsync(workspace.Path);
+
+        await Assert.That(result.IsSuccess).IsTrue().Because(result.Error ?? string.Empty);
+        var manifest = result.RequireValue();
+        await Assert.That(manifest.Description).IsNull();
+        await Assert.That(manifest.Parameters["environment"].Required).IsNull();
+    }
+
+    [Test]
+    public async Task Update_WhenParameterHasRequiredWhen_PreservesExpressionAndOrder()
+    {
+        using var workspace = new TestWorkspace();
+        var path = Path.Combine(workspace.Path, PackManifestStore.FileName);
+        File.WriteAllText(
+            path,
+            "id: example\nversion: 1.0.0\nauthor: Example\nlicense: MIT\nparameters:\n  includeApi:\n    type: bool\n    default: true\n  apiName:\n    type: string\n    requiredWhen: includeApi\n"
+        );
+        var store = new PackManifestStore(workspace.FileSystem);
+
+        var result = await store.UpdateAsync(
+            workspace.Path,
+            manifest =>
+            {
+                manifest.Description = "Updated";
+                return null;
+            }
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue().Because(result.Error ?? string.Empty);
+        var content = File.ReadAllText(path);
+        await Assert.That(content).Contains("requiredWhen: includeApi");
+        await Assert
+            .That(content.IndexOf("includeApi:", StringComparison.Ordinal))
+            .IsLessThan(content.IndexOf("apiName:", StringComparison.Ordinal));
+    }
+
+    [Test]
     public async Task Update_WhenCandidateInvalid_PreservesOriginalBytes()
     {
         using var workspace = new TestWorkspace();

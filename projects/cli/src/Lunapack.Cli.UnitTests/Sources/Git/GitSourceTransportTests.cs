@@ -57,6 +57,40 @@ public sealed class GitSourceTransportTests
     }
 
     [Test]
+    public async Task Cache_WhenParameterHasMultipleDefaults_PreservesDefaults()
+    {
+        var fileSystem = new MockFileSystem();
+        var cache = new GitSourceCache(fileSystem);
+        var source = CreateSource();
+        var manifest = new PackManifest
+        {
+            Id = "example",
+            Version = "1.0.0",
+            Author = "Example Author",
+            License = "MIT",
+            Parameters = new Dictionary<string, PackManifest.PackParameter>(StringComparer.Ordinal)
+            {
+                ["features"] = new()
+                {
+                    Type = "enum",
+                    Multiple = true,
+                    Default = new List<object> { "api", "docker" },
+                    Values = ["api", "docker"],
+                },
+            },
+        };
+        var entry = CreateCacheEntry(source, manifest, "packs/example");
+
+        var saved = cache.Save(@"C:\project", entry);
+        var loaded = cache.Load(@"C:\project", source);
+
+        await Assert.That(saved.IsSuccess).IsTrue();
+        await Assert
+            .That(loaded.Value?.Packs.Single().Manifest.Parameters["features"].Default)
+            .IsEquivalentTo(new List<object> { "api", "docker" });
+    }
+
+    [Test]
     public async Task Cache_WhenEntryCorrupt_TreatsEntryAsCacheMiss()
     {
         var fileSystem = new MockFileSystem();
@@ -354,6 +388,27 @@ public sealed class GitSourceTransportTests
     }
 
     [Test]
+    public async Task Discovery_WhenBooleanParameterHasDefault_PreservesTypedValue()
+    {
+        var fileSystem = new MockFileSystem();
+        var processRunner = new ParameterManifestGitProcessRunner();
+        var discovery = new GitPackDiscovery(
+            fileSystem,
+            processRunner,
+            new GitRefResolver(processRunner),
+            new GitSourceCache(fileSystem),
+            TestConsole.Create()
+        );
+
+        var result = await discovery.BrowseAsync(@"C:\project", CreateSource(), 0);
+
+        await Assert.That(result.IsSuccess).IsTrue().Because(result.Error ?? string.Empty);
+        var defaultValue = result.RequireValue().Single().Manifest.Parameters["enabled"].Default;
+        await Assert.That(defaultValue).IsTypeOf<bool>();
+        await Assert.That((bool)defaultValue!).IsTrue();
+    }
+
+    [Test]
     public async Task RefResolver_WhenCachedDefaultBranchResolves_ReusesCachedBranch()
     {
         var processRunner = new FakeGitProcessRunner(
@@ -461,6 +516,29 @@ public sealed class GitSourceTransportTests
                         )
                     )
                     : ManifestOperationResult<GitProcessOutput>.Failure("Stop after resolution.")
+            );
+        }
+    }
+
+    private sealed class ParameterManifestGitProcessRunner : IGitProcessRunner
+    {
+        public Task<ManifestOperationResult<GitProcessOutput>> RunAsync(
+            IReadOnlyList<string> arguments,
+            TimeSpan timeout,
+            CancellationToken cancellationToken
+        )
+        {
+            var output =
+                string.Equals(arguments[0], "ls-remote", StringComparison.Ordinal)
+                    ? $"ref: refs/heads/main\tHEAD\n{Commit}\tHEAD\n"
+                : arguments.Contains("ls-tree", StringComparer.Ordinal) ? "packs/example/pack.yml\n"
+                : arguments.Contains("show", StringComparer.Ordinal)
+                    ? "id: example\nversion: 1.0.0\nauthor: Example\nlicense: MIT\nparameters:\n  enabled:\n    type: bool\n    default: true\n"
+                : string.Empty;
+            return Task.FromResult(
+                ManifestOperationResult<GitProcessOutput>.Success(
+                    new GitProcessOutput(output, string.Empty)
+                )
             );
         }
     }

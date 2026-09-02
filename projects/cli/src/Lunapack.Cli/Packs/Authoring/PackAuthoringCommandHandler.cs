@@ -757,6 +757,7 @@ internal sealed class PackAuthoringCommandHandler(
         var idArgument = new Argument<string>("id");
         var versionArgument = new Argument<string>("version");
         var parameterOption = new Option<string[]>("--parameter", "-p");
+        var conditionOption = new Option<string?>("--condition", "-c");
         var disabledHookOption = new Option<string[]>("--disable-hook");
         disabledHookOption.CompletionSources.Add(_hooks);
         var replaceOption = new Option<bool>("--replace");
@@ -765,6 +766,7 @@ internal sealed class PackAuthoringCommandHandler(
             idArgument,
             versionArgument,
             parameterOption,
+            conditionOption,
             disabledHookOption,
             replaceOption,
         };
@@ -774,6 +776,7 @@ internal sealed class PackAuthoringCommandHandler(
                 parseResult.GetValue(idArgument),
                 parseResult.GetValue(versionArgument),
                 parseResult.GetValue(parameterOption) ?? [],
+                parseResult.GetValue(conditionOption),
                 parseResult.GetValue(disabledHookOption) ?? [],
                 replaceByDefault || parseResult.GetValue(replaceOption)
             )
@@ -786,6 +789,7 @@ internal sealed class PackAuthoringCommandHandler(
         string? id,
         string? version,
         string[] rawBindings,
+        string? condition,
         string[] hooks,
         bool replace
     )
@@ -820,6 +824,7 @@ internal sealed class PackAuthoringCommandHandler(
                 {
                     Id = id,
                     Version = version,
+                    Condition = condition,
                     Parameters = parameters,
                     DisabledHooks = [.. hooks],
                 };
@@ -845,6 +850,7 @@ internal sealed class PackAuthoringCommandHandler(
         typeArgument.CompletionSources.Add("bool", "enum", "string");
         var valueOption = new Option<string[]>("--value", "-v");
         var requiredOption = new Option<bool>("--required");
+        var requiredWhenOption = new Option<string?>("--required-when");
         var defaultOption = new Option<string[]>("--default");
         var multipleOption = new Option<bool>("--multiple");
         var displayNameOption = new Option<string?>("--display-name");
@@ -855,6 +861,7 @@ internal sealed class PackAuthoringCommandHandler(
             typeArgument,
             valueOption,
             requiredOption,
+            requiredWhenOption,
             defaultOption,
             multipleOption,
             displayNameOption,
@@ -871,6 +878,15 @@ internal sealed class PackAuthoringCommandHandler(
 
             var values = parseResult.GetValue(valueOption) ?? [];
             var multiple = parseResult.GetValue(multipleOption);
+            var required = parseResult.GetValue(requiredOption);
+            var requiredWhen = parseResult.GetValue(requiredWhenOption);
+            if (required && requiredWhen is not null)
+            {
+                return console.Fail(
+                    "Parameter cannot declare both --required and --required-when."
+                );
+            }
+
             var defaultValue = ParseParameterDefault(
                 type,
                 parseResult.GetValue(defaultOption) ?? [],
@@ -887,7 +903,8 @@ internal sealed class PackAuthoringCommandHandler(
                     manifest.Parameters[name] = new PackManifest.PackParameter
                     {
                         Type = type,
-                        Required = parseResult.GetValue(requiredOption),
+                        Required = required ? true : null,
+                        RequiredWhen = requiredWhen,
                         Default = defaultValue.Value,
                         Multiple = multiple ? true : null,
                         Values = string.Equals(type, "enum", StringComparison.Ordinal)

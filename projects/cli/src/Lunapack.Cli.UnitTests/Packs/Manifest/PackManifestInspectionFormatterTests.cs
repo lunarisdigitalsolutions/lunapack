@@ -7,6 +7,35 @@ namespace Lunapack.Cli.UnitTests.Packs.Manifest;
 public sealed class PackManifestInspectionFormatterTests
 {
     [Test]
+    public async Task Format_WhenParametersDeclared_DisplaysRequiredWhenInDefinitionOrder()
+    {
+        var manifest = new PackManifest
+        {
+            Id = "example",
+            Version = "1.0.0",
+            Parameters = new Dictionary<string, PackManifest.PackParameter>(StringComparer.Ordinal)
+            {
+                ["zControl"] = new() { Type = "bool", Default = true },
+                ["aValue"] = new() { Type = "string", RequiredWhen = "zControl" },
+            },
+        };
+        var console = new SpectreTestConsole();
+        console.Profile.Width = 500;
+
+        foreach (var renderable in PackManifestInspectionFormatter.Format(manifest))
+        {
+            console.Write(renderable);
+        }
+
+        await Assert.That(console.Output).Contains("zControl");
+        await Assert.That(console.Output).Contains("aValue");
+        await Assert.That(console.Output).Contains("Required when");
+        await Assert
+            .That(console.Output.IndexOf("zControl", StringComparison.Ordinal))
+            .IsLessThan(console.Output.IndexOf("aValue", StringComparison.Ordinal));
+    }
+
+    [Test]
     public async Task Format_WhenManifestIsDraft_DisplaysDraftStatus()
     {
         var manifest = new PackManifest
@@ -135,6 +164,7 @@ public sealed class PackManifestInspectionFormatterTests
                 {
                     Id = "suppressed",
                     Version = "1.0.0",
+                    Condition = "includeDependency",
                     DisabledHooks = ["preInstall", "postInstall"],
                 },
                 new PackManifest.PackReference { Id = "enabled", Version = "1.0.0" },
@@ -147,6 +177,7 @@ public sealed class PackManifestInspectionFormatterTests
             console.Write(renderable);
         }
 
+        await Assert.That(console.Output).Contains("includeDependency");
         await Assert.That(console.Output).Contains("preInstall, postInstall");
         await Assert.That(console.Output).Contains("none");
     }

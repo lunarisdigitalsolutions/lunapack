@@ -214,6 +214,7 @@ internal sealed class LocalSourceCommandHandler(
         var removeSourceNameArgument = new Argument<string>("name")
         {
             Description = "Name of the configured source to remove.",
+            HelpName = "name",
         };
         if (completionProvider is not null)
         {
@@ -248,6 +249,7 @@ internal sealed class LocalSourceCommandHandler(
         var currentSourceNameArgument = new Argument<string>("current-id")
         {
             Description = "Name of the configured source to rename.",
+            HelpName = "current-id",
         };
         if (completionProvider is not null)
         {
@@ -291,9 +293,9 @@ internal sealed class LocalSourceCommandHandler(
             return console.Fail(loadedState.Error);
         }
 
-        foreach (var source in state.Configuration.Sources)
+        if (state.Configuration.Sources.Count > 0)
         {
-            console.Info(SourceOutputFormatter.Format(source));
+            console.Render(SourceOutputFormatter.CreateListTable(state.Configuration.Sources));
         }
 
         return 0;

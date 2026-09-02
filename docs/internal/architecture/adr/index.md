@@ -77,8 +77,18 @@ Create a new architecture decision record from the [MADR-based template](templat
 | [ADR-0071][adr-0071]                                                            | Reject filesystem aliases at snapshot and project mutation boundaries.                  |
 | [ADR-0072][adr-0072]                                                            | Share parameter conditions across managed files and lifecycle hooks.                    |
 | [ADR-0073][adr-0073]                                                            | Prefer stable tag releases over same-commit previews.                                   |
+| [ADR-0074][adr-0074]                                                            | Evolve persisted YAML through tolerant optional fields and versioned migrations.        |
+| [ADR-0075][adr-0075]                                                            | Superseded by ADR-0076.                                                                 |
+| [ADR-0076][adr-0076]                                                            | Prompt parameters incrementally across active composite paths.                          |
+| [ADR-0077][adr-0077]                                                            | Allow explicit noninteractive parameter resolution for dry-run previews.                |
+| [ADR-0078][adr-0078]                                                            | Align configurable update inputs and target remapping with installation.                |
 
 [adr-0070]: 0070-bind-privileged-workflows-to-trusted-provenance.md
 [adr-0071]: 0071-reject-filesystem-aliases-at-mutation-boundaries.md
 [adr-0072]: 0072-share-conditions-across-pack-declarations.md
 [adr-0073]: 0073-prefer-stable-tags-over-same-commit-previews.md
+[adr-0074]: 0074-evolve-yaml-schemas-compatibly.md
+[adr-0075]: 0075-select-conditional-pack-references-before-source-planning.md
+[adr-0076]: 0076-prompt-parameters-across-active-composite-paths.md
+[adr-0077]: 0077-allow-noninteractive-dry-run-parameter-resolution.md
+[adr-0078]: 0078-align-update-input-and-remapping-options.md

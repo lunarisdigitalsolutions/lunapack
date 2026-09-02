@@ -1,4 +1,5 @@
 using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Catalog;
 using Lunapack.Cli.Packs.Manifest;
 using Lunapack.Cli.Packs.Planning;
 using Lunapack.Cli.Project;
@@ -7,6 +8,54 @@ namespace Lunapack.Cli.Packs;
 
 internal static class PackParameterResolver
 {
+    public static ManifestOperationResult<
+        IReadOnlyDictionary<string, IReadOnlyList<string>>
+    > Prompt(
+        ResolvedPackGraph graph,
+        ProjectConfiguration configuration,
+        PackInstallationRequest installationRequest,
+        bool includeOptional,
+        PackParameterPromptCallback promptParameters
+    )
+    {
+        var values = installationRequest
+            .GetParameterValues()
+            .ToDictionary(
+                parameter => parameter.Key,
+                parameter => parameter.Value,
+                StringComparer.Ordinal
+            );
+        while (true)
+        {
+            var request = installationRequest with { ParameterValues = values };
+            var next = FindNextPromptable(graph, configuration, request, includeOptional);
+            if (next.Value is not { } prompts)
+            {
+                return ManifestOperationResult<
+                    IReadOnlyDictionary<string, IReadOnlyList<string>>
+                >.Failure(next.Error ?? "Unable to resolve the next pack parameter prompt.");
+            }
+
+            if (prompts.Count == 0)
+            {
+                return ManifestOperationResult<
+                    IReadOnlyDictionary<string, IReadOnlyList<string>>
+                >.Success(values);
+            }
+
+            var prompt = prompts[0];
+            var prompted = promptParameters(prompts);
+            if (!prompted.TryGetValue(prompt.Id, out var promptedValue))
+            {
+                return ManifestOperationResult<
+                    IReadOnlyDictionary<string, IReadOnlyList<string>>
+                >.Failure($"Parameter prompt did not return a value for '{prompt.Id}'.");
+            }
+
+            values[prompt.Id] = promptedValue;
+        }
+    }
+
     public static ManifestOperationResult<ResolvedPackParameters> Resolve(
         ResolvedPackGraph graph,
         ProjectConfiguration configuration,
@@ -33,8 +82,29 @@ internal static class PackParameterResolver
             resolvedDeclarations,
             resolvedCompositeValues,
             configuration,
-            installationRequest
+            installationRequest,
+            enforceRequired: true
         );
+    }
+
+    public static ManifestOperationResult<ResolvedPackParameters> ResolveForSelection(
+        ResolvedPackGraph graph,
+        ProjectConfiguration configuration,
+        PackInstallationRequest installationRequest
+    )
+    {
+        var declarations = CollectDeclarations(graph);
+        return declarations.Value is { } resolvedDeclarations
+            ? BindValues(
+                resolvedDeclarations,
+                new Dictionary<string, object>(StringComparer.Ordinal),
+                configuration,
+                installationRequest,
+                enforceRequired: false
+            )
+            : ManifestOperationResult<ResolvedPackParameters>.Failure(
+                declarations.Error ?? "Unable to resolve pack parameter declarations."
+            );
     }
 
     public static ManifestOperationResult<
@@ -43,6 +113,13 @@ internal static class PackParameterResolver
         ResolvedPackGraph graph,
         ProjectConfiguration configuration,
         PackInstallationRequest installationRequest
+    ) => FindPromptable(graph, configuration, installationRequest, includeOptional: false);
+
+    public static ManifestOperationResult<IReadOnlyList<PackParameterPrompt>> FindPromptable(
+        ResolvedPackGraph graph,
+        ProjectConfiguration configuration,
+        PackInstallationRequest installationRequest,
+        bool includeOptional
     )
     {
         var declarations = CollectDeclarations(graph);
@@ -62,21 +139,235 @@ internal static class PackParameterResolver
         }
 
         var inputValues = installationRequest.GetParameterValues();
-        var unresolved = resolvedDeclarations
-            .Where(declaration =>
-                declaration.Value.Required
-                && !resolvedCompositeValues.ContainsKey(declaration.Key)
-                && !inputValues.ContainsKey(declaration.Key)
-                && !(
-                    installationRequest.UseProjectVariables
-                    && !installationRequest.SkippedVariables.Contains(declaration.Key)
-                    && configuration.Variables.ContainsKey(declaration.Key)
-                )
+        var partialParameters = BindValues(
+            resolvedDeclarations,
+            resolvedCompositeValues,
+            configuration,
+            installationRequest,
+            enforceRequired: false
+        );
+        if (partialParameters.Value is not { } parameters)
+        {
+            return ManifestOperationResult<IReadOnlyList<PackParameterPrompt>>.Failure(
+                partialParameters.Error ?? "Unable to resolve pack parameters."
+            );
+        }
+
+        var unresolved = new List<PackParameterPrompt>();
+        foreach (var (name, declaration) in resolvedDeclarations)
+        {
+            var required = IsRequired(declaration, resolvedDeclarations, parameters.Values);
+            if (!required.IsSuccess)
+            {
+                return ManifestOperationResult<IReadOnlyList<PackParameterPrompt>>.Failure(
+                    required.Error ?? $"Unable to evaluate requiredWhen for parameter '{name}'."
+                );
+            }
+
+            var usesProjectVariable =
+                !includeOptional
+                && installationRequest.UseProjectVariables
+                && !installationRequest.SkippedVariables.Contains(name)
+                && configuration.Variables.ContainsKey(name);
+            if (
+                (includeOptional || required.Value)
+                && !resolvedCompositeValues.ContainsKey(name)
+                && !inputValues.ContainsKey(name)
+                && !usesProjectVariable
             )
-            .Select(declaration => new PackParameterPrompt(declaration.Key, declaration.Value))
-            .ToList();
+            {
+                unresolved.Add(new PackParameterPrompt(name, declaration));
+            }
+        }
 
         return ManifestOperationResult<IReadOnlyList<PackParameterPrompt>>.Success(unresolved);
+    }
+
+    private static ManifestOperationResult<IReadOnlyList<PackParameterPrompt>> FindNextPromptable(
+        ResolvedPackGraph graph,
+        ProjectConfiguration configuration,
+        PackInstallationRequest installationRequest,
+        bool includeOptional
+    )
+    {
+        var declarations = CollectDeclarations(graph);
+        if (declarations.Value is not { } resolvedDeclarations)
+        {
+            return ManifestOperationResult<IReadOnlyList<PackParameterPrompt>>.Failure(
+                declarations.Error ?? "Unable to resolve pack parameter declarations."
+            );
+        }
+
+        var selectionParameters = ResolveForSelection(graph, configuration, installationRequest);
+        if (selectionParameters.Value is not { } parametersForSelection)
+        {
+            return ManifestOperationResult<IReadOnlyList<PackParameterPrompt>>.Failure(
+                selectionParameters.Error ?? "Unable to resolve parameters for graph selection."
+            );
+        }
+
+        var selection = graph.Select(parametersForSelection);
+        if (selection.Value is not { } selectedGraph)
+        {
+            return ManifestOperationResult<IReadOnlyList<PackParameterPrompt>>.Failure(
+                selection.Error ?? "Unable to select conditional pack references."
+            );
+        }
+
+        var compositeValues = CollectCompositeValues(selectedGraph, resolvedDeclarations);
+        if (compositeValues.Value is not { } resolvedCompositeValues)
+        {
+            return ManifestOperationResult<IReadOnlyList<PackParameterPrompt>>.Failure(
+                compositeValues.Error ?? "Unable to resolve composite pack parameters."
+            );
+        }
+
+        var partialParameters = BindValues(
+            resolvedDeclarations,
+            resolvedCompositeValues,
+            configuration,
+            installationRequest,
+            enforceRequired: false
+        );
+        if (partialParameters.Value is not { } parameters)
+        {
+            return ManifestOperationResult<IReadOnlyList<PackParameterPrompt>>.Failure(
+                partialParameters.Error ?? "Unable to resolve pack parameters."
+            );
+        }
+
+        var packsById = selectedGraph.Packs.ToDictionary(
+            pack => pack.Manifest.Id,
+            StringComparer.Ordinal
+        );
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var root in selectedGraph.Packs.Where(selectedGraph.IsRoot))
+        {
+            var next = FindNextInPack(
+                root,
+                packsById,
+                resolvedDeclarations,
+                resolvedCompositeValues,
+                parameters,
+                configuration,
+                installationRequest,
+                includeOptional,
+                visited,
+                selectedGraph.ActiveReferences
+            );
+            if (!next.IsSuccess || next.Value is { Count: > 0 })
+            {
+                return next;
+            }
+        }
+
+        return ManifestOperationResult<IReadOnlyList<PackParameterPrompt>>.Success([]);
+    }
+
+    private static ManifestOperationResult<IReadOnlyList<PackParameterPrompt>> FindNextInPack(
+        DiscoveredPack pack,
+        IReadOnlyDictionary<string, DiscoveredPack> packsById,
+        IReadOnlyDictionary<string, PackParameterDefinition> declarations,
+        IReadOnlyDictionary<string, object> compositeValues,
+        ResolvedPackParameters parameters,
+        ProjectConfiguration configuration,
+        PackInstallationRequest installationRequest,
+        bool includeOptional,
+        ISet<string> visited,
+        IReadOnlySet<PackManifest.PackReference>? activeReferences
+    )
+    {
+        if (!visited.Add(pack.Manifest.Id))
+        {
+            return ManifestOperationResult<IReadOnlyList<PackParameterPrompt>>.Success([]);
+        }
+
+        foreach (var name in pack.Manifest.Parameters.Keys)
+        {
+            var prompt = CreatePrompt(
+                name,
+                declarations,
+                compositeValues,
+                parameters,
+                configuration,
+                installationRequest,
+                includeOptional
+            );
+            if (!prompt.IsSuccess || prompt.Value is { Count: > 0 })
+            {
+                return prompt;
+            }
+        }
+
+        foreach (var reference in pack.Manifest.Packs)
+        {
+            if (
+                (activeReferences is null || activeReferences.Contains(reference))
+                && packsById.TryGetValue(reference.Id, out var dependency)
+            )
+            {
+                var next = FindNextInPack(
+                    dependency,
+                    packsById,
+                    declarations,
+                    compositeValues,
+                    parameters,
+                    configuration,
+                    installationRequest,
+                    includeOptional,
+                    visited,
+                    activeReferences
+                );
+                if (!next.IsSuccess || next.Value is { Count: > 0 })
+                {
+                    return next;
+                }
+            }
+        }
+
+        return ManifestOperationResult<IReadOnlyList<PackParameterPrompt>>.Success([]);
+    }
+
+    private static ManifestOperationResult<IReadOnlyList<PackParameterPrompt>> CreatePrompt(
+        string name,
+        IReadOnlyDictionary<string, PackParameterDefinition> declarations,
+        IReadOnlyDictionary<string, object> compositeValues,
+        ResolvedPackParameters parameters,
+        ProjectConfiguration configuration,
+        PackInstallationRequest installationRequest,
+        bool includeOptional
+    )
+    {
+        if (
+            compositeValues.ContainsKey(name)
+            || installationRequest.GetParameterValues().ContainsKey(name)
+        )
+        {
+            return ManifestOperationResult<IReadOnlyList<PackParameterPrompt>>.Success([]);
+        }
+
+        var usesProjectVariable =
+            !includeOptional
+            && installationRequest.UseProjectVariables
+            && !installationRequest.SkippedVariables.Contains(name)
+            && configuration.Variables.ContainsKey(name);
+        if (usesProjectVariable)
+        {
+            return ManifestOperationResult<IReadOnlyList<PackParameterPrompt>>.Success([]);
+        }
+
+        var declaration = declarations[name];
+        var required = IsRequired(declaration, declarations, parameters.Values);
+        if (!required.IsSuccess)
+        {
+            return ManifestOperationResult<IReadOnlyList<PackParameterPrompt>>.Failure(
+                required.Error ?? $"Unable to evaluate requiredWhen for parameter '{name}'."
+            );
+        }
+
+        return ManifestOperationResult<IReadOnlyList<PackParameterPrompt>>.Success(
+            includeOptional || required.Value ? [new PackParameterPrompt(name, declaration)] : []
+        );
     }
 
     private static ManifestOperationResult<
@@ -140,6 +431,14 @@ internal static class PackParameterResolver
         {
             foreach (var reference in pack.Manifest.Packs)
             {
+                if (
+                    graph.ActiveReferences is not null
+                    && !graph.ActiveReferences.Contains(reference)
+                )
+                {
+                    continue;
+                }
+
                 foreach (var (name, value) in reference.Parameters)
                 {
                     if (!declarations.ContainsKey(name))
@@ -166,7 +465,8 @@ internal static class PackParameterResolver
         IReadOnlyDictionary<string, PackParameterDefinition> declarations,
         IReadOnlyDictionary<string, object> compositeValues,
         ProjectConfiguration configuration,
-        PackInstallationRequest installationRequest
+        PackInstallationRequest installationRequest,
+        bool enforceRequired
     )
     {
         var skippedVariableError = ValidateSkippedVariables(
@@ -203,7 +503,8 @@ internal static class PackParameterResolver
             declarations,
             configuration,
             installationRequest,
-            resolvedValues
+            resolvedValues,
+            enforceRequired
         );
         if (fallbackValueError is not null)
         {
@@ -292,7 +593,8 @@ internal static class PackParameterResolver
         IReadOnlyDictionary<string, PackParameterDefinition> declarations,
         ProjectConfiguration configuration,
         PackInstallationRequest installationRequest,
-        Dictionary<string, ResolvedPackParameterValue> resolvedValues
+        Dictionary<string, ResolvedPackParameterValue> resolvedValues,
+        bool enforceRequired
     )
     {
         foreach (var (name, declaration) in declarations)
@@ -318,7 +620,13 @@ internal static class PackParameterResolver
                 continue;
             }
 
-            if (declaration.Required)
+            var required = IsRequired(declaration, declarations, resolvedValues);
+            if (!required.IsSuccess)
+            {
+                return required.Error;
+            }
+
+            if (enforceRequired && required.Value)
             {
                 return $"Required parameter '{name}' has no resolved value.";
             }
@@ -369,12 +677,13 @@ internal static class PackParameterResolver
             return ManifestOperationResult<PackParameterDefinition>.Success(
                 new PackParameterDefinition(
                     type.Value,
-                    declaration.Required,
+                    declaration.Required is true,
                     values,
                     declaration.DisplayName,
                     declaration.Description,
                     declaration.Default,
-                    declaration.Multiple is true
+                    declaration.Multiple is true,
+                    declaration.RequiredWhen
                 )
             );
         }
@@ -383,16 +692,41 @@ internal static class PackParameterResolver
             ? ManifestOperationResult<PackParameterDefinition>.Success(
                 new PackParameterDefinition(
                     type.Value,
-                    declaration.Required,
+                    declaration.Required is true,
                     [],
                     declaration.DisplayName,
                     declaration.Description,
                     declaration.Default,
-                    false
+                    false,
+                    declaration.RequiredWhen
                 )
             )
             : ManifestOperationResult<PackParameterDefinition>.Failure(
                 $"Parameter '{name}' in pack '{packId}' may only declare values when its type is enum."
+            );
+    }
+
+    private static ManifestOperationResult<bool> IsRequired(
+        PackParameterDefinition declaration,
+        IReadOnlyDictionary<string, PackParameterDefinition> declarations,
+        IReadOnlyDictionary<string, ResolvedPackParameterValue> values
+    )
+    {
+        if (declaration.Required)
+        {
+            return ManifestOperationResult<bool>.Success(true);
+        }
+
+        if (declaration.RequiredWhen is not { } requiredWhen)
+        {
+            return ManifestOperationResult<bool>.Success(false);
+        }
+
+        var parsed = ManagedFileConditionParser.Parse(requiredWhen, declarations);
+        return parsed.Value is { } condition
+            ? ManifestOperationResult<bool>.Success(condition.Evaluate(values))
+            : ManifestOperationResult<bool>.Failure(
+                parsed.Error ?? "Unable to evaluate parameter requiredWhen."
             );
     }
 

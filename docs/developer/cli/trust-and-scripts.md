@@ -20,8 +20,9 @@ trust boundaries and residual risks.
 Persisted script denial overrides all three modes and every source or pack
 grant. It is evaluated before command resolution or confirmation.
 
-Dry runs do not execute hooks or prompt. They show each hook phase, pack and
-version, suppression, and expected consent source. Script rows report applicable
+Dry runs do not execute hooks or request hook consent. They may prompt for pack
+parameters before planning unless `--skip-parameters` is set. They show each
+hook phase, pack and version, suppression, and expected consent source. Script rows report applicable
 policy-denial scopes, an explicit `--scripts run|skip` override, matching
 project/local-user/global-user trust scopes, or the need for confirmation.
 Instruction rows show their file, effective templating state, and step count.

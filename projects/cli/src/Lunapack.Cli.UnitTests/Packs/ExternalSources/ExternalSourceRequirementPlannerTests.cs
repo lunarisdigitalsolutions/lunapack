@@ -111,6 +111,50 @@ public sealed class ExternalSourceRequirementPlannerTests
     }
 
     [Test]
+    public async Task PlanAsync_WhenReferencedPackConditionIsFalse_IgnoresItsSource()
+    {
+        var dependency = CreatePack("dependency", "unused");
+        var root = new DiscoveredPack(
+            "source",
+            "root",
+            new PackManifest
+            {
+                Id = "root",
+                Version = "1.0.0",
+                Packs =
+                [
+                    new PackManifest.PackReference
+                    {
+                        Id = "dependency",
+                        Version = "1.0.0",
+                        Condition = "includeDependency",
+                    },
+                ],
+            }
+        );
+        var parameters = new ResolvedPackParameters(
+            new Dictionary<string, PackParameterDefinition>(StringComparer.Ordinal)
+            {
+                ["includeDependency"] = new(PackParameterType.Bool, false, []),
+            },
+            new Dictionary<string, ResolvedPackParameterValue>(StringComparer.Ordinal)
+            {
+                ["includeDependency"] = new(PackParameterType.Bool, string.Empty, false),
+            }
+        );
+        var graph = new ResolvedPackGraph(
+            [dependency, root],
+            new HashSet<string>(["root"], StringComparer.Ordinal)
+        ).Select(parameters);
+
+        var result = await CreatePlanner()
+            .PlanAsync(graph.RequireValue(), new ProjectConfiguration(), parameters);
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert.That(result.RequireValue().Groups).IsEmpty();
+    }
+
+    [Test]
     public async Task PlanAsync_WhenProposedIdentifierConfiguredForOtherFingerprint_ReportsConflict()
     {
         var configuration = new ProjectConfiguration

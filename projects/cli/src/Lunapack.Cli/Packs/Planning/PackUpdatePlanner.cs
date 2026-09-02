@@ -43,12 +43,21 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
             );
         }
 
+        var commandRemappedTargets = installationPlan
+            .Remappings.Where(remapping => remapping.Origin == ManagedFileRemappingOrigin.Command)
+            .Select(remapping => new PackTargetKey(
+                remapping.PackId,
+                ProjectPath.Normalize(remapping.DeclaredTarget)
+            ))
+            .ToHashSet();
+
         var updateActions = CreateActions(
             projectDirectory,
             previousTargetMap,
             installationPlan.ManagedFiles,
             plannedTargetMap,
             installationPlan.IgnoredDeclaredTargets,
+            commandRemappedTargets,
             removeUnplannedManagedFiles
         );
         if (updateActions.Value is not { } actions)
@@ -113,6 +122,7 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
         IReadOnlyList<PlannedManagedFile> plannedManagedFiles,
         Dictionary<PackTargetKey, PlannedManagedFile> plannedTargetMap,
         IReadOnlySet<string> ignoredDeclaredTargets,
+        IReadOnlySet<PackTargetKey> commandRemappedTargets,
         bool removeUnplannedManagedFiles
     )
     {
@@ -124,7 +134,8 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
             previousTargetMap,
             plannedManagedFiles,
             actions,
-            plannedResultingContents
+            plannedResultingContents,
+            commandRemappedTargets
         );
         if (!plannedUpdates.IsSuccess)
         {
@@ -141,6 +152,7 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
                 plannedManagedFiles,
                 plannedTargetMap,
                 ignoredDeclaredTargets,
+                commandRemappedTargets,
                 actions
             );
         }
@@ -153,7 +165,8 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
         Dictionary<PackTargetKey, PreviousManagedTarget> previousTargetMap,
         IReadOnlyList<PlannedManagedFile> plannedManagedFiles,
         List<PlannedPackUpdateAction> actions,
-        Dictionary<string, byte[]> plannedResultingContents
+        Dictionary<string, byte[]> plannedResultingContents,
+        IReadOnlySet<PackTargetKey> commandRemappedTargets
     )
     {
         foreach (var managedFile in plannedManagedFiles)
@@ -163,7 +176,8 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
                 previousTargetMap,
                 managedFile,
                 actions,
-                plannedResultingContents
+                plannedResultingContents,
+                commandRemappedTargets
             );
             if (!plannedUpdate.IsSuccess)
             {
@@ -181,7 +195,8 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
         Dictionary<PackTargetKey, PreviousManagedTarget> previousTargetMap,
         PlannedManagedFile managedFile,
         List<PlannedPackUpdateAction> actions,
-        Dictionary<string, byte[]> plannedResultingContents
+        Dictionary<string, byte[]> plannedResultingContents,
+        IReadOnlySet<PackTargetKey> commandRemappedTargets
     )
     {
         var key = new PackTargetKey(
@@ -192,7 +207,8 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
         var effectiveManagedFile = GetEffectiveManagedFile(
             projectDirectory,
             managedFile,
-            previousTarget
+            previousTarget,
+            commandRemappedTargets.Contains(key)
         );
         var targetPath = ProjectPath.Normalize(effectiveManagedFile.TargetPathRelativeToProject);
         if (!plannedResultingContents.TryGetValue(targetPath, out var targetContents))
@@ -242,6 +258,7 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
         IReadOnlyList<PlannedManagedFile> plannedManagedFiles,
         Dictionary<PackTargetKey, PlannedManagedFile> plannedTargetMap,
         IReadOnlySet<string> ignoredDeclaredTargets,
+        IReadOnlySet<PackTargetKey> commandRemappedTargets,
         List<PlannedPackUpdateAction> actions
     )
     {
@@ -250,8 +267,18 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
             .ToHashSet(StringComparer.Ordinal);
         foreach (var (key, previousTarget) in previousTargetMap)
         {
+            var plannedTargetRetainsPreviousPath =
+                plannedTargetMap.TryGetValue(key, out var plannedTarget)
+                && (
+                    !commandRemappedTargets.Contains(key)
+                    || string.Equals(
+                        ProjectPath.Normalize(plannedTarget.TargetPathRelativeToProject),
+                        ProjectPath.Normalize(previousTarget.ManagedFile.TargetPath),
+                        StringComparison.Ordinal
+                    )
+                );
             var targetIsStillPlannedOrIgnored =
-                plannedTargetMap.ContainsKey(key)
+                plannedTargetRetainsPreviousPath
                 || plannedTargetPaths.Contains(
                     ProjectPath.Normalize(previousTarget.ManagedFile.TargetPath)
                 )
@@ -310,9 +337,10 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
     private PlannedManagedFile GetEffectiveManagedFile(
         string projectDirectory,
         PlannedManagedFile managedFile,
-        PreviousManagedTarget? previousTarget
+        PreviousManagedTarget? previousTarget,
+        bool commandRemapped
     ) =>
-        previousTarget is null
+        previousTarget is null || commandRemapped
             ? managedFile
             : managedFile with
             {

@@ -20,8 +20,17 @@ luna install dotnet-project@1.0.0 --dry-run
 ```
 
 The dry run resolves the pack and preflights the target changes without
-modifying project files or LunaPack state. Remove `--dry-run` when the plan is
-ready to apply.
+modifying project files or LunaPack state. It asks for every configurable pack
+parameter before planning so conditional references, files, hooks, and sources
+reflect the selected values. For a noninteractive preview, add
+`--skip-parameters`. Luna still uses declared defaults, variables, composite
+bindings, and explicit `--parameter` values; the preview fails when a required
+parameter remains unresolved. Remove `--dry-run` when the plan is ready to
+apply.
+
+Pass `--prompt-parameters` on a real install to answer every configurable
+parameter instead of only unresolved required parameters. Optional prompts
+offer their declared defaults.
 
 ## Read the Result
 
@@ -33,6 +42,10 @@ policy, command arguments, persisted trust, or confirmation controls consent.
 A successful install lists its managed-file changes. Use
 `--no-file-change-output` to hide that list in routine or automated runs. This
 option does not hide managed-file actions from `--dry-run`.
+
+If the selected pack ID and version exist in multiple configured sources, both
+the dry run and successful install identify the chosen source by name and type.
+The earliest configured source wins an equal-version tie.
 
 ## Continue from the basic install
 

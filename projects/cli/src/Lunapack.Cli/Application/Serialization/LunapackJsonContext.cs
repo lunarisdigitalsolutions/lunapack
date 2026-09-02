@@ -7,6 +7,7 @@ using Lunapack.Cli.Sources.Git;
 namespace Lunapack.Cli.Application.Serialization;
 
 [JsonSourceGenerationOptions(
+    Converters = [typeof(ScalarValueJsonConverter)],
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase
 )]

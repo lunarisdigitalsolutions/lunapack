@@ -194,8 +194,9 @@ internal static class ManagedFileConditionParser
                 }
 
                 var left = expression;
-                expression = new ManagedFileCondition(values =>
-                    left.Evaluate(values) || right.Evaluate(values)
+                expression = new ManagedFileCondition(
+                    values => left.Evaluate(values) || right.Evaluate(values),
+                    CombineReferences(left, right)
                 );
             }
 
@@ -214,8 +215,9 @@ internal static class ManagedFileConditionParser
                 }
 
                 var left = expression;
-                expression = new ManagedFileCondition(values =>
-                    left.Evaluate(values) && right.Evaluate(values)
+                expression = new ManagedFileCondition(
+                    values => left.Evaluate(values) && right.Evaluate(values),
+                    CombineReferences(left, right)
                 );
             }
 
@@ -302,13 +304,16 @@ internal static class ManagedFileConditionParser
                 return null;
             }
 
-            return new ManagedFileCondition(values =>
-            {
-                var isDefault =
-                    values.TryGetValue(parameter.Text, out var value)
-                    && IsDefaultValue(value, declaration);
-                return negated ? !isDefault : isDefault;
-            });
+            return new ManagedFileCondition(
+                values =>
+                {
+                    var isDefault =
+                        values.TryGetValue(parameter.Text, out var value)
+                        && IsDefaultValue(value, declaration);
+                    return negated ? !isDefault : isDefault;
+                },
+                CreateReferences(parameter.Text)
+            );
         }
 
         private static bool IsDefaultValue(
@@ -362,10 +367,12 @@ internal static class ManagedFileConditionParser
                 return null;
             }
 
-            return new ManagedFileCondition(values =>
-                values.TryGetValue(parameter.Text, out var value)
-                && value.StringValues is { } selections
-                && selections.Contains(literal, StringComparer.Ordinal)
+            return new ManagedFileCondition(
+                values =>
+                    values.TryGetValue(parameter.Text, out var value)
+                    && value.StringValues is { } selections
+                    && selections.Contains(literal, StringComparer.Ordinal),
+                CreateReferences(parameter.Text)
             );
         }
 
@@ -376,9 +383,11 @@ internal static class ManagedFileConditionParser
                 return null;
             }
 
-            return new ManagedFileCondition(values =>
-                values.TryGetValue(parameter.Text, out var value)
-                && (negated ? !value.BooleanValue : value.BooleanValue)
+            return new ManagedFileCondition(
+                values =>
+                    values.TryGetValue(parameter.Text, out var value)
+                    && (negated ? !value.BooleanValue : value.BooleanValue),
+                CreateReferences(parameter.Text)
             );
         }
 
@@ -414,15 +423,28 @@ internal static class ManagedFileConditionParser
                 return null;
             }
 
-            return new ManagedFileCondition(values =>
-                values.TryGetValue(parameter.Text, out var value)
-                && (
-                    operatorToken.Kind == TokenKind.Equal
-                        ? string.Equals(value.StringValue, literal, StringComparison.Ordinal)
-                        : !string.Equals(value.StringValue, literal, StringComparison.Ordinal)
-                )
+            return new ManagedFileCondition(
+                values =>
+                    values.TryGetValue(parameter.Text, out var value)
+                    && (
+                        operatorToken.Kind == TokenKind.Equal
+                            ? string.Equals(value.StringValue, literal, StringComparison.Ordinal)
+                            : !string.Equals(value.StringValue, literal, StringComparison.Ordinal)
+                    ),
+                CreateReferences(parameter.Text)
             );
         }
+
+        private static HashSet<string> CombineReferences(
+            ManagedFileCondition left,
+            ManagedFileCondition right
+        ) =>
+            left
+                .ReferencedParameters.Concat(right.ReferencedParameters)
+                .ToHashSet(StringComparer.Ordinal);
+
+        private static HashSet<string> CreateReferences(string parameter) =>
+            new([parameter], StringComparer.Ordinal);
 
         private bool TryGetDeclaration(
             Token parameter,

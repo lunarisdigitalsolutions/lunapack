@@ -42,6 +42,24 @@ luna pack set parameter checkName string `
 Every declaration of the same parameter in the graph must use a compatible
 type.
 
+## Select optional dependencies
+
+Add `--condition` or `-c` when a referenced pack should participate only for
+selected parameter values:
+
+```powershell
+luna pack set parameter includeIssueForms bool --default true
+luna pack add reference github-issue-forms 1.0.0 `
+  --condition includeIssueForms
+```
+
+Reference conditions use the same Boolean, comparison, membership,
+`isDefault`, and logical expressions as managed files. A false condition omits
+the referenced pack and dependencies reachable only through it from managed
+files, hooks, ownership, lock state, and pack-defined external-source planning.
+The exact referenced release must still be available for graph and parameter
+validation.
+
 ## Suppress dependency hooks
 
 Disable selected lifecycle hooks for a transient dependency when the root pack
@@ -69,3 +87,6 @@ luna install example-dotnet-foundation@1.0.0 --dry-run
 
 The consumer operation rejects missing releases, cycles, incompatible
 parameter declarations, and target collisions before writing project files.
+Dry runs ask for configurable parameter values before producing the plan. Use
+`--skip-parameters` when the preview must use available defaults and explicit
+values without prompting.

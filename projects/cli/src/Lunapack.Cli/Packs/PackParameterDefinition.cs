@@ -7,5 +7,6 @@ internal sealed record PackParameterDefinition(
     string? DisplayName = null,
     string? Description = null,
     object? Default = null,
-    bool Multiple = false
+    bool Multiple = false,
+    string? RequiredWhen = null
 );

@@ -135,6 +135,46 @@ public sealed class LinkLifecycleServiceTests
     }
 
     [Test]
+    public async Task UpdateAsync_WhenRemappingSaved_RelocatesTargetsAndPersistsMapping()
+    {
+        var fileSystem = CreateFileSystem();
+        var service = CreateService(fileSystem);
+        await WriteConfigurationAsync(fileSystem, CreateConfiguration());
+        await service.InstallAsync(_projectDirectory, "agents");
+        var remapping = ManagedFileTargetRemapping
+            .Create(fileSystem, _projectDirectory, [".github/agents=.config/agents"], [])
+            .RequireValue();
+
+        var exitCode = await service.UpdateAsync(
+            _projectDirectory,
+            "agents",
+            remapping,
+            saveRemapping: true
+        );
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(fileSystem.File.Exists(TargetPath("CSharpExpert.agent.md"))).IsFalse();
+        await Assert
+            .That(
+                fileSystem.File.Exists(
+                    Path.Combine(_projectDirectory, ".config", "agents", "CSharpExpert.agent.md")
+                )
+            )
+            .IsTrue();
+        var configuration = await LoadConfigurationAsync(fileSystem);
+        await Assert
+            .That(configuration.Remap.RequireNotNull().Directories[".github/agents"])
+            .IsEqualTo(".config/agents");
+        var lockFile = await LoadLockFileAsync(fileSystem);
+        await Assert
+            .That(lockFile.Links["agents"].Files.Select(file => file.TargetPath))
+            .IsEquivalentTo([
+                ".config/agents/CSharpExpert.agent.md",
+                ".config/agents/ai-team.agent.md",
+            ]);
+    }
+
+    [Test]
     public async Task UpdateAsync_WhenSelectionShrinks_RemovesOrphanedTarget()
     {
         var fileSystem = CreateFileSystem();

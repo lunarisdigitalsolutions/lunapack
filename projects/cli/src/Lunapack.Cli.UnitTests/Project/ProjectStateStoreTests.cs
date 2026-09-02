@@ -242,9 +242,32 @@ public sealed class ProjectStateStoreTests
     }
 
     [Test]
-    [Arguments(
-        "schemaVersion: 1\nsources:\n  - name: local\n    type: local\n    path: source\n    unknown: value\npacks: []\n"
-    )]
+    public async Task Load_WhenUnknownOptionalPropertiesDeclared_IgnoresValuesAndUsesDefaults()
+    {
+        var fileSystem = CreateFileSystem();
+        const string projectDirectory = @"C:\project";
+        fileSystem.AddDirectory(projectDirectory);
+        fileSystem.AddFile(
+            fileSystem.Path.Combine(projectDirectory, ProjectStateStore.ConfigurationFileName),
+            new MockFileData(
+                "schemaVersion: 1\nsources:\n  - name: local\n    type: local\n    path: source\n    futureOptions:\n      enabled: true\npacks: []\nfutureValues: [one, two]\n"
+            )
+        );
+        fileSystem.AddFile(
+            fileSystem.Path.Combine(projectDirectory, ProjectStateStore.LockFileName),
+            new MockFileData("schemaVersion: 1\npacks: []\nfutureOptions:\n  enabled: true\n")
+        );
+        var stateStore = new ProjectStateStore(fileSystem);
+
+        var loaded = await stateStore.LoadAsync(projectDirectory);
+
+        await Assert.That(loaded.IsSuccess).IsTrue().Because(loaded.Error ?? string.Empty);
+        var state = loaded.RequireValue();
+        await Assert.That(state.Configuration.Variables).IsEmpty();
+        await Assert.That(state.LockFile.Links).IsEmpty();
+    }
+
+    [Test]
     [Arguments(
         "schemaVersion: 1\nsources:\n  - name: local\n    name: replacement\n    type: local\n    path: source\npacks: []\n"
     )]

@@ -264,11 +264,42 @@ internal sealed class PackCatalog(
                     selectedPack.GitSource,
                     selectedPack.RepositoryPath
                 )
+                {
+                    SourceSelection = GetSourceSelection(catalog, selectedPack),
+                }
             )
             : ManifestOperationResult<DiscoveredPack>.Failure(
                 selected.Error ?? $"Pack '{packId}' is unavailable.",
                 ManifestOperationErrorKind.PackNotFound
             );
+    }
+
+    internal static PackSourceSelection? GetSourceSelection(
+        IReadOnlyList<CatalogPack> catalog,
+        CatalogPack selectedPack
+    )
+    {
+        var matchingSourceCount = catalog
+            .Where(candidate =>
+                string.Equals(
+                    candidate.Manifest.Id,
+                    selectedPack.Manifest.Id,
+                    StringComparison.Ordinal
+                )
+                && VersionComparer.VersionRelease.Compare(candidate.Version, selectedPack.Version)
+                    == 0
+            )
+            .Select(candidate => candidate.SourceIdentity)
+            .Distinct()
+            .Take(2)
+            .Count();
+        return matchingSourceCount > 1
+            ? new PackSourceSelection(
+                selectedPack.Manifest.Id,
+                selectedPack.SourceName,
+                selectedPack.SourceIdentity.Type
+            )
+            : null;
     }
 
     internal static ManifestOperationResult<CatalogPack> SelectFromCatalog(

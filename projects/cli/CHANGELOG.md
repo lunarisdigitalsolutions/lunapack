@@ -7,6 +7,37 @@ pack-package, documentation, CI, build, test, and release-process changes.
 
 Update this section before creating a release tag.
 
+### Conditional Packs
+
+- Composite pack references now accept parameter conditions. False references
+  and dependencies reachable only through them are omitted from files, hooks,
+  ownership, lock state, and pack-defined external-source requirements.
+- Install and update dry runs now prompt for configurable parameters before
+  planning. Use `--prompt-parameters` on a real install or update to answer all
+  optional parameters with their declared defaults offered.
+- Parameters now support mutually exclusive `requiredWhen` expressions and
+  deterministic declaration-order prompting. Parameters reachable only through
+  inactive references are skipped while shared packs reached by an active path
+  remain promptable.
+
+- Install and update dry runs now accept `--skip-parameters` for noninteractive
+  previews that use declared defaults and supplied values.
+- Updates now accept explicit parameters, project-variable exclusions, and
+  command target remappings. Named updates can persist provided remappings with
+  `--save-remap`.
+
+### Source Selection
+
+- Install and update output now identifies the selected source name and type
+  when the same pack release is available from multiple configured sources.
+
+### Fixed
+
+- Dynamic pack and source completion candidates no longer replace stable
+  argument names in `--help` output.
+- Git source discovery and search no longer crash when a pack declares a
+  multi-value parameter default.
+
 ## Version 1.4.0 - 2026-09-01
 
 ### Conditional Hooks
