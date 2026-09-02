@@ -7,6 +7,8 @@ pack-package, documentation, CI, build, test, and release-process changes.
 
 Update this section before creating a release tag.
 
+## Version 1.5.0 - 2026-09-02
+
 ### Conditional Packs
 
 - Composite pack references now accept parameter conditions. False references

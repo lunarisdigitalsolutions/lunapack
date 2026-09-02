@@ -95,11 +95,11 @@ jobs:
           )
 
           $targets = @{
-            'linux-x64' = [PSCustomObject]@{ runner = 'ubuntu-latest'; runtimeIdentifier = 'linux-x64' }
+            'linux-x64' = [PSCustomObject]@{ runner = 'ubuntu-24.04'; runtimeIdentifier = 'linux-x64' }
             'linux-arm64' = [PSCustomObject]@{ runner = 'ubuntu-24.04-arm'; runtimeIdentifier = 'linux-arm64' }
-            'osx-x64' = [PSCustomObject]@{ runner = 'macos-15-intel'; runtimeIdentifier = 'osx-x64' }
-            'osx-arm64' = [PSCustomObject]@{ runner = 'macos-15'; runtimeIdentifier = 'osx-arm64' }
-            'win-x64' = [PSCustomObject]@{ runner = 'windows-latest'; runtimeIdentifier = 'win-x64' }
+            'osx-x64' = [PSCustomObject]@{ runner = 'macos-26-intel'; runtimeIdentifier = 'osx-x64' }
+            'osx-arm64' = [PSCustomObject]@{ runner = 'macos-26'; runtimeIdentifier = 'osx-arm64' }
+            'win-x64' = [PSCustomObject]@{ runner = 'windows-2025'; runtimeIdentifier = 'win-x64' }
           }
           $selectedTargets = @(
             foreach ($runtimeIdentifier in $selectedRuntimeIdentifiers) {
