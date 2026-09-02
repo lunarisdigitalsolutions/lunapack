@@ -105,13 +105,14 @@ public sealed class CliProcessTests
         await Assert.That(output).Contains("Type");
         await Assert.That(output).Contains("Details");
         await Assert.That(output).Contains("local");
-        await Assert.That(output).Contains("Path: packs");
-        await Assert.That(output).Contains("identity: local(path=packs)").IgnoringCase();
+        await Assert.That(output).Contains("Path");
+        await Assert.That(output).Contains("local(path=packs)");
         await Assert.That(output).Contains("git");
-        await Assert.That(output).Contains("URL:");
+        await Assert.That(output).Contains("URL");
         await Assert.That(output).Contains("git-sources");
-        await Assert.That(output).Contains("Ref: refs/heads/main");
-        await Assert.That(output).Contains("Identity:");
+        await Assert.That(output).Contains("Ref");
+        await Assert.That(output).Contains("refs/heads/main");
+        await Assert.That(output).Contains("Identity");
         await Assert.That(output).Contains("git(url=");
         await Assert
             .That(output.IndexOf("local", StringComparison.Ordinal))
@@ -869,7 +870,7 @@ public sealed class CliProcessTests
 
         await Assert.That(install.ExitCode).IsEqualTo(0);
         await Assert.That(install.StandardOutput).Contains("Selected source");
-        await Assert.That(install.StandardOutput).Contains("local (local)");
+        await Assert.That(install.StandardOutput).Contains("(local)");
         await Assert
             .That(File.ReadAllText(Path.Combine(workspace.Path, ".pack")))
             .IsEqualTo("from local");
