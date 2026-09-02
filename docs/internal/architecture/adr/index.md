@@ -82,6 +82,8 @@ Create a new architecture decision record from the [MADR-based template](templat
 | [ADR-0076][adr-0076]                                                            | Prompt parameters incrementally across active composite paths.                          |
 | [ADR-0077][adr-0077]                                                            | Allow explicit noninteractive parameter resolution for dry-run previews.                |
 | [ADR-0078][adr-0078]                                                            | Align configurable update inputs and target remapping with installation.                |
+| [ADR-0079][adr-0079]                                                            | Validate direct Git pack references while preserving local diagnostics.                 |
+| [ADR-0080][adr-0080]                                                            | Run x64 CLI sanity checks in native build jobs.                                         |
 
 [adr-0070]: 0070-bind-privileged-workflows-to-trusted-provenance.md
 [adr-0071]: 0071-reject-filesystem-aliases-at-mutation-boundaries.md
@@ -92,3 +94,5 @@ Create a new architecture decision record from the [MADR-based template](templat
 [adr-0076]: 0076-prompt-parameters-across-active-composite-paths.md
 [adr-0077]: 0077-allow-noninteractive-dry-run-parameter-resolution.md
 [adr-0078]: 0078-align-update-input-and-remapping-options.md
+[adr-0079]: 0079-validate-direct-git-pack-references.md
+[adr-0080]: 0080-sanity-check-x64-cli-artifacts-across-operating-systems.md

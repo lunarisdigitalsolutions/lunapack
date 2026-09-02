@@ -168,7 +168,9 @@ project. Pack trust and pack-trust revocation require `--source` or `-s`. See
   results include their latest releases; link results include source, target,
   and installation status.
 - `luna validate <pack-reference>`: Validates the selected release from configured
-  local sources, or the latest local release when version is omitted.
+  local or Git sources, or the latest release when version is omitted. Direct
+  references can select draft packs even though discovery and search hide them
+  by default.
 - `luna inspect <pack-reference>`: Shows the selected pack's identity,
   description, license, author, parameters, and referenced packs.
 

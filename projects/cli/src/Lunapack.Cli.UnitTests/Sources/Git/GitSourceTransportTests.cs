@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
 using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Serialization;
 using Lunapack.Cli.Catalog;
 using Lunapack.Cli.Packs.Manifest;
 using Lunapack.Cli.Packs.Planning;
@@ -88,6 +89,14 @@ public sealed class GitSourceTransportTests
         await Assert
             .That(loaded.Value?.Packs.Single().Manifest.Parameters["features"].Default)
             .IsEquivalentTo(new List<object> { "api", "docker" });
+    }
+
+    [Test]
+    public async Task Cache_WhenParameterHasMultipleDefaults_HasGeneratedJsonMetadata()
+    {
+        var metadata = LunapackJsonContext.Default.GetTypeInfo(typeof(List<object>));
+
+        await Assert.That(metadata).IsNotNull();
     }
 
     [Test]

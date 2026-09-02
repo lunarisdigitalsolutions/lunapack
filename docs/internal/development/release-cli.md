@@ -86,6 +86,11 @@ archives for `win-x64`, `linux-x64`,
 `linux-arm64`, `osx-x64`, and `osx-arm64`, plus `SHA256SUMS.txt`. Builds run on
 matching native GitHub-hosted runners: Windows x64, Linux x64/Arm64, and macOS
 x64/Arm64. Each runner also creates its Native AOT RID-specific NuGet package.
+After the shared build action completes, the Windows x64, Linux x64, and macOS
+x64 build entries execute the complete pack lifecycle sanity check against
+their local publish output. The Arm64 build entries skip this workflow-owned
+step but retain build and package validation. Any x64 sanity failure fails the
+aggregate build job and blocks release.
 The release action rejects a missing, duplicate, or unexpected archive before
 dispatch. The NuGet publisher performs the equivalent RID package validation
 when its channel starts.

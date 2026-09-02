@@ -252,7 +252,8 @@ internal sealed class CliApplication(
             new PackValidationService(
                 fileSystem,
                 projectStateStore,
-                new LocalPackDiscovery(fileSystem, console)
+                new LocalPackDiscovery(fileSystem, console),
+                packCatalog
             ),
             lifecycleServices,
             linkServices,

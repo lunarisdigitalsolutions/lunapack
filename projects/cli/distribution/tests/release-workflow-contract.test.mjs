@@ -18,6 +18,7 @@ const buildJob = workflow.slice(
   workflow.indexOf('  release:')
 )
 const releaseJob = workflow.slice(workflow.indexOf('  release:'))
+const sanityScript = readFileSync('scripts/Test-CliSanity.ps1', 'utf8')
 const buildAction = readFileSync('.github/actions/cli/build/action.yml', 'utf8')
 const dotnetBuildAction = readFileSync(
   '.github/actions/build-dotnet/action.yml',
@@ -350,6 +351,7 @@ test('Scenario_PreviewWorkflow_PublishesOnlyNuGetForCliChangesOnMain', () => {
   assert.match(buildJob, /needs: plan/)
   assert.match(buildJob, /publish-artifacts: 'true'/)
   assert.match(releaseJob, /needs: \[plan, build\]/)
+  assert.match(releaseJob, /needs\.build\.result == 'success'/)
   assert.match(releaseJob, /environment: Release/)
   assert.match(workflow, /cancel-in-progress: false/)
   assert.match(
@@ -443,6 +445,62 @@ test('Scenario_PreviewWorkflow_PublishesOnlyNuGetForCliChangesOnMain', () => {
     releaseNuGetAction,
     /dotnet publish|runtime-identifier|Publish Native AOT preview/
   )
+})
+
+test('Scenario_ReleaseWorkflow_SanityChecksX64PackLifecycleWithoutScripts', () => {
+  const buildStepIndex = buildJob.indexOf('- name: Build Luna CLI')
+  const sanityStepIndex = buildJob.indexOf('- name: Run CLI sanity check')
+
+  assert.ok(buildStepIndex >= 0)
+  assert.ok(sanityStepIndex > buildStepIndex)
+  assert.doesNotMatch(workflow, /  sanity-check:/)
+  assert.match(
+    buildJob,
+    /if: \$\{\{ endsWith\(matrix\.runtimeIdentifier, '-x64'\) \}\}/
+  )
+  assert.match(buildJob, /SOURCE_REF: \$\{\{ github\.sha \}\}/)
+  assert.match(buildJob, /HOME: \$\{\{ runner\.temp \}\}\/luna-sanity-home/)
+  assert.match(
+    buildJob,
+    /LUNA: \$\{\{ runner\.temp \}\}\/luna-cli\/\$\{\{ matrix\.runtimeIdentifier \}\}\/publish\//
+  )
+  assert.match(buildJob, /startsWith\(matrix\.runtimeIdentifier, 'win-'\)/)
+  assert.doesNotMatch(buildJob, /Download CLI|Check out sanity script/)
+  assert.match(buildJob, /pwsh -NoLogo -NoProfile -NonInteractive/)
+  assert.doesNotMatch(buildAction, /Test-CliSanity/)
+  assert.match(releaseJob, /needs: \[plan, build\]/)
+  assert.doesNotMatch(releaseJob, /sanity-check|needs\.sanity-check/)
+
+  for (const command of [
+    "@('init')",
+    "@('sources', 'list')",
+    "@('discover')",
+    "@('search', 'luna')",
+    "@('validate', 'lunapack-testing@1.0.0')",
+    "@('inspect', 'lunapack-testing@1.0.0')",
+    "@('outdated')",
+    "@('update', 'lunapack-testing', '--scripts', 'skip')",
+    "@('uninstall', 'lunapack-testing', '--scripts', 'skip')"
+  ]) {
+    assert.ok(sanityScript.includes(command))
+  }
+
+  assert.match(sanityScript, /RedirectStandardInput = \$true/)
+  assert.match(sanityScript, /StandardInput\.Close\(\)/)
+  assert.match(sanityScript, /Get-Command .* \| Select-Object -First 1/)
+  for (const parameter of [
+    'projectName=Sanity Check',
+    'includeOptional=true',
+    'profile=full',
+    'features=docs',
+    'features=ci',
+    'features=scripts'
+  ]) {
+    assert.ok(sanityScript.includes(`'${parameter}'`))
+  }
+
+  assert.equal([...sanityScript.matchAll(/@\('audit'\)/g)].length, 3)
+  assert.doesNotMatch(sanityScript, /'--scripts', '(?:prompt|run)'/)
 })
 
 test('Scenario_ReleaseWorkflow_AcceptsOnlyOciSafeSemanticVersions', () => {

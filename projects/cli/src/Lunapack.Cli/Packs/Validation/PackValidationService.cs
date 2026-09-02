@@ -9,7 +9,8 @@ namespace Lunapack.Cli.Packs.Validation;
 internal sealed class PackValidationService(
     IFileSystem fileSystem,
     ProjectStateStore projectStateStore,
-    LocalPackDiscovery localPackDiscovery
+    LocalPackDiscovery localPackDiscovery,
+    PackCatalog packCatalog
 )
 {
     public async Task<ManifestOperationResult<LocalPackValidationResult>> ValidateAsync(
@@ -43,8 +44,8 @@ internal sealed class PackValidationService(
         {
             return ManifestOperationResult<LocalPackValidationResult>.Failure(
                 version is null
-                    ? $"Pack '{packId}' is unavailable in configured local sources."
-                    : $"Pack '{packId}@{version}' is unavailable in configured local sources."
+                    ? $"Pack '{packId}' is unavailable in configured sources."
+                    : $"Pack '{packId}@{version}' is unavailable in configured sources."
             );
         }
 
@@ -82,6 +83,43 @@ internal sealed class PackValidationService(
                 if (TryCreateCandidate(sourceOrder, result, packId, version, out var candidate))
                 {
                     candidates.Add(candidate);
+                }
+            }
+        }
+
+        if (configuration.Sources.Any(source => source is ProjectConfiguration.GitSource))
+        {
+            var browsed = await packCatalog.BrowseAsync(projectDirectory, configuration);
+            if (browsed.Value is not { } catalog)
+            {
+                return ManifestOperationResult<List<PackValidationCandidate>>.Failure(
+                    browsed.Error ?? "Unable to validate Git pack source."
+                );
+            }
+
+            foreach (var pack in catalog.Where(pack => pack.GitSource is not null))
+            {
+                if (
+                    string.Equals(pack.Manifest.Id, packId, StringComparison.Ordinal)
+                    && (
+                        version is null
+                        || string.Equals(pack.Manifest.Version, version, StringComparison.Ordinal)
+                    )
+                )
+                {
+                    candidates.Add(
+                        new PackValidationCandidate(
+                            pack.SourceOrder,
+                            new LocalPackValidationResult(
+                                pack.RepositoryPath is { Length: > 0 } repositoryPath
+                                    ? $"{repositoryPath}/pack.yml"
+                                    : "pack.yml",
+                                pack.Manifest,
+                                []
+                            ),
+                            pack.Version
+                        )
+                    );
                 }
             }
         }

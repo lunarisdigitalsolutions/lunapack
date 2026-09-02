@@ -147,6 +147,28 @@ jobs:
           version: ${{ matrix.buildVersion }}
           publish-artifacts: 'true'
 
+      - name: Run CLI sanity check
+        if: ${{ endsWith(matrix.runtimeIdentifier, '-x64') }}
+        shell: pwsh
+        env:
+          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/luna-sanity-gitconfig
+          GIT_CONFIG_NOSYSTEM: '1'
+          HOME: ${{ runner.temp }}/luna-sanity-home
+          LUNA: ${{ runner.temp }}/luna-cli/${{ matrix.runtimeIdentifier }}/publish/${{ startsWith(matrix.runtimeIdentifier, 'win-') && 'luna.exe' || 'luna' }}
+          SANITY_SCRIPT: ${{ github.workspace }}/scripts/Test-CliSanity.ps1
+          SOURCE_REF: ${{ github.sha }}
+          TMPDIR: ${{ runner.temp }}/luna-sanity-tmp
+          WORKSPACE: ${{ runner.temp }}/luna-sanity-check
+          XDG_CACHE_HOME: ${{ runner.temp }}/luna-sanity-home/.cache
+          XDG_CONFIG_HOME: ${{ runner.temp }}/luna-sanity-home/.config
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path $env:HOME, $env:TMPDIR, $env:WORKSPACE | Out-Null
+          pwsh -NoLogo -NoProfile -NonInteractive -File $env:SANITY_SCRIPT `
+            -LunaPath $env:LUNA `
+            -SourceRef $env:SOURCE_REF `
+            -Workspace $env:WORKSPACE
+
   release:
     name: Publish ${{ needs.plan.outputs.release-type }} release
     needs: [plan, build]
