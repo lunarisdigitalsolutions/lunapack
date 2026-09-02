@@ -37,6 +37,8 @@ Update this section before creating a release tag.
   argument names in `--help` output.
 - Git source discovery and search no longer crash when a pack declares a
   multi-value parameter default.
+- `luna validate` now validates directly referenced draft packs from configured
+  Git sources as well as local sources.
 
 ## Version 1.4.0 - 2026-09-01
 

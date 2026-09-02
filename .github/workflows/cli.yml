@@ -147,42 +147,32 @@ jobs:
           version: ${{ matrix.buildVersion }}
           publish-artifacts: 'true'
 
-  sanity-check:
-    name: Sanity check Linux CLI
-    needs: [plan, build]
-    if: ${{ needs.plan.outputs.should-release == 'true' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Download Linux x64 CLI
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          name: cli-linux-x64
-          path: ${{ runner.temp }}/luna-cli
-
       - name: Run CLI sanity check
-        shell: bash
+        if: ${{ endsWith(matrix.runtimeIdentifier, '-x64') }}
+        shell: pwsh
         env:
-          LUNA: ${{ runner.temp }}/luna-cli/luna
+          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/luna-sanity-gitconfig
+          GIT_CONFIG_NOSYSTEM: '1'
+          HOME: ${{ runner.temp }}/luna-sanity-home
+          LUNA: ${{ runner.temp }}/luna-cli/${{ matrix.runtimeIdentifier }}/publish/${{ startsWith(matrix.runtimeIdentifier, 'win-') && 'luna.exe' || 'luna' }}
+          SANITY_SCRIPT: ${{ github.workspace }}/scripts/Test-CliSanity.ps1
+          SOURCE_REF: ${{ github.sha }}
+          TMPDIR: ${{ runner.temp }}/luna-sanity-tmp
           WORKSPACE: ${{ runner.temp }}/luna-sanity-check
+          XDG_CACHE_HOME: ${{ runner.temp }}/luna-sanity-home/.cache
+          XDG_CONFIG_HOME: ${{ runner.temp }}/luna-sanity-home/.config
         run: |
-          set -euo pipefail
-          chmod +x "$LUNA"
-          mkdir -p "$WORKSPACE"
-          cd "$WORKSPACE"
-
-          "$LUNA" init
-          "$LUNA" sources add github lunapack lunarisdigitalsolutions/lunapack --ref main --path projects/packs
-          "$LUNA" discover
-          "$LUNA" search luna
-          "$LUNA" install lunapack-testing@1.0.0 --scripts skip
-          "$LUNA" update lunapack-testing --scripts skip
-          "$LUNA" uninstall lunapack-testing --scripts skip
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path $env:HOME, $env:TMPDIR, $env:WORKSPACE | Out-Null
+          pwsh -NoLogo -NoProfile -NonInteractive -File $env:SANITY_SCRIPT `
+            -LunaPath $env:LUNA `
+            -SourceRef $env:SOURCE_REF `
+            -Workspace $env:WORKSPACE
 
   release:
     name: Publish ${{ needs.plan.outputs.release-type }} release
-    needs: [plan, build, sanity-check]
-    if: ${{ always() && needs.plan.outputs.should-release == 'true' && needs.plan.result == 'success' && needs.build.result == 'success' && needs.sanity-check.result == 'success' }}
+    needs: [plan, build]
+    if: ${{ always() && needs.plan.outputs.should-release == 'true' && needs.plan.result == 'success' && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     environment: Release
     timeout-minutes: 30

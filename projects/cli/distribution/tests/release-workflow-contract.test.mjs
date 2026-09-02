@@ -15,13 +15,10 @@ const planJob = workflow.slice(
 )
 const buildJob = workflow.slice(
   workflow.indexOf('  build:'),
-  workflow.indexOf('  sanity-check:')
-)
-const sanityCheckJob = workflow.slice(
-  workflow.indexOf('  sanity-check:'),
   workflow.indexOf('  release:')
 )
 const releaseJob = workflow.slice(workflow.indexOf('  release:'))
+const sanityScript = readFileSync('scripts/Test-CliSanity.ps1', 'utf8')
 const buildAction = readFileSync('.github/actions/cli/build/action.yml', 'utf8')
 const dotnetBuildAction = readFileSync(
   '.github/actions/build-dotnet/action.yml',
@@ -353,8 +350,8 @@ test('Scenario_PreviewWorkflow_PublishesOnlyNuGetForCliChangesOnMain', () => {
   assert.match(planJob, /version: \$\{\{ steps\.targets\.outputs\.version \}\}/)
   assert.match(buildJob, /needs: plan/)
   assert.match(buildJob, /publish-artifacts: 'true'/)
-  assert.match(releaseJob, /needs: \[plan, build, sanity-check\]/)
-  assert.match(releaseJob, /needs\.sanity-check\.result == 'success'/)
+  assert.match(releaseJob, /needs: \[plan, build\]/)
+  assert.match(releaseJob, /needs\.build\.result == 'success'/)
   assert.match(releaseJob, /environment: Release/)
   assert.match(workflow, /cancel-in-progress: false/)
   assert.match(
@@ -450,24 +447,60 @@ test('Scenario_PreviewWorkflow_PublishesOnlyNuGetForCliChangesOnMain', () => {
   )
 })
 
-test('Scenario_ReleaseWorkflow_SanityChecksLinuxPackLifecycleWithoutScripts', () => {
-  assert.match(sanityCheckJob, /needs: \[plan, build\]/)
-  assert.match(sanityCheckJob, /runs-on: ubuntu-latest/)
-  assert.match(sanityCheckJob, /name: cli-linux-x64/)
+test('Scenario_ReleaseWorkflow_SanityChecksX64PackLifecycleWithoutScripts', () => {
+  const buildStepIndex = buildJob.indexOf('- name: Build Luna CLI')
+  const sanityStepIndex = buildJob.indexOf('- name: Run CLI sanity check')
+
+  assert.ok(buildStepIndex >= 0)
+  assert.ok(sanityStepIndex > buildStepIndex)
+  assert.doesNotMatch(workflow, /  sanity-check:/)
+  assert.match(
+    buildJob,
+    /if: \$\{\{ endsWith\(matrix\.runtimeIdentifier, '-x64'\) \}\}/
+  )
+  assert.match(buildJob, /SOURCE_REF: \$\{\{ github\.sha \}\}/)
+  assert.match(buildJob, /HOME: \$\{\{ runner\.temp \}\}\/luna-sanity-home/)
+  assert.match(
+    buildJob,
+    /LUNA: \$\{\{ runner\.temp \}\}\/luna-cli\/\$\{\{ matrix\.runtimeIdentifier \}\}\/publish\//
+  )
+  assert.match(buildJob, /startsWith\(matrix\.runtimeIdentifier, 'win-'\)/)
+  assert.doesNotMatch(buildJob, /Download CLI|Check out sanity script/)
+  assert.match(buildJob, /pwsh -NoLogo -NoProfile -NonInteractive/)
+  assert.doesNotMatch(buildAction, /Test-CliSanity/)
+  assert.match(releaseJob, /needs: \[plan, build\]/)
+  assert.doesNotMatch(releaseJob, /sanity-check|needs\.sanity-check/)
 
   for (const command of [
-    '"$LUNA" init',
-    '"$LUNA" sources add github lunapack lunarisdigitalsolutions/lunapack --ref main --path projects/packs',
-    '"$LUNA" discover',
-    '"$LUNA" search luna',
-    '"$LUNA" install lunapack-testing@1.0.0 --scripts skip',
-    '"$LUNA" update lunapack-testing --scripts skip',
-    '"$LUNA" uninstall lunapack-testing --scripts skip'
+    "@('init')",
+    "@('sources', 'list')",
+    "@('discover')",
+    "@('search', 'luna')",
+    "@('validate', 'lunapack-testing@1.0.0')",
+    "@('inspect', 'lunapack-testing@1.0.0')",
+    "@('outdated')",
+    "@('update', 'lunapack-testing', '--scripts', 'skip')",
+    "@('uninstall', 'lunapack-testing', '--scripts', 'skip')"
   ]) {
-    assert.ok(sanityCheckJob.includes(command))
+    assert.ok(sanityScript.includes(command))
   }
 
-  assert.doesNotMatch(sanityCheckJob, /--scripts (?:prompt|run)/)
+  assert.match(sanityScript, /RedirectStandardInput = \$true/)
+  assert.match(sanityScript, /StandardInput\.Close\(\)/)
+  assert.match(sanityScript, /Get-Command .* \| Select-Object -First 1/)
+  for (const parameter of [
+    'projectName=Sanity Check',
+    'includeOptional=true',
+    'profile=full',
+    'features=docs',
+    'features=ci',
+    'features=scripts'
+  ]) {
+    assert.ok(sanityScript.includes(`'${parameter}'`))
+  }
+
+  assert.equal([...sanityScript.matchAll(/@\('audit'\)/g)].length, 3)
+  assert.doesNotMatch(sanityScript, /'--scripts', '(?:prompt|run)'/)
 })
 
 test('Scenario_ReleaseWorkflow_AcceptsOnlyOciSafeSemanticVersions', () => {
@@ -518,7 +551,7 @@ test('Scenario_ReleaseWorkflow_RunsAreBoundedAndSerialized', () => {
     /concurrency:\s+group: cli-release-\$\{\{ github\.ref \}\}/
   )
   assert.match(workflow, /cancel-in-progress: false/)
-  assert.equal([...workflow.matchAll(/timeout-minutes:/g)].length, 4)
+  assert.equal([...workflow.matchAll(/timeout-minutes:/g)].length, 3)
   assert.match(buildAction, /default: '3'/)
   assert.match(
     buildAction,
