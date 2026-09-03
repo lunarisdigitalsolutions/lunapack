@@ -65,21 +65,22 @@ not trigger this prompt. Choose the transfer option after recording release
 notes below that text. Release notes describe externally observable changes for
 CLI consumers; exclude independently versioned pack packages, documentation,
 CI, build, test, and release-process work.
-Otherwise, the new version receives a release-notes placeholder. The script
-stops after either action. Fill in the new release section and rerun the
-script. This flow applies to derived and explicit
+When the transfer is confirmed, the script continues through the release
+workflow. Otherwise, the new version receives a release-notes placeholder; fill
+in the new release section and rerun the script. This flow applies to derived and explicit
 versions; an explicit version must be greater than the current changelog
 version.
 
 The script requires checked-out `main` to match `origin/main`, verifies that
 the release version is newer than the following changelog version, and rejects
-existing local or remote `vx.x.x` tags. It asks before fetching,
-creating the changelog section, creating the release commit, pushing `main`,
-creating the annotated tag, and pushing that tag. Declining a dependent action
-stops the remaining release workflow. The release commit contains only
-`projects/cli/CHANGELOG.md` and uses `chore: Release version x.x.x`. If the
-changelog has no changes, the script skips the release commit and `main` push
-before creating the tag. The pushed `vx.x.x` tag starts the Luna release
+existing local or remote `vx.x.x` tags. It asks before fetching, creating the
+changelog section, creating the release commit, creating the annotated tag, and
+one atomic push. Declining a dependent action stops the remaining release
+workflow. The release commit contains only `projects/cli/CHANGELOG.md` and
+uses `release: Release version x.x.x`. If the changelog has no changes, the
+script skips the release commit and pushes only the tag. Otherwise, it creates
+the release commit and tag locally, then atomically pushes `main` and the tag in
+one command. The pushed `vx.x.x` tag starts the Luna release
 workflow. The GitHub Release title is `Luna vx.x.x` and attaches a
 `CHANGELOG.md` containing only the matching version section. It publishes
 archives for `win-x64`, `linux-x64`,
@@ -158,9 +159,15 @@ access and provenance are visible.
 
 ## Recover From A Tag Push Failure
 
-If the `main` push succeeds but the tag push fails, do not rerun the script:
-the release commit and local tag already exist. Resolve the remote failure,
-then push the existing tag:
+If the atomic push fails, the release commit and local tag remain available.
+Resolve the remote failure, then rerun the same push command:
+
+```powershell
+git push --atomic origin main v1.0.1
+```
+
+If the remote has already accepted `main` but not the tag, push the existing tag
+alone after verifying the release commit is present on `origin/main`:
 
 ```powershell
 git push origin v1.0.1

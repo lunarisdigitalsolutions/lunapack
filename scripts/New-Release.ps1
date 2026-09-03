@@ -305,8 +305,15 @@ try {
         }
 
         Add-ChangelogSection -Path $changelogPath -Changelog $changelog -InsertionIndex $releaseMatches[0].Index -ReleaseVersion $releaseVersion -UnreleasedSection $unreleasedSection -CopyUnreleased:$copyUnreleased
-        Write-Information "Added CHANGELOG.md section for version $releaseVersion. Fill in its release notes, then rerun this script."
-        return
+        if (-not $copyUnreleased) {
+            Write-Information "Added CHANGELOG.md section for version $releaseVersion. Fill in its release notes, then rerun this script."
+            return
+        }
+
+        $changelog = Get-Content -LiteralPath $changelogPath -Raw
+        $releaseMatches = [regex]::Matches($changelog, $releaseHeadingPattern)
+        $unreleasedSection = [regex]::Match($changelog, $unreleasedSectionPattern)
+        $matchingReleaseIndex = 0
     }
 
     if ($matchingReleaseIndex -ne 0) {
@@ -343,38 +350,38 @@ try {
         throw "Release tag '$releaseTag' already exists on origin."
     }
 
-    if (Test-GitPathChanged -Path $changelogRepositoryPath) {
+    $changelogChanged = Test-GitPathChanged -Path $changelogRepositoryPath
+    if ($changelogChanged) {
         if (-not (Confirm-Action -Action "Create commit 'release: Release version $releaseVersion' containing $changelogRepositoryPath")) {
             Write-Information 'Release cancelled before commit.'
             return
         }
 
         Invoke-Git -Arguments @('commit', '--only', $changelogRepositoryPath, '-m', "release: Release version $releaseVersion") | Out-Null
-
-        if (-not (Confirm-Action -Action 'Push main to origin?')) {
-            Write-Information "Release commit created locally. Push main before creating tag '$releaseTag'."
-            return
-        }
-
-        Invoke-Git -Arguments @('push', 'origin', 'main') | Out-Null
     }
     else {
         Write-Information "$changelogRepositoryPath is unchanged; skipping release commit and main push."
     }
 
     if (-not (Confirm-Action -Action "Create annotated tag '$releaseTag'?")) {
-        Write-Information "Main was pushed. Create and push tag '$releaseTag' to finish the release."
+        Write-Information "Release commit is local. Create tag '$releaseTag' before pushing the release."
         return
     }
 
     Invoke-Git -Arguments @('tag', '-a', $releaseTag, '-m', "Release version $releaseVersion") | Out-Null
 
-    if (-not (Confirm-Action -Action "Push tag '$releaseTag' to origin?")) {
-        Write-Information "Tag '$releaseTag' exists locally. Push it with: git push origin $releaseTag"
+    $pushArguments = @('push', '--atomic', 'origin')
+    if ($changelogChanged) {
+        $pushArguments += 'main'
+    }
+    $pushArguments += $releaseTag
+    $pushDescription = if ($changelogChanged) { "main and tag '$releaseTag'" } else { "tag '$releaseTag'" }
+    if (-not (Confirm-Action -Action "Push $pushDescription to origin?")) {
+        Write-Information "Release commit and tag '$releaseTag' exist locally. Push them with: git $($pushArguments -join ' ')"
         return
     }
 
-    Invoke-Git -Arguments @('push', 'origin', $releaseTag) | Out-Null
+    Invoke-Git -Arguments $pushArguments | Out-Null
     Write-Information "Released version $releaseVersion with tag $releaseTag."
 }
 finally {

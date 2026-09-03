@@ -1,0 +1,18 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+# Security contact for Lunaris Digital Solutions GmbH & Co. KG
+Contact: mailto:security@lunaris.digital
+Expires: 2027-09-03T23:59:59Z
+Encryption: https://lunaris.digital/.well-known/pgp.asc
+Preferred-Languages: en, de
+Canonical: https://lunapack.dev/.well-known/security.txt
+Policy: https://lunaris.digital/security
+-----BEGIN PGP SIGNATURE-----
+
+iKsEARYKAFMWIQTFHqBGhXiMINewy8j5ZjDNOw2rQwUCapmduhsUgAAAAAAEAA5t
+YW51MiwyLjUrMS4xMiwyLDEZHHNlY3VyaXR5QGx1bmFyaXMuZGlnaXRhbAAKCRD5
+ZjDNOw2rQ23KAPsHHOe/30ITr10xtNg7uJ/teAKfKMtSPYrTfxMPtlxTdAD9EjKB
+QmYoOx5rwZm7f2tR+GeaIL1MTroCch513fB3sQ0=
+=FpCP
+-----END PGP SIGNATURE-----
