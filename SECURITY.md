@@ -4,8 +4,13 @@
 
 Do not open a public issue for a suspected vulnerability. Use the repository's
 private security-advisory reporting form. If private reporting is unavailable,
-email <info@lunaris.digital> with a concise description, affected version or
-commit, impact, and reproduction conditions.
+email <security@lunaris.digital> with a concise description, affected version
+or commit, impact, and reproduction conditions.
+
+The canonical machine-readable security contact is published at
+<https://lunaris.digital/.well-known/security.txt>. See the
+[Lunaris security policy](https://lunaris.digital/security) for organization-wide
+reporting guidance.
 
 Do not include live credentials, customer data, or unrelated personal data.
 Use synthetic examples and redact logs before attaching them.
