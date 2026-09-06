@@ -529,7 +529,7 @@ public sealed class CliApplicationTests
         await Assert.That(projectState.Configuration.SchemaVersion).IsEqualTo(1);
         await Assert.That(projectState.Configuration.Sources).IsEmpty();
         await Assert.That(projectState.Configuration.Packs).IsEmpty();
-        await Assert.That(projectState.LockFile.SchemaVersion).IsEqualTo(1);
+        await Assert.That(projectState.LockFile.SchemaVersion).IsEqualTo(2);
         await Assert.That(projectState.LockFile.Packs).IsEmpty();
     }
 

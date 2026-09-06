@@ -5,6 +5,7 @@ using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Application.Guidance;
 using Lunapack.Cli.Links;
 using Lunapack.Cli.Packs.ManagedFiles;
+using Lunapack.Cli.Packs.Manifest;
 using Lunapack.Cli.Packs.Planning;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Trust;
@@ -28,6 +29,7 @@ internal sealed class UpdatePackCommandHandler(
     public Command CreateCommand(string projectDirectory, Option<string?> workspaceOption)
     {
         var packReferenceArgument = CreatePackReferenceArgument(completionProvider);
+        var nameOption = CreateNameOption();
         var promptOption = CreatePromptOption();
         var dryRunOption = CreateDryRunOption();
         var noFileChangeOutputOption = CreateNoFileChangeOutputOption();
@@ -40,6 +42,7 @@ internal sealed class UpdatePackCommandHandler(
         var command = new Command("update", "Update installed packs.")
         {
             packReferenceArgument,
+            nameOption,
             promptOption,
             dryRunOption,
             noFileChangeOutputOption,
@@ -56,6 +59,7 @@ internal sealed class UpdatePackCommandHandler(
                 workspaceOption,
                 parseResult,
                 packReferenceArgument,
+                nameOption,
                 promptOption,
                 dryRunOption,
                 noFileChangeOutputOption,
@@ -101,6 +105,7 @@ internal sealed class UpdatePackCommandHandler(
         Option<string?> workspaceOption,
         ParseResult parseResult,
         Argument<string[]> packReferenceArgument,
+        Option<string?> nameOption,
         Option<bool> promptOption,
         Option<bool> dryRunOption,
         Option<bool> noFileChangeOutputOption,
@@ -122,6 +127,12 @@ internal sealed class UpdatePackCommandHandler(
         if (parsedReferences.Value is not { } references)
         {
             return console.Fail(parsedReferences.Error);
+        }
+
+        var name = parseResult.GetValue(nameOption);
+        if (GetNameOptionError(name, references.Count) is { } nameOptionError)
+        {
+            return console.Fail(nameOptionError);
         }
 
         var workspaceDirectory = workspaceDirectoryResolver.Resolve(
@@ -185,6 +196,7 @@ internal sealed class UpdatePackCommandHandler(
             workspaceDirectory,
             referenceValues,
             references,
+            name,
             prompt,
             dryRun,
             showFileChanges,
@@ -220,6 +232,7 @@ internal sealed class UpdatePackCommandHandler(
         string workspaceDirectory,
         string[] referenceValues,
         IReadOnlyList<PackReference> references,
+        string? name,
         bool prompt,
         bool dryRun,
         bool showFileChanges,
@@ -254,6 +267,7 @@ internal sealed class UpdatePackCommandHandler(
                 await UpdateAsync(
                     workspaceDirectory,
                     null,
+                    null,
                     dryRun,
                     scriptMode,
                     skipInstructions,
@@ -271,6 +285,7 @@ internal sealed class UpdatePackCommandHandler(
             workspaceDirectory,
             referenceValues,
             references,
+            name,
             dryRun,
             showFileChanges,
             scriptMode,
@@ -295,10 +310,18 @@ internal sealed class UpdatePackCommandHandler(
             ? "The --prompt option is only available when updating all packs."
             : null;
 
+    private static string? GetNameOptionError(string? name, int referenceCount) =>
+        name is not null && referenceCount != 1
+            ? "The --name option requires exactly one pack reference."
+        : name is not null && !ManifestModelValidator.IsPackId(name)
+            ? $"Pack instance alias '{name}' must use pack-ID syntax."
+        : null;
+
     private async Task<int> UpdateRequestedPacksAsync(
         string workspaceDirectory,
         string[] referenceValues,
         IReadOnlyList<PackReference> references,
+        string? name,
         bool dryRun,
         bool showFileChanges,
         ScriptExecutionMode scriptMode,
@@ -333,6 +356,7 @@ internal sealed class UpdatePackCommandHandler(
                 await UpdateAsync(
                     workspaceDirectory,
                     reference,
+                    name,
                     dryRun,
                     scriptMode,
                     skipInstructions,
@@ -369,6 +393,9 @@ internal sealed class UpdatePackCommandHandler(
 
     private static Option<bool> CreatePromptOption() =>
         new("--prompt", "-p") { Description = "Confirm each available update before applying it." };
+
+    private static Option<string?> CreateNameOption() =>
+        new("--name") { Description = "Alias of the pack instance to update." };
 
     private static Option<bool> CreateDryRunOption() =>
         new("--dry-run", "-D") { Description = "Plan updates without modifying files or state." };
@@ -463,6 +490,7 @@ internal sealed class UpdatePackCommandHandler(
     private Task<PackUpdateService.UpdateResult> UpdateAsync(
         string projectDirectory,
         PackReference? reference,
+        string? name,
         bool dryRun,
         ScriptExecutionMode scriptMode,
         bool skipInstructions,
@@ -480,7 +508,8 @@ internal sealed class UpdatePackCommandHandler(
                 skipInstructions,
                 acceptSources,
                 promptParameters,
-                updateOptions
+                updateOptions,
+                name
             )
             : console.RunWithStatusAsync(
                 status,
@@ -493,7 +522,8 @@ internal sealed class UpdatePackCommandHandler(
                         skipInstructions,
                         acceptSources,
                         promptParameters,
-                        updateOptions
+                        updateOptions,
+                        name
                     )
             );
 

@@ -4,10 +4,16 @@
   "title": "LunaPack project lock file",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "packs"],
+  "required": ["schemaVersion", "instances", "packs"],
   "properties": {
     "schemaVersion": {
-      "enum": [1]
+      "enum": [2]
+    },
+    "instances": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/packInstance"
+      }
     },
     "packs": {
       "type": "array",
@@ -26,6 +32,49 @@
     }
   },
   "definitions": {
+    "packInstance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "rootResolution",
+        "placements",
+        "managedFiles"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/packId"
+        },
+        "name": {
+          "$ref": "#/definitions/packId"
+        },
+        "rootResolution": {
+          "$ref": "#/definitions/resolvedPackKey"
+        },
+        "destination": {
+          "$ref": "#/definitions/destination"
+        },
+        "placements": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/definitions/repositoryRelativePath"
+          },
+          "additionalProperties": {
+            "$ref": "#/definitions/repositoryRelativePath"
+          }
+        },
+        "externalSources": {
+          "$ref": "#/definitions/externalSources"
+        },
+        "managedFiles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/managedFile"
+          }
+        }
+      }
+    },
     "managedFile": {
       "type": "object",
       "additionalProperties": false,
@@ -123,7 +172,7 @@
     "packReference": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "version"],
+      "required": ["id", "version", "resolution"],
       "properties": {
         "id": {
           "type": "string",
@@ -131,6 +180,51 @@
         },
         "version": {
           "$ref": "#/definitions/semanticVersion"
+        },
+        "resolution": {
+          "$ref": "#/definitions/resolvedPackKey"
+        }
+      }
+    },
+    "resolvedPackKey": {
+      "oneOf": [
+        { "$ref": "#/definitions/localResolvedPackKey" },
+        { "$ref": "#/definitions/gitResolvedPackKey" }
+      ]
+    },
+    "localResolvedPackKey": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "sourceIdentity"],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/packId"
+        },
+        "version": {
+          "$ref": "#/definitions/semanticVersion"
+        },
+        "sourceIdentity": {
+          "$ref": "#/definitions/localSourceIdentity"
+        }
+      }
+    },
+    "gitResolvedPackKey": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "sourceIdentity", "resolvedCommit"],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/packId"
+        },
+        "version": {
+          "$ref": "#/definitions/semanticVersion"
+        },
+        "sourceIdentity": {
+          "$ref": "#/definitions/gitSourceIdentity"
+        },
+        "resolvedCommit": {
+          "type": "string",
+          "pattern": "^[A-Fa-f0-9]{40}(?:[A-Fa-f0-9]{24})?$"
         }
       }
     },
@@ -169,6 +263,7 @@
       "additionalProperties": false,
       "required": [
         "id",
+        "key",
         "version",
         "packPath",
         "sourceName",
@@ -178,8 +273,8 @@
         "managedFiles"
       ],
       "properties": {
-        "destination": {
-          "$ref": "#/definitions/destination"
+        "key": {
+          "$ref": "#/definitions/resolvedPackKey"
         },
         "sourceName": {
           "$ref": "#/definitions/sourceName"
@@ -225,6 +320,7 @@
       "additionalProperties": false,
       "required": [
         "id",
+        "key",
         "version",
         "sourceName",
         "sourceIdentity",
@@ -234,8 +330,8 @@
         "managedFiles"
       ],
       "properties": {
-        "destination": {
-          "$ref": "#/definitions/destination"
+        "key": {
+          "$ref": "#/definitions/resolvedPackKey"
         },
         "sourceName": {
           "$ref": "#/definitions/sourceName"
@@ -313,6 +409,11 @@
       }
     },
     "linkName": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$"
+    },
+    "packId": {
       "type": "string",
       "minLength": 1,
       "pattern": "^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$"

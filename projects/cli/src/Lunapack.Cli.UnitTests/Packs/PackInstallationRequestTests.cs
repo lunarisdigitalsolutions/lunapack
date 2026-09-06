@@ -42,6 +42,24 @@ public sealed class PackInstallationRequestTests
     }
 
     [Test]
+    public async Task Create_WhenNameProvided_PreservesName()
+    {
+        var result = PackInstallationRequest.Create(
+            new MockFileSystem(),
+            "C:\\project",
+            "license-mit",
+            null,
+            false,
+            [],
+            false,
+            [],
+            name: "orders"
+        );
+
+        await Assert.That(result.RequireValue().Name).IsEqualTo("orders");
+    }
+
+    [Test]
     public async Task Parse_WhenScriptModeUnsupported_ReturnsFailure()
     {
         var result = ScriptExecutionMode.Parse("always");

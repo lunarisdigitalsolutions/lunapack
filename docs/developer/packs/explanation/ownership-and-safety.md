@@ -1,8 +1,10 @@
 # Ownership and safety
 
 LunaPack records a SHA-256 digest of each rendered managed file. Installation
-creates absent targets and can adopt an existing target only when it exactly
-matches the rendered content. A conflicting unowned target stops the operation.
+creates absent targets and applies the declared strategy to existing unowned
+targets. Explicit adoption records an existing target without rewriting it only
+when it exactly matches rendered content. Preview overwrite and merge actions
+before installing over repository files.
 
 Only merge strategies may share a target. The merged result is deterministic,
 and every owner records its final digest. Other target collisions fail before
@@ -29,4 +31,6 @@ this ownership decision; Luna accesses source content separately when it can
 load uninstall hooks.
 
 Consumers select trusted sources. Local paths and Git provenance are recorded
-in the lock document.
+in the lock document. See
+[Managed-file strategies through install and update](managed-file-strategies.md)
+for concrete file transformations and shared dependency examples.

@@ -26,11 +26,13 @@ internal sealed class PackUpdateService(
         bool skipInstructions = false,
         bool acceptSources = false,
         PackParameterPromptCallback? promptParameters = null,
-        PackUpdateOptions? options = null
+        PackUpdateOptions? options = null,
+        string? name = null
     ) =>
         await UpdateAsync(
             projectDirectory,
             packReference,
+            name,
             selectedUpdateIds: null,
             dryRun,
             scriptMode ?? ScriptExecutionMode.Prompt,
@@ -53,6 +55,7 @@ internal sealed class PackUpdateService(
         await UpdateAsync(
             projectDirectory,
             packReference: null,
+            name: null,
             selectedUpdateIds,
             dryRun,
             scriptMode ?? ScriptExecutionMode.Prompt,
@@ -65,6 +68,7 @@ internal sealed class PackUpdateService(
     private async Task<UpdateResult> UpdateAsync(
         string projectDirectory,
         PackReference? packReference,
+        string? name,
         IReadOnlySet<string>? selectedUpdateIds,
         bool dryRun,
         ScriptExecutionMode scriptMode,
@@ -99,6 +103,7 @@ internal sealed class PackUpdateService(
                 state,
                 catalogPacks,
                 reference,
+                name,
                 dryRun,
                 scriptMode,
                 skipInstructions,
@@ -156,6 +161,7 @@ internal sealed class PackUpdateService(
         ProjectState state,
         IReadOnlyList<CatalogPack> catalog,
         PackReference packReference,
+        string? name,
         bool dryRun,
         ScriptExecutionMode scriptMode,
         bool skipInstructions,
@@ -164,7 +170,7 @@ internal sealed class PackUpdateService(
         PackUpdateOptions options
     )
     {
-        var selectedUpdate = SelectNamedUpdate(state, catalog, packReference);
+        var selectedUpdate = SelectNamedUpdate(state, catalog, packReference, name);
         if (selectedUpdate.Value is not { } update)
         {
             return UpdateResult.Failure(
@@ -180,7 +186,7 @@ internal sealed class PackUpdateService(
 
         var nextRequestedRoots = state
             .Configuration.Packs.Select(root =>
-                string.Equals(root.Id, packReference.Id, StringComparison.Ordinal)
+                root.GetInstanceIdentity() == update.RequestedRoot.GetInstanceIdentity()
                     ? update.NextRequestedRoot
                     : root
             )
@@ -305,28 +311,25 @@ internal sealed class PackUpdateService(
     private static ManifestOperationResult<NamedPackUpdate> SelectNamedUpdate(
         ProjectState state,
         IReadOnlyList<CatalogPack> catalog,
-        PackReference packReference
+        PackReference packReference,
+        string? name
     )
     {
-        var requestedRoot = state.Configuration.Packs.Find(request =>
-            string.Equals(request.Id, packReference.Id, StringComparison.Ordinal)
+        var selectedInstance = PackInstanceSelection.Select(
+            state,
+            packReference.Id,
+            name,
+            "update"
         );
-        if (requestedRoot is null)
+        if (selectedInstance.Value is not { } instance)
         {
             return ManifestOperationResult<NamedPackUpdate>.Failure(
-                $"Pack '{packReference.Id}' is not installed."
+                selectedInstance.Error ?? $"Pack '{packReference.Id}' is not installed."
             );
         }
 
-        var currentPack = state.LockFile.Packs.Find(pack =>
-            string.Equals(pack.Id, packReference.Id, StringComparison.Ordinal)
-        );
-        if (currentPack is null)
-        {
-            return ManifestOperationResult<NamedPackUpdate>.Failure(
-                $"Lock file does not contain requested pack '{packReference.Id}'."
-            );
-        }
+        var requestedRoot = instance.RequestedRoot;
+        var currentPack = instance.ResolvedPack;
 
         var selected = packReference.Version is null
             ? SelectOrdinaryUpdate(currentPack, catalog)
@@ -583,22 +586,12 @@ internal sealed class PackUpdateService(
         LockedSourceUpdateSelector.SourceSwitch? proposedSourceSwitch = null
     )
     {
-        var updateRequestResult = PackInstallationRequest.Create(
-            fileSystem,
+        var updateRequestResult = CreateUpdateRequest(
             projectDirectory,
-            updateRequestRoot.Version is null
-                ? updateRequestRoot.Id
-                : $"{updateRequestRoot.Id}@{updateRequestRoot.Version}",
-            updateRequestRoot.Destination,
-            adoptExisting: false,
-            options.Parameters,
-            options.NoVariables,
-            options.SkippedVariables,
-            options.DirectoryRemappings,
-            options.FileRemappings,
+            updateRequestRoot,
             scriptMode,
             skipInstructions,
-            options.SaveRemapping
+            options
         );
         if (updateRequestResult.Value is not { } updateRequest)
         {
@@ -613,7 +606,7 @@ internal sealed class PackUpdateService(
             selectedRequestedRoots =
             [
                 .. selectedRequestedRoots.Select(root =>
-                    string.Equals(root.Id, updateRequestRoot.Id, StringComparison.Ordinal)
+                    root.GetInstanceIdentity() == updateRequestRoot.GetInstanceIdentity()
                         ? root with
                         {
                             Remap = updateRequest.TargetRemapping?.MergeInto(root.Remap),
@@ -663,6 +656,32 @@ internal sealed class PackUpdateService(
             ? UpdateResult.Success(outcomes, appliedPlan)
             : UpdateResult.LifecycleFailure();
     }
+
+    private ManifestOperationResult<PackInstallationRequest> CreateUpdateRequest(
+        string projectDirectory,
+        ProjectConfiguration.RequestedPack updateRequestRoot,
+        ScriptExecutionMode scriptMode,
+        bool skipInstructions,
+        PackUpdateOptions options
+    ) =>
+        PackInstallationRequest.Create(
+            fileSystem,
+            projectDirectory,
+            updateRequestRoot.Version is null
+                ? updateRequestRoot.Id
+                : $"{updateRequestRoot.Id}@{updateRequestRoot.Version}",
+            updateRequestRoot.Destination,
+            adoptExisting: false,
+            options.Parameters,
+            options.NoVariables,
+            options.SkippedVariables,
+            options.DirectoryRemappings,
+            options.FileRemappings,
+            scriptMode,
+            skipInstructions,
+            options.SaveRemapping,
+            updateRequestRoot.GetInstanceIdentity().Alias
+        );
 
     internal sealed record UpdateResult(
         IReadOnlyList<UpdateOutcome> Outcomes,

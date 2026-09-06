@@ -441,7 +441,7 @@ internal sealed class CliApplication(
     {
         var packLifecycleService = new PackLifecycleService(
             fileSystem,
-            new CompositePackGraphResolver(packCatalog),
+            new CompositePackGraphResolver(packCatalog, console),
             new PackInstallationPlanner(fileSystem, new PackTemplateRenderer(fileSystem)),
             new PackUpdatePlanner(fileSystem),
             new PackUpdateTransaction(fileSystem, console),

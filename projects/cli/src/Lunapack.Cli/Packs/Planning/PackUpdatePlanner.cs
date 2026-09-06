@@ -1,10 +1,6 @@
 using System.IO.Abstractions;
-using System.Text;
-using System.Text.Json;
-using System.Text.Json.Nodes;
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Application.Paths;
-using Lunapack.Cli.Application.Serialization;
 using Lunapack.Cli.Packs.ManagedFiles;
 using Lunapack.Cli.Project;
 
@@ -12,13 +8,7 @@ namespace Lunapack.Cli.Packs.Planning;
 
 internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
 {
-    private static readonly UTF8Encoding _utf8 = new(false, true);
-    private static readonly JsonSerializerOptions _mergedJsonOptions = new(
-        LunapackJsonSerializerOptions.Default
-    )
-    {
-        WriteIndented = true,
-    };
+    private readonly CopyManagedFileUpdatePlanner _copyPlanner = new(fileSystem);
 
     public ManifestOperationResult<PackUpdatePlan> Plan(
         string projectDirectory,
@@ -27,7 +17,10 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
         bool removeUnplannedManagedFiles = true
     )
     {
-        var previousTargets = CreatePreviousTargetMap(previousLockFile);
+        var previousTargets = CreatePreviousTargetMap(
+            previousLockFile,
+            installationPlan.RootIdentity
+        );
         if (previousTargets.Value is not { } previousTargetMap)
         {
             return ManifestOperationResult<PackUpdatePlan>.Failure(
@@ -47,6 +40,7 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
             .Remappings.Where(remapping => remapping.Origin == ManagedFileRemappingOrigin.Command)
             .Select(remapping => new PackTargetKey(
                 remapping.PackId,
+                GetAlias(remapping.PackId, installationPlan.RootIdentity),
                 ProjectPath.Normalize(remapping.DeclaredTarget)
             ))
             .ToHashSet();
@@ -58,6 +52,7 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
             plannedTargetMap,
             installationPlan.IgnoredDeclaredTargets,
             commandRemappedTargets,
+            installationPlan.RootIdentity,
             removeUnplannedManagedFiles
         );
         if (updateActions.Value is not { } actions)
@@ -82,12 +77,17 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
     {
         var remappings = installationPlan.Remappings.ToDictionary(remapping => new PackTargetKey(
             remapping.PackId,
+            GetAlias(remapping.PackId, installationPlan.RootIdentity),
             ProjectPath.Normalize(remapping.DeclaredTarget)
         ));
         foreach (var managedFile in installationPlan.ManagedFiles)
         {
             var declaredTarget = ProjectPath.Normalize(managedFile.DeclaredTargetPath);
-            var key = new PackTargetKey(managedFile.Pack.Manifest.Id, declaredTarget);
+            var key = new PackTargetKey(
+                managedFile.Pack.Manifest.Id,
+                GetAlias(managedFile, installationPlan.RootIdentity),
+                declaredTarget
+            );
             if (!previousTargets.TryGetValue(key, out var previousTarget))
             {
                 continue;
@@ -123,6 +123,7 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
         Dictionary<PackTargetKey, PlannedManagedFile> plannedTargetMap,
         IReadOnlySet<string> ignoredDeclaredTargets,
         IReadOnlySet<PackTargetKey> commandRemappedTargets,
+        PackInstanceIdentity? rootIdentity,
         bool removeUnplannedManagedFiles
     )
     {
@@ -135,7 +136,8 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
             plannedManagedFiles,
             actions,
             plannedResultingContents,
-            commandRemappedTargets
+            commandRemappedTargets,
+            rootIdentity
         );
         if (!plannedUpdates.IsSuccess)
         {
@@ -166,7 +168,8 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
         IReadOnlyList<PlannedManagedFile> plannedManagedFiles,
         List<PlannedPackUpdateAction> actions,
         Dictionary<string, byte[]> plannedResultingContents,
-        IReadOnlySet<PackTargetKey> commandRemappedTargets
+        IReadOnlySet<PackTargetKey> commandRemappedTargets,
+        PackInstanceIdentity? rootIdentity
     )
     {
         foreach (var managedFile in plannedManagedFiles)
@@ -177,7 +180,8 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
                 managedFile,
                 actions,
                 plannedResultingContents,
-                commandRemappedTargets
+                commandRemappedTargets,
+                rootIdentity
             );
             if (!plannedUpdate.IsSuccess)
             {
@@ -196,11 +200,13 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
         PlannedManagedFile managedFile,
         List<PlannedPackUpdateAction> actions,
         Dictionary<string, byte[]> plannedResultingContents,
-        IReadOnlySet<PackTargetKey> commandRemappedTargets
+        IReadOnlySet<PackTargetKey> commandRemappedTargets,
+        PackInstanceIdentity? rootIdentity
     )
     {
         var key = new PackTargetKey(
             managedFile.Pack.Manifest.Id,
+            GetAlias(managedFile, rootIdentity),
             ProjectPath.Normalize(managedFile.DeclaredTargetPath)
         );
         previousTargetMap.TryGetValue(key, out var previousTarget);
@@ -291,9 +297,10 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
             actions.Add(
                 new DeleteManagedFileUpdateAction(
                     new ManagedRootOwner(
-                        ManagedRootKind.Pack,
+                        key.Alias is null ? ManagedRootKind.Pack : ManagedRootKind.PackInstance,
                         previousTarget.Pack.Id,
-                        previousTarget.Pack.Version
+                        previousTarget.Pack.Version,
+                        key.Alias
                     ),
                     new ManagedRootFile(
                         previousTarget.Pack.PackPath,
@@ -326,8 +333,12 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
 
         return managedFile.Strategy.Type switch
         {
-            "copy" => CreateCopyAction(managedFile, previousTarget, targetContents),
-            "merge" => CreateMergeAction(managedFile, previousTarget, targetContents),
+            "copy" => _copyPlanner.Plan(managedFile, previousTarget?.ManagedFile, targetContents),
+            "merge" => MergeManagedFileUpdatePlanner.Plan(
+                managedFile,
+                previousTarget?.ManagedFile,
+                targetContents
+            ),
             _ => ManifestOperationResult<PlannedPackUpdateAction>.Failure(
                 $"Managed target '{managedFile.TargetPathRelativeToProject}' uses unsupported strategy '{managedFile.Strategy.Type}/{managedFile.Strategy.Method}'."
             ),
@@ -353,343 +364,81 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
                 ),
             };
 
-    private ManifestOperationResult<PlannedPackUpdateAction> CreateCopyAction(
-        PlannedManagedFile managedFile,
-        PreviousManagedTarget? previousTarget,
-        byte[] targetContents
-    )
-    {
-        if (!string.Equals(managedFile.Strategy.Type, "copy", StringComparison.Ordinal))
-        {
-            return ManifestOperationResult<PlannedPackUpdateAction>.Failure(
-                $"Managed target '{managedFile.TargetPathRelativeToProject}' uses unsupported strategy '{managedFile.Strategy.Type}/{managedFile.Strategy.Method}'."
-            );
-        }
-
-        return managedFile.Strategy.Method switch
-        {
-            "overwrite" => ManifestOperationResult<PlannedPackUpdateAction>.Success(
-                new CopyManagedFileUpdateAction(managedFile, previousTarget?.ManagedFile)
-            ),
-            "fail-if-exists" => ManifestOperationResult<PlannedPackUpdateAction>.Failure(
-                $"Managed target '{managedFile.TargetPathRelativeToProject}' already exists."
-            ),
-            "skip-if-exists" => ManifestOperationResult<PlannedPackUpdateAction>.Success(
-                new SkipManagedFileUpdateAction(
-                    managedFile,
-                    previousTarget?.ManagedFile,
-                    targetContents
-                )
-            ),
-            "backup-and-overwrite" => ManifestOperationResult<PlannedPackUpdateAction>.Success(
-                new BackupAndCopyManagedFileUpdateAction(
-                    managedFile,
-                    previousTarget?.ManagedFile,
-                    CreateBackupPath(managedFile.TargetPath)
-                )
-            ),
-            _ => ManifestOperationResult<PlannedPackUpdateAction>.Failure(
-                $"Managed target '{managedFile.TargetPathRelativeToProject}' uses unsupported copy method '{managedFile.Strategy.Method}'."
-            ),
-        };
-    }
-
-    private static ManifestOperationResult<PlannedPackUpdateAction> CreateMergeAction(
-        PlannedManagedFile managedFile,
-        PreviousManagedTarget? previousTarget,
-        byte[] targetContents
-    )
-    {
-        var mergedContents = managedFile.Strategy.Method switch
-        {
-            "lines" => MergeLines(targetContents, managedFile.Contents),
-            "section" => MergeSection(targetContents, managedFile.Contents),
-            "json" => MergeJson(targetContents, managedFile.Contents),
-            _ => ManifestOperationResult<byte[]>.Failure(
-                $"Managed target '{managedFile.TargetPathRelativeToProject}' uses unsupported merge method '{managedFile.Strategy.Method}'."
-            ),
-        };
-        if (mergedContents.Value is not { } contents)
-        {
-            return ManifestOperationResult<PlannedPackUpdateAction>.Failure(
-                mergedContents.Error ?? "Unable to merge managed file."
-            );
-        }
-
-        return ManifestOperationResult<PlannedPackUpdateAction>.Success(
-            managedFile.Strategy.Method switch
-            {
-                "lines" => new MergeLinesManagedFileUpdateAction(
-                    managedFile,
-                    previousTarget?.ManagedFile,
-                    contents
-                ),
-                "section" => new MergeSectionManagedFileUpdateAction(
-                    managedFile,
-                    previousTarget?.ManagedFile,
-                    contents
-                ),
-                "json" => new MergeJsonManagedFileUpdateAction(
-                    managedFile,
-                    previousTarget?.ManagedFile,
-                    contents
-                ),
-                _ => throw new InvalidOperationException("Unsupported merge method."),
-            }
-        );
-    }
-
-    private string CreateBackupPath(string targetPath)
-    {
-        var suffix = 1;
-        var backupPath = $"{targetPath}.{suffix}";
-        while (fileSystem.File.Exists(backupPath))
-        {
-            suffix++;
-            backupPath = $"{targetPath}.{suffix}";
-        }
-
-        return backupPath;
-    }
-
-    private static ManifestOperationResult<byte[]> MergeLines(
-        byte[] targetContents,
-        byte[] sourceContents
-    )
-    {
-        try
-        {
-            var targetText = GetUtf8Text(targetContents);
-            var sourceText = GetUtf8Text(sourceContents);
-            var targetLines = ReadLines(targetText);
-            var sourceLines = ReadLines(sourceText);
-            var knownLines = new HashSet<string>(targetLines, StringComparer.Ordinal);
-            foreach (var sourceLine in sourceLines)
-            {
-                if (knownLines.Add(sourceLine))
-                {
-                    targetLines.Add(sourceLine);
-                }
-            }
-
-            return ManifestOperationResult<byte[]>.Success(
-                CreateTextContents(
-                    targetLines,
-                    HasTrailingNewline(targetText) || HasTrailingNewline(sourceText)
-                )
-            );
-        }
-        catch (DecoderFallbackException exception)
-        {
-            return ManifestOperationResult<byte[]>.Failure(
-                $"Line merge requires UTF-8 text: {exception.Message}"
-            );
-        }
-    }
-
-    private static ManifestOperationResult<byte[]> MergeSection(
-        byte[] targetContents,
-        byte[] sourceContents
-    )
-    {
-        try
-        {
-            var targetText = GetUtf8Text(targetContents);
-            var sourceText = GetUtf8Text(sourceContents);
-            var sourceLines = ReadLines(sourceText);
-            if (sourceLines.Count < 2)
-            {
-                return ManifestOperationResult<byte[]>.Failure(
-                    "Section merge requires distinct first and last source marker lines."
-                );
-            }
-
-            var targetLines = ReadLines(targetText);
-            var firstMarkerIndexes = FindMarkerIndexes(targetLines, sourceLines[0]);
-            var lastMarkerIndexes = FindMarkerIndexes(targetLines, sourceLines[^1]);
-            if (firstMarkerIndexes.Count == 0 && lastMarkerIndexes.Count == 0)
-            {
-                targetLines.AddRange(sourceLines);
-                return ManifestOperationResult<byte[]>.Success(
-                    CreateTextContents(
-                        targetLines,
-                        HasTrailingNewline(targetText) || HasTrailingNewline(sourceText)
-                    )
-                );
-            }
-
-            var markersAreIncompleteOrAmbiguous =
-                firstMarkerIndexes.Count != 1
-                || lastMarkerIndexes.Count != 1
-                || firstMarkerIndexes[0] >= lastMarkerIndexes[0];
-            if (markersAreIncompleteOrAmbiguous)
-            {
-                return ManifestOperationResult<byte[]>.Failure(
-                    "Section merge markers are incomplete or ambiguous."
-                );
-            }
-
-            var firstMarkerIndex = firstMarkerIndexes[0];
-            targetLines.RemoveRange(firstMarkerIndex, lastMarkerIndexes[0] - firstMarkerIndex + 1);
-            targetLines.InsertRange(firstMarkerIndex, sourceLines);
-            return ManifestOperationResult<byte[]>.Success(
-                CreateTextContents(
-                    targetLines,
-                    HasTrailingNewline(targetText) || HasTrailingNewline(sourceText)
-                )
-            );
-        }
-        catch (DecoderFallbackException exception)
-        {
-            return ManifestOperationResult<byte[]>.Failure(
-                $"Section merge requires UTF-8 text: {exception.Message}"
-            );
-        }
-    }
-
-    private static ManifestOperationResult<byte[]> MergeJson(
-        byte[] targetContents,
-        byte[] sourceContents
-    )
-    {
-        try
-        {
-            var target = JsonNode.Parse(GetUtf8Text(targetContents));
-            var source = JsonNode.Parse(GetUtf8Text(sourceContents));
-            JsonNode? merged = (target, source) switch
-            {
-                (JsonObject targetObject, JsonObject sourceObject) => MergeJsonObjects(
-                    targetObject,
-                    sourceObject
-                ),
-                (JsonArray targetArray, JsonArray sourceArray) => MergeJsonArrays(
-                    targetArray,
-                    sourceArray
-                ),
-                _ => null,
-            };
-            if (merged is null)
-            {
-                return ManifestOperationResult<byte[]>.Failure(
-                    "JSON merge requires source and target JSON objects or arrays of the same kind."
-                );
-            }
-
-            return ManifestOperationResult<byte[]>.Success(
-                _utf8.GetBytes(merged.ToJsonString(_mergedJsonOptions))
-            );
-        }
-        catch (Exception exception) when (exception is DecoderFallbackException or JsonException)
-        {
-            return ManifestOperationResult<byte[]>.Failure(
-                $"JSON merge requires valid UTF-8 JSON: {exception.Message}"
-            );
-        }
-    }
-
-    private static JsonObject MergeJsonObjects(JsonObject target, JsonObject source)
-    {
-        foreach (var (key, sourceValue) in source)
-        {
-            target.TryGetPropertyValue(key, out var targetValue);
-            target[key] = MergeJsonValues(targetValue, sourceValue);
-        }
-
-        return target;
-    }
-
-    private static JsonArray MergeJsonArrays(JsonArray target, JsonArray source)
-    {
-        foreach (var sourceValue in source)
-        {
-            if (!target.Any(targetValue => JsonNode.DeepEquals(targetValue, sourceValue)))
-            {
-                target.Add(sourceValue?.DeepClone());
-            }
-        }
-
-        return target;
-    }
-
-    private static JsonNode? MergeJsonValues(JsonNode? targetValue, JsonNode? sourceValue) =>
-        (targetValue, sourceValue) switch
-        {
-            (JsonObject targetObject, JsonObject sourceObject) => MergeJsonObjects(
-                targetObject,
-                sourceObject
-            ),
-            (JsonArray targetArray, JsonArray sourceArray) => MergeJsonArrays(
-                targetArray,
-                sourceArray
-            ),
-            _ => sourceValue?.DeepClone(),
-        };
-
-    private static List<int> FindMarkerIndexes(IReadOnlyList<string> lines, string marker) =>
-        [
-            .. lines
-                .Select((line, index) => (line, index))
-                .Where(item => string.Equals(item.line, marker, StringComparison.Ordinal))
-                .Select(item => item.index),
-        ];
-
-    private static string GetUtf8Text(byte[] contents) => _utf8.GetString(contents);
-
-    private static List<string> ReadLines(string contents)
-    {
-        var normalized = contents
-            .Replace("\r\n", "\n", StringComparison.Ordinal)
-            .Replace("\r", "\n", StringComparison.Ordinal);
-        var lines = normalized.Split('\n', StringSplitOptions.None).ToList();
-        if (lines.Count > 0 && lines[^1].Length == 0)
-        {
-            lines.RemoveAt(lines.Count - 1);
-        }
-
-        return lines;
-    }
-
-    private static bool HasTrailingNewline(string contents) =>
-        contents.EndsWith('\n') || contents.EndsWith('\r');
-
-    private static byte[] CreateTextContents(IReadOnlyList<string> lines, bool trailingNewline)
-    {
-        var contents = string.Join("\n", lines);
-        if (trailingNewline && contents.Length > 0)
-        {
-            contents += '\n';
-        }
-
-        return _utf8.GetBytes(contents);
-    }
-
     private static ManifestOperationResult<
         Dictionary<PackTargetKey, PreviousManagedTarget>
-    > CreatePreviousTargetMap(ProjectLockFile lockFile)
+    > CreatePreviousTargetMap(ProjectLockFile lockFile, PackInstanceIdentity? rootIdentity)
     {
         var targets = new Dictionary<PackTargetKey, PreviousManagedTarget>();
-        foreach (var pack in lockFile.Packs)
+        if (rootIdentity is not null)
         {
-            foreach (var managedFile in pack.ManagedFiles)
+            var instance = lockFile.Instances.Find(candidate =>
+                string.Equals(candidate.Id, rootIdentity.PackId, StringComparison.Ordinal)
+                && string.Equals(candidate.Name, rootIdentity.Alias, StringComparison.Ordinal)
+            );
+            var rootPack = instance is null
+                ? null
+                : lockFile.Packs.Find(pack => pack.Key == instance.RootResolution);
+            if (instance is not null && rootPack is not null)
             {
-                var key = new PackTargetKey(
-                    pack.Id,
-                    ProjectPath.Normalize(managedFile.DeclaredTargetPath ?? managedFile.TargetPath)
+                var error = AddPreviousTargets(
+                    targets,
+                    rootPack,
+                    instance.ManagedFiles,
+                    rootIdentity.Alias
                 );
-                if (!targets.TryAdd(key, new PreviousManagedTarget(pack, managedFile)))
+                if (error is not null)
                 {
                     return ManifestOperationResult<
                         Dictionary<PackTargetKey, PreviousManagedTarget>
-                    >.Failure(
-                        $"Lock file assigns target '{managedFile.TargetPath}' more than once for pack '{pack.Id}'."
-                    );
+                    >.Failure(error);
                 }
+            }
+        }
+
+        var instanceRootKeys = lockFile
+            .Instances.Select(instance => instance.RootResolution)
+            .ToHashSet();
+        foreach (
+            var pack in lockFile.Packs.Where(pack =>
+                rootIdentity is null || pack.Key is null || !instanceRootKeys.Contains(pack.Key)
+            )
+        )
+        {
+            var error = AddPreviousTargets(targets, pack, pack.ManagedFiles, alias: null);
+            if (error is not null)
+            {
+                return ManifestOperationResult<
+                    Dictionary<PackTargetKey, PreviousManagedTarget>
+                >.Failure(error);
             }
         }
 
         return ManifestOperationResult<Dictionary<PackTargetKey, PreviousManagedTarget>>.Success(
             targets
         );
+    }
+
+    private static string? AddPreviousTargets(
+        Dictionary<PackTargetKey, PreviousManagedTarget> targets,
+        ProjectLockFile.ResolvedPack pack,
+        IEnumerable<ProjectLockFile.ManagedFile> managedFiles,
+        string? alias
+    )
+    {
+        foreach (var managedFile in managedFiles)
+        {
+            var key = new PackTargetKey(
+                pack.Id,
+                alias,
+                ProjectPath.Normalize(managedFile.DeclaredTargetPath ?? managedFile.TargetPath)
+            );
+            if (!targets.TryAdd(key, new PreviousManagedTarget(pack, managedFile)))
+            {
+                return $"Lock file assigns target '{managedFile.TargetPath}' more than once for pack '{pack.Id}'.";
+            }
+        }
+
+        return null;
     }
 
     private static ManifestOperationResult<
@@ -701,6 +450,7 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
         {
             var key = new PackTargetKey(
                 managedFile.Pack.Manifest.Id,
+                GetAlias(managedFile, installationPlan.RootIdentity),
                 ProjectPath.Normalize(managedFile.DeclaredTargetPath)
             );
             if (!targets.TryAdd(key, managedFile))
@@ -721,7 +471,19 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
     private static string ComputeSha256(byte[] contents) =>
         Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(contents));
 
-    private sealed record PackTargetKey(string PackId, string TargetPath);
+    private static string? GetAlias(string packId, PackInstanceIdentity? rootIdentity) =>
+        rootIdentity is not null
+        && string.Equals(packId, rootIdentity.PackId, StringComparison.Ordinal)
+            ? rootIdentity.Alias
+            : null;
+
+    private static string? GetAlias(
+        PlannedManagedFile managedFile,
+        PackInstanceIdentity? rootIdentity
+    ) =>
+        managedFile.InstanceIdentity?.Alias ?? GetAlias(managedFile.Pack.Manifest.Id, rootIdentity);
+
+    private sealed record PackTargetKey(string PackId, string? Alias, string TargetPath);
 
     private sealed record PreviousManagedTarget(
         ProjectLockFile.ResolvedPack Pack,

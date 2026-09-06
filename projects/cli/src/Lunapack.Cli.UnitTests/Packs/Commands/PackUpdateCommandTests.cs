@@ -102,6 +102,142 @@ public sealed class PackUpdateCommandTests
     }
 
     [Test]
+    public async Task Update_WhenSoleInstanceIsNamed_SelectsItWithoutName()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var sourcePath = CreateVersionedPackSource(workspace.Path, "dotnet", "1.0.0", "2.0.0");
+        await ConfigureSourceAsync(workspace, sourcePath);
+        await workspace.Application.RunAsync(
+            ["install", "dotnet@1.0.0", "--name", "orders", "-d", "orders"],
+            workspace.Path
+        );
+
+        var exitCode = await workspace.Application.RunAsync(["update", "dotnet"], workspace.Path);
+        var state = (await workspace.StateStore.LoadAsync(workspace.Path)).RequireValue();
+
+        await Assert.That(exitCode).IsEqualTo(0).Because(ansiConsole.Output);
+        await Assert.That(state.LockFile.Instances.Single().Name).IsEqualTo("orders");
+        await Assert.That(state.LockFile.Packs.Single().Version).IsEqualTo("2.0.0");
+    }
+
+    [Test]
+    public async Task Update_WhenDefaultAndNamedInstancesExist_SelectsDefault()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var sourcePath = CreateVersionedPackSource(workspace.Path, "dotnet", "1.0.0", "2.0.0");
+        await ConfigureSourceAsync(workspace, sourcePath);
+        var defaultInstall = await workspace.Application.RunAsync(
+            ["install", "dotnet@1.0.0", "-d", "default"],
+            workspace.Path
+        );
+        var previewStart = ansiConsole.Output.Length;
+        var namedPreview = await workspace.Application.RunAsync(
+            ["install", "dotnet@1.0.0", "--name", "orders", "-d", "orders", "--dry-run"],
+            workspace.Path
+        );
+        var previewOutput = ansiConsole.Output[previewStart..];
+        var namedInstall = await workspace.Application.RunAsync(
+            ["install", "dotnet@1.0.0", "--name", "orders", "-d", "orders"],
+            workspace.Path
+        );
+
+        await Assert.That(defaultInstall).IsEqualTo(0).Because(ansiConsole.Output);
+        await Assert.That(namedPreview).IsEqualTo(0).Because(previewOutput);
+        await Assert.That(previewOutput).Contains("orders/dotnet.txt");
+        await Assert.That(namedInstall).IsEqualTo(0).Because(ansiConsole.Output);
+
+        var exitCode = await workspace.Application.RunAsync(["update", "dotnet"], workspace.Path);
+        var state = (await workspace.StateStore.LoadAsync(workspace.Path)).RequireValue();
+        var versions = state.LockFile.Instances.ToDictionary(
+            instance => instance.Name,
+            instance => instance.RootResolution.Version,
+            StringComparer.Ordinal
+        );
+
+        await Assert.That(exitCode).IsEqualTo(0).Because(ansiConsole.Output);
+        await Assert.That(versions["dotnet"]).IsEqualTo("2.0.0");
+        await Assert.That(versions["orders"]).IsEqualTo("1.0.0");
+    }
+
+    [Test]
+    public async Task Update_WhenNamedInstancesAreAmbiguous_ListsCompleteCommands()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var sourcePath = CreateVersionedPackSource(workspace.Path, "dotnet", "1.0.0", "2.0.0");
+        await ConfigureSourceAsync(workspace, sourcePath);
+        await workspace.Application.RunAsync(
+            ["install", "dotnet@1.0.0", "--name", "orders", "-d", "orders"],
+            workspace.Path
+        );
+        await workspace.Application.RunAsync(
+            ["install", "dotnet@1.0.0", "--name", "customers", "-d", "customers"],
+            workspace.Path
+        );
+
+        var exitCode = await workspace.Application.RunAsync(["update", "dotnet"], workspace.Path);
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(ansiConsole.Output).Contains("luna update dotnet --name customers");
+        await Assert.That(ansiConsole.Output).Contains("luna update dotnet --name orders");
+    }
+
+    [Test]
+    public async Task Update_WhenNameIsUnknown_LeavesSiblingUnchanged()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreateVersionedPackSource(workspace.Path, "dotnet", "1.0.0", "2.0.0");
+        await ConfigureSourceAsync(workspace, sourcePath);
+        await workspace.Application.RunAsync(
+            ["install", "dotnet@1.0.0", "--name", "orders", "-d", "orders"],
+            workspace.Path
+        );
+        var initialState = await ReadStateAsync(workspace.Path);
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["update", "dotnet", "--name", "missing"],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(await ReadStateAsync(workspace.Path)).IsEqualTo(initialState);
+    }
+
+    [Test]
+    public async Task Update_WhenNameSelectsSibling_UpdatesOnlySelectedInstance()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var sourcePath = CreateVersionedPackSource(workspace.Path, "dotnet", "1.0.0", "2.0.0");
+        await ConfigureSourceAsync(workspace, sourcePath);
+        await workspace.Application.RunAsync(
+            ["install", "dotnet@1.0.0", "--name", "orders", "-d", "orders"],
+            workspace.Path
+        );
+        await workspace.Application.RunAsync(
+            ["install", "dotnet@1.0.0", "--name", "customers", "-d", "customers"],
+            workspace.Path
+        );
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["update", "dotnet", "--name", "orders"],
+            workspace.Path
+        );
+        var state = (await workspace.StateStore.LoadAsync(workspace.Path)).RequireValue();
+        var versions = state.LockFile.Instances.ToDictionary(
+            instance => instance.Name,
+            instance => instance.RootResolution.Version,
+            StringComparer.Ordinal
+        );
+
+        await Assert.That(exitCode).IsEqualTo(0).Because(ansiConsole.Output);
+        await Assert.That(versions["orders"]).IsEqualTo("2.0.0");
+        await Assert.That(versions["customers"]).IsEqualTo("1.0.0");
+    }
+
+    [Test]
     public async Task Scenario_UpdateSucceeds_ReportsManagedFileChanges()
     {
         var ansiConsole = new SpectreTestConsole();

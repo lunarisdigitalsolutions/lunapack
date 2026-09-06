@@ -114,7 +114,9 @@ public sealed class LinkLifecycleServiceTests
         var exitCode = await service.InstallAsync(_projectDirectory, "agents");
 
         await Assert.That(exitCode).IsEqualTo(1);
-        await Assert.That(Unwrap(console)).Contains("already managed by pack 'acme-pack'");
+        await Assert
+            .That(Unwrap(console))
+            .Contains("already managed by pack instance 'acme-pack/acme-pack'");
     }
 
     [Test]

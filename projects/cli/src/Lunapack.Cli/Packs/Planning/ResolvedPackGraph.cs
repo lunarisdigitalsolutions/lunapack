@@ -10,6 +10,8 @@ internal sealed record ResolvedPackGraph(
     IReadOnlySet<PackManifest.PackReference>? ActiveReferences = null
 )
 {
+    public IReadOnlyList<string> Warnings { get; init; } = [];
+
     public IReadOnlyList<PackManifest.PackReference> GetIncomingReferences(DiscoveredPack pack) =>
         [
             .. Packs
@@ -27,14 +29,21 @@ internal sealed record ResolvedPackGraph(
 
     public ManifestOperationResult<ResolvedPackGraph> Select(ResolvedPackParameters parameters)
     {
-        var packsById = Packs.ToDictionary(pack => pack.Manifest.Id, StringComparer.Ordinal);
-        var selectedIds = new HashSet<string>(StringComparer.Ordinal);
+        var packsById = Packs.ToLookup(pack => pack.Manifest.Id, StringComparer.Ordinal);
+        var selectedPacks = new HashSet<DiscoveredPack>();
         var activeReferences = new HashSet<PackManifest.PackReference>(
             ReferenceEqualityComparer.Instance
         );
         foreach (var root in Packs.Where(IsRoot))
         {
-            var selectionError = Select(root, parameters, packsById, selectedIds, activeReferences);
+            var selectionError = Select(
+                root,
+                parameters,
+                packsById,
+                selectedPacks,
+                activeReferences,
+                ActiveReferences
+            );
             if (selectionError is not null)
             {
                 return ManifestOperationResult<ResolvedPackGraph>.Failure(selectionError);
@@ -43,10 +52,13 @@ internal sealed record ResolvedPackGraph(
 
         return ManifestOperationResult<ResolvedPackGraph>.Success(
             new ResolvedPackGraph(
-                [.. Packs.Where(pack => selectedIds.Contains(pack.Manifest.Id))],
+                [.. Packs.Where(selectedPacks.Contains)],
                 RootPackIds,
                 activeReferences
             )
+            {
+                Warnings = Warnings,
+            }
         );
     }
 
@@ -60,18 +72,24 @@ internal sealed record ResolvedPackGraph(
     private static string? Select(
         DiscoveredPack pack,
         ResolvedPackParameters parameters,
-        IReadOnlyDictionary<string, DiscoveredPack> packsById,
-        ISet<string> selectedIds,
-        ISet<PackManifest.PackReference> activeReferences
+        ILookup<string, DiscoveredPack> packsById,
+        ISet<DiscoveredPack> selectedPacks,
+        ISet<PackManifest.PackReference> activeReferences,
+        IReadOnlySet<PackManifest.PackReference>? allowedReferences
     )
     {
-        if (!selectedIds.Add(pack.Manifest.Id))
+        if (!selectedPacks.Add(pack))
         {
             return null;
         }
 
         foreach (var reference in pack.Manifest.Packs)
         {
+            if (allowedReferences is not null && !allowedReferences.Contains(reference))
+            {
+                continue;
+            }
+
             var selected = IsSelected(reference, parameters);
             if (!selected.IsSuccess)
             {
@@ -86,8 +104,23 @@ internal sealed record ResolvedPackGraph(
 
             activeReferences.Add(reference);
             if (
-                packsById.TryGetValue(reference.Id, out var dependency)
-                && Select(dependency, parameters, packsById, selectedIds, activeReferences)
+                packsById[reference.Id]
+                    .FirstOrDefault(candidate =>
+                        string.Equals(
+                            candidate.Manifest.Version,
+                            reference.Version,
+                            StringComparison.Ordinal
+                        )
+                    )
+                    is { } dependency
+                && Select(
+                    dependency,
+                    parameters,
+                    packsById,
+                    selectedPacks,
+                    activeReferences,
+                    allowedReferences
+                )
                     is { } error
             )
             {

@@ -92,7 +92,7 @@ public sealed class PackInstallationPlannerTests
     }
 
     [Test]
-    public async Task Plan_WhenTargetExistsUnowned_ReturnsFailure()
+    public async Task Plan_WhenTargetExistsUnowned_AllowsOverwritePlanning()
     {
         var fileSystem = CreateFileSystem(
             (PacksPath("one", "source.txt"), "template"),
@@ -109,7 +109,268 @@ public sealed class PackInstallationPlannerTests
             _emptyParameters
         );
 
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert.That(result.RequireValue().ManagedFiles).Count().IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task Plan_WhenSiblingInstancesUseDifferentValues_RendersIndependently()
+    {
+        var fileSystem = CreateFileSystem((PacksPath("one", "source.txt"), "{{ serviceName }}"));
+        var planner = CreatePlanner(fileSystem);
+        var pack = CreatePack("one", PacksPath("one"), "service.txt");
+        pack.Manifest.ManagedFiles[0].Template = true;
+        pack.Manifest.Parameters["serviceName"] = new PackManifest.PackParameter
+        {
+            Type = "string",
+        };
+
+        var orders = planner.Plan(
+            _projectDirectory,
+            new ResolvedPackGraph([pack]),
+            new ProjectLockFile { SchemaVersion = 2 },
+            new ProjectConfiguration { SchemaVersion = 1 },
+            new PackInstallationRequest(new PackReference("one", null), null, false)
+            {
+                Name = "orders",
+            },
+            CreateParameters("serviceName", "Orders")
+        );
+        var customers = planner.Plan(
+            _projectDirectory,
+            new ResolvedPackGraph([pack]),
+            new ProjectLockFile { SchemaVersion = 2 },
+            new ProjectConfiguration { SchemaVersion = 1 },
+            new PackInstallationRequest(new PackReference("one", null), null, false)
+            {
+                Name = "customers",
+            },
+            CreateParameters("serviceName", "Customers")
+        );
+
+        await Assert
+            .That(
+                System.Text.Encoding.UTF8.GetString(orders.RequireValue().ManagedFiles[0].Contents)
+            )
+            .IsEqualTo("Orders");
+        await Assert
+            .That(
+                System.Text.Encoding.UTF8.GetString(
+                    customers.RequireValue().ManagedFiles[0].Contents
+                )
+            )
+            .IsEqualTo("Customers");
+    }
+
+    [Test]
+    public async Task Plan_WhenDestinationChangesTarget_BuildsCanonicalPlacement()
+    {
+        var fileSystem = CreateFileSystem((PacksPath("one", "source.txt"), "template"));
+        var planner = CreatePlanner(fileSystem);
+        var configuration = new ProjectConfiguration
+        {
+            SchemaVersion = 1,
+            Packs =
+            [
+                new ProjectConfiguration.RequestedPack
+                {
+                    Id = "one",
+                    Name = "orders",
+                    Destination = @"src\Orders",
+                },
+            ],
+        };
+
+        var result = planner.Plan(
+            _projectDirectory,
+            new ResolvedPackGraph([CreatePack("one", PacksPath("one"), "service.txt")]),
+            new ProjectLockFile { SchemaVersion = 2 },
+            configuration,
+            new PackInstallationRequest(new PackReference("one", null), "src/Orders", false)
+            {
+                Name = "orders",
+            },
+            _emptyParameters
+        );
+
+        await Assert
+            .That(result.RequireValue().Placements)
+            .IsEquivalentTo(
+                new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["service.txt"] = "src/Orders/service.txt",
+                }
+            );
+    }
+
+    [Test]
+    public async Task Plan_WhenSiblingConfigurationsExist_UsesCurrentInstanceDestination()
+    {
+        var fileSystem = CreateFileSystem((PacksPath("one", "source.txt"), "template"));
+        var planner = CreatePlanner(fileSystem);
+        var configuration = new ProjectConfiguration
+        {
+            SchemaVersion = 1,
+            Packs =
+            [
+                new ProjectConfiguration.RequestedPack { Id = "one", Destination = "default" },
+                new ProjectConfiguration.RequestedPack
+                {
+                    Id = "one",
+                    Name = "orders",
+                    Destination = "orders",
+                },
+            ],
+        };
+
+        var result = planner.Plan(
+            _projectDirectory,
+            new ResolvedPackGraph([CreatePack("one", PacksPath("one"), "service.txt")]),
+            new ProjectLockFile { SchemaVersion = 2 },
+            configuration,
+            new PackInstallationRequest(new PackReference("one", null), "orders", false)
+            {
+                Name = "orders",
+            },
+            _emptyParameters
+        );
+
+        await Assert
+            .That(result.RequireValue().Placements["service.txt"])
+            .IsEqualTo("orders/service.txt");
+    }
+
+    [Test]
+    public async Task Plan_WhenSiblingPlacementMatchesExistingInstance_ReturnsFailure()
+    {
+        var fileSystem = CreateFileSystem((PacksPath("one", "source.txt"), "template"));
+        var planner = CreatePlanner(fileSystem);
+        var lockFile = CreateInstanceLock("one", "existing", "service.txt", "service.txt");
+
+        var result = planner.Plan(
+            _projectDirectory,
+            new ResolvedPackGraph([CreatePack("one", PacksPath("one"), "service.txt")]),
+            lockFile,
+            new ProjectConfiguration { SchemaVersion = 1 },
+            new PackInstallationRequest(new PackReference("one", null), null, false)
+            {
+                Name = "candidate",
+            },
+            _emptyParameters
+        );
+
         await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("same effective placement");
+    }
+
+    [Test]
+    public async Task Plan_WhenIdentityRemapMatchesSiblingPlacement_ReturnsFailure()
+    {
+        var fileSystem = CreateFileSystem((PacksPath("one", "source.txt"), "template"));
+        var planner = CreatePlanner(fileSystem);
+        var lockFile = CreateInstanceLock("one", "existing", "service.txt", "service.txt");
+        var remapping = ManagedFileTargetRemapping
+            .Create(fileSystem, _projectDirectory, [], ["service.txt=service.txt"])
+            .RequireValue();
+
+        var result = planner.Plan(
+            _projectDirectory,
+            new ResolvedPackGraph([CreatePack("one", PacksPath("one"), "service.txt")]),
+            lockFile,
+            new ProjectConfiguration { SchemaVersion = 1 },
+            new PackInstallationRequest(new PackReference("one", null), null, false)
+            {
+                Name = "candidate",
+                TargetRemapping = remapping,
+            },
+            _emptyParameters
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("same effective placement");
+    }
+
+    [Test]
+    public async Task Plan_WhenRemapChangesSiblingPlacement_ReturnsCanonicalPlacement()
+    {
+        var fileSystem = CreateFileSystem((PacksPath("one", "source.txt"), "template"));
+        var planner = CreatePlanner(fileSystem);
+        var lockFile = CreateInstanceLock("one", "existing", "service.txt", "service.txt");
+        var remapping = ManagedFileTargetRemapping
+            .Create(fileSystem, _projectDirectory, [], [@"service.txt=src\Orders\service.txt"])
+            .RequireValue();
+
+        var result = planner.Plan(
+            _projectDirectory,
+            new ResolvedPackGraph([CreatePack("one", PacksPath("one"), "service.txt")]),
+            lockFile,
+            new ProjectConfiguration { SchemaVersion = 1 },
+            new PackInstallationRequest(new PackReference("one", null), null, false)
+            {
+                Name = "candidate",
+                TargetRemapping = remapping,
+            },
+            _emptyParameters
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert
+            .That(result.RequireValue().Placements["service.txt"])
+            .IsEqualTo("src/Orders/service.txt");
+    }
+
+    [Test]
+    public async Task Plan_WhenSecondContentlessInstanceRequested_ReturnsFailure()
+    {
+        var fileSystem = CreateFileSystem();
+        var planner = CreatePlanner(fileSystem);
+        var pack = new DiscoveredPack(
+            _packsDirectory,
+            PacksPath("one"),
+            new PackManifest { Id = "one", Version = "1.0.0" }
+        );
+        var lockFile = CreateInstanceLock("one", "existing", null, null);
+
+        var result = planner.Plan(
+            _projectDirectory,
+            new ResolvedPackGraph([pack]),
+            lockFile,
+            new ProjectConfiguration { SchemaVersion = 1 },
+            new PackInstallationRequest(new PackReference("one", null), null, false)
+            {
+                Name = "candidate",
+            },
+            _emptyParameters
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("no managed target placement");
+    }
+
+    [Test]
+    public async Task Plan_WhenTargetOwnedBySiblingInstance_ReturnsFailure()
+    {
+        var fileSystem = CreateFileSystem(
+            (PacksPath("one", "source.txt"), "template"),
+            (ProjectPath("service.txt"), "existing")
+        );
+        var planner = CreatePlanner(fileSystem);
+        var lockFile = CreateInstanceLock("other", "existing", "service.txt", "service.txt");
+
+        var result = planner.Plan(
+            _projectDirectory,
+            new ResolvedPackGraph([CreatePack("one", PacksPath("one"), "service.txt")]),
+            lockFile,
+            new ProjectConfiguration { SchemaVersion = 1 },
+            new PackInstallationRequest(new PackReference("one", null), null, false)
+            {
+                Name = "candidate",
+            },
+            _emptyParameters
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("already managed");
     }
 
     [Test]
@@ -725,6 +986,76 @@ public sealed class PackInstallationPlannerTests
                 ],
             }
         );
+
+    private static ResolvedPackParameters CreateParameters(string name, string value) =>
+        new(
+            new Dictionary<string, PackParameterDefinition>(StringComparer.Ordinal)
+            {
+                [name] = new(PackParameterType.String, false, []),
+            },
+            new Dictionary<string, ResolvedPackParameterValue>(StringComparer.Ordinal)
+            {
+                [name] = new(PackParameterType.String, value, false),
+            }
+        );
+
+    private static ProjectLockFile CreateInstanceLock(
+        string id,
+        string name,
+        string? declaredTarget,
+        string? effectiveTarget
+    )
+    {
+        var key = new ProjectLockFile.ResolvedPackKey
+        {
+            Id = id,
+            Version = "1.0.0",
+            SourceIdentity = Lunapack.Cli.Sources.ConfiguredSourceIdentity.CreateLocal("packs"),
+        };
+        return new ProjectLockFile
+        {
+            SchemaVersion = 2,
+            Instances =
+            [
+                new ProjectLockFile.PackInstance
+                {
+                    Id = id,
+                    Name = name,
+                    RootResolution = key,
+                    Placements = declaredTarget is null
+                        ? []
+                        : new Dictionary<string, string>(StringComparer.Ordinal)
+                        {
+                            [declaredTarget] = effectiveTarget!,
+                        },
+                    ManagedFiles = declaredTarget is null
+                        ? []
+                        :
+                        [
+                            new ProjectLockFile.ManagedFile
+                            {
+                                DeclaredTargetPath = declaredTarget,
+                                TargetPath = effectiveTarget!,
+                                Sha256 = new string('a', 64),
+                            },
+                        ],
+                },
+            ],
+            Packs =
+            [
+                new ProjectLockFile.ResolvedPack
+                {
+                    Id = id,
+                    Version = "1.0.0",
+                    Key = key,
+                    SourceIdentity = key.SourceIdentity,
+                    SourceName = "source",
+                    SourcePath = "packs",
+                    PackPath = id,
+                },
+            ],
+        };
+    }
 
     private static PackManifest.PackManagedFile CreateSelectorManagedFile(string selectorKind) =>
         selectorKind switch

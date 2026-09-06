@@ -84,9 +84,13 @@ internal sealed record ProjectConfiguration
 
         public required string Id { get; set; }
 
+        public string? Name { get; set; }
+
         public Remapping? Remap { get; set; }
 
         public string? Version { get; set; }
+
+        public PackInstanceIdentity GetInstanceIdentity() => new(Id, Name ?? Id);
     }
 
     internal sealed record TrustedPack

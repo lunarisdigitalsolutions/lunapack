@@ -60,6 +60,86 @@ public sealed class ManifestSchemaTests
     }
 
     [Test]
+    public async Task LockSchema_WhenVersionTwoPublished_RequiresInstancesAndExactKeys()
+    {
+        using var schema = JsonDocument.Parse(
+            File.ReadAllText(
+                Path.Combine(AppContext.BaseDirectory, "TestData", "lunapack-lock.schema.json")
+            )
+        );
+        var root = schema.RootElement;
+        var definitions = root.GetProperty("definitions");
+
+        await Assert
+            .That(
+                root.GetProperty("properties")
+                    .GetProperty("schemaVersion")
+                    .GetProperty("enum")[0]
+                    .GetInt32()
+            )
+            .IsEqualTo(2);
+        await Assert
+            .That(root.GetProperty("required").EnumerateArray().Select(item => item.GetString()))
+            .Contains("instances");
+        await Assert
+            .That(
+                definitions
+                    .GetProperty("packInstance")
+                    .GetProperty("required")
+                    .EnumerateArray()
+                    .Select(item => item.GetString())
+            )
+            .Contains("rootResolution");
+        await Assert
+            .That(
+                definitions
+                    .GetProperty("packReference")
+                    .GetProperty("required")
+                    .EnumerateArray()
+                    .Select(item => item.GetString())
+            )
+            .Contains("resolution");
+        await Assert
+            .That(
+                definitions
+                    .GetProperty("gitResolvedPackKey")
+                    .GetProperty("required")
+                    .EnumerateArray()
+                    .Select(item => item.GetString())
+            )
+            .Contains("resolvedCommit");
+    }
+
+    [Test]
+    public async Task ProjectLockFile_WhenVersionTwoResolutionKeyMissing_IsRejected()
+    {
+        var lockFile = new ProjectLockFile
+        {
+            SchemaVersion = 2,
+            Packs =
+            [
+                new ProjectLockFile.ResolvedPack
+                {
+                    Id = "example",
+                    PackPath = "example",
+                    SourceIdentity = ConfiguredSourceIdentity.CreateLocal("packs"),
+                    SourceName = "local",
+                    SourcePath = "packs",
+                    Version = "1.0.0",
+                },
+            ],
+        };
+
+        var issues = ManifestModelValidator.Validate(lockFile);
+
+        await Assert
+            .That(issues)
+            .Contains(
+                "Resolved pack keys must define exact pack ID, version, source identity, and Git revision when applicable."
+            );
+    }
+
+    [Test]
     public async Task ProjectSchema_WhenRequestedPackDeclared_AllowsPackRemapping()
     {
         using var schema = JsonDocument.Parse(
@@ -76,6 +156,25 @@ public sealed class ManifestSchemaTests
             .GetString();
 
         await Assert.That(remap).IsEqualTo("#/definitions/remapping");
+    }
+
+    [Test]
+    public async Task ProjectSchema_WhenRequestedPackNamed_UsesPackInstanceName()
+    {
+        using var schema = JsonDocument.Parse(
+            File.ReadAllText(
+                Path.Combine(AppContext.BaseDirectory, "TestData", "lunapack.schema.json")
+            )
+        );
+        var name = schema
+            .RootElement.GetProperty("definitions")
+            .GetProperty("requestedPack")
+            .GetProperty("properties")
+            .GetProperty("name")
+            .GetProperty("$ref")
+            .GetString();
+
+        await Assert.That(name).IsEqualTo("#/definitions/packInstanceName");
     }
 
     [Test]
@@ -965,6 +1064,66 @@ public sealed class ManifestSchemaTests
         var issues = ManifestModelValidator.Validate(configuration);
 
         await Assert.That(issues).IsEmpty();
+    }
+
+    [Test]
+    public async Task ProjectConfiguration_WhenPackInstancesHaveDistinctNames_IsAccepted()
+    {
+        var configuration = new ProjectConfiguration
+        {
+            SchemaVersion = 1,
+            Packs =
+            [
+                new ProjectConfiguration.RequestedPack { Id = "dotnet-api", Name = "orders" },
+                new ProjectConfiguration.RequestedPack { Id = "dotnet-api", Name = "customers" },
+                new ProjectConfiguration.RequestedPack { Id = "worker", Name = "orders" },
+            ],
+        };
+
+        var issues = ManifestModelValidator.Validate(configuration);
+
+        await Assert.That(issues).IsEmpty();
+    }
+
+    [Test]
+    public async Task ProjectConfiguration_WhenEffectiveInstanceIdentityDuplicated_IsRejected()
+    {
+        var configuration = new ProjectConfiguration
+        {
+            SchemaVersion = 1,
+            Packs =
+            [
+                new ProjectConfiguration.RequestedPack { Id = "dotnet-api" },
+                new ProjectConfiguration.RequestedPack { Id = "dotnet-api", Name = "dotnet-api" },
+            ],
+        };
+
+        var issues = ManifestModelValidator.Validate(configuration);
+
+        await Assert
+            .That(issues)
+            .Contains("Requested pack instance names must be unique within each pack.");
+    }
+
+    [Test]
+    public async Task ProjectConfiguration_WhenInstanceNameInvalid_IsRejected()
+    {
+        var configuration = new ProjectConfiguration
+        {
+            SchemaVersion = 1,
+            Packs =
+            [
+                new ProjectConfiguration.RequestedPack { Id = "dotnet-api", Name = "orders api" },
+            ],
+        };
+
+        var issues = ManifestModelValidator.Validate(configuration);
+
+        await Assert
+            .That(issues)
+            .Contains(
+                "Requested pack instance ID 'orders api' must use hyphen-separated alphanumeric segments."
+            );
     }
 
     [Test]

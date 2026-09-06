@@ -4,6 +4,8 @@ namespace Lunapack.Cli.Project;
 
 internal sealed record ProjectLockFile
 {
+    public List<PackInstance> Instances { get; set; } = [];
+
     public Dictionary<string, ResolvedLink> Links { get; set; } = [];
 
     public List<ResolvedPack> Packs { get; set; } = [];
@@ -77,7 +79,37 @@ internal sealed record ProjectLockFile
     {
         public required string Id { get; set; }
 
+        public ResolvedPackKey? Resolution { get; set; }
+
         public required string Version { get; set; }
+    }
+
+    internal sealed record ResolvedPackKey
+    {
+        public required string Id { get; set; }
+
+        public string? ResolvedCommit { get; set; }
+
+        public required ConfiguredSourceIdentity SourceIdentity { get; set; }
+
+        public required string Version { get; set; }
+    }
+
+    internal sealed record PackInstance
+    {
+        public string? Destination { get; set; }
+
+        public Dictionary<string, ExternalSourceLock> ExternalSources { get; set; } = [];
+
+        public required string Id { get; set; }
+
+        public List<ManagedFile> ManagedFiles { get; set; } = [];
+
+        public required string Name { get; set; }
+
+        public Dictionary<string, string> Placements { get; set; } = [];
+
+        public required ResolvedPackKey RootResolution { get; set; }
     }
 
     internal sealed record ResolvedPack
@@ -95,6 +127,8 @@ internal sealed record ProjectLockFile
         public List<PackReference> Packs { get; set; } = [];
 
         public required string Id { get; set; }
+
+        public ResolvedPackKey? Key { get; set; }
 
         public List<ManagedFile> ManagedFiles { get; set; } = [];
 

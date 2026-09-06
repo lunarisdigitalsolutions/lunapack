@@ -68,7 +68,9 @@ visible through `luna audit`; update does not provide a force-reconcile option.
 When desired pack content changes, the declared strategy applies to current
 target content. Copy strategies may replace, back up, retain, or reject it,
 while merge strategies combine it according to their method. Review the dry
-run instead of assuming local edits are preserved.
+run instead of assuming local edits are preserved. See
+[Managed-file strategies through install and update](packs/explanation/managed-file-strategies.md)
+for before-and-after examples of every strategy and shared dependency behavior.
 
 When a new pack version stops declaring an owned target, update deletes that
 target without comparing its current bytes with the locked digest. This differs

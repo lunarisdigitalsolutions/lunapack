@@ -66,7 +66,9 @@ Merge methods are `lines`, `section`, and `json`. Only merge strategies may
 share a target. Prefer `lines` for unique line sets, `section` for
 marker-bounded text owned by one pack, and `json` for structured JSON content.
 See [Merge content into shared files](merge-managed-content.md) for exact line,
-section, JSON, newline, and conflict behavior.
+section, JSON, newline, and conflict behavior. See
+[Managed-file strategies through install and update](../explanation/managed-file-strategies.md)
+for before-and-after examples of every method.
 
 ## Inspect and test
 

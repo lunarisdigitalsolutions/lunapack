@@ -80,6 +80,7 @@ const sidebars = {
           items: [
             'packs/explanation/scope-taxonomy-and-naming',
             'packs/explanation/composition-and-lifecycle',
+            'packs/explanation/managed-file-strategies',
             'packs/explanation/ownership-and-safety'
           ]
         }

@@ -62,8 +62,19 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
             );
         }
 
+        var migratedLockFile = ProjectLockFileMigration.ToCurrent(
+            loadedConfiguration,
+            loadedLockFile
+        );
+        if (migratedLockFile.Value is not { } currentLockFile)
+        {
+            return ManifestOperationResult<ProjectState>.Failure(
+                migratedLockFile.Error ?? "Unable to migrate project lock file."
+            );
+        }
+
         var normalizedState = NormalizeState(
-            new ProjectState { Configuration = loadedConfiguration, LockFile = loadedLockFile }
+            new ProjectState { Configuration = loadedConfiguration, LockFile = currentLockFile }
         );
         var validationError = ValidateState(
             normalizedState.Configuration,
@@ -75,13 +86,18 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
             return ManifestOperationResult<ProjectState>.Failure(validationError);
         }
 
-        return ManifestOperationResult<ProjectState>.Success(normalizedState);
+        return ManifestOperationResult<ProjectState>.Success(
+            HydrateSoleRootOwnership(normalizedState)
+        );
     }
 
     public async Task<ManifestOperationResult<bool>> InitializeAsync(string projectDirectory)
     {
         var configuration = new ProjectConfiguration { SchemaVersion = 1 };
-        var lockFile = new ProjectLockFile { SchemaVersion = 1 };
+        var lockFile = new ProjectLockFile
+        {
+            SchemaVersion = ProjectLockFileMigration.CurrentSchemaVersion,
+        };
         var hasInvalidInitialState =
             !await IsValidAsync(configuration, ManifestModelValidator.Validate)
             || !await IsValidAsync(lockFile, ManifestModelValidator.Validate);
@@ -158,25 +174,12 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
         bool allowUnconfiguredLockSources
     )
     {
-        var normalizedState = NormalizeState(state);
-        var hasInvalidState =
-            !await IsValidAsync(normalizedState.Configuration, ManifestModelValidator.Validate)
-            || !await IsValidAsync(normalizedState.LockFile, ManifestModelValidator.Validate);
-        if (hasInvalidState)
+        var preparedState = await PrepareStateForSaveAsync(state, allowUnconfiguredLockSources);
+        if (preparedState.Value is not { } normalizedState)
         {
             return ManifestOperationResult<bool>.Failure(
-                "Refusing to write project state that does not match the schemas."
+                preparedState.Error ?? "Unable to prepare project state."
             );
-        }
-
-        var validationError = ValidateState(
-            normalizedState.Configuration,
-            normalizedState.LockFile,
-            allowUnconfiguredLockSources
-        );
-        if (validationError is not null)
-        {
-            return ManifestOperationResult<bool>.Failure(validationError);
         }
 
         var configurationPath = GetDocumentPath(projectDirectory, ConfigurationFileName);
@@ -213,6 +216,58 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
             DeleteTemporaryFile(temporaryConfigurationPath);
             DeleteTemporaryFile(temporaryLockFilePath);
         }
+    }
+
+    private static async Task<ManifestOperationResult<ProjectState>> PrepareStateForSaveAsync(
+        ProjectState state,
+        bool allowUnconfiguredLockSources
+    )
+    {
+        var hasInvalidInput =
+            !await IsValidAsync(state.Configuration, ManifestModelValidator.Validate)
+            || state.LockFile.SchemaVersion == 1
+                && !await IsValidAsync(state.LockFile, ManifestModelValidator.Validate);
+        if (hasInvalidInput)
+        {
+            return ManifestOperationResult<ProjectState>.Failure(
+                "Refusing to write project state that does not match the schemas."
+            );
+        }
+
+        var nameCollision = ValidateConfigurationNameCollisions(state.Configuration);
+        if (nameCollision is not null)
+        {
+            return ManifestOperationResult<ProjectState>.Failure(nameCollision);
+        }
+
+        var normalizedState = NormalizeState(state);
+        var migratedLockFile = ProjectLockFileMigration.PrepareForPersistence(
+            normalizedState.Configuration,
+            normalizedState.LockFile
+        );
+        if (migratedLockFile.Value is not { } currentLockFile)
+        {
+            return ManifestOperationResult<ProjectState>.Failure(
+                migratedLockFile.Error ?? "Unable to migrate project lock file."
+            );
+        }
+
+        normalizedState = normalizedState with { LockFile = currentLockFile };
+        if (!await IsValidAsync(normalizedState.LockFile, ManifestModelValidator.Validate))
+        {
+            return ManifestOperationResult<ProjectState>.Failure(
+                "Refusing to write project state that does not match the schemas."
+            );
+        }
+
+        var validationError = ValidateState(
+            normalizedState.Configuration,
+            normalizedState.LockFile,
+            allowUnconfiguredLockSources
+        );
+        return validationError is null
+            ? ManifestOperationResult<ProjectState>.Success(normalizedState)
+            : ManifestOperationResult<ProjectState>.Failure(validationError);
     }
 
     private DocumentSnapshot CreateSnapshot(string path) =>
@@ -291,13 +346,12 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
         bool allowUnconfiguredLockSources = false
     )
     {
-        var resolvedPacksById = new Dictionary<string, ProjectLockFile.ResolvedPack>(
-            StringComparer.Ordinal
-        );
+        var resolvedPacksByKey =
+            new Dictionary<ProjectLockFile.ResolvedPackKey, ProjectLockFile.ResolvedPack>();
         var validationError = ValidateResolvedPacks(
             configuration,
             lockFile,
-            resolvedPacksById,
+            resolvedPacksByKey,
             allowUnconfiguredLockSources
         );
         if (validationError is not null)
@@ -315,7 +369,8 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
             return linkValidationError;
         }
 
-        return ValidateRequestedRoots(configuration, resolvedPacksById);
+        return ValidateRequestedRoots(configuration, lockFile, resolvedPacksByKey)
+            ?? ValidateUniqueOwnership(lockFile);
     }
 
     private static string? ValidateLinks(
@@ -324,15 +379,10 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
         bool allowUnconfiguredLockSources
     )
     {
-        foreach (var linkName in configuration.Links.Keys)
+        var nameCollision = ValidateConfigurationNameCollisions(configuration);
+        if (nameCollision is not null)
         {
-            var duplicatesRequestedPackId = configuration.Packs.Any(pack =>
-                string.Equals(pack.Id, linkName, StringComparison.Ordinal)
-            );
-            if (duplicatesRequestedPackId)
-            {
-                return $"Project configuration uses '{linkName}' as both a link name and a requested pack ID.";
-            }
+            return nameCollision;
         }
 
         foreach (var (linkName, resolvedLink) in lockFile.Links)
@@ -366,12 +416,51 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
         return null;
     }
 
+    private static string? ValidateConfigurationNameCollisions(ProjectConfiguration configuration)
+    {
+        foreach (var linkName in configuration.Links.Keys)
+        {
+            var duplicatesRequestedPackId = configuration.Packs.Any(pack =>
+                string.Equals(pack.Id, linkName, StringComparison.Ordinal)
+            );
+            if (duplicatesRequestedPackId)
+            {
+                return $"Project configuration uses '{linkName}' as both a link name and a requested pack ID.";
+            }
+        }
+
+        return null;
+    }
+
     private static ProjectState NormalizeState(ProjectState state) =>
         new()
         {
             Configuration = NormalizeConfiguration(state.Configuration),
             LockFile = NormalizeLockFile(state.LockFile),
         };
+
+    private static ProjectState HydrateSoleRootOwnership(ProjectState state)
+    {
+        foreach (
+            var instanceGroup in state.LockFile.Instances.GroupBy(instance =>
+                instance.RootResolution
+            )
+        )
+        {
+            var instances = instanceGroup.ToList();
+            var root = state.LockFile.Packs.SingleOrDefault(pack => pack.Key == instanceGroup.Key);
+            if (instances.Count != 1 || root is null)
+            {
+                continue;
+            }
+
+            root.Destination = instances[0].Destination;
+            root.ExternalSources = instances[0].ExternalSources;
+            root.ManagedFiles = instances[0].ManagedFiles;
+        }
+
+        return state;
+    }
 
     private static ProjectConfiguration NormalizeConfiguration(
         ProjectConfiguration configuration
@@ -396,7 +485,24 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
                 link => NormalizeResolvedLink(link.Value),
                 StringComparer.Ordinal
             ),
+            Instances = [.. lockFile.Instances.Select(NormalizePackInstance)],
             Packs = [.. lockFile.Packs.Select(NormalizeResolvedPack)],
+        };
+
+    private static ProjectLockFile.PackInstance NormalizePackInstance(
+        ProjectLockFile.PackInstance instance
+    ) =>
+        instance with
+        {
+            Destination = ProjectPath.NormalizeOptional(instance.Destination),
+            ExternalSources = instance.ExternalSources.ToDictionary(
+                source => source.Key,
+                source => source.Value,
+                StringComparer.Ordinal
+            ),
+            ManagedFiles = [.. instance.ManagedFiles.Select(NormalizeManagedFile)],
+            Placements = NormalizeMappings(instance.Placements),
+            RootResolution = NormalizeResolvedPackKey(instance.RootResolution),
         };
 
     private static ProjectConfiguration.Link NormalizeLink(ProjectConfiguration.Link link) =>
@@ -484,12 +590,28 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
             ),
             GitSource = NormalizeGitSource(pack.GitSource),
             ManagedFiles = [.. pack.ManagedFiles.Select(NormalizeManagedFile)],
+            Key = pack.Key is null ? null : NormalizeResolvedPackKey(pack.Key),
             PackPath = ProjectPath.Normalize(pack.PackPath),
+            Packs =
+            [
+                .. pack.Packs.Select(reference =>
+                    reference with
+                    {
+                        Resolution = reference.Resolution is null
+                            ? null
+                            : NormalizeResolvedPackKey(reference.Resolution),
+                    }
+                ),
+            ],
             SourceIdentity = pack.SourceIdentity is { } sourceIdentity
                 ? NormalizeSourceIdentity(sourceIdentity)
                 : null,
             SourcePath = ProjectPath.NormalizeOptional(pack.SourcePath),
         };
+
+    private static ProjectLockFile.ResolvedPackKey NormalizeResolvedPackKey(
+        ProjectLockFile.ResolvedPackKey key
+    ) => key with { SourceIdentity = NormalizeSourceIdentity(key.SourceIdentity) };
 
     private static ConfiguredSourceIdentity NormalizeSourceIdentity(
         ConfiguredSourceIdentity source
@@ -516,24 +638,43 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
     private static Dictionary<string, string> NormalizeMappings(
         IReadOnlyDictionary<string, string> mappings
     ) =>
-        mappings.ToDictionary(
-            mapping => ProjectPath.Normalize(mapping.Key),
-            mapping => ProjectPath.Normalize(mapping.Value),
-            StringComparer.Ordinal
-        );
+        mappings
+            .OrderBy(mapping => mapping.Key, StringComparer.Ordinal)
+            .ToDictionary(
+                mapping => ProjectPath.Normalize(mapping.Key),
+                mapping => ProjectPath.Normalize(mapping.Value),
+                StringComparer.Ordinal
+            );
 
     private static string? ValidateResolvedPacks(
         ProjectConfiguration configuration,
         ProjectLockFile lockFile,
-        IDictionary<string, ProjectLockFile.ResolvedPack> resolvedPacksById,
+        Dictionary<
+            ProjectLockFile.ResolvedPackKey,
+            ProjectLockFile.ResolvedPack
+        > resolvedPacksByKey,
         bool allowUnconfiguredLockSources
     )
     {
         foreach (var resolvedPack in lockFile.Packs)
         {
-            if (!resolvedPacksById.TryAdd(resolvedPack.Id, resolvedPack))
+            if (resolvedPack.Key is not { } key || !resolvedPacksByKey.TryAdd(key, resolvedPack))
             {
-                return $"Lock file contains multiple resolved packs with ID '{resolvedPack.Id}'.";
+                return $"Lock file contains a missing or duplicate resolution key for '{resolvedPack.Id}@{resolvedPack.Version}'.";
+            }
+
+            var keyDoesNotMatchPack =
+                !string.Equals(key.Id, resolvedPack.Id, StringComparison.Ordinal)
+                || !string.Equals(key.Version, resolvedPack.Version, StringComparison.Ordinal)
+                || key.SourceIdentity != resolvedPack.SourceIdentity
+                || !string.Equals(
+                    key.ResolvedCommit,
+                    resolvedPack.GitSource?.ResolvedCommit,
+                    StringComparison.Ordinal
+                );
+            if (keyDoesNotMatchPack)
+            {
+                return $"Lock file resolution key for '{resolvedPack.Id}@{resolvedPack.Version}' does not match its resolved node.";
             }
 
             var usesUnconfiguredSource =
@@ -542,6 +683,26 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
             if (usesUnconfiguredSource)
             {
                 return "Lock file contains a source that is not configured.";
+            }
+        }
+
+        foreach (var resolvedPack in lockFile.Packs)
+        {
+            foreach (var reference in resolvedPack.Packs)
+            {
+                if (
+                    reference.Resolution is not { } resolution
+                    || !resolvedPacksByKey.ContainsKey(resolution)
+                    || !string.Equals(reference.Id, resolution.Id, StringComparison.Ordinal)
+                    || !string.Equals(
+                        reference.Version,
+                        resolution.Version,
+                        StringComparison.Ordinal
+                    )
+                )
+                {
+                    return $"Lock file reference '{reference.Id}@{reference.Version}' does not identify an exact resolved node.";
+                }
             }
         }
 
@@ -560,22 +721,38 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
 
     private static string? ValidateRequestedRoots(
         ProjectConfiguration configuration,
-        Dictionary<string, ProjectLockFile.ResolvedPack> resolvedPacksById
+        ProjectLockFile lockFile,
+        Dictionary<ProjectLockFile.ResolvedPackKey, ProjectLockFile.ResolvedPack> resolvedPacksByKey
     )
     {
-        var requestedRoots = new HashSet<string>(StringComparer.Ordinal);
-        var reachablePacks = new HashSet<string>(StringComparer.Ordinal);
-        var visitingPacks = new HashSet<string>(StringComparer.Ordinal);
+        var instancesByIdentity =
+            new Dictionary<PackInstanceIdentity, ProjectLockFile.PackInstance>();
+        foreach (var instance in lockFile.Instances)
+        {
+            if (!instancesByIdentity.TryAdd(new(instance.Id, instance.Name), instance))
+            {
+                return $"Lock file contains duplicate pack instance '{instance.Id}/{instance.Name}'.";
+            }
+        }
+
+        var reachablePacks = new HashSet<ProjectLockFile.ResolvedPackKey>();
+        var visitingPacks = new HashSet<ProjectLockFile.ResolvedPackKey>();
         foreach (var requestedPack in configuration.Packs)
         {
-            if (!requestedRoots.Add(requestedPack.Id))
+            var identity = requestedPack.GetInstanceIdentity();
+            if (!instancesByIdentity.Remove(identity, out var instance))
             {
-                return $"Project configuration contains duplicate requested pack '{requestedPack.Id}'.";
+                return $"Lock file does not contain requested pack instance '{identity.PackId}/{identity.Alias}'.";
             }
 
-            if (!resolvedPacksById.TryGetValue(requestedPack.Id, out var resolvedPack))
+            if (!resolvedPacksByKey.TryGetValue(instance.RootResolution, out var resolvedPack))
             {
-                return $"Lock file does not contain requested pack '{requestedPack.Id}'.";
+                return $"Lock file instance '{identity.PackId}/{identity.Alias}' has an unavailable root resolution.";
+            }
+
+            if (!string.Equals(instance.Id, resolvedPack.Id, StringComparison.Ordinal))
+            {
+                return $"Lock file instance '{identity.PackId}/{identity.Alias}' resolves a different pack ID.";
             }
 
             var hasMismatchedVersion =
@@ -592,7 +769,7 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
 
             var hasMismatchedDestination = !string.Equals(
                 requestedPack.Destination,
-                resolvedPack.Destination,
+                instance.Destination,
                 StringComparison.Ordinal
             );
             if (hasMismatchedDestination)
@@ -602,7 +779,7 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
 
             var validationError = ValidateReachablePack(
                 resolvedPack,
-                resolvedPacksById,
+                resolvedPacksByKey,
                 reachablePacks,
                 visitingPacks
             );
@@ -612,31 +789,47 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
             }
         }
 
-        return reachablePacks.Count == resolvedPacksById.Count
+        if (instancesByIdentity.Count > 0)
+        {
+            return "Lock file contains pack instances that are not defined in project configuration.";
+        }
+
+        return reachablePacks.Count == resolvedPacksByKey.Count
             ? null
             : "Lock file contains packs that are unreachable from requested packs.";
     }
 
     private static string? ValidateReachablePack(
         ProjectLockFile.ResolvedPack pack,
-        Dictionary<string, ProjectLockFile.ResolvedPack> resolvedPacksById,
-        ISet<string> reachablePacks,
-        ISet<string> visitingPacks
+        Dictionary<
+            ProjectLockFile.ResolvedPackKey,
+            ProjectLockFile.ResolvedPack
+        > resolvedPacksByKey,
+        ISet<ProjectLockFile.ResolvedPackKey> reachablePacks,
+        ISet<ProjectLockFile.ResolvedPackKey> visitingPacks
     )
     {
-        if (reachablePacks.Contains(pack.Id))
+        if (pack.Key is not { } key)
+        {
+            return $"Lock file resolved pack '{pack.Id}@{pack.Version}' has no resolution key.";
+        }
+
+        if (reachablePacks.Contains(key))
         {
             return null;
         }
 
-        if (!visitingPacks.Add(pack.Id))
+        if (!visitingPacks.Add(key))
         {
             return $"Lock file contains a dependency cycle at '{pack.Id}@{pack.Version}'.";
         }
 
         foreach (var reference in pack.Packs)
         {
-            if (!resolvedPacksById.TryGetValue(reference.Id, out var dependency))
+            if (
+                reference.Resolution is not { } resolution
+                || !resolvedPacksByKey.TryGetValue(resolution, out var dependency)
+            )
             {
                 return $"Lock file reference '{reference.Id}@{reference.Version}' is unavailable.";
             }
@@ -648,7 +841,7 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
 
             var validationError = ValidateReachablePack(
                 dependency,
-                resolvedPacksById,
+                resolvedPacksByKey,
                 reachablePacks,
                 visitingPacks
             );
@@ -658,8 +851,81 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
             }
         }
 
-        visitingPacks.Remove(pack.Id);
-        reachablePacks.Add(pack.Id);
+        visitingPacks.Remove(key);
+        reachablePacks.Add(key);
+        return null;
+    }
+
+    private static string? ValidateUniqueOwnership(ProjectLockFile lockFile)
+    {
+        var owners = new Dictionary<string, (string Owner, bool AllowsSharedSection)>(
+            StringComparer.Ordinal
+        );
+        foreach (var instance in lockFile.Instances)
+        {
+            var error = AddOwnedTargets(
+                instance.ManagedFiles,
+                $"pack instance '{instance.Id}/{instance.Name}'",
+                owners
+            );
+            if (error is not null)
+            {
+                return error;
+            }
+        }
+
+        foreach (var pack in lockFile.Packs)
+        {
+            var error = AddOwnedTargets(
+                pack.ManagedFiles,
+                $"resolved pack '{pack.Id}@{pack.Version}'",
+                owners
+            );
+            if (error is not null)
+            {
+                return error;
+            }
+        }
+
+        foreach (var (name, link) in lockFile.Links)
+        {
+            var error = AddOwnedTargets(
+                link.Files.Select(file => new ProjectLockFile.ManagedFile
+                {
+                    DeclaredTargetPath = file.DeclaredTargetPath,
+                    Sha256 = file.Sha256,
+                    TargetPath = file.TargetPath,
+                }),
+                $"link '{name}'",
+                owners
+            );
+            if (error is not null)
+            {
+                return error;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? AddOwnedTargets(
+        IEnumerable<ProjectLockFile.ManagedFile> managedFiles,
+        string owner,
+        Dictionary<string, (string Owner, bool AllowsSharedSection)> owners
+    )
+    {
+        foreach (var managedFile in managedFiles)
+        {
+            var allowsSharedSection = managedFile.Strategy is { Type: "merge", Method: "section" };
+            if (
+                !owners.TryAdd(managedFile.TargetPath, (owner, allowsSharedSection))
+                && (!allowsSharedSection || !owners[managedFile.TargetPath].AllowsSharedSection)
+            )
+            {
+                return $"Lock file target '{managedFile.TargetPath}' has multiple owners: {owners[managedFile.TargetPath].Owner} and {owner}.";
+            }
+        }
+
         return null;
     }
 

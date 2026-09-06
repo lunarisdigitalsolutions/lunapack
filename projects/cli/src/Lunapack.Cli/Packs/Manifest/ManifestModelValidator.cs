@@ -894,14 +894,35 @@ internal static partial class ManifestModelValidator
         ArgumentNullException.ThrowIfNull(lockFile);
 
         var issues = new List<string>();
-        if (lockFile.SchemaVersion != 1)
+        if (lockFile.SchemaVersion is not 1 and not ProjectLockFileMigration.CurrentSchemaVersion)
         {
-            issues.Add("Project lock file schema version must be 1.");
+            issues.Add("Project lock file schema version must be 1 or 2.");
         }
 
         foreach (var resolvedPack in lockFile.Packs)
         {
             ValidateResolvedPack(resolvedPack, issues);
+            if (lockFile.SchemaVersion == ProjectLockFileMigration.CurrentSchemaVersion)
+            {
+                if (resolvedPack.Destination is not null)
+                {
+                    issues.Add("Version 2 resolved pack nodes cannot define instance placement.");
+                }
+
+                ValidateResolvedPackKey(resolvedPack.Key, issues);
+                foreach (var reference in resolvedPack.Packs)
+                {
+                    ValidateResolvedPackKey(reference.Resolution, issues);
+                }
+            }
+        }
+
+        if (lockFile.SchemaVersion == ProjectLockFileMigration.CurrentSchemaVersion)
+        {
+            foreach (var instance in lockFile.Instances)
+            {
+                ValidatePackInstance(instance, issues);
+            }
         }
 
         foreach (var (name, resolvedLink) in lockFile.Links)
@@ -911,6 +932,77 @@ internal static partial class ManifestModelValidator
 
         return issues;
     }
+
+    private static void ValidatePackInstance(
+        ProjectLockFile.PackInstance instance,
+        List<string> issues
+    )
+    {
+        if (!IsPackId(instance.Id) || !IsPackId(instance.Name))
+        {
+            issues.Add("Pack instances must define a pack ID and alias using pack-ID syntax.");
+        }
+
+        if (instance.Destination is not null && !IsSafeProjectRelativePath(instance.Destination))
+        {
+            issues.Add($"Pack instance '{instance.Id}/{instance.Name}' has an unsafe destination.");
+        }
+
+        ValidateResolvedPackKey(instance.RootResolution, issues);
+        if (
+            instance.Placements.Any(placement =>
+                !IsSafeProjectRelativePath(placement.Key)
+                || !IsSafeProjectRelativePath(placement.Value)
+            )
+        )
+        {
+            issues.Add(
+                $"Pack instance '{instance.Id}/{instance.Name}' must define safe canonical placements."
+            );
+        }
+
+        ValidateExternalSources(instance.Id, instance.ExternalSources, issues);
+        ValidateManagedFiles(instance.Id, instance.ExternalSources, instance.ManagedFiles, issues);
+    }
+
+    private static void ValidateResolvedPackKey(
+        ProjectLockFile.ResolvedPackKey? key,
+        List<string> issues
+    )
+    {
+        var invalidKey =
+            key is null
+            || !IsPackId(key.Id)
+            || !IsSemanticVersion(key.Version)
+            || key.SourceIdentity is null
+            || !IsValidLockSourceIdentity(key.SourceIdentity)
+            || (
+                string.Equals(key.SourceIdentity.Type, "git", StringComparison.Ordinal)
+                && !IsGitCommit(key.ResolvedCommit)
+            )
+            || (
+                string.Equals(key.SourceIdentity.Type, "local", StringComparison.Ordinal)
+                && key.ResolvedCommit is not null
+            );
+        if (invalidKey)
+        {
+            issues.Add(
+                "Resolved pack keys must define exact pack ID, version, source identity, and Git revision when applicable."
+            );
+        }
+    }
+
+    private static bool IsValidLockSourceIdentity(ConfiguredSourceIdentity identity) =>
+        identity.Type switch
+        {
+            "local" => IsRelativePath(identity.Path)
+                && identity.Url is null
+                && identity.Ref is null,
+            "git" => !string.IsNullOrEmpty(identity.Url)
+                && identity.Ref is not ""
+                && (identity.Path is null || IsSafeProjectRelativePath(identity.Path)),
+            _ => false,
+        };
 
     private static void ValidateResolvedLink(
         string name,
@@ -1137,6 +1229,16 @@ internal static partial class ManifestModelValidator
                 issues.Add("Requested packs must define an ID.");
             }
 
+            if (requestedPack.Name is not null)
+            {
+                if (requestedPack.Name.Length == 0)
+                {
+                    issues.Add("Requested pack instance names cannot be empty.");
+                }
+
+                ValidatePackId(requestedPack.Name, "Requested pack instance", issues);
+            }
+
             if (requestedPack.Version is not null && !IsSemanticVersion(requestedPack.Version))
             {
                 issues.Add($"Requested pack '{requestedPack.Id}' has an invalid version.");
@@ -1151,6 +1253,14 @@ internal static partial class ManifestModelValidator
             }
 
             ValidateRemapping(requestedPack.Remap, issues);
+        }
+
+        var hasDuplicateInstance = requestedPacks
+            .GroupBy(pack => pack.GetInstanceIdentity())
+            .Any(group => group.Count() > 1);
+        if (hasDuplicateInstance)
+        {
+            issues.Add("Requested pack instance names must be unique within each pack.");
         }
     }
 
@@ -1272,9 +1382,22 @@ internal static partial class ManifestModelValidator
     private static void ValidateResolvedManagedFiles(
         ProjectLockFile.ResolvedPack resolvedPack,
         List<string> issues
+    ) =>
+        ValidateManagedFiles(
+            resolvedPack.Id,
+            resolvedPack.ExternalSources,
+            resolvedPack.ManagedFiles,
+            issues
+        );
+
+    private static void ValidateManagedFiles(
+        string ownerId,
+        IReadOnlyDictionary<string, ProjectLockFile.ExternalSourceLock> externalSources,
+        IReadOnlyList<ProjectLockFile.ManagedFile> managedFiles,
+        List<string> issues
     )
     {
-        foreach (var managedFile in resolvedPack.ManagedFiles)
+        foreach (var managedFile in managedFiles)
         {
             var hasInvalidManagedFile =
                 !IsSafeProjectRelativePath(managedFile.DeclaredTargetPath)
@@ -1294,29 +1417,33 @@ internal static partial class ManifestModelValidator
                 );
             }
 
-            ValidateResolvedManagedFileProvenance(resolvedPack, managedFile, issues);
+            ValidateResolvedManagedFileProvenance(ownerId, externalSources, managedFile, issues);
         }
     }
 
     private static void ValidateResolvedPackExternalSources(
         ProjectLockFile.ResolvedPack resolvedPack,
         List<string> issues
+    ) => ValidateExternalSources(resolvedPack.Id, resolvedPack.ExternalSources, issues);
+
+    private static void ValidateExternalSources(
+        string ownerId,
+        IReadOnlyDictionary<string, ProjectLockFile.ExternalSourceLock> externalSources,
+        List<string> issues
     )
     {
-        foreach (var (alias, externalSource) in resolvedPack.ExternalSources)
+        foreach (var (alias, externalSource) in externalSources)
         {
             if (!IsSourceAlias(alias))
             {
                 issues.Add(
-                    $"Resolved pack '{resolvedPack.Id}' external source alias '{alias}' is invalid."
+                    $"Resolved owner '{ownerId}' external source alias '{alias}' is invalid."
                 );
             }
 
             if (externalSource is null)
             {
-                issues.Add(
-                    $"Resolved pack '{resolvedPack.Id}' external source '{alias}' is required."
-                );
+                issues.Add($"Resolved owner '{ownerId}' external source '{alias}' is required.");
                 continue;
             }
 
@@ -1328,14 +1455,15 @@ internal static partial class ManifestModelValidator
             if (hasInvalidExternalSource)
             {
                 issues.Add(
-                    $"Resolved pack '{resolvedPack.Id}' external source '{alias}' must record source name, fingerprint, ref, and resolved commit."
+                    $"Resolved owner '{ownerId}' external source '{alias}' must record source name, fingerprint, ref, and resolved commit."
                 );
             }
         }
     }
 
     private static void ValidateResolvedManagedFileProvenance(
-        ProjectLockFile.ResolvedPack resolvedPack,
+        string ownerId,
+        IReadOnlyDictionary<string, ProjectLockFile.ExternalSourceLock> externalSources,
         ProjectLockFile.ManagedFile managedFile,
         List<string> issues
     )
@@ -1372,10 +1500,10 @@ internal static partial class ManifestModelValidator
             return;
         }
 
-        if (!resolvedPack.ExternalSources.TryGetValue(sourceAlias, out var declared))
+        if (!externalSources.TryGetValue(sourceAlias, out var declared))
         {
             issues.Add(
-                $"Resolved managed file references external source '{managedFile.SourceAlias}' that pack '{resolvedPack.Id}' does not record."
+                $"Resolved managed file references external source '{managedFile.SourceAlias}' that owner '{ownerId}' does not record."
             );
             return;
         }

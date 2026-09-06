@@ -2,6 +2,7 @@ namespace Lunapack.Cli.Packs.ManagedFiles;
 
 internal enum ManagedRootKind
 {
+    PackInstance,
     Pack,
     Link,
 }

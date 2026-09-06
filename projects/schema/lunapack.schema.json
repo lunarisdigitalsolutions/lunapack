@@ -164,6 +164,9 @@
           "type": "string",
           "minLength": 1
         },
+        "name": {
+          "$ref": "#/definitions/packInstanceName"
+        },
         "remap": {
           "$ref": "#/definitions/remapping"
         },
@@ -172,6 +175,11 @@
           "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
         }
       }
+    },
+    "packInstanceName": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$"
     },
     "remapping": {
       "type": "object",

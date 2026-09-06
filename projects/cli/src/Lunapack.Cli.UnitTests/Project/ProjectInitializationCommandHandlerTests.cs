@@ -56,7 +56,7 @@ public sealed class ProjectInitializationCommandHandlerTests
         var projectState = state.RequireValue();
         await Assert.That(projectState.Configuration.SchemaVersion).IsEqualTo(1);
         await Assert.That(projectState.Configuration.Variables).IsEmpty();
-        await Assert.That(projectState.LockFile.SchemaVersion).IsEqualTo(1);
+        await Assert.That(projectState.LockFile.SchemaVersion).IsEqualTo(2);
         var configuration = workspace.FileSystem.File.ReadAllText(
             workspace.FileSystem.Path.Combine(
                 workspace.Path,
@@ -71,6 +71,6 @@ public sealed class ProjectInitializationCommandHandlerTests
         );
         await Assert
             .That(lockFile.ReplaceLineEndings("\n"))
-            .IsEqualTo("packs: []\nschemaVersion: 1\n");
+            .IsEqualTo("instances: []\npacks: []\nschemaVersion: 2\n");
     }
 }

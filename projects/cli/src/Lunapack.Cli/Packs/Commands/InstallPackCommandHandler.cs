@@ -6,6 +6,7 @@ using Lunapack.Cli.Application.Guidance;
 using Lunapack.Cli.Catalog;
 using Lunapack.Cli.Links;
 using Lunapack.Cli.Packs.ManagedFiles;
+using Lunapack.Cli.Packs.Manifest;
 using Lunapack.Cli.Packs.Planning;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Trust;
@@ -27,6 +28,7 @@ internal sealed class InstallPackCommandHandler(
     public Command CreateCommand(string projectDirectory, Option<string?> workspaceOption)
     {
         var packReferenceArgument = CreatePackReferenceArgument(completionProvider);
+        var nameOption = CreateNameOption();
         var destinationOption = CreateDestinationOption();
         var remapDirectoryOption = CreateRemapDirectoryOption();
         var remapFileOption = CreateRemapFileOption();
@@ -45,6 +47,7 @@ internal sealed class InstallPackCommandHandler(
         var command = new Command("install", "Install a pack.")
         {
             packReferenceArgument,
+            nameOption,
             destinationOption,
             remapDirectoryOption,
             remapFileOption,
@@ -67,6 +70,7 @@ internal sealed class InstallPackCommandHandler(
                 workspaceOption,
                 parseResult,
                 packReferenceArgument,
+                nameOption,
                 destinationOption,
                 remapDirectoryOption,
                 remapFileOption,
@@ -93,6 +97,7 @@ internal sealed class InstallPackCommandHandler(
         Option<string?> workspaceOption,
         ParseResult parseResult,
         Argument<string[]> packReferenceArgument,
+        Option<string?> nameOption,
         Option<string?> destinationOption,
         Option<string[]> remapDirectoryOption,
         Option<string[]> remapFileOption,
@@ -114,6 +119,17 @@ internal sealed class InstallPackCommandHandler(
         if (packReferences.Length == 0)
         {
             return console.Fail("A pack ID is required.");
+        }
+
+        var name = parseResult.GetValue(nameOption);
+        if (name is not null && packReferences.Length != 1)
+        {
+            return console.Fail("The --name option requires exactly one pack reference.");
+        }
+
+        if (name is not null && !ManifestModelValidator.IsPackId(name))
+        {
+            return console.Fail($"Pack instance alias '{name}' must use pack-ID syntax.");
         }
 
         var scriptMode = ScriptExecutionMode.Parse(
@@ -144,6 +160,7 @@ internal sealed class InstallPackCommandHandler(
             var exitCode = await InstallAsync(
                 workspaceDirectory,
                 packReference,
+                name,
                 parseResult.GetValue(destinationOption),
                 parseResult.GetValue(remapDirectoryOption) ?? [],
                 parseResult.GetValue(remapFileOption) ?? [],
@@ -182,6 +199,9 @@ internal sealed class InstallPackCommandHandler(
         argument.CompletionSources.Add(completionProvider.GetInstallReferences);
         return argument;
     }
+
+    private static Option<string?> CreateNameOption() =>
+        new("--name") { Description = "Alias for this pack instance." };
 
     private static Option<string?> CreateDestinationOption() =>
         new("--destination", "-d")
@@ -274,6 +294,7 @@ internal sealed class InstallPackCommandHandler(
     private async Task<int> InstallAsync(
         string workspaceDirectory,
         string packReference,
+        string? name,
         string? destination,
         string[] directoryRemappings,
         string[] fileRemappings,
@@ -323,6 +344,7 @@ internal sealed class InstallPackCommandHandler(
         return await PrepareAndInstallPackAsync(
             workspaceDirectory,
             packReference,
+            name,
             destination,
             directoryRemappings,
             fileRemappings,
@@ -372,6 +394,7 @@ internal sealed class InstallPackCommandHandler(
     private async Task<int> PrepareAndInstallPackAsync(
         string workspaceDirectory,
         string packReference,
+        string? name,
         string? destination,
         string[] directoryRemappings,
         string[] fileRemappings,
@@ -392,6 +415,7 @@ internal sealed class InstallPackCommandHandler(
         var installationRequest = CreateInstallationRequest(
             workspaceDirectory,
             packReference,
+            name,
             destination,
             directoryRemappings,
             fileRemappings,
@@ -570,6 +594,7 @@ internal sealed class InstallPackCommandHandler(
     private ManifestOperationResult<PackInstallationRequest> CreateInstallationRequest(
         string workspaceDirectory,
         string packReference,
+        string? name,
         string? destination,
         string[] directoryRemappings,
         string[] fileRemappings,
@@ -594,7 +619,8 @@ internal sealed class InstallPackCommandHandler(
             fileRemappings,
             scriptMode,
             skipInstructions,
-            saveRemapping
+            saveRemapping,
+            name
         );
 
     private async Task<int?> WarnWhenRootAlreadyInstalledAsync(

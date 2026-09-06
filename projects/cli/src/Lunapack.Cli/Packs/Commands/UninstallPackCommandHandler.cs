@@ -3,6 +3,7 @@ using System.IO.Abstractions;
 using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.Guidance;
 using Lunapack.Cli.Links;
+using Lunapack.Cli.Packs.Manifest;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Trust;
 
@@ -29,6 +30,10 @@ internal sealed class UninstallPackCommandHandler(
             HelpName = "pack-reference",
         };
         packReferenceArgument.CompletionSources.Add(completionProvider.GetInstalledReferences);
+        var nameOption = new Option<string?>("--name")
+        {
+            Description = "Alias of the pack instance to uninstall.",
+        };
         var parameterOption = new Option<string[]>("--parameter", "-p")
         {
             Description = "Lifecycle template parameter in <name>=<value> form.",
@@ -54,6 +59,7 @@ internal sealed class UninstallPackCommandHandler(
         var command = new Command("uninstall", "Remove an installed pack.")
         {
             packReferenceArgument,
+            nameOption,
             parameterOption,
             noVariablesOption,
             skipVariableOption,
@@ -62,6 +68,7 @@ internal sealed class UninstallPackCommandHandler(
         };
         var options = (
             PackReferences: packReferenceArgument,
+            Name: nameOption,
             Parameters: parameterOption,
             NoVariables: noVariablesOption,
             SkippedVariables: skipVariableOption,
@@ -81,6 +88,7 @@ internal sealed class UninstallPackCommandHandler(
         ParseResult parseResult,
         (
             Argument<string[]> PackReferences,
+            Option<string?> Name,
             Option<string[]> Parameters,
             Option<bool> NoVariables,
             Option<string[]> SkippedVariables,
@@ -93,6 +101,17 @@ internal sealed class UninstallPackCommandHandler(
         if (packReferenceValues.Length == 0)
         {
             return console.Fail("A pack ID is required.");
+        }
+
+        var name = parseResult.GetValue(options.Name);
+        if (name is not null && packReferenceValues.Length != 1)
+        {
+            return console.Fail("The --name option requires exactly one pack reference.");
+        }
+
+        if (name is not null && !ManifestModelValidator.IsPackId(name))
+        {
+            return console.Fail($"Pack instance alias '{name}' must use pack-ID syntax.");
         }
 
         var workspaceDirectory = workspaceDirectoryResolver.Resolve(
@@ -125,7 +144,8 @@ internal sealed class UninstallPackCommandHandler(
                 parseResult.GetValue(options.NoVariables),
                 parseResult.GetValue(options.SkippedVariables) ?? [],
                 scriptMode: parsedScriptMode,
-                skipInstructions: parseResult.GetValue(options.SkipInstructions)
+                skipInstructions: parseResult.GetValue(options.SkipInstructions),
+                name: name
             );
             if (hookRequest.Value is not { } request)
             {
@@ -183,7 +203,7 @@ internal sealed class UninstallPackCommandHandler(
 
         console.Info(string.Empty);
         console.Success(
-            $"Uninstalled '{reference.Id}' in {CliDuration.Format(managedFileChangesDuration ?? TimeSpan.Zero)}"
+            $"Uninstalled '{reference.Id}' (alias '{hookRequest.Name ?? reference.Id}') in {CliDuration.Format(managedFileChangesDuration ?? TimeSpan.Zero)}"
         );
         return 0;
     }

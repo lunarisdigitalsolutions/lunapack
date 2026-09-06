@@ -12,6 +12,8 @@ internal sealed record PackInstallationRequest(
     bool AdoptExisting
 )
 {
+    public string? Name { get; init; }
+
     public PackManagedFilePlanningMode PlanningMode { get; init; } =
         PackManagedFilePlanningMode.Install;
 
@@ -49,7 +51,8 @@ internal sealed record PackInstallationRequest(
         IEnumerable<string>? fileRemappings = null,
         ScriptExecutionMode? scriptMode = null,
         bool skipInstructions = false,
-        bool saveRemapping = false
+        bool saveRemapping = false,
+        string? name = null
     )
     {
         var parsedPackReference = PackReference.Parse(packReferenceValue);
@@ -109,7 +112,8 @@ internal sealed record PackInstallationRequest(
                     noVariables,
                     scriptMode ?? ScriptExecutionMode.Prompt,
                     skipInstructions,
-                    saveRemapping
+                    saveRemapping,
+                    name
                 )
             );
     }
@@ -124,10 +128,12 @@ internal sealed record PackInstallationRequest(
         bool noVariables,
         ScriptExecutionMode scriptMode,
         bool skipInstructions,
-        bool saveRemapping
+        bool saveRemapping,
+        string? name
     ) =>
         new(packReference, destination, adoptExisting)
         {
+            Name = name,
             Parameters = parameters.ToDictionary(
                 parameter => parameter.Key,
                 parameter => parameter.Value[0],

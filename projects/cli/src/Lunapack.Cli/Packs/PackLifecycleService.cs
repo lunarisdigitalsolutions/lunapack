@@ -689,8 +689,12 @@ internal sealed class PackLifecycleService(
         }
 
         var requestedPack = installationRequest.PackReference;
+        var requestedIdentity = new PackInstanceIdentity(
+            requestedPack.Id,
+            installationRequest.Name ?? requestedPack.Id
+        );
         var requestedPackIsInstalled = state.Configuration.Packs.Exists(pack =>
-            string.Equals(pack.Id, requestedPack.Id, StringComparison.Ordinal)
+            pack.GetInstanceIdentity() == requestedIdentity
         );
         if (requestedPackIsInstalled)
         {
@@ -780,30 +784,28 @@ internal sealed class PackLifecycleService(
         var uninstalledPacks = new List<DiscoveredPack>();
         foreach (var pack in resolvedGraph.Packs)
         {
-            var installedPack = lockFile.Packs.Find(lockPack =>
-                string.Equals(lockPack.Id, pack.Manifest.Id, StringComparison.Ordinal)
-            );
+            var installedPack = lockFile.Packs.Find(lockPack => IsSameResolution(lockPack, pack));
             if (installedPack is null)
             {
                 uninstalledPacks.Add(pack);
                 continue;
             }
 
-            var installedVersionConflicts = !string.Equals(
-                installedPack.Version,
-                pack.Manifest.Version,
-                StringComparison.Ordinal
-            );
-            if (installedVersionConflicts)
+            if (resolvedGraph.IsRoot(pack))
             {
-                return ManifestOperationResult<ResolvedPackGraph>.Failure(
-                    $"Pack '{pack.Manifest.Id}' is already installed as version '{installedPack.Version}', which conflicts with version '{pack.Manifest.Version}'."
-                );
+                uninstalledPacks.Add(pack);
             }
         }
 
         return ManifestOperationResult<ResolvedPackGraph>.Success(
-            new ResolvedPackGraph(uninstalledPacks, resolvedGraph.RootPackIds)
+            new ResolvedPackGraph(
+                uninstalledPacks,
+                resolvedGraph.RootPackIds,
+                resolvedGraph.ActiveReferences
+            )
+            {
+                Warnings = resolvedGraph.Warnings,
+            }
         );
     }
 
@@ -1042,16 +1044,6 @@ internal sealed class PackLifecycleService(
         }
 
         var packReference = installationRequest.PackReference;
-        var requestedPackIsInstalled = state.Configuration.Packs.Exists(request =>
-            string.Equals(request.Id, packReference.Id, StringComparison.Ordinal)
-        );
-        if (requestedPackIsInstalled)
-        {
-            return ManifestOperationResult<PreparedPackGraphMaterialization>.Failure(
-                $"Pack '{packReference.Id}' is already installed."
-            );
-        }
-
         var nextConfiguration = state.Configuration with
         {
             Packs =
@@ -1061,6 +1053,7 @@ internal sealed class PackLifecycleService(
                 {
                     Destination = installationRequest.Destination,
                     Id = packReference.Id,
+                    Name = installationRequest.Name,
                     Remap = installationRequest.SaveRemapping
                         ? installationRequest.TargetRemapping?.MergeInto(null)
                         : null,
@@ -1258,14 +1251,7 @@ internal sealed class PackLifecycleService(
                 installationPlan.Error ?? "Unable to plan pack installation."
             );
         }
-
-        var collision = ManagedRootInventory.FindCrossRootCollision(
-            ManagedRootInventory.FromInstallationPlan(preparedSources.Graph, plan),
-            preparedGraph.State.LockFile
-        );
-        return collision is null
-            ? ManifestOperationResult<PackInstallationPlan>.Success(plan)
-            : ManifestOperationResult<PackInstallationPlan>.Failure(collision);
+        return ManifestOperationResult<PackInstallationPlan>.Success(plan);
     }
 
     private void WriteManagedFileTemplateDiagnostics(PackInstallationPlan installationPlan)
@@ -1478,7 +1464,7 @@ internal sealed class PackLifecycleService(
             return _console.Fail(loadedState.Error ?? "Unable to load project state.");
         }
 
-        var rootRequest = ValidateUninstallRequest(state, packReference);
+        var rootRequest = ValidateUninstallRequest(state, packReference, hookRequest.Name);
         if (rootRequest.Value is not { } requestedRoot)
         {
             return _console.Fail(rootRequest.Error);
@@ -1526,7 +1512,7 @@ internal sealed class PackLifecycleService(
             Packs =
             [
                 .. state.Configuration.Packs.Where(pack =>
-                    !string.Equals(pack.Id, requestedRoot.Id, StringComparison.Ordinal)
+                    pack.GetInstanceIdentity() != requestedRoot.GetInstanceIdentity()
                 ),
             ],
         };
@@ -1539,7 +1525,7 @@ internal sealed class PackLifecycleService(
         }
 
         var removedPacks = GetRemovedPacks(state.LockFile, lockFile);
-        var managedFilesToRemove = GetManagedFilesToRemove(removedPacks, lockFile);
+        var managedFilesToRemove = GetManagedFilesToRemove(state.LockFile, lockFile);
         var changedFile = managedFilesToRemove.FirstOrDefault(managedFile =>
             ManagedTargetExists(managedFile.ManagedFile, projectDirectory)
             && !ManagedTargetIsUnchanged(managedFile.ManagedFile, projectDirectory)
@@ -1776,30 +1762,28 @@ internal sealed class PackLifecycleService(
 
     private static ManifestOperationResult<ProjectConfiguration.RequestedPack> ValidateUninstallRequest(
         ProjectState state,
-        PackReference packReference
+        PackReference packReference,
+        string? name
     )
     {
-        var rootRequest = state.Configuration.Packs.Find(request =>
-            string.Equals(request.Id, packReference.Id, StringComparison.Ordinal)
-        );
-        if (rootRequest is null)
+        var selected = PackInstanceSelection.Select(state, packReference.Id, name, "uninstall");
+        if (selected.Value is not { } instance)
         {
             return ManifestOperationResult<ProjectConfiguration.RequestedPack>.Failure(
-                $"Pack '{packReference.Id}' is not installed."
+                selected.Error ?? $"Pack '{packReference.Id}' is not installed."
             );
         }
 
-        var installedPack = state.LockFile.Packs.Find(pack =>
-            string.Equals(pack.Id, packReference.Id, StringComparison.Ordinal)
-        );
         return
             packReference.Version is null
             || string.Equals(
-                installedPack?.Version,
+                instance.ResolvedPack.Version,
                 packReference.Version,
                 StringComparison.Ordinal
             )
-            ? ManifestOperationResult<ProjectConfiguration.RequestedPack>.Success(rootRequest)
+            ? ManifestOperationResult<ProjectConfiguration.RequestedPack>.Success(
+                instance.RequestedRoot
+            )
             : ManifestOperationResult<ProjectConfiguration.RequestedPack>.Failure(
                 $"Installed pack '{packReference.Id}' is not version '{packReference.Version}'."
             );
@@ -1903,7 +1887,8 @@ internal sealed class PackLifecycleService(
             graph,
             installationPlan,
             state.LockFile,
-            resultingContents
+            resultingContents,
+            preserveExistingLock
         );
         var mergedLockFile = preserveExistingLock
             ? MergeLockFiles(state.LockFile, updatedLockFile)
@@ -2203,17 +2188,25 @@ internal sealed class PackLifecycleService(
         ProjectLockFile updatedLockFile
     )
     {
-        var updatedIds = updatedLockFile
-            .Packs.Select(pack => pack.Id)
-            .ToHashSet(StringComparer.Ordinal);
+        var updatedKeys = updatedLockFile.Packs.Select(pack => pack.Key).ToHashSet();
+        var updatedInstances = updatedLockFile
+            .Instances.Select(instance => new PackInstanceIdentity(instance.Id, instance.Name))
+            .ToHashSet();
         return ManifestOperationResult<ProjectLockFile>.Success(
             new ProjectLockFile
             {
-                SchemaVersion = 1,
+                SchemaVersion = ProjectLockFileMigration.CurrentSchemaVersion,
+                Instances =
+                [
+                    .. previousLockFile.Instances.Where(instance =>
+                        !updatedInstances.Contains(new(instance.Id, instance.Name))
+                    ),
+                    .. updatedLockFile.Instances,
+                ],
                 Links = CloneLinks(updatedLockFile),
                 Packs =
                 [
-                    .. previousLockFile.Packs.Where(pack => !updatedIds.Contains(pack.Id)),
+                    .. previousLockFile.Packs.Where(pack => !updatedKeys.Contains(pack.Key)),
                     .. updatedLockFile.Packs,
                 ],
             }
@@ -2436,35 +2429,26 @@ internal sealed class PackLifecycleService(
         ResolvedPackGraph graph,
         PackInstallationPlan installationPlan,
         ProjectLockFile previousLockFile,
-        IReadOnlyDictionary<string, byte[]>? resultingContents = null
+        IReadOnlyDictionary<string, byte[]>? resultingContents,
+        bool preserveExistingLock
     )
     {
         var resolvedPacks = new List<ProjectLockFile.ResolvedPack>(graph.Packs.Count);
         foreach (var pack in graph.Packs)
         {
             var gitSource = pack.GitSource;
-            var managedFiles = CreateLockManagedFiles(
-                pack,
-                installationPlan,
-                previousLockFile,
-                resultingContents
-            );
-            var externalSources = CreateLockExternalSources(pack, installationPlan);
+            var key = CreateResolvedPackKey(pack);
+            var isRoot = IsRequestedRoot(configuration, pack);
             resolvedPacks.Add(
                 new ProjectLockFile.ResolvedPack
                 {
-                    Destination = configuration
-                        .Packs.Find(request =>
-                            string.Equals(request.Id, pack.Manifest.Id, StringComparison.Ordinal)
-                        )
-                        ?.Destination,
                     GitSource = gitSource,
                     Id = pack.Manifest.Id,
+                    Key = key,
                     Version = pack.Manifest.Version,
                     SourceName = pack.SourceName,
                     SourceIdentity = pack.SourceIdentity,
                     SourcePath = gitSource is null ? pack.SourceIdentity.Path : null,
-                    ExternalSources = externalSources,
                     PackPath = gitSource is null
                         ? ProjectPath.Normalize(
                             fileSystem.Path.GetRelativePath(pack.SourcePath, pack.PackDirectory)
@@ -2475,31 +2459,272 @@ internal sealed class PackLifecycleService(
                             ),
                     Packs =
                     [
-                        .. pack.Manifest.Packs.Select(reference => new ProjectLockFile.PackReference
-                        {
-                            Id = reference.Id,
-                            Version = reference.Version,
-                        }),
+                        .. pack
+                            .Manifest.Packs.Where(reference =>
+                                graph.ActiveReferences is null
+                                || graph.ActiveReferences.Contains(reference)
+                            )
+                            .Select(reference =>
+                                CreateLockReference(graph, previousLockFile, reference)
+                            ),
                     ],
-                    ManagedFiles = managedFiles,
+                    ExternalSources = isRoot
+                        ? []
+                        : CreateLockExternalSources(pack, installationPlan, instanceIdentity: null),
+                    ManagedFiles = isRoot
+                        ? []
+                        : CreateLockManagedFiles(
+                            pack,
+                            installationPlan,
+                            previousLockFile,
+                            resultingContents,
+                            instanceIdentity: null
+                        ),
                 }
             );
         }
 
+        var previousInstances = previousLockFile
+            .Instances.Select(instance => new PackInstanceIdentity(instance.Id, instance.Name))
+            .ToHashSet();
+        var instances = configuration
+            .Packs.Where(request =>
+                !preserveExistingLock || !previousInstances.Contains(request.GetInstanceIdentity())
+            )
+            .Select(request =>
+                CreateLockInstance(
+                    request,
+                    graph,
+                    installationPlan,
+                    previousLockFile,
+                    resultingContents
+                )
+            )
+            .OfType<ProjectLockFile.PackInstance>()
+            .ToList();
+        ClearInstanceRootOwnership(resolvedPacks, instances);
+
         return new ProjectLockFile
         {
-            SchemaVersion = 1,
+            SchemaVersion = ProjectLockFileMigration.CurrentSchemaVersion,
+            Instances = instances,
             Links = CloneLinks(previousLockFile),
             Packs = resolvedPacks,
         };
     }
 
+    private static void ClearInstanceRootOwnership(
+        IEnumerable<ProjectLockFile.ResolvedPack> resolvedPacks,
+        IEnumerable<ProjectLockFile.PackInstance> instances
+    )
+    {
+        var instanceRootKeys = instances.Select(instance => instance.RootResolution).ToHashSet();
+        foreach (
+            var root in resolvedPacks.Where(pack =>
+                pack.Key is not null && instanceRootKeys.Contains(pack.Key)
+            )
+        )
+        {
+            root.Destination = null;
+            root.ExternalSources = [];
+            root.ManagedFiles = [];
+        }
+    }
+
+    private static bool IsRequestedRoot(ProjectConfiguration configuration, DiscoveredPack pack) =>
+        configuration.Packs.Exists(request =>
+            string.Equals(request.Id, pack.Manifest.Id, StringComparison.Ordinal)
+            && (
+                request.Version is null
+                || string.Equals(request.Version, pack.Manifest.Version, StringComparison.Ordinal)
+            )
+        );
+
+    private static ProjectLockFile.PackInstance? CreateLockInstance(
+        ProjectConfiguration.RequestedPack request,
+        ResolvedPackGraph graph,
+        PackInstallationPlan installationPlan,
+        ProjectLockFile previousLockFile,
+        IReadOnlyDictionary<string, byte[]>? resultingContents
+    )
+    {
+        var identity = request.GetInstanceIdentity();
+        var previousInstance = previousLockFile.Instances.Find(instance =>
+            string.Equals(instance.Id, identity.PackId, StringComparison.Ordinal)
+            && string.Equals(instance.Name, identity.Alias, StringComparison.Ordinal)
+        );
+        var root = FindInstanceRoot(
+            request,
+            identity,
+            graph,
+            installationPlan,
+            installationPlan.RootIdentity,
+            previousLockFile,
+            previousInstance
+        );
+        var previousManagedFiles = previousInstance?.ManagedFiles ?? [];
+        return root is null
+            ? null
+            : new ProjectLockFile.PackInstance
+            {
+                Destination = request.Destination,
+                ExternalSources = CreateLockExternalSources(root, installationPlan, identity),
+                Id = request.Id,
+                ManagedFiles = CreateLockManagedFiles(
+                    root,
+                    installationPlan,
+                    previousLockFile,
+                    resultingContents,
+                    identity,
+                    previousManagedFiles
+                ),
+                Name = identity.Alias,
+                Placements = CreateLockPlacements(identity, installationPlan, previousInstance),
+                RootResolution = CreateResolvedPackKey(root),
+            };
+    }
+
+    private static Dictionary<string, string> CreateLockPlacements(
+        PackInstanceIdentity identity,
+        PackInstallationPlan installationPlan,
+        ProjectLockFile.PackInstance? previousInstance
+    )
+    {
+        var placements = installationPlan
+            .ManagedFiles.Where(file => file.InstanceIdentity == identity)
+            .ToDictionary(
+                file => ProjectPath.Normalize(file.DeclaredTargetPath),
+                file => ProjectPath.Normalize(file.TargetPathRelativeToProject),
+                StringComparer.Ordinal
+            );
+        return placements.Count > 0 || previousInstance is null
+            ? placements
+            : new Dictionary<string, string>(previousInstance.Placements, StringComparer.Ordinal);
+    }
+
+    private static DiscoveredPack? FindInstanceRoot(
+        ProjectConfiguration.RequestedPack request,
+        PackInstanceIdentity identity,
+        ResolvedPackGraph graph,
+        PackInstallationPlan installationPlan,
+        PackInstanceIdentity? selectedIdentity,
+        ProjectLockFile previousLockFile,
+        ProjectLockFile.PackInstance? previousInstance
+    )
+    {
+        var plannedRoot = installationPlan.ManagedFiles.FirstOrDefault(file =>
+            file.InstanceIdentity == identity
+            && string.Equals(file.Pack.Manifest.Id, request.Id, StringComparison.Ordinal)
+            && (
+                request.Version is null
+                || string.Equals(
+                    file.Pack.Manifest.Version,
+                    request.Version,
+                    StringComparison.Ordinal
+                )
+            )
+        );
+        if (plannedRoot is not null)
+        {
+            return plannedRoot.Pack;
+        }
+
+        if (
+            identity != selectedIdentity
+            && previousInstance is not null
+            && (
+                request.Version is null
+                || string.Equals(
+                    request.Version,
+                    previousInstance.RootResolution.Version,
+                    StringComparison.Ordinal
+                )
+            )
+        )
+        {
+            return graph.Packs.FirstOrDefault(pack =>
+                CreateResolvedPackKey(pack) == previousInstance.RootResolution
+            );
+        }
+
+        var candidates = graph
+            .Packs.Where(pack =>
+                string.Equals(pack.Manifest.Id, request.Id, StringComparison.Ordinal)
+                && (
+                    request.Version is null
+                    || string.Equals(
+                        pack.Manifest.Version,
+                        request.Version,
+                        StringComparison.Ordinal
+                    )
+                )
+            )
+            .ToList();
+        if (request.Version is not null)
+        {
+            return candidates.FirstOrDefault();
+        }
+
+        var siblingRootKeys = previousLockFile
+            .Instances.Where(instance =>
+                !string.Equals(instance.Id, identity.PackId, StringComparison.Ordinal)
+                || !string.Equals(instance.Name, identity.Alias, StringComparison.Ordinal)
+            )
+            .Select(instance => instance.RootResolution)
+            .ToHashSet();
+        return candidates.LastOrDefault(pack =>
+                !siblingRootKeys.Contains(CreateResolvedPackKey(pack))
+            ) ?? candidates.LastOrDefault();
+    }
+
+    private static ProjectLockFile.PackReference CreateLockReference(
+        ResolvedPackGraph graph,
+        ProjectLockFile previousLockFile,
+        PackManifest.PackReference reference
+    )
+    {
+        var target = graph.Packs.FirstOrDefault(pack =>
+            string.Equals(pack.Manifest.Id, reference.Id, StringComparison.Ordinal)
+            && string.Equals(pack.Manifest.Version, reference.Version, StringComparison.Ordinal)
+        );
+        var resolution = target is null
+            ? previousLockFile
+                .Packs.First(pack =>
+                    string.Equals(pack.Id, reference.Id, StringComparison.Ordinal)
+                    && string.Equals(pack.Version, reference.Version, StringComparison.Ordinal)
+                )
+                .Key
+                ?? throw new InvalidOperationException(
+                    $"Resolved pack '{reference.Id}@{reference.Version}' has no resolution key."
+                )
+            : CreateResolvedPackKey(target);
+        return new ProjectLockFile.PackReference
+        {
+            Id = reference.Id,
+            Resolution = resolution,
+            Version = reference.Version,
+        };
+    }
+
+    private static ProjectLockFile.ResolvedPackKey CreateResolvedPackKey(DiscoveredPack pack) =>
+        new()
+        {
+            Id = pack.Manifest.Id,
+            ResolvedCommit = pack.GitSource?.ResolvedCommit,
+            SourceIdentity = pack.SourceIdentity,
+            Version = pack.Manifest.Version,
+        };
+
     private static Dictionary<string, ProjectLockFile.ExternalSourceLock> CreateLockExternalSources(
         DiscoveredPack pack,
-        PackInstallationPlan installationPlan
+        PackInstallationPlan installationPlan,
+        PackInstanceIdentity? instanceIdentity
     ) =>
         installationPlan
-            .ManagedFiles.Where(managedFile => IsSamePack(managedFile.Pack, pack))
+            .ManagedFiles.Where(managedFile =>
+                IsSamePack(managedFile.Pack, pack)
+                && (instanceIdentity is null || managedFile.InstanceIdentity == instanceIdentity)
+            )
             .Select(managedFile => managedFile.ExternalSource)
             .OfType<PlannedExternalSource>()
             .GroupBy(source => source.Alias, StringComparer.Ordinal)
@@ -2527,13 +2752,26 @@ internal sealed class PackLifecycleService(
         DiscoveredPack pack,
         PackInstallationPlan installationPlan,
         ProjectLockFile previousLockFile,
-        IReadOnlyDictionary<string, byte[]>? resultingContents
+        IReadOnlyDictionary<string, byte[]>? resultingContents,
+        PackInstanceIdentity? instanceIdentity,
+        IReadOnlyList<ProjectLockFile.ManagedFile>? previousOwnedFiles = null
     ) =>
         [
             .. installationPlan
-                .ManagedFiles.Where(managedFile => IsSamePack(managedFile.Pack, pack))
+                .ManagedFiles.Where(managedFile =>
+                    IsSamePack(managedFile.Pack, pack)
+                    && (
+                        instanceIdentity is null || managedFile.InstanceIdentity == instanceIdentity
+                    )
+                )
                 .Select(managedFile =>
-                    CreateLockManagedFile(pack, managedFile, previousLockFile, resultingContents)
+                    CreateLockManagedFile(
+                        pack,
+                        managedFile,
+                        previousLockFile,
+                        resultingContents,
+                        previousOwnedFiles
+                    )
                 ),
         ];
 
@@ -2541,18 +2779,20 @@ internal sealed class PackLifecycleService(
         DiscoveredPack pack,
         PlannedManagedFile managedFile,
         ProjectLockFile previousLockFile,
-        IReadOnlyDictionary<string, byte[]>? resultingContents
+        IReadOnlyDictionary<string, byte[]>? resultingContents,
+        IReadOnlyList<ProjectLockFile.ManagedFile>? previousOwnedFiles
     )
     {
-        var previousManagedFile = previousLockFile
-            .Packs.Find(lockPack => IsSamePackId(lockPack, pack))
-            ?.ManagedFiles.Find(file =>
-                string.Equals(
-                    file.DeclaredTargetPath ?? file.TargetPath,
-                    managedFile.DeclaredTargetPath,
-                    StringComparison.Ordinal
-                )
-            );
+        var previousManagedFiles =
+            previousOwnedFiles
+            ?? previousLockFile.Packs.Find(lockPack => IsSamePackId(lockPack, pack))?.ManagedFiles;
+        var previousManagedFile = previousManagedFiles?.FirstOrDefault(file =>
+            string.Equals(
+                file.DeclaredTargetPath ?? file.TargetPath,
+                managedFile.DeclaredTargetPath,
+                StringComparison.Ordinal
+            )
+        );
         var effectiveTargetPath =
             previousManagedFile?.TargetPath ?? managedFile.TargetPathRelativeToProject;
 
@@ -2583,52 +2823,67 @@ internal sealed class PackLifecycleService(
         ProjectLockFile previousLockFile
     )
     {
-        var packsById = previousLockFile.Packs.ToDictionary(
-            pack => pack.Id,
-            StringComparer.Ordinal
-        );
-        var remainingIds = new HashSet<string>(StringComparer.Ordinal);
-        var pendingIds = new Stack<string>(requestedRoots.Select(pack => pack.Id));
-        while (pendingIds.TryPop(out var packId))
+        var requestedIdentities = requestedRoots
+            .Select(request => request.GetInstanceIdentity())
+            .ToHashSet();
+        var remainingInstances = previousLockFile
+            .Instances.Where(instance =>
+                requestedIdentities.Contains(new(instance.Id, instance.Name))
+            )
+            .ToList();
+        if (remainingInstances.Count != requestedRoots.Count)
         {
-            if (!remainingIds.Add(packId))
+            return ManifestOperationResult<ProjectLockFile>.Failure(
+                "Lock file does not contain every requested pack instance."
+            );
+        }
+
+        var packsByKey = previousLockFile
+            .Packs.Where(pack => pack.Key is not null)
+            .ToDictionary(pack => pack.Key!);
+        var remainingKeys = new HashSet<ProjectLockFile.ResolvedPackKey>();
+        var pendingKeys = new Stack<ProjectLockFile.ResolvedPackKey>(
+            remainingInstances.Select(instance => instance.RootResolution)
+        );
+        while (pendingKeys.TryPop(out var packKey))
+        {
+            if (!remainingKeys.Add(packKey))
             {
                 continue;
             }
 
-            if (!packsById.TryGetValue(packId, out var resolvedPack))
+            if (!packsByKey.TryGetValue(packKey, out var resolvedPack))
             {
                 return ManifestOperationResult<ProjectLockFile>.Failure(
-                    $"Lock file does not contain resolved pack '{packId}'."
+                    $"Lock file does not contain resolved pack '{packKey.Id}@{packKey.Version}'."
                 );
             }
 
             foreach (var dependency in resolvedPack.Packs)
             {
-                var dependencyIsMissingOrMismatched =
-                    !packsById.TryGetValue(dependency.Id, out var resolvedDependency)
-                    || !string.Equals(
-                        dependency.Version,
-                        resolvedDependency.Version,
-                        StringComparison.Ordinal
-                    );
-                if (dependencyIsMissingOrMismatched)
+                if (dependency.Resolution is not { } dependencyKey)
                 {
                     return ManifestOperationResult<ProjectLockFile>.Failure(
-                        $"Lock file does not contain resolved pack '{dependency.Id}@{dependency.Version}'."
+                        $"Lock reference '{dependency.Id}@{dependency.Version}' has no resolution key."
                     );
                 }
 
-                pendingIds.Push(dependency.Id);
+                pendingKeys.Push(dependencyKey);
             }
         }
 
         return ManifestOperationResult<ProjectLockFile>.Success(
             new ProjectLockFile
             {
-                SchemaVersion = 1,
+                SchemaVersion = ProjectLockFileMigration.CurrentSchemaVersion,
+                Instances = remainingInstances,
                 Links = CloneLinks(previousLockFile),
-                Packs = [.. previousLockFile.Packs.Where(pack => remainingIds.Contains(pack.Id))],
+                Packs =
+                [
+                    .. previousLockFile.Packs.Where(pack =>
+                        pack.Key is not null && remainingKeys.Contains(pack.Key)
+                    ),
+                ],
             }
         );
     }
@@ -2650,23 +2905,41 @@ internal sealed class PackLifecycleService(
     ) =>
         [
             .. previousLockFile.Packs.Where(lockPack =>
-                !remainingLockFile.Packs.Exists(pack =>
-                    string.Equals(pack.Id, lockPack.Id, StringComparison.Ordinal)
-                )
+                !remainingLockFile.Packs.Exists(pack => pack.Key == lockPack.Key)
             ),
         ];
 
     private static List<ManagedFileRemoval> GetManagedFilesToRemove(
-        IReadOnlyList<ProjectLockFile.ResolvedPack> removedPacks,
+        ProjectLockFile previousLockFile,
         ProjectLockFile remainingLockFile
     )
     {
         var remainingTargets = remainingLockFile
             .Packs.SelectMany(pack => pack.ManagedFiles)
+            .Concat(remainingLockFile.Instances.SelectMany(instance => instance.ManagedFiles))
             .Select(managedFile => ProjectPath.Normalize(managedFile.TargetPath))
             .ToHashSet(StringComparer.Ordinal);
+        var remainingInstances = remainingLockFile
+            .Instances.Select(instance => new PackInstanceIdentity(instance.Id, instance.Name))
+            .ToHashSet();
+        var previousInstanceRootKeys = previousLockFile
+            .Instances.Select(instance => instance.RootResolution)
+            .ToHashSet();
+        var removedManagedFiles = previousLockFile
+            .Packs.Where(pack =>
+                (pack.Key is null || !previousInstanceRootKeys.Contains(pack.Key))
+                && !remainingLockFile.Packs.Exists(candidate => candidate.Key == pack.Key)
+            )
+            .SelectMany(pack => pack.ManagedFiles)
+            .Concat(
+                previousLockFile
+                    .Instances.Where(instance =>
+                        !remainingInstances.Contains(new(instance.Id, instance.Name))
+                    )
+                    .SelectMany(instance => instance.ManagedFiles)
+            );
         var removals = new List<ManagedFileRemoval>();
-        foreach (var managedFile in removedPacks.SelectMany(pack => pack.ManagedFiles))
+        foreach (var managedFile in removedManagedFiles)
         {
             var removalKind = GetRemovalKind(managedFile);
             if (
@@ -2897,6 +3170,18 @@ internal sealed class PackLifecycleService(
     private static bool IsSamePack(ProjectLockFile.ResolvedPack lockPack, DiscoveredPack pack) =>
         IsSamePackId(lockPack, pack)
         && string.Equals(lockPack.Version, pack.Manifest.Version, StringComparison.Ordinal);
+
+    private static bool IsSameResolution(
+        ProjectLockFile.ResolvedPack lockPack,
+        DiscoveredPack pack
+    ) =>
+        IsSamePack(lockPack, pack)
+        && lockPack.SourceIdentity == pack.SourceIdentity
+        && string.Equals(
+            lockPack.GitSource?.ResolvedCommit,
+            pack.GitSource?.ResolvedCommit,
+            StringComparison.Ordinal
+        );
 
     private static bool IsSamePackId(ProjectLockFile.ResolvedPack lockPack, DiscoveredPack pack) =>
         string.Equals(lockPack.Id, pack.Manifest.Id, StringComparison.Ordinal);

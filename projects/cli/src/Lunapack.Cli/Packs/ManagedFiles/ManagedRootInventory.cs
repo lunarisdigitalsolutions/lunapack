@@ -12,20 +12,50 @@ internal static class ManagedRootInventory
         ArgumentNullException.ThrowIfNull(lockFile);
 
         var roots = new List<ManagedRoot>();
+        var instanceRootKeys = lockFile
+            .Instances.Select(instance => instance.RootResolution)
+            .ToHashSet();
+        foreach (var instance in lockFile.Instances)
+        {
+            roots.Add(
+                new ManagedRoot(
+                    new ManagedRootOwner(
+                        ManagedRootKind.PackInstance,
+                        instance.Id,
+                        instance.RootResolution.Version,
+                        instance.Name
+                    ),
+                    string.Empty,
+                    instance.RootResolution.SourceIdentity,
+                    null,
+                    [
+                        .. instance.ManagedFiles.Select(managedFile => new ManagedRootFile(
+                            string.Empty,
+                            managedFile.DeclaredTargetPath ?? managedFile.TargetPath,
+                            managedFile.TargetPath,
+                            managedFile.Sha256
+                        )),
+                    ]
+                )
+            );
+        }
+
         foreach (var resolvedPack in lockFile.Packs)
         {
+            var managedFiles = GetResolvedManagedFiles(resolvedPack, instanceRootKeys);
             roots.Add(
                 new ManagedRoot(
                     new ManagedRootOwner(
                         ManagedRootKind.Pack,
                         resolvedPack.Id,
-                        resolvedPack.Version
+                        resolvedPack.Version,
+                        IsLegacy: lockFile.SchemaVersion == 1
                     ),
                     resolvedPack.SourceName ?? string.Empty,
                     resolvedPack.SourceIdentity,
                     resolvedPack.GitSource,
                     [
-                        .. resolvedPack.ManagedFiles.Select(managedFile => new ManagedRootFile(
+                        .. managedFiles.Select(managedFile => new ManagedRootFile(
                             resolvedPack.PackPath,
                             managedFile.DeclaredTargetPath ?? managedFile.TargetPath,
                             managedFile.TargetPath,
@@ -59,9 +89,18 @@ internal static class ManagedRootInventory
         return roots;
     }
 
+    private static List<ProjectLockFile.ManagedFile> GetResolvedManagedFiles(
+        ProjectLockFile.ResolvedPack resolvedPack,
+        HashSet<ProjectLockFile.ResolvedPackKey> instanceRootKeys
+    ) =>
+        resolvedPack.Key is not null && instanceRootKeys.Contains(resolvedPack.Key)
+            ? []
+            : resolvedPack.ManagedFiles;
+
     public static IReadOnlyList<ManagedRoot> FromInstallationPlan(
         ResolvedPackGraph graph,
-        PackInstallationPlan installationPlan
+        PackInstallationPlan installationPlan,
+        PackInstanceIdentity instanceIdentity
     )
     {
         ArgumentNullException.ThrowIfNull(graph);
@@ -70,7 +109,18 @@ internal static class ManagedRootInventory
         return
         [
             .. graph.Packs.Select(pack => new ManagedRoot(
-                new ManagedRootOwner(ManagedRootKind.Pack, pack.Manifest.Id, pack.Manifest.Version),
+                graph.IsRoot(pack)
+                    ? new ManagedRootOwner(
+                        ManagedRootKind.PackInstance,
+                        instanceIdentity.PackId,
+                        pack.Manifest.Version,
+                        instanceIdentity.Alias
+                    )
+                    : new ManagedRootOwner(
+                        ManagedRootKind.Pack,
+                        pack.Manifest.Id,
+                        pack.Manifest.Version
+                    ),
                 pack.SourceName,
                 pack.SourceIdentity,
                 pack.GitSource,
@@ -113,7 +163,8 @@ internal static class ManagedRootInventory
             {
                 if (
                     ownership.TryGetValue(ProjectPath.Normalize(file.TargetPath), out var owners)
-                    && owners.Find(owner => owner.Kind != plannedRoot.Owner.Kind) is { } conflicting
+                    && owners.Find(owner => IsConflictingOwner(owner, plannedRoot.Owner))
+                        is { } conflicting
                 )
                 {
                     return $"Target '{file.TargetPath}' is already managed by {conflicting.Describe()}.";
@@ -123,6 +174,15 @@ internal static class ManagedRootInventory
 
         return null;
     }
+
+    private static bool IsConflictingOwner(
+        ManagedRootOwner existingOwner,
+        ManagedRootOwner plannedOwner
+    ) =>
+        !existingOwner.Matches(plannedOwner)
+        && !(
+            existingOwner.Kind == ManagedRootKind.Pack && plannedOwner.Kind == ManagedRootKind.Pack
+        );
 
     public static Dictionary<string, List<ManagedRootOwner>> CreateOwnershipMap(
         ProjectLockFile lockFile

@@ -107,4 +107,5 @@ luna install example-documentation-standard@1.0.0 --dry-run
 
 Test an absent target, expected existing content, ambiguous section markers,
 and a user-modified target. Confirm update and uninstall behavior before
-release.
+release. [Managed-file strategies through install and update](../explanation/managed-file-strategies.md)
+shows complete repository examples and shared transitive-pack behavior.

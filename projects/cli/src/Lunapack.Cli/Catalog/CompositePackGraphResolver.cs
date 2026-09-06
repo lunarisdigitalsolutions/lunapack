@@ -1,10 +1,13 @@
+using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Packs.Manifest;
 using Lunapack.Cli.Packs.Planning;
 using Lunapack.Cli.Project;
+using Lunapack.Cli.Sources;
 
 namespace Lunapack.Cli.Catalog;
 
-internal sealed class CompositePackGraphResolver(PackCatalog packCatalog)
+internal sealed class CompositePackGraphResolver(PackCatalog packCatalog, CliConsole console)
 {
     public async Task<ManifestOperationResult<ResolvedPackGraph>> ResolveAsync(
         string projectDirectory,
@@ -32,9 +35,12 @@ internal sealed class CompositePackGraphResolver(PackCatalog packCatalog)
             );
         }
 
-        var resolvedById = new Dictionary<string, DiscoveredPack>(StringComparer.Ordinal);
+        var resolvedByKey = new Dictionary<PackResolutionKey, DiscoveredPack>();
         var resolvedPacks = new List<DiscoveredPack>();
-        var visiting = new HashSet<PackIdentity>();
+        var warnings = new List<string>();
+        var acceptedReferences = new HashSet<PackManifest.PackReference>(
+            ReferenceEqualityComparer.Instance
+        );
         foreach (var rootRequest in requestedPacks)
         {
             var root = PackCatalog.ResolveFromCatalog(
@@ -53,9 +59,13 @@ internal sealed class CompositePackGraphResolver(PackCatalog packCatalog)
             var error = ResolveDepthFirst(
                 rootPack,
                 catalogPacks,
-                resolvedById,
+                new Dictionary<string, DiscoveredPack>(StringComparer.Ordinal),
+                new HashSet<PackResolutionKey>(),
+                resolvedByKey,
                 resolvedPacks,
-                visiting
+                [],
+                warnings,
+                acceptedReferences
             );
             if (error is not null)
             {
@@ -63,11 +73,21 @@ internal sealed class CompositePackGraphResolver(PackCatalog packCatalog)
             }
         }
 
+        var distinctWarnings = warnings.Distinct(StringComparer.Ordinal).ToList();
+        foreach (var warning in distinctWarnings)
+        {
+            console.Warning(warning);
+        }
+
         return ManifestOperationResult<ResolvedPackGraph>.Success(
             new ResolvedPackGraph(
                 resolvedPacks,
-                requestedPacks.Select(pack => pack.Id).ToHashSet(StringComparer.Ordinal)
+                requestedPacks.Select(pack => pack.Id).ToHashSet(StringComparer.Ordinal),
+                acceptedReferences
             )
+            {
+                Warnings = distinctWarnings,
+            }
         );
     }
 
@@ -75,29 +95,44 @@ internal sealed class CompositePackGraphResolver(PackCatalog packCatalog)
         DiscoveredPack pack,
         IReadOnlyList<CatalogPack> catalog,
         IDictionary<string, DiscoveredPack> resolvedById,
+        ISet<PackResolutionKey> completed,
+        IDictionary<PackResolutionKey, DiscoveredPack> resolvedByKey,
         ICollection<DiscoveredPack> resolvedPacks,
-        ISet<PackIdentity> visiting
+        IList<PackResolutionKey> activePath,
+        ICollection<string> warnings,
+        ISet<PackManifest.PackReference> acceptedReferences
     )
     {
+        var key = PackResolutionKey.Create(pack);
         if (resolvedById.TryGetValue(pack.Manifest.Id, out var resolvedPack))
         {
-            return string.Equals(
-                resolvedPack.Manifest.Version,
-                pack.Manifest.Version,
-                StringComparison.Ordinal
-            )
-                ? null
-                : $"Pack '{pack.Manifest.Id}' resolves to conflicting versions '{resolvedPack.Manifest.Version}' and '{pack.Manifest.Version}'.";
-        }
+            var resolvedKey = PackResolutionKey.Create(resolvedPack);
+            if (resolvedKey != key)
+            {
+                return $"Pack '{pack.Manifest.Id}' resolves to conflicting versions '{resolvedPack.Manifest.Version}' and '{pack.Manifest.Version}'.";
+            }
 
-        var identity = new PackIdentity(pack.Manifest.Id, pack.Manifest.Version);
-        if (!visiting.Add(identity))
+            if (completed.Contains(key))
+            {
+                return null;
+            }
+        }
+        else
         {
-            return $"Composite pack graph contains a cycle at '{identity.Id}@{identity.Version}'.";
+            resolvedById.Add(pack.Manifest.Id, pack);
         }
 
+        activePath.Add(key);
         foreach (var reference in pack.Manifest.Packs)
         {
+            if (string.Equals(reference.Id, pack.Manifest.Id, StringComparison.Ordinal))
+            {
+                warnings.Add(
+                    $"Ignored self-reference '{Format(key)} -> {reference.Id}@{reference.Version}'."
+                );
+                continue;
+            }
+
             var dependency = PackCatalog.ResolveFromCatalog(
                 catalog,
                 reference.Id,
@@ -109,25 +144,61 @@ internal sealed class CompositePackGraphResolver(PackCatalog packCatalog)
                     ?? $"Pack '{reference.Id}@{reference.Version}' is unavailable.";
             }
 
+            var dependencyKey = PackResolutionKey.Create(dependencyPack);
+            var cycleStart = activePath.IndexOf(dependencyKey);
+            if (cycleStart >= 0)
+            {
+                var cycle = activePath.Skip(cycleStart).Append(dependencyKey).Select(Format);
+                warnings.Add(
+                    $"Ignored dependency cycle '{string.Join(" -> ", cycle)}'; edge '{Format(key)} -> {Format(dependencyKey)}' closes the active path."
+                );
+                continue;
+            }
+
             var error = ResolveDepthFirst(
                 dependencyPack,
                 catalog,
                 resolvedById,
+                completed,
+                resolvedByKey,
                 resolvedPacks,
-                visiting
+                activePath,
+                warnings,
+                acceptedReferences
             );
             if (error is not null)
             {
                 return error;
             }
+
+            acceptedReferences.Add(reference);
         }
 
-        visiting.Remove(identity);
-        resolvedById.Add(pack.Manifest.Id, pack);
-        resolvedPacks.Add(pack);
+        activePath.RemoveAt(activePath.Count - 1);
+        completed.Add(key);
+        if (resolvedByKey.TryAdd(key, pack))
+        {
+            resolvedPacks.Add(pack);
+        }
 
         return null;
     }
 
-    private sealed record PackIdentity(string Id, string Version);
+    private static string Format(PackResolutionKey key) => $"{key.Id}@{key.Version}";
+
+    private sealed record PackResolutionKey(
+        string Id,
+        string Version,
+        ConfiguredSourceIdentity SourceIdentity,
+        string? ResolvedCommit
+    )
+    {
+        public static PackResolutionKey Create(DiscoveredPack pack) =>
+            new(
+                pack.Manifest.Id,
+                pack.Manifest.Version,
+                pack.SourceIdentity,
+                pack.GitSource?.ResolvedCommit
+            );
+    }
 }

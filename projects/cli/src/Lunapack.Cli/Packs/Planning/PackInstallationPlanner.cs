@@ -53,13 +53,89 @@ internal sealed class PackInstallationPlanner(
             );
         }
 
-        return ManifestOperationResult<PackInstallationPlan>.Success(
-            plan with
-            {
-                IgnoredDeclaredTargets = ignoredDeclaredTargets,
-            }
+        var rootIdentity = new PackInstanceIdentity(
+            installationRequest.PackReference.Id,
+            installationRequest.Name ?? installationRequest.PackReference.Id
         );
+        var placements = plan
+            .ManagedFiles.Where(file => file.InstanceIdentity == rootIdentity)
+            .OrderBy(file => file.DeclaredTargetPath, StringComparer.Ordinal)
+            .ToDictionary(
+                file => ProjectPath.Normalize(file.DeclaredTargetPath),
+                file => ProjectPath.Normalize(file.TargetPathRelativeToProject),
+                StringComparer.Ordinal
+            );
+        var instanceError = ValidateInstancePlacement(lockFile, installationRequest, placements);
+        return instanceError is null
+            ? ManifestOperationResult<PackInstallationPlan>.Success(
+                plan with
+                {
+                    IgnoredDeclaredTargets = ignoredDeclaredTargets,
+                    Placements = placements,
+                    RootIdentity = rootIdentity,
+                }
+            )
+            : ManifestOperationResult<PackInstallationPlan>.Failure(instanceError);
     }
+
+    private static string? ValidateInstancePlacement(
+        ProjectLockFile lockFile,
+        PackInstallationRequest installationRequest,
+        Dictionary<string, string> placements
+    )
+    {
+        var identity = new PackInstanceIdentity(
+            installationRequest.PackReference.Id,
+            installationRequest.Name ?? installationRequest.PackReference.Id
+        );
+        var siblings = lockFile
+            .Instances.Where(instance =>
+                string.Equals(instance.Id, identity.PackId, StringComparison.Ordinal)
+            )
+            .ToList();
+        if (installationRequest.PlanningMode == PackManagedFilePlanningMode.Update)
+        {
+            siblings.RemoveAll(instance =>
+                string.Equals(instance.Name, identity.Alias, StringComparison.Ordinal)
+            );
+        }
+        else if (
+            siblings.Exists(instance =>
+                string.Equals(instance.Name, identity.Alias, StringComparison.Ordinal)
+            )
+        )
+        {
+            return $"Pack instance '{identity.PackId}/{identity.Alias}' is already installed.";
+        }
+
+        if (siblings.Count == 0)
+        {
+            return null;
+        }
+
+        if (placements.Count == 0)
+        {
+            return $"Pack '{identity.PackId}' has no managed target placement that can distinguish another instance.";
+        }
+
+        return siblings.Exists(instance => PlacementsEqual(instance.Placements, placements))
+            ? $"Pack instance '{identity.PackId}/{identity.Alias}' has the same effective placement as an existing instance."
+            : null;
+    }
+
+    private static bool PlacementsEqual(
+        Dictionary<string, string> left,
+        Dictionary<string, string> right
+    ) =>
+        left.Count == right.Count
+        && left.All(pair =>
+            right.TryGetValue(ProjectPath.Normalize(pair.Key), out var effectiveTarget)
+            && string.Equals(
+                ProjectPath.Normalize(pair.Value),
+                effectiveTarget,
+                StringComparison.Ordinal
+            )
+        );
 
     private static ManifestOperationResult<
         Dictionary<string, List<ManagedRootOwner>>
@@ -107,6 +183,12 @@ internal sealed class PackInstallationPlanner(
         );
         foreach (var candidate in candidates)
         {
+            var plannedOwner = CreatePlannedOwner(
+                graph,
+                candidate.Pack,
+                requestedPacks,
+                installationRequest
+            );
             var managedFilePlan = CreateManagedFilePlan(
                 projectDirectory,
                 candidate.Pack,
@@ -117,6 +199,7 @@ internal sealed class PackInstallationPlanner(
                 candidate.Strategy,
                 candidate.IsTemplate,
                 existingManagedTargets,
+                plannedOwner,
                 installationRequest,
                 parameters,
                 new ManagedFileTemplateContext(candidate.Target, effectiveTargets),
@@ -129,25 +212,11 @@ internal sealed class PackInstallationPlanner(
                 );
             }
 
-            if (
-                plannedTargets.TryGetValue(
-                    plan.TargetPathRelativeToProject,
-                    out var existingTargets
-                )
-            )
+            var targetConflict = AddPlannedTarget(plannedTargets, plan);
+            if (targetConflict is not null)
             {
-                if (!CanShareTarget(existingTargets, plan))
-                {
-                    return ManifestOperationResult<PackInstallationPlan>.Failure(
-                        $"Target '{plan.TargetPathRelativeToProject}' is claimed by both '{existingTargets[0].Pack.Manifest.Id}' and '{candidate.Pack.Manifest.Id}'."
-                    );
-                }
-
-                existingTargets.Add(plan);
-                continue;
+                return ManifestOperationResult<PackInstallationPlan>.Failure(targetConflict);
             }
-
-            plannedTargets.Add(plan.TargetPathRelativeToProject, [plan]);
         }
 
         return ManifestOperationResult<PackInstallationPlan>.Success(
@@ -158,6 +227,53 @@ internal sealed class PackInstallationPlanner(
                 Diagnostics = diagnostics,
                 Remappings = remappings,
             }
+        );
+    }
+
+    private static string? AddPlannedTarget(
+        Dictionary<string, List<PlannedManagedFile>> plannedTargets,
+        PlannedManagedFile plan
+    )
+    {
+        if (!plannedTargets.TryGetValue(plan.TargetPathRelativeToProject, out var existingTargets))
+        {
+            plannedTargets.Add(plan.TargetPathRelativeToProject, [plan]);
+            return null;
+        }
+
+        if (!CanShareTarget(existingTargets, plan))
+        {
+            return $"Target '{plan.TargetPathRelativeToProject}' is claimed by both '{existingTargets[0].Pack.Manifest.Id}' and '{plan.Pack.Manifest.Id}'.";
+        }
+
+        existingTargets.Add(plan);
+        return null;
+    }
+
+    private static ManagedRootOwner CreatePlannedOwner(
+        ResolvedPackGraph graph,
+        DiscoveredPack pack,
+        IReadOnlyList<ProjectConfiguration.RequestedPack> requestedPacks,
+        PackInstallationRequest installationRequest
+    )
+    {
+        if (!graph.IsRoot(pack))
+        {
+            return new ManagedRootOwner(
+                ManagedRootKind.Pack,
+                pack.Manifest.Id,
+                pack.Manifest.Version
+            );
+        }
+
+        var requestedRoot = FindRequestedRoot(pack, requestedPacks, installationRequest);
+        return new ManagedRootOwner(
+            ManagedRootKind.PackInstance,
+            pack.Manifest.Id,
+            pack.Manifest.Version,
+            requestedRoot?.GetInstanceIdentity().Alias
+                ?? installationRequest.Name
+                ?? installationRequest.PackReference.Id
         );
     }
 
@@ -304,14 +420,9 @@ internal sealed class PackInstallationPlanner(
         PackInstallationRequest installationRequest
     )
     {
+        var requestedRoot = FindRequestedRoot(pack, requestedPacks, installationRequest);
         var globalRemapping = ManagedFileTargetRemapping.FromConfiguration(configuration.Remap);
-        var packRemapping = ManagedFileTargetRemapping.FromConfiguration(
-            requestedPacks
-                .FirstOrDefault(request =>
-                    string.Equals(request.Id, pack.Manifest.Id, StringComparison.Ordinal)
-                )
-                ?.Remap
-        );
+        var packRemapping = ManagedFileTargetRemapping.FromConfiguration(requestedRoot?.Remap);
         var remappedTarget = installationRequest.TargetRemapping?.TryResolve(target);
         if (remappedTarget is not null)
         {
@@ -345,15 +456,52 @@ internal sealed class PackInstallationPlanner(
             );
         }
 
-        var destination = requestedPacks
-            .FirstOrDefault(request =>
-                string.Equals(request.Id, pack.Manifest.Id, StringComparison.Ordinal)
-            )
-            ?.Destination;
+        var destination = requestedRoot?.Destination;
 
         return new ManagedFileTargetResolution(
             destination is null ? target : fileSystem.Path.Combine(destination, target)
         );
+    }
+
+    private static ProjectConfiguration.RequestedPack? FindRequestedRoot(
+        DiscoveredPack pack,
+        IReadOnlyList<ProjectConfiguration.RequestedPack> requestedPacks,
+        PackInstallationRequest installationRequest
+    )
+    {
+        var requestedIdentity = new PackInstanceIdentity(
+            installationRequest.PackReference.Id,
+            installationRequest.Name ?? installationRequest.PackReference.Id
+        );
+        var selectedRequest = requestedPacks.FirstOrDefault(request =>
+            string.Equals(request.Id, pack.Manifest.Id, StringComparison.Ordinal)
+            && request.GetInstanceIdentity() == requestedIdentity
+        );
+        if (
+            selectedRequest?.Version is not null
+            && string.Equals(
+                selectedRequest.Version,
+                pack.Manifest.Version,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            return selectedRequest;
+        }
+
+        var exactRequest = requestedPacks.FirstOrDefault(request =>
+            request.GetInstanceIdentity() != requestedIdentity
+            && string.Equals(request.Id, pack.Manifest.Id, StringComparison.Ordinal)
+            && string.Equals(request.Version, pack.Manifest.Version, StringComparison.Ordinal)
+        );
+        return exactRequest
+            ?? (
+                string.Equals(pack.Manifest.Id, requestedIdentity.PackId, StringComparison.Ordinal)
+                    ? selectedRequest
+                    : requestedPacks.FirstOrDefault(request =>
+                        string.Equals(request.Id, pack.Manifest.Id, StringComparison.Ordinal)
+                    )
+            );
     }
 
     private static ManagedFileTargetResolution CreateRemappedTargetResolution(
@@ -721,6 +869,7 @@ internal sealed class PackInstallationPlanner(
         PackManifest.PackManagedFileStrategy strategy,
         bool isTemplate,
         Dictionary<string, List<ManagedRootOwner>> existingManagedTargets,
+        ManagedRootOwner plannedOwner,
         PackInstallationRequest installationRequest,
         ResolvedPackParameters parameters,
         ManagedFileTemplateContext templateContext,
@@ -755,36 +904,26 @@ internal sealed class PackInstallationPlanner(
                 )
             )
             {
-                var ownerMatchesPack = existingManagedPacks.Any(owner =>
-                    owner.Kind == ManagedRootKind.Pack
-                    && string.Equals(owner.Name, pack.Manifest.Id, StringComparison.Ordinal)
-                    && (
-                        installationRequest.PlanningMode == PackManagedFilePlanningMode.Update
-                        || string.Equals(
-                            owner.Version,
-                            pack.Manifest.Version,
-                            StringComparison.Ordinal
-                        )
+                var conflictingOwner = existingManagedPacks.FirstOrDefault(owner =>
+                    !owner.Matches(plannedOwner)
+                    && !IsSelectedInstanceOwner(
+                        owner,
+                        plannedOwner,
+                        installationRequest.PlanningMode
                     )
+                    && !IsSelectedLegacyOwner(owner, plannedOwner, installationRequest)
                 );
-                var claimedByDifferentRoot = existingManagedPacks.Any(owner =>
-                    owner.Kind != ManagedRootKind.Pack
-                    || !string.Equals(owner.Name, pack.Manifest.Id, StringComparison.Ordinal)
-                );
-                if ((!ownerMatchesPack || claimedByDifferentRoot) && !IsMergeStrategy(strategy))
+                if (conflictingOwner is not null && !IsMergeStrategy(strategy))
                 {
                     return ManifestOperationResult<PlannedManagedFile>.Failure(
-                        $"Target '{target}' is already managed by '{existingManagedPacks[0].Name}'."
+                        $"Target '{target}' is already managed by {conflictingOwner.Describe()}."
                     );
                 }
             }
-            else if (!installationRequest.AdoptExisting && !IsMergeStrategy(strategy))
-            {
-                return ManifestOperationResult<PlannedManagedFile>.Failure(
-                    $"Target '{target}' already exists and is not managed by LunaPack."
-                );
-            }
-            else if (!CanAdoptTarget(strategy, content, targetPath))
+            else if (
+                installationRequest.AdoptExisting
+                && !RenderedContentMatchesTarget(content, targetPath)
+            )
             {
                 return ManifestOperationResult<PlannedManagedFile>.Failure(
                     $"Target '{target}' differs from the pack content and cannot be adopted."
@@ -803,8 +942,46 @@ internal sealed class PackInstallationPlanner(
                 strategy,
                 CreateExternalProvenance(contentRoot, sourcePath)
             )
+            {
+                InstanceIdentity =
+                    plannedOwner.Kind == ManagedRootKind.PackInstance
+                        ? new PackInstanceIdentity(
+                            plannedOwner.Name,
+                            plannedOwner.InstanceName
+                                ?? throw new InvalidOperationException(
+                                    "Pack instance owners require an alias."
+                                )
+                        )
+                        : null,
+            }
         );
     }
+
+    private static bool IsSelectedInstanceOwner(
+        ManagedRootOwner existingOwner,
+        ManagedRootOwner plannedOwner,
+        PackManagedFilePlanningMode planningMode
+    ) =>
+        planningMode == PackManagedFilePlanningMode.Update
+        && existingOwner.Kind == ManagedRootKind.PackInstance
+        && string.Equals(existingOwner.Name, plannedOwner.Name, StringComparison.Ordinal)
+        && string.Equals(
+            existingOwner.InstanceName,
+            plannedOwner.InstanceName,
+            StringComparison.Ordinal
+        )
+        && plannedOwner.Kind == ManagedRootKind.PackInstance;
+
+    private static bool IsSelectedLegacyOwner(
+        ManagedRootOwner owner,
+        ManagedRootOwner plannedOwner,
+        PackInstallationRequest installationRequest
+    ) =>
+        installationRequest.PlanningMode == PackManagedFilePlanningMode.Update
+        && owner.IsLegacy
+        && owner.Kind == ManagedRootKind.Pack
+        && plannedOwner.Kind == ManagedRootKind.PackInstance
+        && string.Equals(owner.Name, plannedOwner.Name, StringComparison.Ordinal);
 
     private PlannedExternalSource? CreateExternalProvenance(
         ManagedFileContentRoot contentRoot,
@@ -847,12 +1024,6 @@ internal sealed class PackInstallationPlanner(
 
         return baseDirectory;
     }
-
-    private bool CanAdoptTarget(
-        PackManifest.PackManagedFileStrategy strategy,
-        byte[] content,
-        string targetPath
-    ) => IsMergeStrategy(strategy) || RenderedContentMatchesTarget(content, targetPath);
 
     private static bool IsMergeStrategy(PackManifest.PackManagedFileStrategy strategy) =>
         string.Equals(strategy.Type, "merge", StringComparison.Ordinal);

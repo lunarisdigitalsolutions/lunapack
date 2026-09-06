@@ -28,4 +28,5 @@ Use this guide to author, compose, test, and release versioned LunaPack packs.
 - [Project document reference](reference/project-documents.md)
 - [Pack scope, taxonomy, and naming](explanation/scope-taxonomy-and-naming.md)
 - [Composition and lifecycle](explanation/composition-and-lifecycle.md)
+- [Managed-file strategies through install and update](explanation/managed-file-strategies.md)
 - [Ownership and safety](explanation/ownership-and-safety.md)

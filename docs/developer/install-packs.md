@@ -56,8 +56,10 @@ The earliest configured source wins an equal-version tie.
 - Use [target remapping](remap-targets.md) for repository-specific locations.
 - Follow [external-source approval](advanced/approve-external-sources.md) when
   the preview proposes additional Git sources.
-- Use [adoption](advanced/adopt-existing-files.md) only for existing files that
-  exactly match pack content.
+- Review [managed-file strategy behavior](packs/explanation/managed-file-strategies.md)
+  before installing over existing files. Use
+  [adoption](advanced/adopt-existing-files.md) to record an exact content match
+  without rewriting it.
 
 The [command reference](cli/commands.md#pack-lifecycle) lists every install
 option and interaction.

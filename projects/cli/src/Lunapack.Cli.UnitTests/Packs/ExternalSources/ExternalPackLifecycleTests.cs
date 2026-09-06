@@ -214,29 +214,21 @@ public sealed class ExternalPackLifecycleTests
     }
 
     [Test]
-    public async Task Install_WhenExternalTargetConflicts_PreservesProjectState()
+    public async Task Install_WhenExternalTargetIsUnowned_OverwritesAndRecordsOwnership()
     {
         var runner = new ExternalCheckoutGitProcessRunner();
         using var workspace = await CreateWorkspaceAsync(runner);
         var targetPath = Path.Combine(workspace.Path, "README.md");
         File.WriteAllText(targetPath, "workspace content");
-        var configurationPath = Path.Combine(
-            workspace.Path,
-            ProjectStateStore.ConfigurationFileName
-        );
-        var lockPath = Path.Combine(workspace.Path, ProjectStateStore.LockFileName);
-        var originalConfiguration = File.ReadAllText(configurationPath);
-        var originalLock = File.ReadAllText(lockPath);
-
         var exitCode = await workspace.Application.RunAsync(
             ["install", "example", "--accept-sources"],
             workspace.Path
         );
+        var state = (await workspace.StateStore.LoadAsync(workspace.Path)).RequireValue();
 
-        await Assert.That(exitCode).IsEqualTo(1);
-        await Assert.That(File.ReadAllText(targetPath)).IsEqualTo("workspace content");
-        await Assert.That(File.ReadAllText(configurationPath)).IsEqualTo(originalConfiguration);
-        await Assert.That(File.ReadAllText(lockPath)).IsEqualTo(originalLock);
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(File.ReadAllText(targetPath)).IsNotEqualTo("workspace content");
+        await Assert.That(state.LockFile.Instances.Single().ManagedFiles).Count().IsEqualTo(1);
     }
 
     [Test]
@@ -548,7 +540,7 @@ public sealed class ExternalPackLifecycleTests
         var packCatalog = new PackCatalog(workspace.FileSystem, console, runner);
         return new PackLifecycleService(
             workspace.FileSystem,
-            new CompositePackGraphResolver(packCatalog),
+            new CompositePackGraphResolver(packCatalog, console),
             new PackInstallationPlanner(
                 workspace.FileSystem,
                 new PackTemplateRenderer(workspace.FileSystem)

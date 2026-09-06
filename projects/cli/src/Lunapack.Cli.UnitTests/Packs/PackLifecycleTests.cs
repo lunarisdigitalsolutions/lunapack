@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using Lunapack.Cli.Application;
 using Lunapack.Cli.Catalog;
 using Lunapack.Cli.Packs;
 using Lunapack.Cli.Packs.ManagedFiles;
@@ -7,6 +8,7 @@ using Lunapack.Cli.Packs.Planning;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources;
 using Lunapack.Cli.Trust;
+using Spectre.Console;
 using SpectreTestConsole = Spectre.Console.Testing.TestConsole;
 
 namespace Lunapack.Cli.UnitTests.Packs;
@@ -349,13 +351,197 @@ public sealed class PackLifecycleTests
         );
         var state = await workspace.StateStore.LoadAsync(workspace.Path);
 
-        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(exitCode).IsEqualTo(0).Because(ansiConsole.Output);
         await Assert
             .That(ansiConsole.Output)
             .Contains("warning: Pack 'root-one' is already installed.");
         await Assert
             .That(state.RequireValue().Configuration.Packs.Select(pack => pack.Id))
             .IsEquivalentTo(["root-one", "root-two"]);
+    }
+
+    [Test]
+    public async Task Install_WhenNameProvided_PersistsNamedInstance()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreatePackSource(workspace.Path);
+        await ConfigureSourceAsync(workspace, sourcePath);
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["install", "dotnet-gitignore", "--name", "orders"],
+            workspace.Path
+        );
+        var state = (await workspace.StateStore.LoadAsync(workspace.Path)).RequireValue();
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(state.Configuration.Packs.Single().Name).IsEqualTo("orders");
+        await Assert.That(state.LockFile.Instances.Single().Name).IsEqualTo("orders");
+    }
+
+    [Test]
+    public async Task Install_WhenNameProvidedForMultipleReferences_RejectsBeforeMutation()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["install", "root-one", "root-two", "--name", "orders"],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsNotEqualTo(0);
+        await Assert.That(ansiConsole.Output).Contains("requires exactly one pack reference");
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, ".gitignore"))).IsFalse();
+    }
+
+    [Test]
+    public async Task Install_WhenAliasAlreadyExists_RejectsWithoutMutation()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreatePackSource(workspace.Path);
+        await ConfigureSourceAsync(workspace, sourcePath);
+        await workspace.Application.RunAsync(
+            ["install", "dotnet-gitignore", "--name", "orders", "-d", "orders"],
+            workspace.Path
+        );
+        var initialState = await ReadStateAsync(workspace.Path);
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["install", "dotnet-gitignore", "--name", "orders", "-d", "customers"],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(await ReadStateAsync(workspace.Path)).IsEqualTo(initialState);
+        await Assert
+            .That(File.Exists(Path.Combine(workspace.Path, "customers", ".gitignore")))
+            .IsFalse();
+    }
+
+    [Test]
+    public async Task Install_WhenSiblingPlacementIsIndistinguishable_RejectsWithoutMutation()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreatePackSource(workspace.Path);
+        await ConfigureSourceAsync(workspace, sourcePath);
+        await workspace.Application.RunAsync(
+            ["install", "dotnet-gitignore", "--name", "orders", "-d", "shared"],
+            workspace.Path
+        );
+        var initialState = await ReadStateAsync(workspace.Path);
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["install", "dotnet-gitignore", "--name", "customers", "-d", "shared"],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(await ReadStateAsync(workspace.Path)).IsEqualTo(initialState);
+    }
+
+    [Test]
+    public async Task Uninstall_WhenSoleInstanceIsNamed_SelectsItWithoutName()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreatePackSource(workspace.Path);
+        await ConfigureSourceAsync(workspace, sourcePath);
+        await workspace.Application.RunAsync(
+            ["install", "dotnet-gitignore", "--name", "orders", "-d", "orders"],
+            workspace.Path
+        );
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["uninstall", "dotnet-gitignore"],
+            workspace.Path
+        );
+        var state = (await workspace.StateStore.LoadAsync(workspace.Path)).RequireValue();
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(state.Configuration.Packs).IsEmpty();
+        await Assert.That(state.LockFile.Instances).IsEmpty();
+    }
+
+    [Test]
+    public async Task Uninstall_WhenDefaultAndNamedInstancesExist_SelectsDefault()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var sourcePath = CreatePackSource(workspace.Path);
+        await ConfigureSourceAsync(workspace, sourcePath);
+        await workspace.Application.RunAsync(
+            ["install", "dotnet-gitignore", "-d", "default"],
+            workspace.Path
+        );
+        await workspace.Application.RunAsync(
+            ["install", "dotnet-gitignore", "--name", "orders", "-d", "orders"],
+            workspace.Path
+        );
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["uninstall", "dotnet-gitignore"],
+            workspace.Path
+        );
+        var state = (await workspace.StateStore.LoadAsync(workspace.Path)).RequireValue();
+
+        await Assert.That(exitCode).IsEqualTo(0).Because(ansiConsole.Output);
+        await Assert.That(state.Configuration.Packs.Single().Name).IsEqualTo("orders");
+        await Assert
+            .That(File.Exists(Path.Combine(workspace.Path, "default", ".gitignore")))
+            .IsFalse();
+        await Assert
+            .That(File.Exists(Path.Combine(workspace.Path, "orders", ".gitignore")))
+            .IsTrue();
+    }
+
+    [Test]
+    public async Task Uninstall_WhenNamedInstancesAreAmbiguous_ListsCompleteCommands()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var sourcePath = CreatePackSource(workspace.Path);
+        await ConfigureSourceAsync(workspace, sourcePath);
+        await workspace.Application.RunAsync(
+            ["install", "dotnet-gitignore", "--name", "orders", "-d", "orders"],
+            workspace.Path
+        );
+        await workspace.Application.RunAsync(
+            ["install", "dotnet-gitignore", "--name", "customers", "-d", "customers"],
+            workspace.Path
+        );
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["uninstall", "dotnet-gitignore"],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert
+            .That(ansiConsole.Output)
+            .Contains("luna uninstall dotnet-gitignore --name customers");
+        await Assert
+            .That(ansiConsole.Output)
+            .Contains("luna uninstall dotnet-gitignore --name orders");
+    }
+
+    [Test]
+    public async Task Uninstall_WhenNameIsUnknown_LeavesSiblingUnchanged()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreatePackSource(workspace.Path);
+        await ConfigureSourceAsync(workspace, sourcePath);
+        await workspace.Application.RunAsync(
+            ["install", "dotnet-gitignore", "--name", "orders", "-d", "orders"],
+            workspace.Path
+        );
+        var initialState = await ReadStateAsync(workspace.Path);
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["uninstall", "dotnet-gitignore", "--name", "missing"],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(await ReadStateAsync(workspace.Path)).IsEqualTo(initialState);
     }
 
     [Test]
@@ -904,24 +1090,22 @@ public sealed class PackLifecycleTests
     }
 
     [Test]
-    public async Task Install_WhenTargetUnowned_LeavesTargetAndManifestUnchanged()
+    public async Task Install_WhenTargetUnowned_OverwritesTargetAndRecordsOwnership()
     {
         using var workspace = new TestWorkspace();
         var sourcePath = CreatePackSource(workspace.Path);
         await ConfigureSourceAsync(workspace, sourcePath);
         var targetPath = Path.Combine(workspace.Path, ".gitignore");
         File.WriteAllText(targetPath, "# user owned\n");
-        var manifestPath = GetManifestPath(workspace.Path);
-        var initialManifest = File.ReadAllText(manifestPath);
-
         var exitCode = await workspace.Application.RunAsync(
             ["install", "dotnet-gitignore"],
             workspace.Path
         );
+        var state = (await workspace.StateStore.LoadAsync(workspace.Path)).RequireValue();
 
-        await Assert.That(exitCode).IsEqualTo(1);
-        await Assert.That(File.ReadAllText(targetPath)).IsEqualTo("# user owned\n");
-        await Assert.That(File.ReadAllText(manifestPath)).IsEqualTo(initialManifest);
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(File.ReadAllText(targetPath)).IsEqualTo("bin/\nobj/\n");
+        await Assert.That(state.LockFile.Instances.Single().ManagedFiles).Count().IsEqualTo(1);
     }
 
     [Test]
@@ -1267,7 +1451,8 @@ public sealed class PackLifecycleTests
     [Test]
     public async Task Uninstall_WhenSharedSectionMergeTarget_RemovesOnlyUninstalledSection()
     {
-        using var workspace = new TestWorkspace();
+        var ansiConsole = new SpectreTestConsole();
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
         var sourcePath = CreateVersionedSectionMergePackSource(workspace.Path);
         await ConfigureSourceAsync(workspace, sourcePath);
         await workspace.Application.RunAsync(["install", "dotnet-gitignore@1.0.0"], workspace.Path);
@@ -1283,7 +1468,7 @@ public sealed class PackLifecycleTests
         var targetContents = File.ReadAllText(Path.Combine(workspace.Path, ".gitignore"));
         var state = await workspace.StateStore.LoadAsync(workspace.Path);
 
-        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(exitCode).IsEqualTo(0).Because(ansiConsole.Output);
         await Assert.That(targetContents).DoesNotContain("# dotnet:start");
         await Assert.That(targetContents).Contains("# general:start\n*.temporary\n# general:end");
         await Assert
@@ -1845,7 +2030,7 @@ public sealed class PackLifecycleTests
         await Assert
             .That(state.RequireValue().LockFile.Packs[0].ManagedFiles[0].Sha256)
             .Matches("^[A-F0-9]{64}$");
-        await Assert.That(state.RequireValue().LockFile.SchemaVersion).IsEqualTo(1);
+        await Assert.That(state.RequireValue().LockFile.SchemaVersion).IsEqualTo(2);
         await Assert
             .That(state.RequireValue().LockFile.Packs[0].ManagedFiles[0].DeclaredTargetPath)
             .IsEqualTo(".gitignore");
@@ -1925,7 +2110,7 @@ public sealed class PackLifecycleTests
         await Assert
             .That(
                 updatedState
-                    .LockFile.Packs.SelectMany(pack => pack.ManagedFiles)
+                    .LockFile.Instances.SelectMany(instance => instance.ManagedFiles)
                     .Select(managedFile => managedFile.Sha256)
             )
             .IsEquivalentTo([finalDigest, finalDigest]);
@@ -1934,12 +2119,13 @@ public sealed class PackLifecycleTests
     [Test]
     public async Task Update_WhenTargetOwnedByPriorVersion_RefreshesRootsAndCompleteLockGraph()
     {
-        using var workspace = new TestWorkspace();
+        var ansiConsole = new SpectreTestConsole();
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
         var sourcePath = CreateVersionedPackSource(workspace.Path, "version one", "version two");
         await ConfigureSourceAsync(workspace, sourcePath);
         await workspace.Application.RunAsync(["install", "dotnet-gitignore@1.0.0"], workspace.Path);
 
-        var exitCode = await CreatePackLifecycleService(workspace)
+        var exitCode = await CreatePackLifecycleService(workspace, ansiConsole: ansiConsole)
             .UpdateAsync(
                 workspace.Path,
                 [
@@ -1956,8 +2142,14 @@ public sealed class PackLifecycleTests
                 )
             );
         var state = await workspace.StateStore.LoadAsync(workspace.Path);
+        var persisted = state.RequireValue().LockFile;
 
-        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert
+            .That(exitCode)
+            .IsEqualTo(0)
+            .Because(
+                $"{ansiConsole.Output}\ninstance files: {persisted.Instances.Single().ManagedFiles.Count}; resolved files: {persisted.Packs.Single().ManagedFiles.Count}"
+            );
         await Assert
             .That(File.ReadAllText(Path.Combine(workspace.Path, ".gitignore")))
             .IsEqualTo("version two");
@@ -2156,7 +2348,7 @@ public sealed class PackLifecycleTests
     }
 
     [Test]
-    public async Task Update_WhenIgnoredManagedTargetBecomesActive_InstallsAndLocksLatestFile()
+    public async Task Update_WhenIgnoredManagedTargetBecomesActive_OverwritesUnownedTarget()
     {
         using var workspace = new TestWorkspace();
         var sourcePath = CreateVersionedPackSource(workspace.Path, "version one", "version two");
@@ -2179,6 +2371,7 @@ public sealed class PackLifecycleTests
         var ignoredState = (await workspace.StateStore.LoadAsync(workspace.Path)).RequireValue();
         ignoredState.Configuration.Remap = null;
         await workspace.StateStore.SaveAsync(workspace.Path, ignoredState);
+        File.WriteAllText(Path.Combine(workspace.Path, ".gitignore"), "unowned content");
 
         var exitCode = await CreatePackLifecycleService(workspace)
             .UpdateAsync(
@@ -2498,21 +2691,25 @@ public sealed class PackLifecycleTests
 
     private static PackLifecycleService CreatePackLifecycleService(
         TestWorkspace workspace,
-        IProjectStateStore? projectStateStore = null
+        IProjectStateStore? projectStateStore = null,
+        IAnsiConsole? ansiConsole = null
     )
     {
-        var packCatalog = new PackCatalog(workspace.FileSystem, TestConsole.Create());
+        var console = ansiConsole is null
+            ? TestConsole.Create()
+            : new CliConsole(ansiConsole, CliLogLevel.Info);
+        var packCatalog = new PackCatalog(workspace.FileSystem, console);
         return new PackLifecycleService(
             workspace.FileSystem,
-            new CompositePackGraphResolver(packCatalog),
+            new CompositePackGraphResolver(packCatalog, console),
             new PackInstallationPlanner(
                 workspace.FileSystem,
                 new PackTemplateRenderer(workspace.FileSystem)
             ),
             new PackUpdatePlanner(workspace.FileSystem),
-            new PackUpdateTransaction(workspace.FileSystem, TestConsole.Create()),
+            new PackUpdateTransaction(workspace.FileSystem, console),
             projectStateStore ?? workspace.StateStore,
-            TestConsole.Create()
+            console
         );
     }
 
