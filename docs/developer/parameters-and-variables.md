@@ -25,6 +25,11 @@ Supply explicit `--parameter` values, commit compatible project variables, or
 use composite bindings before running Luna with noninteractive standard input.
 Luna has no separate `--non-interactive` option.
 
+Composite authors can pass through or derive a transient dependency value with
+an exact `${{ expression }}` binding. See
+[Compose packs](packs/how-to/compose-packs.md#bind-dependency-parameters) for
+the supported identifier and `iif` syntax.
+
 ## Reuse project variables
 
 Store a value in `lunapack.yml` through the CLI:

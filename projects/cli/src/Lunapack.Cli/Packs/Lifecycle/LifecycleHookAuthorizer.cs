@@ -52,9 +52,11 @@ internal sealed class LifecycleHookAuthorizer(
             invocations
         );
         return authorization.Value is { } value
-            ? ManifestOperationResult<IReadOnlyList<AuthorizedLifecycleHook>>.Success(
-                value.AuthorizedHooks
-            )
+            ? ManifestOperationResult<IReadOnlyList<AuthorizedLifecycleHook>>.Success([
+                .. value.AuthorizedHooks.Where(static hook =>
+                    hook.Invocation.IsInstruction || hook.Script is not null
+                ),
+            ])
             : ManifestOperationResult<IReadOnlyList<AuthorizedLifecycleHook>>.Failure(
                 authorization.Error ?? "Unable to authorize lifecycle scripts."
             );
@@ -131,10 +133,22 @@ internal sealed class LifecycleHookAuthorizer(
             {
                 authorized.Add(new AuthorizedLifecycleHook(invocation, script));
             }
+            else
+            {
+                authorized.Add(new AuthorizedLifecycleHook(invocation, null));
+            }
         }
 
         return ManifestOperationResult<LifecycleHookAuthorization>.Success(
-            new LifecycleHookAuthorization(authorized, deniedScripts)
+            new LifecycleHookAuthorization(
+                [
+                    .. authorized.Where(static hook =>
+                        hook.Invocation.IsInstruction || hook.Script is not null
+                    ),
+                ],
+                deniedScripts,
+                authorized
+            )
         );
     }
 

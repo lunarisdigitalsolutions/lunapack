@@ -99,6 +99,13 @@ public sealed class PackDryRunFormatterTests
                 ),
                 new ManagedFileRemapping(
                     "example",
+                    "docs/composite.md",
+                    "composite/composite.md",
+                    ManagedFileRemappingOrigin.Composite,
+                    "application"
+                ),
+                new ManagedFileRemapping(
+                    "example",
                     "docs/locked.md",
                     "locked/locked.md",
                     ManagedFileRemappingOrigin.Lock
@@ -122,6 +129,11 @@ public sealed class PackDryRunFormatterTests
             .That(installOutput)
             .Contains(
                 "remap: example docs/project.md -> project/project.md source: top-level remap in lunapack.yml"
+            );
+        await Assert
+            .That(installOutput)
+            .Contains(
+                "remap: example docs/composite.md -> composite/composite.md source: composite reference from pack 'application'"
             );
         await Assert
             .That(installOutput)
@@ -327,6 +339,64 @@ public sealed class PackDryRunFormatterTests
         await Assert.That(output).Contains("    Steps        2");
         await Assert.That(output).DoesNotContain("postUpdate");
         await Assert.That(output).DoesNotContain("Press Enter to continue...");
+    }
+
+    [Test]
+    public async Task Scenario_InstallPreviewHasRuntimeConditions_LabelsKnownAndUnknownResults()
+    {
+        var pack = new DiscoveredPack(
+            "source",
+            "source/example",
+            new PackManifest { Id = "example", Version = "1.0.0" },
+            "local",
+            ConfiguredSourceIdentity.CreateLocal("source")
+        );
+        var declarations = new Dictionary<string, PackParameterDefinition>(StringComparer.Ordinal);
+        var values = new Dictionary<string, ResolvedPackParameterValue>(StringComparer.Ordinal);
+        var skipped = ManagedFileConditionParser
+            .ParseLifecycle("scriptsSkipped()", declarations)
+            .RequireValue();
+        var previous = ManagedFileConditionParser
+            .ParseLifecycle("previousScriptState() == \"failed\"", declarations)
+            .RequireValue();
+        var hooks = new[]
+        {
+            new LifecycleHookInvocation(
+                pack,
+                LifecycleHook.PreInstall,
+                new PackManifest.PackHook { Type = "instruction", Condition = "scriptsSkipped()" },
+                null,
+                RuntimeCondition: skipped,
+                ParameterValues: values
+            ),
+            new LifecycleHookInvocation(
+                pack,
+                LifecycleHook.PreInstall,
+                new PackManifest.PackHook
+                {
+                    Type = "instruction",
+                    Condition = "previousScriptState() == \"failed\"",
+                },
+                null,
+                RuntimeCondition: previous,
+                ParameterValues: values
+            ),
+        };
+
+        var output = PackDryRunFormatter.FormatInstall(
+            new PackInstallDryRunResult(
+                new PackReference("example", "1.0.0"),
+                new PackUpdatePlan(
+                    [],
+                    new LifecycleDryRunPlan(ScriptExecutionMode.Skip, hooks, [], [])
+                )
+            )
+        );
+
+        var rendered = string.Join("\n", output);
+        await Assert.That(rendered).Contains("Condition    scriptsSkipped() (true)");
+        await Assert.That(rendered).Contains("Condition    previousScriptState()");
+        await Assert.That(rendered).Contains("runtime-dependent");
     }
 
     [Test]

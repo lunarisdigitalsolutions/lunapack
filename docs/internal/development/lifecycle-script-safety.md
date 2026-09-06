@@ -25,6 +25,13 @@ must still accept.
   scripts.
 - Every planned script is authorized before any hook is processed. Instructions
   do not use persisted trust and cannot grant process authority.
+- Runtime hook conditions are evaluated during ordered dispatch. Every script
+  that could execute is still authorized up front. State is scoped to the
+  nearest earlier script in the same pack and lifecycle event; a false static
+  condition records `ignored`, while individual refusal records `skipped`.
+- `scriptsSkipped()` reports only invocation-wide skip mode or policy denial.
+  Disabled events, false conditions, missing scripts, and individual refusal do
+  not imply global suppression.
 - Policy-denied scripts produce one warning per hook before any lifecycle or
   managed-file work. Instructions remain ordered and lifecycle state continues.
 - Instruction files resolve beneath the copied operation snapshot, decode as
@@ -46,7 +53,9 @@ must still accept.
   failure emits a warning and skips hooks so removal can continue.
 - Dry runs prepare and report hooks without launching scripts, requesting hook
   consent, or entering guided instruction display. Parameter prompts still run
-  before planning unless `--skip-parameters` is set. Denied rows report
+  before planning unless `--skip-parameters` is set. Previous-state conditions
+  are labeled runtime-dependent rather than evaluated against invented state.
+  Denied rows report
   `policy-denied` and all origins without execution warnings. `--scripts skip`
   and `--skip-instructions` suppress only their respective hook types.
 

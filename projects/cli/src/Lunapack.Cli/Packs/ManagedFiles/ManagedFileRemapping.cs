@@ -4,5 +4,6 @@ internal sealed record ManagedFileRemapping(
     string PackId,
     string DeclaredTarget,
     string EffectiveTarget,
-    ManagedFileRemappingOrigin Origin
+    ManagedFileRemappingOrigin Origin,
+    string? SourcePackId = null
 );

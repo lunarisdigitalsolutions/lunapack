@@ -64,7 +64,9 @@ containment is checked against the workspace. Local enumeration rejects
 symlinks and reparse points before reading bytes.
 
 Pack authoring applies `NormalizeProjectRelativePath` to file, directory,
-target, and lifecycle-script file input. Glob input uses `Normalize` before
+target, composite-reference remap, and lifecycle-script file input. Manifest
+deserialization normalizes composite remap keys and values through `ProjectPath`;
+`@ignore` remains a reserved non-path target. Glob input uses `Normalize` before
 separate checks reject rooted and parent-traversing patterns. Persisted
 `pack.yml` paths always use `/`.
 

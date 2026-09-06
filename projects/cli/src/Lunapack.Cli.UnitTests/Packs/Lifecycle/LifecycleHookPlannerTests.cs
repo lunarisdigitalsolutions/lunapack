@@ -183,6 +183,57 @@ public sealed class LifecycleHookPlannerTests
     }
 
     [Test]
+    public async Task Plan_WhenConditionDependsOnRuntimeState_RetainsDeclaration()
+    {
+        using var workspace = new TestWorkspace();
+        var pack = CreatePack(
+            workspace.Path,
+            "example",
+            new PackManifest.PackHooks
+            {
+                PreInstall =
+                [
+                    new PackManifest.PackHook
+                    {
+                        Type = "script",
+                        Command = "excluded",
+                        Condition = "includeScript",
+                    },
+                    new PackManifest.PackHook
+                    {
+                        Type = "instruction",
+                        File = "instructions/fallback.md",
+                        Condition = "previousScriptState() == \"ignored\"",
+                    },
+                ],
+            }
+        );
+        AddInstructionFiles(pack, "fallback.md");
+        var entry = CreateEntry(PackLifecyclePlan.ChangeKind.Install, pack);
+        var parameters = new ResolvedPackParameters(
+            new Dictionary<string, PackParameterDefinition>(StringComparer.Ordinal)
+            {
+                ["includeScript"] = new(PackParameterType.Bool, false, []),
+            },
+            new Dictionary<string, ResolvedPackParameterValue>(StringComparer.Ordinal)
+            {
+                ["includeScript"] = new(PackParameterType.Bool, string.Empty, false),
+            }
+        );
+
+        var result = new LifecycleHookPlanner(new FileSystem()).PlanPreMutation(
+            new PackLifecyclePlan([entry], [entry], []),
+            parameters
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue().Because(result.Error ?? string.Empty);
+        await Assert.That(result.RequireValue().Single().IsInstruction).IsTrue();
+        await Assert
+            .That(result.RequireValue().Single().PlannedPreviousScriptState)
+            .IsEqualTo(LifecycleScriptState.Ignored);
+    }
+
+    [Test]
     public async Task Plan_WhenEventDisabled_SuppressesAllTypedHooks()
     {
         using var workspace = new TestWorkspace();

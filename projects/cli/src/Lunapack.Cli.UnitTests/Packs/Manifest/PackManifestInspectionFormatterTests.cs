@@ -183,6 +183,40 @@ public sealed class PackManifestInspectionFormatterTests
     }
 
     [Test]
+    public async Task Format_WhenReferenceContainsRemapping_DisplaysReferenceMapping()
+    {
+        var manifest = new PackManifest
+        {
+            Id = "example",
+            Version = "1.0.0",
+            Packs =
+            [
+                new PackManifest.PackReference
+                {
+                    Id = "dependency",
+                    Version = "1.0.0",
+                    Remap = new PackManifest.PackRemapping
+                    {
+                        Files = new Dictionary<string, string>(StringComparer.Ordinal)
+                        {
+                            ["source.txt"] = "second.txt",
+                        },
+                    },
+                },
+            ],
+        };
+        var console = new SpectreTestConsole();
+        console.Profile.Width = 500;
+
+        foreach (var renderable in PackManifestInspectionFormatter.Format(manifest))
+        {
+            console.Write(renderable);
+        }
+
+        await Assert.That(console.Output).Contains("file source.txt -> second.txt");
+    }
+
+    [Test]
     public async Task Format_WhenMixedLifecycleHooksAreDeclared_DisplaysOrderedTypedDetails()
     {
         var manifest = new PackManifest

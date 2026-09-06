@@ -190,6 +190,110 @@ public sealed class PackInstallationPlannerTests
     }
 
     [Test]
+    public async Task Plan_WhenCompositeAndProjectRemappingMatch_UsesProjectRemapping()
+    {
+        var fileSystem = CreateFileSystem((PacksPath("dependency", "source.txt"), "template"));
+        var planner = CreatePlanner(fileSystem);
+        var dependency = CreatePack("dependency", PacksPath("dependency"), "docs/adr/template.md");
+        var root = new DiscoveredPack(
+            _packsDirectory,
+            PacksPath("root"),
+            new PackManifest
+            {
+                Id = "root",
+                Version = "1.0.0",
+                Packs =
+                [
+                    new PackManifest.PackReference
+                    {
+                        Id = "dependency",
+                        Version = "1.0.0",
+                        Remap = new PackManifest.PackRemapping
+                        {
+                            Directories = { ["docs/adr"] = "composite/adr" },
+                        },
+                    },
+                ],
+            }
+        );
+
+        var result = planner.Plan(
+            _projectDirectory,
+            new ResolvedPackGraph(
+                [dependency, root],
+                new HashSet<string>(["root"], StringComparer.Ordinal)
+            ),
+            new ProjectLockFile { SchemaVersion = 1 },
+            new ProjectConfiguration
+            {
+                SchemaVersion = 1,
+                Remap = new ProjectConfiguration.Remapping
+                {
+                    Directories = { ["docs/adr"] = "project/adr" },
+                },
+            },
+            new PackInstallationRequest(new PackReference("root", null), null, false),
+            _emptyParameters
+        );
+
+        var plannedFile = result.RequireValue().ManagedFiles.Single();
+        await Assert
+            .That(plannedFile.TargetPathRelativeToProject)
+            .IsEqualTo("project/adr/template.md");
+        await Assert
+            .That(result.RequireValue().Remappings.Single().Origin)
+            .IsEqualTo(ManagedFileRemappingOrigin.Project);
+    }
+
+    [Test]
+    public async Task Plan_WhenCompositeDirectoryRemappingMatches_UsesSuffixAndProvenance()
+    {
+        var fileSystem = CreateFileSystem((PacksPath("dependency", "source.txt"), "template"));
+        var planner = CreatePlanner(fileSystem);
+        var dependency = CreatePack("dependency", PacksPath("dependency"), "docs/adr/template.md");
+        var root = new DiscoveredPack(
+            _packsDirectory,
+            PacksPath("root"),
+            new PackManifest
+            {
+                Id = "root",
+                Version = "1.0.0",
+                Packs =
+                [
+                    new PackManifest.PackReference
+                    {
+                        Id = "dependency",
+                        Version = "1.0.0",
+                        Remap = new PackManifest.PackRemapping
+                        {
+                            Directories = { ["docs/adr"] = "composite/adr" },
+                        },
+                    },
+                ],
+            }
+        );
+
+        var result = planner.Plan(
+            _projectDirectory,
+            new ResolvedPackGraph(
+                [dependency, root],
+                new HashSet<string>(["root"], StringComparer.Ordinal)
+            ),
+            new ProjectLockFile { SchemaVersion = 1 },
+            new ProjectConfiguration { SchemaVersion = 1 },
+            new PackInstallationRequest(new PackReference("root", null), null, false),
+            _emptyParameters
+        );
+
+        await Assert
+            .That(result.RequireValue().ManagedFiles.Single().TargetPathRelativeToProject)
+            .IsEqualTo("composite/adr/template.md");
+        var remapping = result.RequireValue().Remappings.Single();
+        await Assert.That(remapping.Origin).IsEqualTo(ManagedFileRemappingOrigin.Composite);
+        await Assert.That(remapping.SourcePackId).IsEqualTo("root");
+    }
+
+    [Test]
     [Arguments("file", "configuration", "file")]
     [Arguments("file", "invocation", "directory")]
     [Arguments("directory", "configuration", "directory")]

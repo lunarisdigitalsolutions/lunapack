@@ -7,6 +7,22 @@ pack-package, documentation, CI, build, test, and release-process changes.
 
 Update this section before creating a release tag.
 
+### Composite Packs
+
+- Composite references can define file and directory remaps for their active
+  dependency subtree. Consumer mappings retain precedence, and conflicting
+  equal-depth composite mappings stop planning.
+- Composite reference parameters now accept exact `${{ expression }}` bindings
+  for typed parameter pass-through and `iif(condition, whenTrue, whenFalse)`
+  selection. Invalid references, cycles, and target-type mismatches stop before
+  project changes.
+
+### Lifecycle Hooks
+
+- Hook conditions now support `scriptsSkipped()` and
+  `previousScriptState()` for fallback instructions based on global script
+  suppression or the nearest earlier script in the same pack and event.
+
 ## Version 1.5.0 - 2026-09-02
 
 ### Conditional Packs

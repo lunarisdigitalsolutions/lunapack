@@ -10,7 +10,10 @@ internal sealed record LifecycleHookInvocation(
     PackManifest.PackHook Script,
     PackedHookFile? PackedFile,
     int Position = 1,
-    PreparedInstruction? Instruction = null
+    PreparedInstruction? Instruction = null,
+    ManagedFileCondition? RuntimeCondition = null,
+    IReadOnlyDictionary<string, ResolvedPackParameterValue>? ParameterValues = null,
+    LifecycleScriptState? PlannedPreviousScriptState = null
 )
 {
     public bool IsScript => string.Equals(Script.Type, "script", StringComparison.Ordinal);

@@ -42,6 +42,30 @@ luna pack set parameter checkName string `
 Every declaration of the same parameter in the graph must use a compatible
 type.
 
+Use an exact `${{ expression }}` value to pass through a parameter declared by
+the composite:
+
+```powershell
+luna pack set parameter frameworkName string --default react
+luna pack add reference example-web-framework 1.0.0 `
+  --parameter 'framework=${{ frameworkName }}'
+```
+
+Use `iif(condition, whenTrue, whenFalse)` to derive a value from the same
+Boolean grammar used by reference conditions:
+
+```powershell
+luna pack set parameter isAngular bool --default false
+luna pack set reference example-web-framework 1.0.0 `
+  --parameter 'framework=${{ iif(isAngular, "angular", "react") }}'
+```
+
+The expression marker must be the complete value. Direct identifiers preserve
+string, Boolean, enum, and multi-select values. `iif` branches must have
+compatible types, and expressions can reference only parameters declared by
+the composite that owns the reference. Invalid expressions and dependency
+cycles fail before the manifest or project changes.
+
 ## Select optional dependencies
 
 Add `--condition` or `-c` when a referenced pack should participate only for

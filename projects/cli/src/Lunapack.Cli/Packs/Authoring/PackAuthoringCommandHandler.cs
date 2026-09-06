@@ -760,6 +760,8 @@ internal sealed class PackAuthoringCommandHandler(
         var conditionOption = new Option<string?>("--condition", "-c");
         var disabledHookOption = new Option<string[]>("--disable-hook");
         disabledHookOption.CompletionSources.Add(_hooks);
+        var remapDirectoryOption = new Option<string[]>("--remap-directory");
+        var remapFileOption = new Option<string[]>("--remap-file");
         var replaceOption = new Option<bool>("--replace");
         var command = new Command(name, "Add or replace a composite pack reference.")
         {
@@ -768,6 +770,8 @@ internal sealed class PackAuthoringCommandHandler(
             parameterOption,
             conditionOption,
             disabledHookOption,
+            remapDirectoryOption,
+            remapFileOption,
             replaceOption,
         };
         command.SetAction(async parseResult =>
@@ -778,6 +782,8 @@ internal sealed class PackAuthoringCommandHandler(
                 parseResult.GetValue(parameterOption) ?? [],
                 parseResult.GetValue(conditionOption),
                 parseResult.GetValue(disabledHookOption) ?? [],
+                parseResult.GetValue(remapDirectoryOption) ?? [],
+                parseResult.GetValue(remapFileOption) ?? [],
                 replaceByDefault || parseResult.GetValue(replaceOption)
             )
         );
@@ -791,20 +797,31 @@ internal sealed class PackAuthoringCommandHandler(
         string[] rawBindings,
         string? condition,
         string[] hooks,
+        string[] directoryRemappings,
+        string[] fileRemappings,
         bool replace
     )
     {
         var bindings = ParseBindings(rawBindings);
+        var remapping = ManagedFileTargetRemapping.Create(
+            fileSystem,
+            workspace,
+            directoryRemappings,
+            fileRemappings
+        );
         if (
             string.IsNullOrEmpty(id)
             || version is null
             || !ManifestModelValidator.IsSemanticVersion(version)
             || bindings.Value is not { } parameters
+            || remapping.Value is not { } parsedRemapping
             || hooks.Any(hook => !IsHook(hook))
         )
         {
             return console.Fail(
-                bindings.Error ?? "Reference requires an ID, exact version, and valid hooks."
+                bindings.Error
+                    ?? remapping.Error
+                    ?? "Reference requires an ID, exact version, valid hooks, and valid remappings."
             );
         }
 
@@ -827,6 +844,7 @@ internal sealed class PackAuthoringCommandHandler(
                     Condition = condition,
                     Parameters = parameters,
                     DisabledHooks = [.. hooks],
+                    Remap = parsedRemapping.HasMappings ? parsedRemapping.ToManifest() : null,
                 };
                 if (existing >= 0)
                 {

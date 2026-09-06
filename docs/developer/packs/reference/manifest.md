@@ -60,7 +60,7 @@ selectors install content.
 | `managedFiles`         | Each entry has one `source`, `directory`, or `glob` selector and a non-empty project-relative `target` that cannot contain `.` or `..` segments.                                        |
 | `packs`                | Each composite reference has a hyphen-separated alphanumeric ID and an exact version. Optional `condition` selects whether the reference participates in lifecycle planning.            |
 | `parameters`           | Ordered identifier-named `string`, `bool`, or `enum` declarations. Enums require unique values and may set `multiple: true`; multi-select defaults are unique arrays of allowed values. |
-| Reference `parameters` | String, Boolean, or unique string-array bindings for a referenced pack. Runtime validation checks arrays against the target multi-select enum.                                          |
+| Reference `parameters` | Literal string, Boolean, unique string-array, or exact `${{ expression }}` bindings for a referenced pack. Runtime validation checks the result against the target declaration.         |
 | `condition`            | Boolean, comparison, membership, and `isDefault(identifier)` expressions joined with logical operators.                                                                                 |
 | `strategy`             | `copy` with `overwrite`, `fail-if-exists`, `skip-if-exists`, or `backup-and-overwrite`; or `merge` with `lines`, `section`, or `json`.                                                  |
 | `tags`                 | Optional list of up to 15 unique, non-empty tags. Search matches tags; discover lists them, and inspect previews the first five.                                                        |
@@ -98,6 +98,40 @@ parameters:
 
 `apiName` is required only when both predicates are true. Do not alphabetize
 parameters when their prompt dependency requires another declaration first.
+
+### Composite parameter expressions
+
+A referenced pack parameter accepts a typed expression when its complete
+string value uses `${{ expression }}`. A parameter identifier passes through
+its resolved value. `iif(condition, whenTrue, whenFalse)` uses the condition
+grammar for its first argument and returns one compatible branch:
+
+```yml
+parameters:
+  frameworkName:
+    type: string
+    default: react
+  isAngular:
+    type: bool
+    default: false
+packs:
+  - id: example-web-framework
+    version: 1.0.0
+    parameters:
+      framework: '${{ frameworkName }}'
+      template: '${{ iif(isAngular, "angular", "react") }}'
+```
+
+The expression can reference only parameters declared by the pack containing
+the reference. Direct identifiers preserve string, Boolean, enum, and
+multi-select values. `iif` branches can be quoted strings, Boolean literals,
+parameter identifiers, or nested `iif` calls, and both branches must have
+compatible types. Runtime lifecycle functions are not available.
+
+The marker must occupy the complete trimmed value. A value such as
+`prefix-${{ frameworkName }}` remains a literal string. Unknown parameters,
+cycles, unresolved dependencies, and results incompatible with the referenced
+parameter declaration fail before prompting or project mutation.
 
 ## Lifecycle hooks
 
@@ -140,7 +174,11 @@ require `type: instruction` and a pack-relative Markdown `file`; optional
 `templating: true` enables Scriban before display. Hook order within each event
 is significant. Optional `condition` uses the same parameter expressions as a
 managed file and omits the hook when false. `isDefault(parameterName)` compares
-the resolved value with an explicitly declared default. A composite reference
+the resolved value with an explicitly declared default. Hook conditions also
+support `scriptsSkipped()` and comparisons of `previousScriptState()` with
+`succeeded`, `failed`, `skipped`, `cancelled`, `ignored`, or `none`. These
+runtime functions are invalid in managed-file, pack-reference, and
+`requiredWhen` conditions. A composite reference
 can set `disabledHooks` to suppress every typed hook in selected events for that
 transient pack.
 
@@ -155,6 +193,11 @@ packs:
     disabledHooks:
       - preInstall
       - postUpdate
+    remap:
+      directories:
+        docs: docs/internal
+      files:
+        docs/generated.md: '@ignore'
 ```
 
 Consumers select `luna install`, `luna update`, and `luna uninstall` behavior with
@@ -187,9 +230,10 @@ The version directory containing the manifest is the pack root. Source
 selectors read from that root; directory and glob matches retain their relative
 paths below the target.
 
-Managed-file `target` values are portable pack defaults. Consumers can remap
-them in project-level `lunapack.yml` configuration or through `luna install`
-options; pack authors do not declare consumer remapping in `pack.yml`. See
+Managed-file `target` values are portable pack defaults. Composite references
+can declare subtree defaults under `remap.directories` and `remap.files`.
+Consumers can override them in project-level `lunapack.yml` configuration or
+through `luna install` options. See
 [Remap managed targets](../../remap-targets.md) for
 mapping syntax, precedence, lifecycle retention, and explicit relocation.
 

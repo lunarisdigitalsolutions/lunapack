@@ -185,8 +185,11 @@ public sealed class CliProcessTests
         var sourcePath = CreateInstructionPackSource(
             workspace.Path,
             "example",
-            "id: example\nversion: 1.0.0\nhooks:\n  preInstall:\n    - type: script\n      command: dotnet\n      arguments:\n        - --version\nmanagedFiles:\n  - source: templates/content.txt\n    target: .pack\n",
+            "id: example\nversion: 1.0.0\nhooks:\n  preInstall:\n    - type: script\n      command: dotnet\n      arguments:\n        - --version\n    - type: instruction\n      file: instructions/denied.md\n      condition: scriptsSkipped()\nmanagedFiles:\n  - source: templates/content.txt\n    target: .pack\n",
             new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["denied.md"] = "## Denied\nscripts-denied-fallback",
+            }
         );
         await CliProcess.InvokeAsync(
             workspace.Path,
@@ -237,6 +240,7 @@ public sealed class CliProcessTests
         await Assert.That(install.ExitCode).IsEqualTo(0);
         await Assert.That(installOutput).Contains("Lifecycle script denied by policy:");
         await Assert.That(installOutput).Contains(scopeName);
+        await Assert.That(installOutput).Contains("scripts-denied-fallback");
         await Assert.That(installOutput).DoesNotContain("10.0.");
         await Assert.That(File.Exists(Path.Combine(workspace.Path, ".pack"))).IsTrue();
     }
@@ -278,6 +282,118 @@ public sealed class CliProcessTests
         await Assert.That(first >= 0 && first < script && script < last && last < success).IsTrue();
         await Assert.That(install.StandardOutput).DoesNotContain("Press Enter to continue...");
         await Assert.That(install.StandardOutput).DoesNotContain("Applied managed-file changes");
+    }
+
+    [Test]
+    public async Task PackLifecycle_WhenEarlierScriptIgnored_RendersFallbackInstruction()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreateInstructionPackSource(
+            workspace.Path,
+            "example",
+            "id: example\nversion: 1.0.0\nparameters:\n  runScript:\n    type: bool\n    default: false\nhooks:\n  preInstall:\n    - type: script\n      command: dotnet\n      arguments:\n        - --version\n      condition: runScript\n    - type: instruction\n      file: instructions/fallback.md\n      condition: previousScriptState() == \"ignored\"\nmanagedFiles:\n  - source: templates/content.txt\n    target: .pack\n",
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["fallback.md"] = "## Fallback\nscript-was-ignored",
+            }
+        );
+        await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
+
+        var install = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "install",
+            "example",
+            "--scripts",
+            "run"
+        );
+
+        await Assert.That(install.ExitCode).IsEqualTo(0);
+        await Assert.That(install.StandardOutput).Contains("script-was-ignored");
+        await Assert.That(install.StandardOutput).DoesNotContain("10.0.");
+    }
+
+    [Test]
+    public async Task PackLifecycle_WhenScriptsGloballySkipped_RendersSkipInstruction()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreateInstructionPackSource(
+            workspace.Path,
+            "example",
+            "id: example\nversion: 1.0.0\nhooks:\n  preInstall:\n    - type: script\n      command: dotnet\n      arguments:\n        - --version\n    - type: instruction\n      file: instructions/skipped.md\n      condition: scriptsSkipped()\nmanagedFiles:\n  - source: templates/content.txt\n    target: .pack\n",
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["skipped.md"] = "## Skipped\nscripts-were-skipped",
+            }
+        );
+        await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
+
+        var install = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "install",
+            "example",
+            "--scripts",
+            "skip"
+        );
+
+        await Assert.That(install.ExitCode).IsEqualTo(0);
+        await Assert.That(install.StandardOutput).Contains("scripts-were-skipped");
+        await Assert.That(install.StandardOutput).DoesNotContain("10.0.");
+    }
+
+    [Test]
+    public async Task PackLifecycle_WhenScriptsSkipped_CoversInstallUpdateAndUninstall()
+    {
+        using var workspace = new TestWorkspace();
+        var sourceRoot = Path.Combine(workspace.Path, "source");
+        CreateInstructionPack(
+            sourceRoot,
+            "example-v1",
+            "id: example\nversion: 1.0.0\nhooks:\n  preInstall:\n    - type: instruction\n      file: instructions/install.md\n      condition: scriptsSkipped()\nmanagedFiles:\n  - source: templates/content.txt\n    target: .pack\n",
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["install.md"] = "## Install\ninstall-scripts-skipped",
+            }
+        );
+        CreateInstructionPack(
+            sourceRoot,
+            "example-v2",
+            "id: example\nversion: 2.0.0\nhooks:\n  preUpdate:\n    - type: instruction\n      file: instructions/update.md\n      condition: scriptsSkipped()\n  preUninstall:\n    - type: instruction\n      file: instructions/uninstall.md\n      condition: scriptsSkipped()\nmanagedFiles:\n  - source: templates/content.txt\n    target: .pack\n",
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["update.md"] = "## Update\nupdate-scripts-skipped",
+                ["uninstall.md"] = "## Uninstall\nuninstall-scripts-skipped",
+            }
+        );
+        await InitializeAndAddSourceAsync(workspace.Path, "source");
+
+        var install = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "install",
+            "example@1.0.0",
+            "--scripts",
+            "skip"
+        );
+        var update = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "update",
+            "example",
+            "--scripts",
+            "skip"
+        );
+        var uninstall = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "uninstall",
+            "example",
+            "--scripts",
+            "skip"
+        );
+
+        await Assert.That(install.StandardOutput).Contains("install-scripts-skipped");
+        await Assert.That(update.StandardOutput).Contains("update-scripts-skipped");
+        await Assert.That(uninstall.StandardOutput).Contains("uninstall-scripts-skipped");
+        await Assert.That(install.ExitCode).IsEqualTo(0);
+        await Assert.That(update.ExitCode).IsEqualTo(0);
+        await Assert.That(uninstall.ExitCode).IsEqualTo(0);
     }
 
     [Test]
@@ -1752,6 +1868,33 @@ public sealed class CliProcessTests
         await Assert
             .That(File.ReadAllText(Path.Combine(workspace.Path, "shared.txt")))
             .IsEqualTo("Shared Lunaris");
+    }
+
+    [Test]
+    public async Task Install_WhenCompositeParameterUsesExpression_RendersSelectedValue()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreateCompositePackSource(
+            workspace.Path,
+            (
+                "framework",
+                "id: framework\nversion: 1.0.0\nparameters:\n  frameworkName:\n    type: enum\n    values: [angular, react]\n    required: true\nmanagedFiles:\n  - source: templates/content.txt\n    target: framework.txt\n    template: true\n",
+                "{{ frameworkName }}"
+            ),
+            (
+                "foundation",
+                "id: foundation\nversion: 1.0.0\nparameters:\n  isAngular:\n    type: bool\n    default: true\npacks:\n  - id: framework\n    version: 1.0.0\n    parameters:\n      frameworkName: '${{ iif(isAngular, \"angular\", \"react\") }}'\n",
+                null
+            )
+        );
+        await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
+
+        var install = await CliProcess.InvokeAsync(workspace.Path, "install", "foundation");
+
+        await Assert.That(install.ExitCode).IsEqualTo(0);
+        await Assert
+            .That(File.ReadAllText(Path.Combine(workspace.Path, "framework.txt")))
+            .IsEqualTo("angular");
     }
 
     [Test]

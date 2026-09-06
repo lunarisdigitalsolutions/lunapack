@@ -238,23 +238,31 @@ internal sealed class PackInstallationPlanner(
                     );
                 }
 
-                candidates.AddRange(
-                    managedFileCandidates.Select(candidate =>
+                foreach (var candidate in managedFileCandidates)
+                {
+                    var resolvedTarget = GetEffectiveTarget(
+                        graph,
+                        pack,
+                        candidate.DeclaredTarget,
+                        requestedPacks,
+                        configuration,
+                        installationRequest
+                    );
+                    if (resolvedTarget.Value is not { } resolution)
                     {
-                        var resolution = GetEffectiveTarget(
-                            pack,
-                            candidate.DeclaredTarget,
-                            requestedPacks,
-                            configuration,
-                            installationRequest
+                        return ManifestOperationResult<List<ManagedFilePlanCandidate>>.Failure(
+                            resolvedTarget.Error ?? "Unable to resolve managed-file target."
                         );
-                        return candidate with
+                    }
+
+                    candidates.Add(
+                        candidate with
                         {
                             Target = resolution.EffectiveTarget,
                             Remapping = resolution.Remapping,
-                        };
-                    })
-                );
+                        }
+                    );
+                }
             }
         }
 
@@ -296,7 +304,8 @@ internal sealed class PackInstallationPlanner(
             );
     }
 
-    private ManagedFileTargetResolution GetEffectiveTarget(
+    private ManifestOperationResult<ManagedFileTargetResolution> GetEffectiveTarget(
+        ResolvedPackGraph graph,
         DiscoveredPack pack,
         string target,
         IReadOnlyList<ProjectConfiguration.RequestedPack> requestedPacks,
@@ -315,33 +324,60 @@ internal sealed class PackInstallationPlanner(
         var remappedTarget = installationRequest.TargetRemapping?.TryResolve(target);
         if (remappedTarget is not null)
         {
-            return CreateRemappedTargetResolution(
-                pack.Manifest.Id,
-                target,
-                remappedTarget,
-                ManagedFileRemappingOrigin.Command
+            return ManifestOperationResult<ManagedFileTargetResolution>.Success(
+                CreateRemappedTargetResolution(
+                    pack.Manifest.Id,
+                    target,
+                    remappedTarget,
+                    ManagedFileRemappingOrigin.Command
+                )
             );
         }
 
         remappedTarget = packRemapping.TryResolve(target);
         if (remappedTarget is not null)
         {
-            return CreateRemappedTargetResolution(
-                pack.Manifest.Id,
-                target,
-                remappedTarget,
-                ManagedFileRemappingOrigin.Pack
+            return ManifestOperationResult<ManagedFileTargetResolution>.Success(
+                CreateRemappedTargetResolution(
+                    pack.Manifest.Id,
+                    target,
+                    remappedTarget,
+                    ManagedFileRemappingOrigin.Pack
+                )
             );
         }
 
         remappedTarget = globalRemapping.TryResolve(target);
         if (remappedTarget is not null)
         {
-            return CreateRemappedTargetResolution(
-                pack.Manifest.Id,
-                target,
-                remappedTarget,
-                ManagedFileRemappingOrigin.Project
+            return ManifestOperationResult<ManagedFileTargetResolution>.Success(
+                CreateRemappedTargetResolution(
+                    pack.Manifest.Id,
+                    target,
+                    remappedTarget,
+                    ManagedFileRemappingOrigin.Project
+                )
+            );
+        }
+
+        var compositeTarget = graph.ResolveCompositeTarget(pack, target);
+        if (!compositeTarget.IsSuccess)
+        {
+            return ManifestOperationResult<ManagedFileTargetResolution>.Failure(
+                compositeTarget.Error ?? "Unable to resolve composite managed-file remapping."
+            );
+        }
+
+        if (compositeTarget.Value is { } composite)
+        {
+            return ManifestOperationResult<ManagedFileTargetResolution>.Success(
+                CreateRemappedTargetResolution(
+                    pack.Manifest.Id,
+                    target,
+                    composite.EffectiveTarget,
+                    ManagedFileRemappingOrigin.Composite,
+                    composite.ParentPackId
+                )
             );
         }
 
@@ -351,8 +387,10 @@ internal sealed class PackInstallationPlanner(
             )
             ?.Destination;
 
-        return new ManagedFileTargetResolution(
-            destination is null ? target : fileSystem.Path.Combine(destination, target)
+        return ManifestOperationResult<ManagedFileTargetResolution>.Success(
+            new ManagedFileTargetResolution(
+                destination is null ? target : fileSystem.Path.Combine(destination, target)
+            )
         );
     }
 
@@ -360,11 +398,12 @@ internal sealed class PackInstallationPlanner(
         string packId,
         string declaredTarget,
         string effectiveTarget,
-        ManagedFileRemappingOrigin origin
+        ManagedFileRemappingOrigin origin,
+        string? sourcePackId = null
     ) =>
         new(
             effectiveTarget,
-            new ManagedFileRemapping(packId, declaredTarget, effectiveTarget, origin)
+            new ManagedFileRemapping(packId, declaredTarget, effectiveTarget, origin, sourcePackId)
         );
 
     private ManifestOperationResult<List<ManagedFilePlanCandidate>> CreateManagedFileCandidates(

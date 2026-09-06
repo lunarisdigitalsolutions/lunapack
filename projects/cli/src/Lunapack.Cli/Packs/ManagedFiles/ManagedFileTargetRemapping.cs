@@ -1,6 +1,7 @@
 using System.IO.Abstractions;
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Application.Paths;
+using Lunapack.Cli.Packs.Manifest;
 using Lunapack.Cli.Project;
 
 namespace Lunapack.Cli.Packs.ManagedFiles;
@@ -23,6 +24,13 @@ internal sealed class ManagedFileTargetRemapping
     }
 
     public bool HasMappings => _directories.Count > 0 || _files.Count > 0;
+
+    public PackManifest.PackRemapping ToManifest() =>
+        new()
+        {
+            Directories = new Dictionary<string, string>(_directories, _pathComparer),
+            Files = new Dictionary<string, string>(_files, _pathComparer),
+        };
 
     public ProjectConfiguration.Remapping MergeInto(ProjectConfiguration.Remapping? remapping)
     {
@@ -47,6 +55,17 @@ internal sealed class ManagedFileTargetRemapping
     public static ManagedFileTargetRemapping FromConfiguration(
         ProjectConfiguration.Remapping? remapping
     ) =>
+        remapping is null
+            ? new ManagedFileTargetRemapping(
+                new Dictionary<string, string>(_pathComparer),
+                new Dictionary<string, string>(_pathComparer)
+            )
+            : new ManagedFileTargetRemapping(
+                NormalizeMappings(remapping.Directories),
+                NormalizeMappings(remapping.Files)
+            );
+
+    public static ManagedFileTargetRemapping FromManifest(PackManifest.PackRemapping? remapping) =>
         remapping is null
             ? new ManagedFileTargetRemapping(
                 new Dictionary<string, string>(_pathComparer),

@@ -1822,7 +1822,8 @@ internal sealed class PackLifecycleService(
         var preExecution = await ExecuteHooksAsync(
             projectDirectory,
             authorizedHooks?.PreMutation ?? [],
-            manifestSnapshot
+            manifestSnapshot,
+            authorizedHooks?.ScriptsSkipped is true
         );
         if (!preExecution.IsSuccess)
         {
@@ -1928,7 +1929,8 @@ internal sealed class PackLifecycleService(
         var postExecution = await ExecuteHooksAsync(
             projectDirectory,
             authorizedHooks?.PostMutation ?? [],
-            CreateManifestSnapshot(projectDirectory)
+            CreateManifestSnapshot(projectDirectory),
+            authorizedHooks?.ScriptsSkipped is true
         );
         if (!postExecution.IsSuccess)
         {
@@ -2003,7 +2005,7 @@ internal sealed class PackLifecycleService(
             _console.Warning(LifecycleScriptDenialFormatter.Format(deniedScript));
         }
 
-        var hooks = authorization.AuthorizedHooks;
+        var hooks = authorization.DispatchHooks ?? authorization.AuthorizedHooks;
 
         return ManifestOperationResult<AuthorizedLifecycleHooks>.Success(
             new AuthorizedLifecycleHooks(
@@ -2022,7 +2024,8 @@ internal sealed class PackLifecycleService(
                                 or LifecycleHook.PostUpdate
                                 or LifecycleHook.PostUninstall
                     ),
-                ]
+                ],
+                scriptMode == ScriptExecutionMode.Skip || authorization.DeniedScripts.Count > 0
             )
         );
     }
@@ -2101,11 +2104,46 @@ internal sealed class PackLifecycleService(
     private async Task<ManifestOperationResult<bool>> ExecuteHooksAsync(
         string projectDirectory,
         IReadOnlyList<AuthorizedLifecycleHook> hooks,
-        ManifestSnapshot manifestSnapshot
+        ManifestSnapshot manifestSnapshot,
+        bool scriptsSkipped
     )
     {
+        var previousStates =
+            new Dictionary<(string PackId, LifecycleHook Hook), LifecycleScriptState>();
         foreach (var hook in hooks)
         {
+            var key = (hook.Invocation.Pack.Manifest.Id, hook.Invocation.Hook);
+            if (hook.Invocation.PlannedPreviousScriptState is { } plannedState)
+            {
+                previousStates[key] = plannedState;
+            }
+
+            var previousState = previousStates.GetValueOrDefault(key, LifecycleScriptState.None);
+            if (
+                hook.Invocation.RuntimeCondition is { } condition
+                && !condition.Evaluate(
+                    hook.Invocation.ParameterValues
+                        ?? new Dictionary<string, ResolvedPackParameterValue>(
+                            StringComparer.Ordinal
+                        ),
+                    new(scriptsSkipped, previousState)
+                )
+            )
+            {
+                if (hook.Invocation.IsScript)
+                {
+                    previousStates[key] = LifecycleScriptState.Ignored;
+                }
+
+                continue;
+            }
+
+            if (hook.Invocation.IsScript && hook.Script is null)
+            {
+                previousStates[key] = LifecycleScriptState.Skipped;
+                continue;
+            }
+
             var execution = await DispatchHookAsync(projectDirectory, hook);
             var integrity = VerifyManifestSnapshot(manifestSnapshot);
             if (!integrity.IsSuccess)
@@ -2115,7 +2153,23 @@ internal sealed class PackLifecycleService(
 
             if (!execution.IsSuccess)
             {
+                if (hook.Invocation.IsScript)
+                {
+                    previousStates[key] = execution.Error?.Contains(
+                        "canceled",
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                        is true
+                        ? LifecycleScriptState.Cancelled
+                        : LifecycleScriptState.Failed;
+                }
+
                 return execution;
+            }
+
+            if (hook.Invocation.IsScript)
+            {
+                previousStates[key] = LifecycleScriptState.Succeeded;
             }
         }
 
@@ -2232,7 +2286,8 @@ internal sealed class PackLifecycleService(
         var preExecution = await ExecuteHooksAsync(
             projectDirectory,
             authorizedHooks?.PreMutation ?? [],
-            CreateManifestSnapshot(projectDirectory)
+            CreateManifestSnapshot(projectDirectory),
+            authorizedHooks?.ScriptsSkipped is true
         );
         if (!preExecution.IsSuccess)
         {
@@ -2304,7 +2359,8 @@ internal sealed class PackLifecycleService(
         var postExecution = await ExecuteHooksAsync(
             projectDirectory,
             authorizedHooks?.PostMutation ?? [],
-            CreateManifestSnapshot(projectDirectory)
+            CreateManifestSnapshot(projectDirectory),
+            authorizedHooks?.ScriptsSkipped is true
         );
         if (!postExecution.IsSuccess)
         {

@@ -64,6 +64,34 @@ command line, the pack entry, top-level project configuration, or the lock
 file. Use this provenance in a dry run to verify which layer won before
 applying changes.
 
+Composite pack references can provide layout defaults for a referenced pack and
+its active dependency subtree:
+
+```yml
+packs:
+  - id: documentation
+    version: 1.0.0
+    remap:
+      directories:
+        docs: docs/internal
+      files:
+        docs/generated.md: '@ignore'
+```
+
+The nearest matching composite reference wins. Equal-depth paths may provide
+the same effective target; conflicting targets stop planning. Composite remaps
+have lower precedence than command input, requested-pack configuration, and
+top-level project configuration. Existing lock ownership continues to control
+updates and uninstall operations.
+
+Authors can add these mappings with repeatable `luna pack add reference` or
+`luna pack set reference` options:
+
+```powershell
+luna pack add reference documentation 1.0.0 --remap-directory docs=docs/internal
+luna pack set reference documentation 1.0.0 --remap-file docs/generated.md=@ignore
+```
+
 ## Ignore pack targets
 
 Use `@ignore` as the exact mapping value to exclude a declared file or every

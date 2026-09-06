@@ -45,6 +45,7 @@ internal sealed class LifecycleHookPlanner(IFileSystem fileSystem)
             }
 
             var declarations = GetHooks(pack.Manifest.Hooks, hook.Value);
+            LifecycleScriptState? plannedPreviousScriptState = null;
             for (var index = 0; index < declarations.Count; index++)
             {
                 var declaration = declarations[index];
@@ -57,8 +58,21 @@ internal sealed class LifecycleHookPlanner(IFileSystem fileSystem)
                     );
                 }
 
-                if (!included.Value)
+                if (included.Value is not { } conditionPlan)
                 {
+                    return ManifestOperationResult<IReadOnlyList<LifecycleHookInvocation>>.Failure(
+                        included.Error
+                            ?? $"Unable to evaluate {ToManifestValue(hook.Value)} hook condition."
+                    );
+                }
+
+                if (!conditionPlan.Included)
+                {
+                    if (string.Equals(declaration.Type, "script", StringComparison.Ordinal))
+                    {
+                        plannedPreviousScriptState = LifecycleScriptState.Ignored;
+                    }
+
                     continue;
                 }
 
@@ -70,7 +84,15 @@ internal sealed class LifecycleHookPlanner(IFileSystem fileSystem)
                     }
                 }
 
-                var planned = PlanDeclaration(pack, hook.Value, declaration, parameters, index + 1);
+                var planned = PlanDeclaration(
+                    pack,
+                    hook.Value,
+                    declaration,
+                    parameters,
+                    index + 1,
+                    conditionPlan.RuntimeCondition,
+                    plannedPreviousScriptState
+                );
                 if (planned.Value is not { } invocation)
                 {
                     return ManifestOperationResult<IReadOnlyList<LifecycleHookInvocation>>.Failure(
@@ -79,26 +101,34 @@ internal sealed class LifecycleHookPlanner(IFileSystem fileSystem)
                 }
 
                 invocations.Add(invocation);
+                if (string.Equals(declaration.Type, "script", StringComparison.Ordinal))
+                {
+                    plannedPreviousScriptState = null;
+                }
             }
         }
 
         return ManifestOperationResult<IReadOnlyList<LifecycleHookInvocation>>.Success(invocations);
     }
 
-    private static ManifestOperationResult<bool> IsIncluded(
+    private static ManifestOperationResult<ConditionPlan> IsIncluded(
         PackManifest.PackHook declaration,
         ResolvedPackParameters parameters
     )
     {
         if (declaration.Condition is not { } condition)
         {
-            return ManifestOperationResult<bool>.Success(true);
+            return ManifestOperationResult<ConditionPlan>.Success(new(true, null));
         }
 
-        var parsed = ManagedFileConditionParser.Parse(condition, parameters.Declarations);
+        var parsed = ManagedFileConditionParser.ParseLifecycle(condition, parameters.Declarations);
         return parsed.Value is { } parsedCondition
-            ? ManifestOperationResult<bool>.Success(parsedCondition.Evaluate(parameters.Values))
-            : ManifestOperationResult<bool>.Failure(
+            ? ManifestOperationResult<ConditionPlan>.Success(
+                parsedCondition.DependsOnRuntimeState
+                    ? new(true, parsedCondition)
+                    : new(parsedCondition.Evaluate(parameters.Values), null)
+            )
+            : ManifestOperationResult<ConditionPlan>.Failure(
                 parsed.Error ?? "Unable to parse lifecycle hook condition."
             );
     }
@@ -108,18 +138,38 @@ internal sealed class LifecycleHookPlanner(IFileSystem fileSystem)
         LifecycleHook hook,
         PackManifest.PackHook declaration,
         ResolvedPackParameters parameters,
-        int position
+        int position,
+        ManagedFileCondition? runtimeCondition,
+        LifecycleScriptState? plannedPreviousScriptState
     ) =>
         string.Equals(declaration.Type, "instruction", StringComparison.Ordinal)
-            ? PlanInstruction(pack, hook, declaration, parameters, position)
-            : PlanScript(pack, hook, declaration, parameters, position);
+            ? PlanInstruction(
+                pack,
+                hook,
+                declaration,
+                parameters,
+                position,
+                runtimeCondition,
+                plannedPreviousScriptState
+            )
+            : PlanScript(
+                pack,
+                hook,
+                declaration,
+                parameters,
+                position,
+                runtimeCondition,
+                plannedPreviousScriptState
+            );
 
     private ManifestOperationResult<LifecycleHookInvocation> PlanInstruction(
         DiscoveredPack pack,
         LifecycleHook hook,
         PackManifest.PackHook declaration,
         ResolvedPackParameters parameters,
-        int position
+        int position,
+        ManagedFileCondition? runtimeCondition,
+        LifecycleScriptState? plannedPreviousScriptState
     )
     {
         var prepared = _instructionPreparer.Prepare(pack, declaration, parameters);
@@ -131,7 +181,10 @@ internal sealed class LifecycleHookPlanner(IFileSystem fileSystem)
                     declaration,
                     instruction.PackedFile,
                     position,
-                    instruction
+                    instruction,
+                    runtimeCondition,
+                    parameters.Values,
+                    plannedPreviousScriptState
                 )
             )
             : ManifestOperationResult<LifecycleHookInvocation>.Failure(
@@ -144,7 +197,9 @@ internal sealed class LifecycleHookPlanner(IFileSystem fileSystem)
         LifecycleHook hook,
         PackManifest.PackHook script,
         ResolvedPackParameters parameters,
-        int position
+        int position,
+        ManagedFileCondition? runtimeCondition,
+        LifecycleScriptState? plannedPreviousScriptState
     )
     {
         var renderedScript = RenderArguments(pack, hook, script, parameters);
@@ -170,9 +225,20 @@ internal sealed class LifecycleHookPlanner(IFileSystem fileSystem)
         }
 
         return ManifestOperationResult<LifecycleHookInvocation>.Success(
-            new LifecycleHookInvocation(pack, hook, invocationScript, packedFile, position)
+            new LifecycleHookInvocation(
+                pack,
+                hook,
+                invocationScript,
+                packedFile,
+                position,
+                RuntimeCondition: runtimeCondition,
+                ParameterValues: parameters.Values,
+                PlannedPreviousScriptState: plannedPreviousScriptState
+            )
         );
     }
+
+    private sealed record ConditionPlan(bool Included, ManagedFileCondition? RuntimeCondition);
 
     private static ManifestOperationResult<PackManifest.PackHook> RenderArguments(
         DiscoveredPack pack,

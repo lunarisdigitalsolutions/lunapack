@@ -1,5 +1,6 @@
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Catalog;
+using Lunapack.Cli.Packs.ManagedFiles;
 using Lunapack.Cli.Packs.Manifest;
 
 namespace Lunapack.Cli.Packs.Planning;
@@ -24,6 +25,46 @@ internal sealed record ResolvedPackGraph(
                     )
                 ),
         ];
+
+    public ManifestOperationResult<CompositePackTargetResolution?> ResolveCompositeTarget(
+        DiscoveredPack pack,
+        string declaredTarget
+    )
+    {
+        if (IsRoot(pack))
+        {
+            return ManifestOperationResult<CompositePackTargetResolution?>.Success(null);
+        }
+
+        var packsById = Packs.ToDictionary(
+            candidate => candidate.Manifest.Id,
+            StringComparer.Ordinal
+        );
+        var candidates = new List<CompositePackTargetResolution>();
+        foreach (var root in Packs.Where(IsRoot))
+        {
+            FindCompositeTargets(root, pack, declaredTarget, packsById, [], candidates);
+        }
+
+        if (candidates.Count == 0)
+        {
+            return ManifestOperationResult<CompositePackTargetResolution?>.Success(null);
+        }
+
+        var nearestDistance = candidates.Min(candidate => candidate.ReferenceDistance);
+        var nearest = candidates
+            .Where(candidate => candidate.ReferenceDistance == nearestDistance)
+            .ToArray();
+        var effectiveTargets = nearest
+            .Select(candidate => candidate.EffectiveTarget)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        return effectiveTargets.Length == 1
+            ? ManifestOperationResult<CompositePackTargetResolution?>.Success(nearest[0])
+            : ManifestOperationResult<CompositePackTargetResolution?>.Failure(
+                $"Pack '{pack.Manifest.Id}' target '{declaredTarget}' has conflicting composite remaps at the same reference depth."
+            );
+    }
 
     public ManifestOperationResult<ResolvedPackGraph> Select(ResolvedPackParameters parameters)
     {
@@ -56,6 +97,60 @@ internal sealed record ResolvedPackGraph(
             RootPackIds is null
             && string.Equals(pack.Manifest.Id, Packs[^1].Manifest.Id, StringComparison.Ordinal)
         );
+
+    private void FindCompositeTargets(
+        DiscoveredPack current,
+        DiscoveredPack targetPack,
+        string declaredTarget,
+        IReadOnlyDictionary<string, DiscoveredPack> packsById,
+        IReadOnlyList<CompositeReferenceLayer> path,
+        ICollection<CompositePackTargetResolution> candidates
+    )
+    {
+        if (string.Equals(current.Manifest.Id, targetPack.Manifest.Id, StringComparison.Ordinal))
+        {
+            for (var index = path.Count - 1; index >= 0; index--)
+            {
+                var layer = path[index];
+                var effectiveTarget = ManagedFileTargetRemapping
+                    .FromManifest(layer.Reference.Remap)
+                    .TryResolve(declaredTarget);
+                if (effectiveTarget is not null)
+                {
+                    candidates.Add(
+                        new CompositePackTargetResolution(
+                            effectiveTarget,
+                            layer.ParentPackId,
+                            path.Count - index
+                        )
+                    );
+                    break;
+                }
+            }
+
+            return;
+        }
+
+        foreach (var reference in current.Manifest.Packs.Where(IsActive))
+        {
+            if (!packsById.TryGetValue(reference.Id, out var dependency))
+            {
+                continue;
+            }
+
+            FindCompositeTargets(
+                dependency,
+                targetPack,
+                declaredTarget,
+                packsById,
+                [.. path, new CompositeReferenceLayer(current.Manifest.Id, reference)],
+                candidates
+            );
+        }
+    }
+
+    private bool IsActive(PackManifest.PackReference reference) =>
+        ActiveReferences is null || ActiveReferences.Contains(reference);
 
     private static string? Select(
         DiscoveredPack pack,
@@ -118,4 +213,9 @@ internal sealed record ResolvedPackGraph(
                 condition.Error ?? "Unable to evaluate pack reference condition."
             );
     }
+
+    private sealed record CompositeReferenceLayer(
+        string ParentPackId,
+        PackManifest.PackReference Reference
+    );
 }

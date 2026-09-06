@@ -97,7 +97,7 @@ internal static class PackParameterResolver
         return declarations.Value is { } resolvedDeclarations
             ? BindValues(
                 resolvedDeclarations,
-                new Dictionary<string, object>(StringComparer.Ordinal),
+                new Dictionary<string, CompositeParameterBinding>(StringComparer.Ordinal),
                 configuration,
                 installationRequest,
                 enforceRequired: false
@@ -268,7 +268,7 @@ internal static class PackParameterResolver
         DiscoveredPack pack,
         IReadOnlyDictionary<string, DiscoveredPack> packsById,
         IReadOnlyDictionary<string, PackParameterDefinition> declarations,
-        IReadOnlyDictionary<string, object> compositeValues,
+        IReadOnlyDictionary<string, CompositeParameterBinding> compositeValues,
         ResolvedPackParameters parameters,
         ProjectConfiguration configuration,
         PackInstallationRequest installationRequest,
@@ -331,7 +331,7 @@ internal static class PackParameterResolver
     private static ManifestOperationResult<IReadOnlyList<PackParameterPrompt>> CreatePrompt(
         string name,
         IReadOnlyDictionary<string, PackParameterDefinition> declarations,
-        IReadOnlyDictionary<string, object> compositeValues,
+        IReadOnlyDictionary<string, CompositeParameterBinding> compositeValues,
         ResolvedPackParameters parameters,
         ProjectConfiguration configuration,
         PackInstallationRequest installationRequest,
@@ -416,7 +416,7 @@ internal static class PackParameterResolver
     }
 
     private static ManifestOperationResult<
-        IReadOnlyDictionary<string, object>
+        IReadOnlyDictionary<string, CompositeParameterBinding>
     > CollectCompositeValues(
         ResolvedPackGraph graph,
         IReadOnlyDictionary<string, PackParameterDefinition> declarations
@@ -426,9 +426,19 @@ internal static class PackParameterResolver
             .Packs.Where(graph.IsRoot)
             .SelectMany(pack => pack.Manifest.Parameters.Keys)
             .ToHashSet(StringComparer.Ordinal);
-        var compositeValues = new Dictionary<string, object>(StringComparer.Ordinal);
+        var compositeValues = new Dictionary<string, CompositeParameterBinding>(
+            StringComparer.Ordinal
+        );
         foreach (var pack in graph.Packs.Reverse())
         {
+            var sourceDeclarations = CollectDeclarations(pack);
+            if (sourceDeclarations.Value is not { } resolvedSourceDeclarations)
+            {
+                return ManifestOperationResult<
+                    IReadOnlyDictionary<string, CompositeParameterBinding>
+                >.Failure(sourceDeclarations.Error ?? "Unable to resolve source parameters.");
+            }
+
             foreach (var reference in pack.Manifest.Packs)
             {
                 if (
@@ -443,27 +453,74 @@ internal static class PackParameterResolver
                 {
                     if (!declarations.ContainsKey(name))
                     {
-                        return ManifestOperationResult<IReadOnlyDictionary<string, object>>.Failure(
+                        return ManifestOperationResult<
+                            IReadOnlyDictionary<string, CompositeParameterBinding>
+                        >.Failure(
                             $"Composite pack '{pack.Manifest.Id}' sets undeclared parameter '{name}'."
                         );
                     }
 
                     if (!rootParameters.Contains(name))
                     {
-                        compositeValues.TryAdd(name, value);
+                        PackParameterBindingExpression? expression = null;
+                        if (
+                            value is string stringValue
+                            && ManagedFileConditionParser.IsBindingExpression(stringValue)
+                        )
+                        {
+                            var parsed = ManagedFileConditionParser.ParseBinding(
+                                stringValue,
+                                resolvedSourceDeclarations
+                            );
+                            if (parsed.Value is not { } parsedExpression)
+                            {
+                                return ManifestOperationResult<
+                                    IReadOnlyDictionary<string, CompositeParameterBinding>
+                                >.Failure(
+                                    $"Composite pack '{pack.Manifest.Id}' parameter '{name}' has an invalid expression: {parsed.Error}"
+                                );
+                            }
+
+                            expression = parsedExpression;
+                        }
+
+                        compositeValues.TryAdd(name, new(value, expression));
                     }
                 }
             }
         }
 
-        return ManifestOperationResult<IReadOnlyDictionary<string, object>>.Success(
-            compositeValues
-        );
+        return ManifestOperationResult<
+            IReadOnlyDictionary<string, CompositeParameterBinding>
+        >.Success(compositeValues);
+    }
+
+    private static ManifestOperationResult<
+        IReadOnlyDictionary<string, PackParameterDefinition>
+    > CollectDeclarations(DiscoveredPack pack)
+    {
+        var declarations = new Dictionary<string, PackParameterDefinition>(StringComparer.Ordinal);
+        foreach (var (name, declaration) in pack.Manifest.Parameters)
+        {
+            var parsed = ParseDeclaration(name, declaration, pack.Manifest.Id);
+            if (parsed.Value is not { } resolvedDeclaration)
+            {
+                return ManifestOperationResult<
+                    IReadOnlyDictionary<string, PackParameterDefinition>
+                >.Failure(parsed.Error ?? "Invalid pack parameter declaration.");
+            }
+
+            declarations.Add(name, resolvedDeclaration);
+        }
+
+        return ManifestOperationResult<
+            IReadOnlyDictionary<string, PackParameterDefinition>
+        >.Success(declarations);
     }
 
     private static ManifestOperationResult<ResolvedPackParameters> BindValues(
         IReadOnlyDictionary<string, PackParameterDefinition> declarations,
-        IReadOnlyDictionary<string, object> compositeValues,
+        IReadOnlyDictionary<string, CompositeParameterBinding> compositeValues,
         ProjectConfiguration configuration,
         PackInstallationRequest installationRequest,
         bool enforceRequired
@@ -482,7 +539,11 @@ internal static class PackParameterResolver
         var resolvedValues = new Dictionary<string, ResolvedPackParameterValue>(
             StringComparer.Ordinal
         );
-        var compositeValueError = AddCompositeValues(declarations, compositeValues, resolvedValues);
+        var compositeValueError = AddLiteralCompositeValues(
+            declarations,
+            compositeValues,
+            resolvedValues
+        );
         if (compositeValueError is not null)
         {
             return ManifestOperationResult<ResolvedPackParameters>.Failure(compositeValueError);
@@ -504,21 +565,32 @@ internal static class PackParameterResolver
             configuration,
             installationRequest,
             resolvedValues,
-            enforceRequired
+            enforceRequired,
+            compositeValues
+                .Where(binding => binding.Value.Expression is not null)
+                .Select(binding => binding.Key)
+                .ToHashSet(StringComparer.Ordinal)
         );
         if (fallbackValueError is not null)
         {
             return ManifestOperationResult<ResolvedPackParameters>.Failure(fallbackValueError);
         }
 
-        return ManifestOperationResult<ResolvedPackParameters>.Success(
-            new ResolvedPackParameters(declarations, resolvedValues)
+        var expressionError = AddExpressionCompositeValues(
+            declarations,
+            compositeValues,
+            resolvedValues
         );
+        return expressionError is null
+            ? ManifestOperationResult<ResolvedPackParameters>.Success(
+                new ResolvedPackParameters(declarations, resolvedValues)
+            )
+            : ManifestOperationResult<ResolvedPackParameters>.Failure(expressionError);
     }
 
     private static string? ValidateSkippedVariables(
         IReadOnlyDictionary<string, PackParameterDefinition> declarations,
-        IReadOnlyDictionary<string, object> compositeValues,
+        IReadOnlyDictionary<string, CompositeParameterBinding> compositeValues,
         PackInstallationRequest installationRequest
     )
     {
@@ -538,15 +610,20 @@ internal static class PackParameterResolver
         return null;
     }
 
-    private static string? AddCompositeValues(
+    private static string? AddLiteralCompositeValues(
         IReadOnlyDictionary<string, PackParameterDefinition> declarations,
-        IReadOnlyDictionary<string, object> compositeValues,
+        IReadOnlyDictionary<string, CompositeParameterBinding> compositeValues,
         Dictionary<string, ResolvedPackParameterValue> resolvedValues
     )
     {
-        foreach (var (name, value) in compositeValues)
+        foreach (var (name, binding) in compositeValues)
         {
-            var compositeValue = ParseCompositeValue(name, declarations[name], value);
+            if (binding.Expression is not null)
+            {
+                continue;
+            }
+
+            var compositeValue = ParseCompositeValue(name, declarations[name], binding.Value);
             if (compositeValue.Value is not { } resolvedValue)
             {
                 return compositeValue.Error ?? $"Invalid composite value for parameter '{name}'.";
@@ -558,9 +635,60 @@ internal static class PackParameterResolver
         return null;
     }
 
+    private static string? AddExpressionCompositeValues(
+        IReadOnlyDictionary<string, PackParameterDefinition> declarations,
+        IReadOnlyDictionary<string, CompositeParameterBinding> compositeValues,
+        Dictionary<string, ResolvedPackParameterValue> resolvedValues
+    )
+    {
+        var pending = compositeValues
+            .Where(binding => binding.Value.Expression is not null)
+            .ToDictionary(binding => binding.Key, binding => binding.Value, StringComparer.Ordinal);
+        while (pending.Count > 0)
+        {
+            var ready = pending
+                .Where(binding =>
+                    binding.Value.Expression is { } expression
+                    && expression.ReferencedParameters.All(resolvedValues.ContainsKey)
+                )
+                .ToArray();
+            if (ready.Length == 0)
+            {
+                return $"Composite parameter expressions contain unresolved or cyclic dependencies: {string.Join(", ", pending.Keys)}.";
+            }
+
+            foreach (var (name, binding) in ready)
+            {
+                if (binding.Expression is not { } expression)
+                {
+                    return $"Composite parameter expression '{name}' is missing.";
+                }
+
+                var evaluated = expression.Evaluate(resolvedValues);
+                if (evaluated.Value is not { } value)
+                {
+                    return evaluated.Error
+                        ?? $"Unable to evaluate composite parameter expression '{name}'.";
+                }
+
+                var compositeValue = ParseCompositeValue(name, declarations[name], value);
+                if (compositeValue.Value is not { } resolvedValue)
+                {
+                    return compositeValue.Error
+                        ?? $"Invalid composite expression value for parameter '{name}'.";
+                }
+
+                resolvedValues.Add(name, resolvedValue);
+                pending.Remove(name);
+            }
+        }
+
+        return null;
+    }
+
     private static string? AddProvidedParameterValues(
         IReadOnlyDictionary<string, PackParameterDefinition> declarations,
-        IReadOnlyDictionary<string, object> compositeValues,
+        IReadOnlyDictionary<string, CompositeParameterBinding> compositeValues,
         PackInstallationRequest installationRequest,
         Dictionary<string, ResolvedPackParameterValue> resolvedValues
     )
@@ -594,12 +722,13 @@ internal static class PackParameterResolver
         ProjectConfiguration configuration,
         PackInstallationRequest installationRequest,
         Dictionary<string, ResolvedPackParameterValue> resolvedValues,
-        bool enforceRequired
+        bool enforceRequired,
+        HashSet<string> deferredParameters
     )
     {
         foreach (var (name, declaration) in declarations)
         {
-            if (resolvedValues.ContainsKey(name))
+            if (resolvedValues.ContainsKey(name) || deferredParameters.Contains(name))
             {
                 continue;
             }

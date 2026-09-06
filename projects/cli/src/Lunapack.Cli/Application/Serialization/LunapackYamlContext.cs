@@ -20,6 +20,7 @@ namespace Lunapack.Cli.Application.Serialization;
 [YamlSerializable(typeof(PackManifest.PackHooks))]
 [YamlSerializable(typeof(PackManifest.PackHook))]
 [YamlSerializable(typeof(PackManifest.PackReference))]
+[YamlSerializable(typeof(PackManifest.PackRemapping))]
 [YamlSerializable(typeof(InitialPackManifest))]
 [YamlSerializable(typeof(ProjectConfiguration))]
 [YamlSerializable(typeof(ProjectConfiguration.Link))]
