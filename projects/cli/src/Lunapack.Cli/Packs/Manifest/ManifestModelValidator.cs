@@ -48,10 +48,16 @@ internal static partial class ManifestModelValidator
 
         ValidateTags(manifest.Tags, issues);
         ValidateParameters(manifest.Parameters, issues);
+        var conditionDeclarations = CreateConditionDeclarations(manifest.Parameters);
         ValidatePackSources(manifest.Sources, issues);
-        ValidateManagedFiles(manifest.ManagedFiles, manifest.Sources, issues);
-        ValidatePackReferences(manifest.Packs, issues);
-        ValidateHooks(manifest.Hooks, issues);
+        ValidateManagedFiles(
+            manifest.ManagedFiles,
+            manifest.Sources,
+            conditionDeclarations,
+            issues
+        );
+        ValidatePackReferences(manifest.Packs, conditionDeclarations, issues);
+        ValidateHooks(manifest.Hooks, conditionDeclarations, issues);
 
         return issues;
     }
@@ -281,6 +287,17 @@ internal static partial class ManifestModelValidator
             RequiredWhen: parameter.RequiredWhen
         );
 
+    private static Dictionary<string, PackParameterDefinition> CreateConditionDeclarations(
+        IReadOnlyDictionary<string, PackManifest.PackParameter> parameters
+    ) =>
+        parameters
+            .Where(parameter => parameter.Value is not null)
+            .ToDictionary(
+                parameter => parameter.Key,
+                parameter => CreateConditionDefinition(parameter.Value),
+                StringComparer.Ordinal
+            );
+
     private static void ValidateParameterDefault(
         string name,
         PackManifest.PackParameter parameter,
@@ -401,6 +418,7 @@ internal static partial class ManifestModelValidator
     private static void ValidateManagedFiles(
         IReadOnlyList<PackManifest.PackManagedFile> managedFiles,
         IReadOnlyDictionary<string, PackManifest.PackSource> sources,
+        IReadOnlyDictionary<string, PackParameterDefinition> declarations,
         List<string> issues
     )
     {
@@ -424,6 +442,10 @@ internal static partial class ManifestModelValidator
             if (managedFile.Condition is "")
             {
                 issues.Add("Managed file condition cannot be empty.");
+            }
+            else if (managedFile.Condition is { } condition)
+            {
+                ValidateCondition(condition, declarations, "Managed file condition", false, issues);
             }
 
             ValidateSelector(managedFile, sources, issues);
@@ -547,6 +569,7 @@ internal static partial class ManifestModelValidator
 
     private static void ValidatePackReferences(
         IReadOnlyList<PackManifest.PackReference> packReferences,
+        IReadOnlyDictionary<string, PackParameterDefinition> declarations,
         List<string> issues
     )
     {
@@ -571,18 +594,20 @@ internal static partial class ManifestModelValidator
             {
                 issues.Add("Pack reference condition cannot be empty.");
             }
+            else if (packReference.Condition is { } condition)
+            {
+                ValidateCondition(
+                    condition,
+                    declarations,
+                    $"Pack reference '{packReference.Id}' condition",
+                    false,
+                    issues
+                );
+            }
 
             foreach (var (name, value) in packReference.Parameters)
             {
-                var hasInvalidParameter =
-                    !ParameterNameRegex().IsMatch(name)
-                    || value is not string and not bool && !TryGetUniqueStringValues(value, out _);
-                if (hasInvalidParameter)
-                {
-                    issues.Add(
-                        $"Pack reference parameter '{name}' must be a named string, Boolean, or unique string array."
-                    );
-                }
+                ValidatePackReferenceParameter(name, value, declarations, issues);
             }
 
             var hasInvalidDisabledHooks =
@@ -597,27 +622,74 @@ internal static partial class ManifestModelValidator
                     $"Pack reference '{packReference.Id}' disabled hooks must be unique lifecycle types."
                 );
             }
+
+            ValidateRemapping(
+                packReference.Remap?.Directories,
+                packReference.Remap?.Files,
+                $"Pack reference '{packReference.Id}'",
+                issues
+            );
         }
     }
 
-    private static void ValidateHooks(PackManifest.PackHooks? hooks, List<string> issues)
+    private static void ValidatePackReferenceParameter(
+        string name,
+        object value,
+        IReadOnlyDictionary<string, PackParameterDefinition> declarations,
+        List<string> issues
+    )
+    {
+        var hasInvalidParameter =
+            !ParameterNameRegex().IsMatch(name)
+            || value is not string and not bool && !TryGetUniqueStringValues(value, out _);
+        if (hasInvalidParameter)
+        {
+            issues.Add(
+                $"Pack reference parameter '{name}' must be a named string, Boolean, or unique string array."
+            );
+            return;
+        }
+
+        if (
+            value is not string stringValue
+            || !ManagedFileConditionParser.IsBindingExpression(stringValue)
+        )
+        {
+            return;
+        }
+
+        var expression = ManagedFileConditionParser.ParseBinding(stringValue, declarations);
+        if (!expression.IsSuccess)
+        {
+            issues.Add(
+                $"Pack reference parameter '{name}' has an invalid expression: {expression.Error}"
+            );
+        }
+    }
+
+    private static void ValidateHooks(
+        PackManifest.PackHooks? hooks,
+        IReadOnlyDictionary<string, PackParameterDefinition> declarations,
+        List<string> issues
+    )
     {
         if (hooks is null)
         {
             return;
         }
 
-        ValidateHooks("postInstall", hooks.PostInstall, issues);
-        ValidateHooks("postUninstall", hooks.PostUninstall, issues);
-        ValidateHooks("postUpdate", hooks.PostUpdate, issues);
-        ValidateHooks("preInstall", hooks.PreInstall, issues);
-        ValidateHooks("preUninstall", hooks.PreUninstall, issues);
-        ValidateHooks("preUpdate", hooks.PreUpdate, issues);
+        ValidateHooks("postInstall", hooks.PostInstall, declarations, issues);
+        ValidateHooks("postUninstall", hooks.PostUninstall, declarations, issues);
+        ValidateHooks("postUpdate", hooks.PostUpdate, declarations, issues);
+        ValidateHooks("preInstall", hooks.PreInstall, declarations, issues);
+        ValidateHooks("preUninstall", hooks.PreUninstall, declarations, issues);
+        ValidateHooks("preUpdate", hooks.PreUpdate, declarations, issues);
     }
 
     private static void ValidateHooks(
         string eventName,
         List<PackManifest.PackHook>? hooks,
+        IReadOnlyDictionary<string, PackParameterDefinition> declarations,
         List<string> issues
     )
     {
@@ -643,6 +715,16 @@ internal static partial class ManifestModelValidator
             {
                 issues.Add($"Lifecycle hook in '{eventName}' condition cannot be empty.");
             }
+            else if (hook.Condition is { } condition)
+            {
+                ValidateCondition(
+                    condition,
+                    declarations,
+                    $"Lifecycle hook in '{eventName}' condition",
+                    true,
+                    issues
+                );
+            }
 
             switch (hook.Type)
             {
@@ -656,6 +738,31 @@ internal static partial class ManifestModelValidator
                     issues.Add($"Lifecycle hook event '{eventName}' has an invalid type.");
                     break;
             }
+        }
+    }
+
+    private static void ValidateCondition(
+        string condition,
+        IReadOnlyDictionary<string, PackParameterDefinition> declarations,
+        string subject,
+        bool allowLifecycleFunctions,
+        List<string> issues
+    )
+    {
+        var usesRuntimeFunction =
+            condition.Contains("scriptsSkipped", StringComparison.Ordinal)
+            || condition.Contains("previousScriptState", StringComparison.Ordinal);
+        if (!usesRuntimeFunction)
+        {
+            return;
+        }
+
+        var parsed = allowLifecycleFunctions
+            ? ManagedFileConditionParser.ParseLifecycle(condition, declarations)
+            : ManagedFileConditionParser.Parse(condition, declarations);
+        if (!parsed.IsSuccess)
+        {
+            issues.Add($"{subject} is invalid: {parsed.Error}");
         }
     }
 
@@ -1159,19 +1266,26 @@ internal static partial class ManifestModelValidator
         List<string> issues
     )
     {
-        if (remapping is null)
-        {
-            return;
-        }
+        ValidateRemapping(remapping?.Directories, remapping?.Files, "Managed file", issues);
+    }
 
-        var hasUnsafeMapping = remapping
-            .Directories.Concat(remapping.Files)
-            .Any(mapping =>
+    private static void ValidateRemapping(
+        IReadOnlyDictionary<string, string>? directories,
+        IReadOnlyDictionary<string, string>? files,
+        string subject,
+        List<string> issues
+    )
+    {
+        var hasUnsafeMapping =
+            directories?.Any(mapping =>
                 !IsSafeProjectRelativePath(mapping.Key) || !IsSafeProjectRelativePath(mapping.Value)
-            );
+            ) == true
+            || files?.Any(mapping =>
+                !IsSafeProjectRelativePath(mapping.Key) || !IsSafeProjectRelativePath(mapping.Value)
+            ) == true;
         if (hasUnsafeMapping)
         {
-            issues.Add("Managed file remappings must stay inside the project.");
+            issues.Add($"{subject} remappings must stay inside the project.");
         }
     }
 

@@ -58,5 +58,29 @@ consent, starting a process, or entering guided display. Parameter prompts still
 occur before planning unless `--skip-parameters` is set. Denied script rows show
 `policy-denied` and every applicable scope without execution warnings.
 
+Hook conditions can react to script handling during the same lifecycle event.
+`scriptsSkipped()` is true only when scripts are suppressed for the whole
+invocation by effective script mode or trust-policy denial. An individual
+decline does not set it. `previousScriptState()` returns the nearest earlier
+script declaration's state in the same pack and event: `succeeded`, `failed`,
+`skipped`, `cancelled`, `ignored`, or `none`.
+
+```yml
+hooks:
+   preInstall:
+      - type: script
+         command: dotnet
+         arguments: [tool, restore]
+      - type: instruction
+         file: instructions/manual-restore.md
+         condition: previousScriptState() == "skipped" || scriptsSkipped()
+```
+
+A false script condition produces `ignored`; an individual authorization
+decline produces `skipped`; and no earlier script produces `none`. Failure and
+cancellation still stop later hooks and trigger existing rollback behavior.
+Dry runs evaluate `scriptsSkipped()` when policy is known and label
+`previousScriptState()` conditions as runtime-dependent.
+
 See the [script and trust reference](cli/trust-and-scripts.md) for lifecycle
 ordering, exact trust scopes, execution behavior, and author requirements.

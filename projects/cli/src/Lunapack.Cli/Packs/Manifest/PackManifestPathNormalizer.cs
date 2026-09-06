@@ -21,6 +21,15 @@ internal static class PackManifestPathNormalizer
                     }
                 ),
             ],
+            Packs =
+            [
+                .. manifest.Packs.Select(reference =>
+                    reference with
+                    {
+                        Remap = NormalizeRemapping(reference.Remap),
+                    }
+                ),
+            ],
             Hooks = NormalizeHooks(manifest.Hooks),
             Sources = manifest.Sources.ToDictionary(
                 source => source.Key,
@@ -32,6 +41,26 @@ internal static class PackManifestPathNormalizer
                 StringComparer.Ordinal
             ),
         };
+
+    private static PackManifest.PackRemapping? NormalizeRemapping(
+        PackManifest.PackRemapping? remapping
+    ) =>
+        remapping is null
+            ? null
+            : remapping with
+            {
+                Directories = NormalizeMappings(remapping.Directories),
+                Files = NormalizeMappings(remapping.Files),
+            };
+
+    private static Dictionary<string, string> NormalizeMappings(
+        IReadOnlyDictionary<string, string> mappings
+    ) =>
+        mappings.ToDictionary(
+            mapping => ProjectPath.Normalize(mapping.Key),
+            mapping => ProjectPath.Normalize(mapping.Value),
+            StringComparer.Ordinal
+        );
 
     private static string? NormalizeSource(PackManifest.PackManagedFile managedFile) =>
         IsExternalAlias(managedFile)

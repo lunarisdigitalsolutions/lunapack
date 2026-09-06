@@ -121,9 +121,11 @@ internal static class PackManifestInspectionFormatter
                     (index + 1).ToString(System.Globalization.CultureInfo.InvariantCulture),
                     Markup.Escape(hook.Type),
                     Markup.Escape(
-                        isInstruction
-                            ? $"{hook.File ?? "-"}; templating: {(hook.Templating == true ? "enabled" : "disabled")}"
-                            : $"{FormatInvocation(hook)}; description: {hook.Description ?? "none"}"
+                        (
+                            isInstruction
+                                ? $"{hook.File ?? "-"}; templating: {(hook.Templating == true ? "enabled" : "disabled")}"
+                                : $"{FormatInvocation(hook)}; description: {hook.Description ?? "none"}"
+                        ) + $"; condition: {hook.Condition ?? "none"}"
                     )
                 );
             }
@@ -217,6 +219,7 @@ internal static class PackManifestInspectionFormatter
         table.AddColumn("[bold]Version[/]");
         table.AddColumn("[bold]Condition[/]");
         table.AddColumn("[bold]Disabled hooks[/]");
+        table.AddColumn("[bold]Remaps[/]");
         foreach (var reference in references)
         {
             table.AddRow(
@@ -227,11 +230,23 @@ internal static class PackManifestInspectionFormatter
                     reference.DisabledHooks.Count == 0
                         ? "none"
                         : string.Join(", ", reference.DisabledHooks)
-                )
+                ),
+                Markup.Escape(FormatRemapping(reference.Remap))
             );
         }
 
         return table;
+    }
+
+    private static string FormatRemapping(PackManifest.PackRemapping? remapping)
+    {
+        var mappings = (remapping?.Directories ?? [])
+            .Select(mapping => $"directory {mapping.Key} -> {mapping.Value}")
+            .Concat(
+                (remapping?.Files ?? []).Select(mapping => $"file {mapping.Key} -> {mapping.Value}")
+            );
+        var value = string.Join(", ", mappings);
+        return value.Length == 0 ? "none" : value;
     }
 
     private static Table CreateTable(string title) =>

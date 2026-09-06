@@ -579,6 +579,163 @@ public sealed class PackAuthoringCommandTests
     }
 
     [Test]
+    public async Task SetReference_WhenRemappingProvided_PersistsNormalizedMappings()
+    {
+        using var workspace = await CreateInitializedWorkspaceAsync();
+
+        var exitCode = await workspace.Application.RunAsync(
+            [
+                "pack",
+                "set",
+                "reference",
+                "dependency",
+                "1.0.0",
+                "--remap-directory",
+                @"docs\adr=docs\internal\adr",
+                "--remap-file",
+                @"docs\generated.md=@ignore",
+            ],
+            workspace.Path
+        );
+        var remapping = (await LoadAsync(workspace)).Packs.Single().Remap.RequireNotNull();
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(remapping.Directories["docs/adr"]).IsEqualTo("docs/internal/adr");
+        await Assert.That(remapping.Files["docs/generated.md"]).IsEqualTo("@ignore");
+    }
+
+    [Test]
+    public async Task ReferenceRemapping_WhenAddedReplacedListedAndRemoved_RoundTrips()
+    {
+        var console = new SpectreTestConsole();
+        console.Profile.Width = 500;
+        using var workspace = await CreateInitializedWorkspaceAsync(console);
+
+        var addExit = await workspace.Application.RunAsync(
+            [
+                "pack",
+                "add",
+                "reference",
+                "dependency",
+                "1.0.0",
+                "--remap-file",
+                "source.txt=first.txt",
+            ],
+            workspace.Path
+        );
+        var replaceExit = await workspace.Application.RunAsync(
+            [
+                "pack",
+                "set",
+                "reference",
+                "dependency",
+                "1.0.0",
+                "--remap-directory",
+                "docs=handbook",
+                "--remap-file",
+                "source.txt=second.txt",
+            ],
+            workspace.Path
+        );
+        var replaced = (await LoadAsync(workspace)).Packs.Single();
+        var listExit = await workspace.Application.RunAsync(["pack", "list"], workspace.Path);
+        var removeExit = await workspace.Application.RunAsync(
+            ["pack", "rm", "reference", "dependency"],
+            workspace.Path
+        );
+
+        await Assert.That(addExit).IsEqualTo(0);
+        await Assert.That(replaceExit).IsEqualTo(0);
+        await Assert.That(replaced.Remap!.Directories["docs"]).IsEqualTo("handbook");
+        await Assert.That(replaced.Remap!.Files["source.txt"]).IsEqualTo("second.txt");
+        await Assert.That(listExit).IsEqualTo(0);
+        await Assert.That(console.Output).Contains("directory: docs -> handbook");
+        await Assert.That(console.Output).Contains("file: source.txt -> second.txt");
+        await Assert.That(removeExit).IsEqualTo(0);
+        await Assert.That((await LoadAsync(workspace)).Packs).IsEmpty();
+    }
+
+    [Test]
+    public async Task ReferenceExpressionBinding_WhenAddedAndListed_PreservesExpression()
+    {
+        var console = new SpectreTestConsole();
+        console.Profile.Width = 500;
+        using var workspace = await CreateInitializedWorkspaceAsync(console);
+        await workspace.Application.RunAsync(
+            ["pack", "set", "parameter", "isAngular", "bool", "--default", "true"],
+            workspace.Path
+        );
+
+        var addExit = await workspace.Application.RunAsync(
+            [
+                "pack",
+                "add",
+                "reference",
+                "dependency",
+                "1.0.0",
+                "--parameter",
+                "framework=${{ iif(isAngular, \"angular\", \"react\") }}",
+            ],
+            workspace.Path
+        );
+        var listExit = await workspace.Application.RunAsync(["pack", "list"], workspace.Path);
+        var binding = (await LoadAsync(workspace)).Packs.Single().Parameters["framework"];
+
+        await Assert.That(addExit).IsEqualTo(0);
+        await Assert.That(listExit).IsEqualTo(0);
+        await Assert.That(binding).IsEqualTo("${{ iif(isAngular, \"angular\", \"react\") }}");
+        await Assert.That(console.Output).Contains("iif(isAngular");
+    }
+
+    [Test]
+    public async Task SetReference_WhenExpressionBindingInvalid_PreservesManifest()
+    {
+        using var workspace = await CreateInitializedWorkspaceAsync();
+        var path = Path.Combine(workspace.Path, PackManifestStore.FileName);
+        var original = File.ReadAllText(path);
+
+        var exitCode = await workspace.Application.RunAsync(
+            [
+                "pack",
+                "set",
+                "reference",
+                "dependency",
+                "1.0.0",
+                "--parameter",
+                "framework=${{ unknown }}",
+            ],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(File.ReadAllText(path)).IsEqualTo(original);
+    }
+
+    [Test]
+    public async Task SetReference_WhenRemappingEscapes_PreservesManifest()
+    {
+        using var workspace = await CreateInitializedWorkspaceAsync();
+        var path = Path.Combine(workspace.Path, PackManifestStore.FileName);
+        var original = File.ReadAllText(path);
+
+        var exitCode = await workspace.Application.RunAsync(
+            [
+                "pack",
+                "set",
+                "reference",
+                "dependency",
+                "1.0.0",
+                "--remap-file",
+                "source.txt=../outside.txt",
+            ],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(File.ReadAllText(path)).IsEqualTo(original);
+    }
+
+    [Test]
     public async Task HookCommands_WhenCommandAndFileScriptsAdded_PreserveLiteralArguments()
     {
         using var workspace = await CreateInitializedWorkspaceAsync();
@@ -632,6 +789,61 @@ public sealed class PackAuthoringCommandTests
         await Assert.That(preInstall.Single().File).IsEqualTo("scripts/setup.ps1");
         await Assert.That(preInstall.Single().Runner).IsEqualTo("pwsh");
         await Assert.That(preInstall.Single().Condition).IsEqualTo("includeSetup");
+    }
+
+    [Test]
+    public async Task HookCommand_WhenRuntimeConditionAdded_ListsCondition()
+    {
+        var console = new SpectreTestConsole();
+        console.Profile.Width = 500;
+        using var workspace = await CreateInitializedWorkspaceAsync(console);
+
+        var addExit = await workspace.Application.RunAsync(
+            [
+                "pack",
+                "add",
+                "hook",
+                "instruction",
+                "preInstall",
+                "instructions/fallback.md",
+                "--condition",
+                "previousScriptState() == \"ignored\"",
+            ],
+            workspace.Path
+        );
+        var listExit = await workspace.Application.RunAsync(["pack", "hooks"], workspace.Path);
+        var condition = (await LoadAsync(workspace)).Hooks!.PreInstall!.Single().Condition;
+
+        await Assert.That(addExit).IsEqualTo(0);
+        await Assert.That(listExit).IsEqualTo(0);
+        await Assert.That(condition).IsEqualTo("previousScriptState() == \"ignored\"");
+        await Assert.That(console.Output).Contains("ignored");
+    }
+
+    [Test]
+    public async Task HookCommand_WhenPreviousStateUnsupported_PreservesManifest()
+    {
+        using var workspace = await CreateInitializedWorkspaceAsync();
+        var path = Path.Combine(workspace.Path, PackManifestStore.FileName);
+        var original = File.ReadAllText(path);
+
+        var exitCode = await workspace.Application.RunAsync(
+            [
+                "pack",
+                "add",
+                "hook",
+                "script",
+                "command",
+                "preInstall",
+                "dotnet",
+                "--condition",
+                "previousScriptState() == \"unknown\"",
+            ],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(File.ReadAllText(path)).IsEqualTo(original);
     }
 
     [Test]

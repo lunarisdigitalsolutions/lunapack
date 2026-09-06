@@ -9,9 +9,10 @@ sources; consumer configuration selects the local or Git source, and lock state
 records the selected provenance for review.
 
 Each maintained pack has an accountable owner, technical contact, semantic
-version, changelog, and release evidence. Pack content should minimize
-executable behavior and avoid sensitive values. Security-sensitive packs may
-require stricter review.
+version, and release evidence. A changelog entry is required when an existing
+pack receives a new version, not for its initial release. Pack content should
+minimize executable behavior and avoid sensitive values. Security-sensitive
+packs may require stricter review.
 
 Documentation is audience-owned and concise. Use Diataxis for reader guidance;
 keep current implementation guidance separate from product planning. Keep

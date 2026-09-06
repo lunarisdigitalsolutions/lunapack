@@ -5,5 +5,6 @@ internal enum ManagedFileRemappingOrigin
     Command,
     Pack,
     Project,
+    Composite,
     Lock,
 }

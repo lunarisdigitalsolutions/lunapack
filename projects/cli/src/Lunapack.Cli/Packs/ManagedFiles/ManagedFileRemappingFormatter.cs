@@ -11,6 +11,8 @@ internal static class ManagedFileRemappingFormatter
             ManagedFileRemappingOrigin.Command => "command line",
             ManagedFileRemappingOrigin.Pack => $"pack '{remapping.PackId}' in lunapack.yml",
             ManagedFileRemappingOrigin.Project => "top-level remap in lunapack.yml",
+            ManagedFileRemappingOrigin.Composite =>
+                $"composite reference from pack '{remapping.SourcePackId}'",
             ManagedFileRemappingOrigin.Lock => "lunapack-lock.yml",
             _ => throw new ArgumentOutOfRangeException(
                 nameof(remapping),

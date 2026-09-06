@@ -39,12 +39,24 @@ For equal-depth ties, later requested roots and later-resolved sibling
 dependencies win. Reordering roots or references can therefore change the
 winning declaration.
 
-A composite can bind a string or Boolean parameter for a dependency. A binding
-is hidden from consumers unless a root declares that parameter. A hidden
-binding is fixed across the graph: explicit `--parameter` input and
+A composite can bind a literal or `${{ expression }}` value for a dependency.
+Expressions read resolved parameters declared by the pack containing the
+reference. A direct identifier preserves its typed value;
+`iif(condition, whenTrue, whenFalse)` selects one compatible typed branch with
+the shared condition grammar. Luna resolves expression dependencies before
+prompting for the referenced transient parameter and rejects dependency cycles.
+
+A binding is hidden from consumers unless a root declares that parameter. A
+hidden binding is fixed across the graph: explicit `--parameter` input and
 `--skip-variable` cannot override it. If several references bind the same
 hidden name, the first binding encountered while evaluating roots from last to
 first wins. Avoid competing bindings; they are not scoped to one dependency.
+
+A composite reference can also remap managed targets for the referenced pack
+and every dependency below it on that active graph path. The nearest matching
+reference wins. Equivalent mappings from equal-depth diamond paths are valid;
+different effective targets at that depth stop planning. Consumer command,
+requested-pack, and top-level mappings override these pack-authored defaults.
 
 For an exposed parameter, an explicit consumer value takes precedence over a
 compatible project variable, then the winning declaration's default. Optional
@@ -86,6 +98,12 @@ is copied into an operation snapshot and hashed before launch. Snapshot
 roots cannot be links or reparse points. Unsupported child entries are omitted
 with a warning while regular siblings remain available. Snapshot inspection is
 not race-free against another process running as the same user.
+
+Runtime hook conditions are evaluated during ordered dispatch. `scriptsSkipped()`
+reflects whole-invocation script suppression. `previousScriptState()` observes
+the nearest earlier script in the same pack and event, including static
+`ignored` and authorization `skipped` outcomes. Potentially executable scripts
+remain subject to up-front authorization before any instruction is displayed.
 
 LunaPack checkpoints configuration and lock ownership after managed-file
 mutation and before post hooks. A handled post-hook failure restores the prior

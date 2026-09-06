@@ -79,6 +79,27 @@ public sealed class ManifestSchemaTests
     }
 
     [Test]
+    public async Task PackSchema_WhenCompositeReferenceDeclared_AllowsPackRemapping()
+    {
+        using var schema = JsonDocument.Parse(
+            File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "pack.schema.json"))
+        );
+        var definitions = schema.RootElement.GetProperty("definitions");
+        var remap = definitions
+            .GetProperty("packReference")
+            .GetProperty("properties")
+            .GetProperty("remap")
+            .GetProperty("$ref")
+            .GetString();
+        var mapping = definitions.GetProperty("pathMapping");
+
+        await Assert.That(remap).IsEqualTo("#/definitions/remapping");
+        await Assert
+            .That(mapping.GetProperty("additionalProperties").GetProperty("$ref").GetString())
+            .IsEqualTo("#/definitions/sourceRelativePath");
+    }
+
+    [Test]
     public async Task ProjectSchema_WhenTrustDeclared_AllowsDenialWithoutGrantCollections()
     {
         using var schema = JsonDocument.Parse(
@@ -414,6 +435,86 @@ public sealed class ManifestSchemaTests
         var issues = ManifestModelValidator.Validate(manifest);
 
         await Assert.That(issues).Contains("Pack reference condition cannot be empty.");
+    }
+
+    [Test]
+    public async Task PackManifest_WhenLifecycleRuntimeConditionValid_IsAccepted()
+    {
+        var manifest = new PackManifest
+        {
+            Id = "example",
+            Version = "1.0.0",
+            Author = "Example Author",
+            License = "MIT",
+            Hooks = new PackManifest.PackHooks
+            {
+                PreInstall =
+                [
+                    new PackManifest.PackHook
+                    {
+                        Type = "script",
+                        Command = "tool",
+                        Condition = "previousScriptState() == \"failed\" || scriptsSkipped()",
+                    },
+                ],
+            },
+        };
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert.That(issues).IsEmpty();
+    }
+
+    [Test]
+    [Arguments("previousScriptState() == \"unsupported\"", true)]
+    [Arguments("scriptsSkipped()", false)]
+    public async Task PackManifest_WhenRuntimeConditionInvalidForContext_IsRejected(
+        string condition,
+        bool lifecycle
+    )
+    {
+        var manifest = new PackManifest
+        {
+            Id = "example",
+            Version = "1.0.0",
+            Author = "Example Author",
+            License = "MIT",
+            ManagedFiles = lifecycle
+                ? []
+                :
+                [
+                    new PackManifest.PackManagedFile
+                    {
+                        Source = "source",
+                        Target = "target",
+                        Condition = condition,
+                    },
+                ],
+            Hooks = lifecycle
+                ? new PackManifest.PackHooks
+                {
+                    PreInstall =
+                    [
+                        new PackManifest.PackHook
+                        {
+                            Type = "script",
+                            Command = "tool",
+                            Condition = condition,
+                        },
+                    ],
+                }
+                : null,
+        };
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert
+            .That(
+                issues.Any(issue =>
+                    issue.Contains("condition is invalid", StringComparison.Ordinal)
+                )
+            )
+            .IsTrue();
     }
 
     [Test]
@@ -845,6 +946,73 @@ public sealed class ManifestSchemaTests
     }
 
     [Test]
+    public async Task PackManifest_WhenReferenceRemappingValid_IsNormalizedAndAccepted()
+    {
+        var manifest = CreateValidPackManifest();
+        manifest.Packs =
+        [
+            new PackManifest.PackReference
+            {
+                Id = "dependency",
+                Version = "1.0.0",
+                Remap = new PackManifest.PackRemapping
+                {
+                    Directories = new Dictionary<string, string>(StringComparer.Ordinal)
+                    {
+                        [@"docs\adr"] = @"docs\internal\adr",
+                    },
+                    Files = new Dictionary<string, string>(StringComparer.Ordinal)
+                    {
+                        [@"docs\generated.md"] = "@ignore",
+                    },
+                },
+            },
+        ];
+
+        var normalized = PackManifestPathNormalizer.Normalize(manifest);
+        var issues = ManifestModelValidator.Validate(normalized);
+
+        await Assert.That(issues).IsEmpty();
+        await Assert
+            .That(normalized.Packs.Single().Remap.RequireNotNull().Directories)
+            .ContainsKey("docs/adr");
+        await Assert
+            .That(normalized.Packs.Single().Remap.RequireNotNull().Files["docs/generated.md"])
+            .IsEqualTo("@ignore");
+    }
+
+    [Test]
+    [Arguments("../docs", "docs")]
+    [Arguments("docs", "../outside")]
+    [Arguments("", "docs")]
+    public async Task PackManifest_WhenReferenceRemappingUnsafe_IsRejected(
+        string source,
+        string target
+    )
+    {
+        var manifest = CreateValidPackManifest();
+        manifest.Packs =
+        [
+            new PackManifest.PackReference
+            {
+                Id = "dependency",
+                Version = "1.0.0",
+                Remap = new PackManifest.PackRemapping
+                {
+                    Directories = new Dictionary<string, string>(StringComparer.Ordinal)
+                    {
+                        [source] = target,
+                    },
+                },
+            },
+        ];
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert.That(issues).IsNotEmpty();
+    }
+
+    [Test]
     public async Task PackManifest_WhenReferenceParameterIsUniqueStringArray_IsAccepted()
     {
         var manifest = CreateValidPackManifest();
@@ -864,6 +1032,62 @@ public sealed class ManifestSchemaTests
         var issues = ManifestModelValidator.Validate(manifest);
 
         await Assert.That(issues).IsEmpty();
+    }
+
+    [Test]
+    [Arguments("${{ parentName }}")]
+    [Arguments("${{ iif(isAngular, \"angular\", \"react\") }}")]
+    [Arguments("prefix-${{ parentName }}")]
+    [Arguments("${{ parentName }} suffix")]
+    public async Task PackManifest_WhenReferenceParameterExpressionValid_IsAccepted(string value)
+    {
+        var manifest = CreateValidPackManifest();
+        manifest.Parameters["parentName"] = new() { Type = "string" };
+        manifest.Parameters["isAngular"] = new() { Type = "bool" };
+        manifest.Packs =
+        [
+            new PackManifest.PackReference
+            {
+                Id = "dependency",
+                Version = "1.0.0",
+                Parameters = new Dictionary<string, object>(StringComparer.Ordinal)
+                {
+                    ["framework"] = value,
+                },
+            },
+        ];
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert.That(issues).IsEmpty();
+    }
+
+    [Test]
+    [Arguments("${{ unknown }}")]
+    [Arguments("${{ scriptsSkipped() }}")]
+    [Arguments("${{ iif(isAngular, true, \"false\") }}")]
+    [Arguments("${{ parentName")]
+    public async Task PackManifest_WhenReferenceParameterExpressionInvalid_IsRejected(string value)
+    {
+        var manifest = CreateValidPackManifest();
+        manifest.Parameters["parentName"] = new() { Type = "string" };
+        manifest.Parameters["isAngular"] = new() { Type = "bool" };
+        manifest.Packs =
+        [
+            new PackManifest.PackReference
+            {
+                Id = "dependency",
+                Version = "1.0.0",
+                Parameters = new Dictionary<string, object>(StringComparer.Ordinal)
+                {
+                    ["framework"] = value,
+                },
+            },
+        ];
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert.That(issues).IsNotEmpty();
     }
 
     [Test]

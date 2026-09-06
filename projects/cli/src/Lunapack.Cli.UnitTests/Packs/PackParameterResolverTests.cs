@@ -537,6 +537,181 @@ public sealed class PackParameterResolverTests
     }
 
     [Test]
+    public async Task Resolve_WhenCompositeExpressionPassesParameter_BindsReferencedValue()
+    {
+        var dependency = CreatePack("dependency", "string", required: true);
+        var root = CreatePackWithoutParameters("root");
+        root.Manifest.Parameters["frameworkName"] = new() { Type = "string", Required = true };
+        root.Manifest.Packs =
+        [
+            new PackManifest.PackReference
+            {
+                Id = "dependency",
+                Version = "1.0.0",
+                Parameters = new Dictionary<string, object>(StringComparer.Ordinal)
+                {
+                    ["companyName"] = "${{ frameworkName }}",
+                },
+            },
+        ];
+
+        var result = PackParameterResolver.Resolve(
+            new ResolvedPackGraph([dependency, root]),
+            new ProjectConfiguration(),
+            CreateRequest(
+                parameters: new Dictionary<string, string> { ["frameworkName"] = "react" }
+            )
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue().Because(result.Error ?? string.Empty);
+        await Assert
+            .That(result.RequireValue().Values["companyName"].StringValue)
+            .IsEqualTo("react");
+    }
+
+    [Test]
+    public async Task Resolve_WhenCompositeExpressionUsesCondition_BindsSelectedValue()
+    {
+        var dependency = CreatePack(
+            "dependency",
+            "enum",
+            required: true,
+            values: ["angular", "react"]
+        );
+        var root = CreatePackWithoutParameters("root");
+        root.Manifest.Parameters["isAngular"] = new() { Type = "bool", Default = true };
+        root.Manifest.Packs =
+        [
+            new PackManifest.PackReference
+            {
+                Id = "dependency",
+                Version = "1.0.0",
+                Parameters = new Dictionary<string, object>(StringComparer.Ordinal)
+                {
+                    ["companyName"] = "${{ iif(isAngular, \"angular\", \"react\") }}",
+                },
+            },
+        ];
+
+        var result = PackParameterResolver.Resolve(
+            new ResolvedPackGraph([dependency, root]),
+            new ProjectConfiguration(),
+            CreateRequest()
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue().Because(result.Error ?? string.Empty);
+        await Assert
+            .That(result.RequireValue().Values["companyName"].StringValue)
+            .IsEqualTo("angular");
+    }
+
+    [Test]
+    public async Task Resolve_WhenCompositeExpressionResultHasWrongType_ReturnsFailure()
+    {
+        var dependency = CreatePack("dependency", "bool", required: true);
+        var root = CreatePackWithoutParameters("root");
+        root.Manifest.Parameters["frameworkName"] = new() { Type = "string", Default = "react" };
+        root.Manifest.Packs =
+        [
+            new PackManifest.PackReference
+            {
+                Id = "dependency",
+                Version = "1.0.0",
+                Parameters = new Dictionary<string, object>(StringComparer.Ordinal)
+                {
+                    ["companyName"] = "${{ frameworkName }}",
+                },
+            },
+        ];
+
+        var result = PackParameterResolver.Resolve(
+            new ResolvedPackGraph([dependency, root]),
+            new ProjectConfiguration(),
+            CreateRequest()
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+    }
+
+    [Test]
+    public async Task Resolve_WhenCompositeExpressionPassesMultiSelect_PreservesValues()
+    {
+        var dependency = CreatePack(
+            "dependency",
+            "enum",
+            required: true,
+            values: ["api", "docker"]
+        );
+        dependency.Manifest.Parameters["companyName"].Multiple = true;
+        var root = CreatePackWithoutParameters("root");
+        root.Manifest.Parameters["features"] = new()
+        {
+            Type = "enum",
+            Multiple = true,
+            Values = ["api", "docker"],
+            Default = new List<object> { "docker", "api" },
+        };
+        root.Manifest.Packs =
+        [
+            new PackManifest.PackReference
+            {
+                Id = "dependency",
+                Version = "1.0.0",
+                Parameters = new Dictionary<string, object>(StringComparer.Ordinal)
+                {
+                    ["companyName"] = "${{ features }}",
+                },
+            },
+        ];
+
+        var result = PackParameterResolver.Resolve(
+            new ResolvedPackGraph([dependency, root]),
+            new ProjectConfiguration(),
+            CreateRequest()
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue().Because(result.Error ?? string.Empty);
+        await Assert
+            .That(result.RequireValue().Values["companyName"].StringValues)
+            .IsEquivalentTo(["docker", "api"]);
+    }
+
+    [Test]
+    public async Task Resolve_WhenCompositeExpressionsAreCyclic_ReturnsFailure()
+    {
+        var dependency = CreatePackWithoutParameters("dependency");
+        dependency.Manifest.Parameters["first"] = new() { Type = "string", Required = true };
+        dependency.Manifest.Parameters["second"] = new() { Type = "string", Required = true };
+        var bridge = CreatePackWithoutParameters("bridge");
+        bridge.Manifest.Parameters["first"] = new() { Type = "string" };
+        bridge.Manifest.Parameters["second"] = new() { Type = "string" };
+        bridge.Manifest.Packs =
+        [
+            new PackManifest.PackReference
+            {
+                Id = "dependency",
+                Version = "1.0.0",
+                Parameters = new Dictionary<string, object>(StringComparer.Ordinal)
+                {
+                    ["first"] = "${{ second }}",
+                    ["second"] = "${{ first }}",
+                },
+            },
+        ];
+        var root = CreatePackWithoutParameters("root");
+        root.Manifest.Packs = [new PackManifest.PackReference { Id = "bridge", Version = "1.0.0" }];
+
+        var result = PackParameterResolver.Resolve(
+            new ResolvedPackGraph([dependency, bridge, root]),
+            new ProjectConfiguration(),
+            CreateRequest()
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("cyclic dependencies");
+    }
+
+    [Test]
     public async Task Resolve_WhenOptionalParametersOmitted_UsesTypedEmptyValues()
     {
         var pack = new DiscoveredPack(

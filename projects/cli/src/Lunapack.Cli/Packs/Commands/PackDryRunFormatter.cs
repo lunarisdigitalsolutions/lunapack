@@ -211,6 +211,26 @@ internal static class PackDryRunFormatter
         {
             yield return $"    Script       {GetConsentStatus(lifecycle, hook)}";
         }
+
+        if (hook.RuntimeCondition is { } condition)
+        {
+            var result =
+                condition.DependsOnPreviousScriptState ? "runtime-dependent"
+                : condition.Evaluate(
+                    hook.ParameterValues
+                        ?? new Dictionary<string, ResolvedPackParameterValue>(
+                            StringComparer.Ordinal
+                        ),
+                    new(
+                        lifecycle.ScriptMode == ScriptExecutionMode.Skip
+                            || lifecycle.ScriptDenialScopes?.Count > 0,
+                        LifecycleScriptState.None
+                    )
+                )
+                    ? "true"
+                : "false";
+            yield return $"    Condition    {Markup.Escape(hook.Script.Condition ?? string.Empty)} ({result})";
+        }
     }
 
     private static string GetConsentStatus(

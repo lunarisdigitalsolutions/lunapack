@@ -84,6 +84,9 @@ Create a new architecture decision record from the [MADR-based template](templat
 | [ADR-0078][adr-0078]                                                            | Align configurable update inputs and target remapping with installation.                |
 | [ADR-0079][adr-0079]                                                            | Validate direct Git pack references while preserving local diagnostics.                 |
 | [ADR-0080][adr-0080]                                                            | Run x64 CLI sanity checks in native build jobs.                                         |
+| [ADR-0081][adr-0081]                                                            | Inherit composite remaps and evaluate runtime hook state during ordered dispatch.       |
+| [ADR-0082][adr-0082]                                                            | Require pack changelog entries only after the initial release.                          |
+| [ADR-0083][adr-0083]                                                            | Evaluate explicitly marked composite parameter expressions as typed values.             |
 
 [adr-0070]: 0070-bind-privileged-workflows-to-trusted-provenance.md
 [adr-0071]: 0071-reject-filesystem-aliases-at-mutation-boundaries.md
@@ -96,3 +99,6 @@ Create a new architecture decision record from the [MADR-based template](templat
 [adr-0078]: 0078-align-update-input-and-remapping-options.md
 [adr-0079]: 0079-validate-direct-git-pack-references.md
 [adr-0080]: 0080-sanity-check-x64-cli-artifacts-across-operating-systems.md
+[adr-0081]: 0081-inherit-composite-remaps-and-evaluate-runtime-hook-state.md
+[adr-0082]: 0082-require-pack-changelogs-after-initial-release.md
+[adr-0083]: 0083-evaluate-typed-composite-parameter-expressions.md

@@ -144,6 +144,15 @@ internal sealed record PackManifest
 
         public Dictionary<string, object> Parameters { get; set; } = [];
 
+        public PackRemapping? Remap { get; set; }
+
         public required string Version { get; set; }
+    }
+
+    internal sealed record PackRemapping
+    {
+        public Dictionary<string, string> Directories { get; set; } = [];
+
+        public Dictionary<string, string> Files { get; set; } = [];
     }
 }

@@ -172,6 +172,31 @@ public sealed class LifecycleHookAuthorizationTests
     }
 
     [Test]
+    public async Task AuthorizeWithDiagnosticsAsync_WhenPromptDeclined_RetainsDispatchPlaceholder()
+    {
+        using var workspace = new TestWorkspace();
+        var fileSystem = new FileSystem();
+        var authorizer = new LifecycleHookAuthorizer(
+            new UserSettingsStore(fileSystem, workspace.Path),
+            new TrustPolicy(fileSystem),
+            new LifecycleCommandResolver(fileSystem),
+            new RecordingConfirmer()
+        );
+
+        var result = await authorizer.AuthorizeWithDiagnosticsAsync(
+            workspace.Path,
+            CreateConfiguration(),
+            ScriptExecutionMode.Prompt,
+            [CreateInvocation(workspace.Path, Environment.ProcessPath.RequireNotNull())]
+        );
+
+        await Assert.That(result.RequireValue().AuthorizedHooks).IsEmpty();
+        var placeholder = result.RequireValue().DispatchHooks!.Single();
+        await Assert.That(placeholder.Invocation.IsScript).IsTrue();
+        await Assert.That(placeholder.Script).IsNull();
+    }
+
+    [Test]
     public async Task AuthorizeAsync_WhenProjectDeniesScripts_DeniesRunBeforeCommandResolution()
     {
         using var workspace = new TestWorkspace();

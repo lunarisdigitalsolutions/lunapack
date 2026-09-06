@@ -7,6 +7,52 @@ internal static class ManagedFileConditionParser
     public static ManifestOperationResult<ManagedFileCondition> Parse(
         string condition,
         IReadOnlyDictionary<string, PackParameterDefinition> declarations
+    ) => Parse(condition, declarations, allowLifecycleFunctions: false);
+
+    public static ManifestOperationResult<ManagedFileCondition> ParseLifecycle(
+        string condition,
+        IReadOnlyDictionary<string, PackParameterDefinition> declarations
+    ) => Parse(condition, declarations, allowLifecycleFunctions: true);
+
+    public static ManifestOperationResult<PackParameterBindingExpression> ParseBinding(
+        string binding,
+        IReadOnlyDictionary<string, PackParameterDefinition> declarations
+    )
+    {
+        var trimmed = binding.Trim();
+        if (
+            !trimmed.StartsWith("${{", StringComparison.Ordinal)
+            || !trimmed.EndsWith("}}", StringComparison.Ordinal)
+        )
+        {
+            return ManifestOperationResult<PackParameterBindingExpression>.Failure(
+                "Parameter binding expression must use the complete '${{ expression }}' form."
+            );
+        }
+
+        var expression = trimmed[3..^2].Trim();
+        var tokens = Tokenize(expression);
+        return tokens.Value is { } parsedTokens
+            ? new Parser(parsedTokens, declarations, allowLifecycleFunctions: false).ParseBinding()
+            : ManifestOperationResult<PackParameterBindingExpression>.Failure(
+                tokens.Error ?? "Unable to parse parameter binding expression."
+            );
+    }
+
+    public static bool IsBindingExpression(string value)
+    {
+        var trimmed = value.Trim();
+        return trimmed.StartsWith("${{", StringComparison.Ordinal)
+            && (
+                !trimmed.Contains("}}", StringComparison.Ordinal)
+                || trimmed.EndsWith("}}", StringComparison.Ordinal)
+            );
+    }
+
+    private static ManifestOperationResult<ManagedFileCondition> Parse(
+        string condition,
+        IReadOnlyDictionary<string, PackParameterDefinition> declarations,
+        bool allowLifecycleFunctions
     )
     {
         var tokens = Tokenize(condition);
@@ -17,7 +63,7 @@ internal static class ManagedFileConditionParser
             );
         }
 
-        return new Parser(parsedTokens, declarations).Parse();
+        return new Parser(parsedTokens, declarations, allowLifecycleFunctions).Parse();
     }
 
     private static ManifestOperationResult<IReadOnlyList<Token>> Tokenize(string condition)
@@ -145,6 +191,7 @@ internal static class ManagedFileConditionParser
                 ")",
                 position
             ),
+            var remaining when remaining[0] == ',' => new Token(TokenKind.Comma, ",", position),
             _ => new Token(TokenKind.Invalid, condition[position].ToString(), position),
         };
 
@@ -156,7 +203,8 @@ internal static class ManagedFileConditionParser
 
     private sealed class Parser(
         IReadOnlyList<Token> tokens,
-        IReadOnlyDictionary<string, PackParameterDefinition> declarations
+        IReadOnlyDictionary<string, PackParameterDefinition> declarations,
+        bool allowLifecycleFunctions
     )
     {
         private int _position;
@@ -182,6 +230,153 @@ internal static class ManagedFileConditionParser
             return ManifestOperationResult<ManagedFileCondition>.Success(expression);
         }
 
+        public ManifestOperationResult<PackParameterBindingExpression> ParseBinding()
+        {
+            var expression = ParseValueExpression();
+            if (expression is null)
+            {
+                return ManifestOperationResult<PackParameterBindingExpression>.Failure(
+                    _error ?? "Invalid parameter binding expression."
+                );
+            }
+
+            if (Current.Kind != TokenKind.End)
+            {
+                return ManifestOperationResult<PackParameterBindingExpression>.Failure(
+                    $"Parameter binding expression contains unexpected token '{Current.Text}' at position {Current.Position}."
+                );
+            }
+
+            return ManifestOperationResult<PackParameterBindingExpression>.Success(expression);
+        }
+
+        private PackParameterBindingExpression? ParseValueExpression()
+        {
+            if (Current.Kind == TokenKind.StringLiteral)
+            {
+                var value = Current.Text;
+                _position++;
+                return new(_ => value, PackParameterType.String, false, CreateReferences());
+            }
+
+            if (Current.Kind != TokenKind.Identifier)
+            {
+                _error =
+                    $"Parameter binding expression requires a value at position {Current.Position}.";
+                return null;
+            }
+
+            if (string.Equals(Current.Text, "iif", StringComparison.Ordinal))
+            {
+                return ParseConditionalValue();
+            }
+
+            if (Current.Text is "true" or "false")
+            {
+                var value = string.Equals(Current.Text, "true", StringComparison.Ordinal);
+                _position++;
+                return new(_ => value, PackParameterType.Bool, false, CreateReferences());
+            }
+
+            var parameter = Current;
+            _position++;
+            if (!TryGetDeclaration(parameter, null, out var declaration))
+            {
+                return null;
+            }
+
+            return new(
+                values => values[parameter.Text].Value,
+                declaration.Type,
+                declaration.Multiple,
+                CreateReferences(parameter.Text)
+            );
+        }
+
+        private PackParameterBindingExpression? ParseConditionalValue()
+        {
+            _position++;
+            if (!Match(TokenKind.OpenParenthesis))
+            {
+                _error =
+                    $"Parameter binding function 'iif' requires '(' at position {Current.Position}.";
+                return null;
+            }
+
+            var condition = ParseOrExpression();
+            if (condition is null || !Match(TokenKind.Comma))
+            {
+                _error ??=
+                    $"Parameter binding function 'iif' requires a condition followed by ',' at position {Current.Position}.";
+                return null;
+            }
+
+            var whenTrue = ParseValueExpression();
+            if (whenTrue is null || !Match(TokenKind.Comma))
+            {
+                _error ??=
+                    $"Parameter binding function 'iif' requires a true value followed by ',' at position {Current.Position}.";
+                return null;
+            }
+
+            var whenFalse = ParseValueExpression();
+            if (whenFalse is null || !Match(TokenKind.CloseParenthesis))
+            {
+                _error ??=
+                    $"Parameter binding function 'iif' requires a false value followed by ')' at position {Current.Position}.";
+                return null;
+            }
+
+            if (!HaveCompatibleTypes(whenTrue, whenFalse))
+            {
+                _error = "Parameter binding function 'iif' requires compatible branch types.";
+                return null;
+            }
+
+            var references = condition
+                .ReferencedParameters.Concat(whenTrue.ReferencedParameters)
+                .Concat(whenFalse.ReferencedParameters)
+                .ToHashSet(StringComparer.Ordinal);
+            return new(
+                values =>
+                    condition.Evaluate(values)
+                        ? EvaluateResolved(whenTrue, values)
+                        : EvaluateResolved(whenFalse, values),
+                GetCompatibleType(whenTrue, whenFalse),
+                whenTrue.Multiple,
+                references
+            );
+        }
+
+        private static object EvaluateResolved(
+            PackParameterBindingExpression expression,
+            IReadOnlyDictionary<string, ResolvedPackParameterValue> values
+        ) =>
+            expression.Evaluate(values).Value is { } value
+                ? value
+                : throw new InvalidOperationException(
+                    "A validated parameter binding branch could not be evaluated."
+                );
+
+        private static bool HaveCompatibleTypes(
+            PackParameterBindingExpression left,
+            PackParameterBindingExpression right
+        ) =>
+            left.Multiple == right.Multiple
+            && (
+                left.Type == right.Type
+                || (
+                    !left.Multiple
+                    && left.Type is PackParameterType.String or PackParameterType.Enum
+                    && right.Type is PackParameterType.String or PackParameterType.Enum
+                )
+            );
+
+        private static PackParameterType GetCompatibleType(
+            PackParameterBindingExpression left,
+            PackParameterBindingExpression right
+        ) => left.Type == right.Type ? left.Type : PackParameterType.String;
+
         private ManagedFileCondition? ParseOrExpression()
         {
             var expression = ParseAndExpression();
@@ -195,8 +390,11 @@ internal static class ManagedFileConditionParser
 
                 var left = expression;
                 expression = new ManagedFileCondition(
-                    values => left.Evaluate(values) || right.Evaluate(values),
-                    CombineReferences(left, right)
+                    (values, context) =>
+                        left.Evaluate(values, context) || right.Evaluate(values, context),
+                    CombineReferences(left, right),
+                    left.DependsOnRuntimeState || right.DependsOnRuntimeState,
+                    left.DependsOnPreviousScriptState || right.DependsOnPreviousScriptState
                 );
             }
 
@@ -216,8 +414,11 @@ internal static class ManagedFileConditionParser
 
                 var left = expression;
                 expression = new ManagedFileCondition(
-                    values => left.Evaluate(values) && right.Evaluate(values),
-                    CombineReferences(left, right)
+                    (values, context) =>
+                        left.Evaluate(values, context) && right.Evaluate(values, context),
+                    CombineReferences(left, right),
+                    left.DependsOnRuntimeState || right.DependsOnRuntimeState,
+                    left.DependsOnPreviousScriptState || right.DependsOnPreviousScriptState
                 );
             }
 
@@ -252,6 +453,14 @@ internal static class ManagedFileConditionParser
                 return ParseDefaultPredicate(negated);
             }
 
+            if (
+                Current.Kind == TokenKind.Identifier
+                && Current.Text is "scriptsSkipped" or "previousScriptState"
+            )
+            {
+                return ParseLifecycleFunction(negated);
+            }
+
             if (Current.Kind != TokenKind.Identifier)
             {
                 _error = $"Condition requires a parameter name at position {Current.Position}.";
@@ -273,6 +482,65 @@ internal static class ManagedFileConditionParser
 
             return ParseBooleanParameter(parameter, negated);
         }
+
+        private ManagedFileCondition? ParseLifecycleFunction(bool negated)
+        {
+            var function = Current;
+            if (!allowLifecycleFunctions)
+            {
+                _error = $"Condition function '{function.Text}' is only valid for lifecycle hooks.";
+                return null;
+            }
+
+            _position++;
+            if (!Match(TokenKind.OpenParenthesis) || !Match(TokenKind.CloseParenthesis))
+            {
+                _error = $"Condition function '{function.Text}' does not accept arguments.";
+                return null;
+            }
+
+            if (string.Equals(function.Text, "scriptsSkipped", StringComparison.Ordinal))
+            {
+                return new ManagedFileCondition(
+                    (_, context) => negated ? !context.ScriptsSkipped : context.ScriptsSkipped,
+                    dependsOnRuntimeState: true
+                );
+            }
+
+            if (negated || Current.Kind is not (TokenKind.Equal or TokenKind.NotEqual))
+            {
+                _error = "Condition must compare 'previousScriptState()' with a supported state.";
+                return null;
+            }
+
+            var comparison = Current.Kind;
+            _position++;
+            if (Current.Kind != TokenKind.StringLiteral)
+            {
+                _error = "Condition must compare 'previousScriptState()' with a quoted state.";
+                return null;
+            }
+
+            if (!TryParseState(Current.Text, out var state))
+            {
+                _error = $"Condition contains unsupported previous script state '{Current.Text}'.";
+                return null;
+            }
+
+            _position++;
+            return new ManagedFileCondition(
+                (_, context) =>
+                    comparison == TokenKind.Equal
+                        ? context.PreviousScriptState == state
+                        : context.PreviousScriptState != state,
+                dependsOnRuntimeState: true,
+                dependsOnPreviousScriptState: true
+            );
+        }
+
+        private static bool TryParseState(string value, out LifecycleScriptState state) =>
+            Enum.TryParse(value, ignoreCase: true, out state)
+            && string.Equals(value, state.ToString(), StringComparison.OrdinalIgnoreCase);
 
         private ManagedFileCondition? ParseDefaultPredicate(bool negated)
         {
@@ -443,8 +711,8 @@ internal static class ManagedFileConditionParser
                 .ReferencedParameters.Concat(right.ReferencedParameters)
                 .ToHashSet(StringComparer.Ordinal);
 
-        private static HashSet<string> CreateReferences(string parameter) =>
-            new([parameter], StringComparer.Ordinal);
+        private static HashSet<string> CreateReferences(params string[] parameters) =>
+            new(parameters, StringComparer.Ordinal);
 
         private bool TryGetDeclaration(
             Token parameter,
@@ -505,6 +773,7 @@ internal static class ManagedFileConditionParser
         In,
         OpenParenthesis,
         CloseParenthesis,
+        Comma,
         End,
         Invalid,
     }

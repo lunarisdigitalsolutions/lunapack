@@ -22,10 +22,15 @@ internal static class PackAuthoringFormatter
             );
         }
 
-        var references = CreateTable("Referenced packs", "ID", "Version");
+        var references = CreateTable("Referenced packs", "ID", "Version", "Bindings", "Remaps");
         foreach (var reference in manifest.Packs)
         {
-            references.AddRow(Markup.Escape(reference.Id), Markup.Escape(reference.Version));
+            references.AddRow(
+                Markup.Escape(reference.Id),
+                Markup.Escape(reference.Version),
+                Markup.Escape(FormatBindings(reference.Parameters)),
+                Markup.Escape(FormatRemappings(reference.Remap))
+            );
         }
 
         var hooks = CreateTable("Lifecycle hooks", "Event");
@@ -231,6 +236,30 @@ internal static class PackAuthoringFormatter
             IEnumerable<object> values => $"[{string.Join(", ", values)}]",
             _ => value.ToString() ?? "-",
         };
+
+    private static string FormatBindings(IReadOnlyDictionary<string, object> bindings)
+    {
+        var values = bindings.Select(binding =>
+            $"{binding.Key}={FormatParameterDefault(binding.Value)}"
+        );
+        var value = string.Join(", ", values);
+        return value.Length == 0 ? "none" : value;
+    }
+
+    private static string FormatRemappings(PackManifest.PackRemapping? remapping)
+    {
+        if (remapping is null)
+        {
+            return "none";
+        }
+
+        var directories = remapping.Directories.Select(mapping =>
+            $"directory: {mapping.Key} -> {mapping.Value}"
+        );
+        var files = remapping.Files.Select(mapping => $"file: {mapping.Key} -> {mapping.Value}");
+        var value = string.Join(", ", directories.Concat(files));
+        return value.Length == 0 ? "none" : value;
+    }
 
     private static string EscapeArgument(string argument) =>
         argument.Any(char.IsWhiteSpace) || argument.Contains('"')

@@ -173,6 +173,126 @@ public sealed class ManagedFileConditionParserTests
         await Assert.That(result.IsSuccess).IsFalse();
     }
 
+    [Test]
+    public async Task ParseLifecycle_WhenRuntimeFunctionsComposed_EvaluatesContext()
+    {
+        var result = ManagedFileConditionParser.ParseLifecycle(
+            "scriptsSkipped() || previousScriptState() == \"ignored\"",
+            CreateDeclarations()
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert
+            .That(
+                result
+                    .RequireValue()
+                    .Evaluate(
+                        CreateValues(includeCi: false),
+                        new(false, LifecycleScriptState.Ignored)
+                    )
+            )
+            .IsTrue();
+        await Assert.That(result.RequireValue().DependsOnPreviousScriptState).IsTrue();
+    }
+
+    [Test]
+    [Arguments("none")]
+    [Arguments("ignored")]
+    [Arguments("skipped")]
+    [Arguments("succeeded")]
+    [Arguments("failed")]
+    [Arguments("cancelled")]
+    public async Task ParseLifecycle_WhenPreviousStateSupported_EvaluatesState(string state)
+    {
+        var result = ManagedFileConditionParser.ParseLifecycle(
+            $"previousScriptState() == \"{state}\"",
+            CreateDeclarations()
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue();
+    }
+
+    [Test]
+    [Arguments("scriptsSkipped(true)")]
+    [Arguments("previousScriptState()")]
+    [Arguments("previousScriptState() == \"unknown\"")]
+    public async Task ParseLifecycle_WhenRuntimeFunctionInvalid_ReturnsFailure(string condition)
+    {
+        var result = ManagedFileConditionParser.ParseLifecycle(condition, CreateDeclarations());
+
+        await Assert.That(result.IsSuccess).IsFalse();
+    }
+
+    [Test]
+    [Arguments("scriptsSkipped()")]
+    [Arguments("previousScriptState() == \"none\"")]
+    public async Task Parse_WhenRuntimeFunctionUsedOutsideLifecycle_ReturnsFailure(string condition)
+    {
+        var result = ManagedFileConditionParser.Parse(condition, CreateDeclarations());
+
+        await Assert.That(result.IsSuccess).IsFalse();
+    }
+
+    [Test]
+    public async Task ParseBinding_WhenParameterReferenced_PreservesTypedValue()
+    {
+        var result = ManagedFileConditionParser.ParseBinding(
+            "${{ features }}",
+            CreateDeclarations()
+        );
+        var expected = new[] { "api" };
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert
+            .That(result.RequireValue().Evaluate(CreateValues(false, features: ["api"])).Value)
+            .IsEquivalentTo(expected);
+    }
+
+    [Test]
+    public async Task ParseBinding_WhenConditionalValueUsed_SelectsTypedBranch()
+    {
+        var result = ManagedFileConditionParser.ParseBinding(
+            "${{ iif(includeCi, \"angular\", \"react\") }}",
+            CreateDeclarations()
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert
+            .That(result.RequireValue().Evaluate(CreateValues(includeCi: true)).Value)
+            .IsEqualTo("angular");
+    }
+
+    [Test]
+    public async Task ParseBinding_WhenConditionalValuesNested_SelectsTypedBranch()
+    {
+        var result = ManagedFileConditionParser.ParseBinding(
+            "${{ iif(includeCi, iif(includeSecurity, \"secure\", environment), \"none\") }}",
+            CreateDeclarations()
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert
+            .That(
+                result
+                    .RequireValue()
+                    .Evaluate(CreateValues(includeCi: true, includeSecurity: false))
+                    .Value
+            )
+            .IsEqualTo("development");
+    }
+
+    [Test]
+    [Arguments("${{ iif(includeCi, true, \"false\") }}")]
+    [Arguments("${{ scriptsSkipped() }}")]
+    [Arguments("${{ unknown }}")]
+    [Arguments("${{ includeCi")]
+    public async Task ParseBinding_WhenExpressionInvalid_ReturnsFailure(string expression)
+    {
+        var result = ManagedFileConditionParser.ParseBinding(expression, CreateDeclarations());
+
+        await Assert.That(result.IsSuccess).IsFalse();
+    }
+
     private static Dictionary<string, PackParameterDefinition> CreateDeclarations() =>
         new(StringComparer.Ordinal)
         {
