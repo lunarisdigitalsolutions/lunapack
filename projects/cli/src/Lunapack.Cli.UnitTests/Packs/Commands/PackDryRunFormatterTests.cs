@@ -30,6 +30,39 @@ public sealed class PackDryRunFormatterTests
     }
 
     [Test]
+    public async Task Scenario_InstallPreviewHasMultipleSources_ReportsSelectedSource()
+    {
+        var output = PackDryRunFormatter.FormatInstall(
+            new PackInstallDryRunResult(
+                new PackReference("example", "2.0.0"),
+                new PackUpdatePlan([]),
+                new PackSourceSelection("example", "primary", "git")
+            )
+        );
+
+        await Assert.That(output).Contains("[cyan]>[/] Selected source   [bold]primary[/] (git)");
+    }
+
+    [Test]
+    public async Task Scenario_UpdatePreviewHasMultipleSources_ReportsSelectedSource()
+    {
+        var output = PackDryRunFormatter.FormatUpdate(
+            [
+                new PackUpdateService.UpdateOutcome(
+                    "example",
+                    "1.0.0",
+                    "2.0.0",
+                    false,
+                    new PackSourceSelection("example", "primary", "local")
+                ),
+            ],
+            new PackUpdatePlan([])
+        );
+
+        await Assert.That(output).Contains("[cyan]>[/] Selected source   [bold]primary[/] (local)");
+    }
+
+    [Test]
     public async Task Scenario_UpdatePreviewHasNoActions_ReportsNoUpdates()
     {
         var output = PackDryRunFormatter.FormatUpdate([], new PackUpdatePlan([]));

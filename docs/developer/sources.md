@@ -36,6 +36,12 @@ Names are unique project identifiers used by trust commands. Ordinary updates
 remain on each lock record's configured source; an explicit version that exists
 only in another configured source requires confirmation before switching.
 
+When the same pack ID and version are available from multiple configured
+sources, Luna selects the earliest source listed in `lunapack.yml`. Install and
+update output, including dry runs, identifies that choice as `Selected source`
+followed by the source name and type. Luna omits this line when the selected
+release is available from only one source.
+
 Packs can also propose Git sources for selected external content during install
 or update. Follow [Approve pack-defined external sources](advanced/approve-external-sources.md)
 before accepting those additions.

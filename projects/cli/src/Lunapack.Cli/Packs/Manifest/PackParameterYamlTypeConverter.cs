@@ -38,6 +38,9 @@ internal sealed class PackParameterYamlTypeConverter : IYamlTypeConverter
                 case "required":
                     parameter.Required = DeserializeRequired<bool>(rootDeserializer, propertyName);
                     break;
+                case "requiredWhen":
+                    parameter.RequiredWhen = (string?)rootDeserializer(typeof(string));
+                    break;
                 case "type":
                     parameter.Type = DeserializeRequired<string>(rootDeserializer, propertyName);
                     break;
@@ -48,7 +51,8 @@ internal sealed class PackParameterYamlTypeConverter : IYamlTypeConverter
                     );
                     break;
                 default:
-                    throw new YamlException($"Unknown pack parameter property '{propertyName}'.");
+                    parser.SkipThisAndNestedEvents();
+                    break;
             }
         }
 
@@ -68,7 +72,8 @@ internal sealed class PackParameterYamlTypeConverter : IYamlTypeConverter
         EmitOptional(emitter, serializer, "description", parameter.Description);
         EmitOptional(emitter, serializer, "displayName", parameter.DisplayName);
         EmitOptional(emitter, serializer, "multiple", parameter.Multiple);
-        Emit(emitter, serializer, "required", parameter.Required);
+        EmitOptional(emitter, serializer, "required", parameter.Required);
+        EmitOptional(emitter, serializer, "requiredWhen", parameter.RequiredWhen);
         Emit(emitter, serializer, "type", parameter.Type);
         EmitOptional(emitter, serializer, "values", parameter.Values);
         emitter.Emit(new MappingEnd());

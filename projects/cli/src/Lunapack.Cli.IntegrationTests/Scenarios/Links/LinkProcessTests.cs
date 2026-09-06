@@ -532,21 +532,24 @@ public sealed class LinkProcessTests
     }
 
     [Test]
-    public async Task LinkInspection_WhenPersistedDefinitionHasPackOnlyProperty_RejectsStateWithoutMutation()
+    public async Task LinkInspection_WhenPersistedDefinitionHasUnknownProperty_AcceptsStateWithoutMutation()
     {
         using var workspace = new TestWorkspace();
         Directory.CreateDirectory(Path.Combine(workspace.Path, "source"));
         File.WriteAllText(Path.Combine(workspace.Path, "source", "content.txt"), "content");
         await InitializeLocalSourceAsync(workspace.Path);
         var configurationPath = Path.Combine(workspace.Path, "lunapack.yml");
-        const string invalidConfiguration =
-            "links:\n  invalid-link:\n    source: local\n    includes:\n    - content.txt\n    parameters: {}\npacks: []\nschemaVersion: 1\nsources:\n- path: source\n  type: local\n  name: local\ntrust:\n  packs: []\n  sources: []\nvariables: {}\n";
-        File.WriteAllText(configurationPath, invalidConfiguration);
+        const string forwardCompatibleConfiguration =
+            "links:\n  compatible-link:\n    source: local\n    includes:\n    - content.txt\n    parameters: {}\n    pack: future-pack\npacks: []\nschemaVersion: 1\nsources:\n- path: source\n  type: local\n  name: local\ntrust:\n  packs: []\n  sources: []\nvariables: {}\n";
+        File.WriteAllText(configurationPath, forwardCompatibleConfiguration);
 
         var result = await CliProcess.InvokeAsync(workspace.Path, "links", "list");
 
-        await Assert.That(result.ExitCode).IsEqualTo(1);
-        await Assert.That(File.ReadAllText(configurationPath)).IsEqualTo(invalidConfiguration);
+        await Assert.That(result.ExitCode).IsEqualTo(0);
+        await Assert.That(result.StandardOutput).Contains("compatible-link");
+        await Assert
+            .That(File.ReadAllText(configurationPath))
+            .IsEqualTo(forwardCompatibleConfiguration);
     }
 
     [Test]

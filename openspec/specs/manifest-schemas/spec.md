@@ -316,8 +316,12 @@ equivalent to false. A parameter MAY declare non-empty `displayName` and
 `description` strings for interactive prompts. A parameter MAY define a
 `default` matching its declared type. A scalar enum default SHALL be one of its
 declared values. A multi-select enum default SHALL be a unique array containing
-zero or more declared values. Existing valid version-1 pack manifests without
-parameters or `multiple` SHALL remain valid.
+zero or more declared values. A parameter MAY declare a non-empty
+`requiredWhen` expression using the shared condition grammar instead of
+`required`; declaring both SHALL be invalid. Every parameter referenced by
+`requiredWhen` SHALL occur earlier in the same ordered parameter mapping.
+Existing valid version-1 pack manifests without parameters, `multiple`, or
+`requiredWhen` SHALL remain valid.
 
 #### Scenario: Validate an enum parameter declaration
 
@@ -363,6 +367,23 @@ parameters or `multiple` SHALL remain valid.
 
 - **WHEN** an enum default has the wrong scalar-or-array shape, contains a
   duplicate, or contains a value outside its declared values
+- **THEN** the pack manifest is invalid
+
+#### Scenario: Validate conditional requiredness
+
+- **WHEN** a parameter declares `requiredWhen` using Boolean, comparison,
+  membership, or `isDefault` expressions over earlier parameters
+- **THEN** the pack manifest is valid
+
+#### Scenario: Reject ambiguous requiredness
+
+- **WHEN** a parameter declares both `required` and `requiredWhen`
+- **THEN** the pack manifest is invalid
+
+#### Scenario: Reject forward requiredness dependency
+
+- **WHEN** `requiredWhen` references itself, a later parameter, or an undeclared
+  parameter
 - **THEN** the pack manifest is invalid
 
 ### Requirement: Define conditional pack declarations

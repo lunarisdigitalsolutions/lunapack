@@ -168,6 +168,7 @@ internal sealed class TrustCommandHandler(
         {
             Arity = ArgumentArity.OneOrMore,
             Description = "Configured source names whose trust will be revoked.",
+            HelpName = "name",
         };
         namesArgument.CompletionSources.Add(completionProvider.GetConfiguredSourceNames);
         var projectOption = CreateProjectOption();
@@ -212,10 +213,12 @@ internal sealed class TrustCommandHandler(
         {
             Arity = ArgumentArity.OneOrMore,
             Description = "Bare pack IDs whose trust will be revoked.",
+            HelpName = "id",
         };
         var sourceOption = new Option<string?>("--source", "-s")
         {
             Description = "Configured source name for the pack IDs.",
+            HelpName = "source",
         };
         sourceOption.CompletionSources.Add(completionProvider.GetConfiguredSourceNames);
         idsArgument.CompletionSources.Add(context =>
@@ -268,6 +271,7 @@ internal sealed class TrustCommandHandler(
         {
             Arity = ArgumentArity.OneOrMore,
             Description = "Configured source names to trust.",
+            HelpName = "name",
         };
         namesArgument.CompletionSources.Add(completionProvider.GetConfiguredSourceNames);
         var projectOption = CreateProjectOption();
@@ -310,10 +314,12 @@ internal sealed class TrustCommandHandler(
         {
             Arity = ArgumentArity.OneOrMore,
             Description = "Bare pack IDs to trust.",
+            HelpName = "id",
         };
         var sourceOption = new Option<string?>("--source", "-s")
         {
             Description = "Configured source name for the pack IDs.",
+            HelpName = "source",
         };
         sourceOption.CompletionSources.Add(completionProvider.GetConfiguredSourceNames);
         idsArgument.CompletionSources.Add(context =>

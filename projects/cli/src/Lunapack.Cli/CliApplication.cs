@@ -252,7 +252,8 @@ internal sealed class CliApplication(
             new PackValidationService(
                 fileSystem,
                 projectStateStore,
-                new LocalPackDiscovery(fileSystem, console)
+                new LocalPackDiscovery(fileSystem, console),
+                packCatalog
             ),
             lifecycleServices,
             linkServices,
@@ -478,6 +479,7 @@ internal sealed class CliApplication(
         return new LifecycleServices(
             packLifecycleService,
             new PackUpdateService(
+                fileSystem,
                 packCatalog,
                 packLifecycleService,
                 projectStateStore,
@@ -604,6 +606,7 @@ internal sealed class CliApplication(
         );
         rootCommand.Add(
             new UpdatePackCommandHandler(
+                fileSystem,
                 packUpdateService,
                 linkCommandDispatcher,
                 updateSelectionService,

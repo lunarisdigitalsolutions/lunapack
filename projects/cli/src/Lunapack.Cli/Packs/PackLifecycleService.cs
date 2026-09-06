@@ -76,7 +76,8 @@ internal sealed class PackLifecycleService(
         string projectDirectory,
         PackInstallationRequest installationRequest,
         Action<TimeSpan>? onManagedFileChangesApplied = null,
-        Action<PackUpdatePlan>? onUpdateApplied = null
+        Action<PackUpdatePlan>? onUpdateApplied = null,
+        Action<PackSourceSelection>? onSourceSelected = null
     )
     {
         _console.Info($"Installing pack '{installationRequest.PackReference.Id}'.");
@@ -106,7 +107,7 @@ internal sealed class PackLifecycleService(
                 return _console.Fail(hooks.Error);
             }
 
-            return await ApplyUpdateAndSaveAsync(
+            var exitCode = await ApplyUpdateAndSaveAsync(
                 preparedInstallation.State,
                 preparedInstallation.Configuration,
                 preparedInstallation.Graph,
@@ -118,6 +119,12 @@ internal sealed class PackLifecycleService(
                 onManagedFileChangesApplied,
                 onUpdateApplied
             );
+            if (exitCode == 0 && preparedInstallation.SourceSelection is { } sourceSelection)
+            {
+                onSourceSelected?.Invoke(sourceSelection);
+            }
+
+            return exitCode;
         }
     }
 
@@ -166,7 +173,8 @@ internal sealed class PackLifecycleService(
                     {
                         Lifecycle = dryRunLifecycle,
                         ExternalSources = preparedInstallation.ExternalSources,
-                    }
+                    },
+                    preparedInstallation.SourceSelection
                 )
             );
         }
@@ -668,7 +676,8 @@ internal sealed class PackLifecycleService(
         ManifestOperationResult<IReadOnlyList<PackParameterPrompt>>
     > FindUnresolvedRequiredParametersAsync(
         string projectDirectory,
-        PackInstallationRequest installationRequest
+        PackInstallationRequest installationRequest,
+        bool includeOptional = false
     )
     {
         var loadedState = await projectStateStore.LoadAsync(projectDirectory);
@@ -697,12 +706,51 @@ internal sealed class PackLifecycleService(
             state.LockFile
         );
         return graph.Value is { } resolvedGraph
-            ? PackParameterResolver.FindUnresolvedRequired(
+            ? PackParameterResolver.FindPromptable(
                 resolvedGraph,
                 state.Configuration,
-                installationRequest
+                installationRequest,
+                includeOptional
             )
             : ManifestOperationResult<IReadOnlyList<PackParameterPrompt>>.Failure(
+                graph.Error ?? "Unable to resolve pack graph.",
+                graph.ErrorKind
+            );
+    }
+
+    public async Task<
+        ManifestOperationResult<IReadOnlyDictionary<string, IReadOnlyList<string>>>
+    > PromptInstallParametersAsync(
+        string projectDirectory,
+        PackInstallationRequest installationRequest,
+        bool includeOptional,
+        PackParameterPromptCallback promptParameters
+    )
+    {
+        var loadedState = await projectStateStore.LoadAsync(projectDirectory);
+        if (loadedState.Value is not { } state)
+        {
+            return ManifestOperationResult<
+                IReadOnlyDictionary<string, IReadOnlyList<string>>
+            >.Failure(loadedState.Error ?? "Unable to load project state.");
+        }
+
+        var requestedPack = installationRequest.PackReference;
+        var graph = await ResolveUninstalledGraphAsync(
+            projectDirectory,
+            state.Configuration,
+            requestedPack,
+            state.LockFile
+        );
+        return graph.Value is { } resolvedGraph
+            ? PackParameterResolver.Prompt(
+                resolvedGraph,
+                state.Configuration,
+                installationRequest,
+                includeOptional,
+                promptParameters
+            )
+            : ManifestOperationResult<IReadOnlyDictionary<string, IReadOnlyList<string>>>.Failure(
                 graph.Error ?? "Unable to resolve pack graph.",
                 graph.ErrorKind
             );
@@ -808,6 +856,78 @@ internal sealed class PackLifecycleService(
                 onUpdateApplied: onUpdateApplied
             );
         }
+    }
+
+    public async Task<
+        ManifestOperationResult<IReadOnlyList<PackParameterPrompt>>
+    > FindUpdateParametersAsync(
+        string projectDirectory,
+        IReadOnlyList<ProjectConfiguration.RequestedPack> selectedRequestedRoots,
+        PackInstallationRequest updateRequest
+    )
+    {
+        var loadedState = await projectStateStore.LoadAsync(projectDirectory);
+        if (loadedState.Value is not { } state)
+        {
+            return ManifestOperationResult<IReadOnlyList<PackParameterPrompt>>.Failure(
+                loadedState.Error ?? "Unable to load project state."
+            );
+        }
+
+        var nextConfiguration = state.Configuration with { Packs = [.. selectedRequestedRoots] };
+        var graph = await graphResolver.ResolveAsync(
+            projectDirectory,
+            nextConfiguration,
+            selectedRequestedRoots
+        );
+        return graph.Value is { } resolvedGraph
+            ? PackParameterResolver.FindPromptable(
+                resolvedGraph,
+                nextConfiguration,
+                updateRequest,
+                includeOptional: true
+            )
+            : ManifestOperationResult<IReadOnlyList<PackParameterPrompt>>.Failure(
+                graph.Error ?? "Unable to resolve pack graph.",
+                graph.ErrorKind
+            );
+    }
+
+    public async Task<
+        ManifestOperationResult<IReadOnlyDictionary<string, IReadOnlyList<string>>>
+    > PromptUpdateParametersAsync(
+        string projectDirectory,
+        IReadOnlyList<ProjectConfiguration.RequestedPack> selectedRequestedRoots,
+        PackInstallationRequest updateRequest,
+        PackParameterPromptCallback promptParameters
+    )
+    {
+        var loadedState = await projectStateStore.LoadAsync(projectDirectory);
+        if (loadedState.Value is not { } state)
+        {
+            return ManifestOperationResult<
+                IReadOnlyDictionary<string, IReadOnlyList<string>>
+            >.Failure(loadedState.Error ?? "Unable to load project state.");
+        }
+
+        var nextConfiguration = state.Configuration with { Packs = [.. selectedRequestedRoots] };
+        var graph = await graphResolver.ResolveAsync(
+            projectDirectory,
+            nextConfiguration,
+            selectedRequestedRoots
+        );
+        return graph.Value is { } resolvedGraph
+            ? PackParameterResolver.Prompt(
+                resolvedGraph,
+                nextConfiguration,
+                updateRequest,
+                includeOptional: true,
+                promptParameters
+            )
+            : ManifestOperationResult<IReadOnlyDictionary<string, IReadOnlyList<string>>>.Failure(
+                graph.Error ?? "Unable to resolve pack graph.",
+                graph.ErrorKind
+            );
     }
 
     public async Task<ManifestOperationResult<PackUpdatePlan>> DryRunUpdateAsync(
@@ -987,8 +1107,28 @@ internal sealed class PackLifecycleService(
         bool previewSources
     )
     {
-        var parameterResolution = PackParameterResolver.Resolve(
+        var selectionParameterResolution = PackParameterResolver.ResolveForSelection(
             graph,
+            configuration,
+            planningRequest
+        );
+        if (selectionParameterResolution.Value is not { } selectionParameters)
+        {
+            return ManifestOperationResult<PreparedExternalSourceMaterialization>.Failure(
+                selectionParameterResolution.Error ?? "Unable to resolve pack parameters."
+            );
+        }
+
+        var graphSelection = graph.Select(selectionParameters);
+        if (graphSelection.Value is not { } selectedGraph)
+        {
+            return ManifestOperationResult<PreparedExternalSourceMaterialization>.Failure(
+                graphSelection.Error ?? "Unable to select conditional pack references."
+            );
+        }
+
+        var parameterResolution = PackParameterResolver.Resolve(
+            selectedGraph,
             configuration,
             planningRequest
         );
@@ -1000,7 +1140,7 @@ internal sealed class PackLifecycleService(
         }
 
         var externalSources = await PrepareExternalSourcesAsync(
-            graph,
+            selectedGraph,
             configuration,
             resolvedParameters,
             acceptSources,
@@ -1025,6 +1165,7 @@ internal sealed class PackLifecycleService(
 
         return ManifestOperationResult<PreparedExternalSourceMaterialization>.Success(
             new PreparedExternalSourceMaterialization(
+                selectedGraph,
                 resolvedParameters,
                 preparedSources,
                 materialization
@@ -1066,7 +1207,7 @@ internal sealed class PackLifecycleService(
             );
         }
 
-        var selectedPack = preparedGraph.Materialization.Graph.Packs.SingleOrDefault(pack =>
+        var selectedPack = preparedSources.Graph.Packs.SingleOrDefault(pack =>
             string.Equals(pack.Manifest.Id, packReference.Id, StringComparison.Ordinal)
         );
         if (selectedPack is null)
@@ -1082,11 +1223,12 @@ internal sealed class PackLifecycleService(
             new PreparedPackInstallation(
                 preparedGraph.State,
                 preparedSources.Plan.CandidateConfiguration,
-                materialization.Graph,
+                preparedSources.Graph,
                 plan,
                 plannedUpdate,
                 preparedSources.Parameters,
                 new PackReference(selectedPack.Manifest.Id, selectedPack.Manifest.Version),
+                selectedPack.SourceSelection,
                 materialization,
                 externalMaterialization,
                 preparedSources.Plan.Requirements
@@ -1103,7 +1245,7 @@ internal sealed class PackLifecycleService(
     {
         var installationPlan = installationPlanner.Plan(
             projectDirectory,
-            preparedGraph.Materialization.Graph,
+            preparedSources.Graph,
             preparedGraph.State.LockFile,
             preparedSources.Plan.CandidateConfiguration,
             planningRequest,
@@ -1118,7 +1260,7 @@ internal sealed class PackLifecycleService(
         }
 
         var collision = ManagedRootInventory.FindCrossRootCollision(
-            ManagedRootInventory.FromInstallationPlan(preparedGraph.Materialization.Graph, plan),
+            ManagedRootInventory.FromInstallationPlan(preparedSources.Graph, plan),
             preparedGraph.State.LockFile
         );
         return collision is null
@@ -1255,7 +1397,7 @@ internal sealed class PackLifecycleService(
     {
         var installationPlan = installationPlanner.Plan(
             projectDirectory,
-            preparedGraph.Materialization.Graph,
+            preparedSources.Graph,
             preparedGraph.State.LockFile,
             preparedSources.Plan.CandidateConfiguration,
             planningRequest,
@@ -1283,7 +1425,7 @@ internal sealed class PackLifecycleService(
             new PreparedPackUpdate(
                 preparedGraph.State,
                 preparedSources.Plan.CandidateConfiguration,
-                materialization.Graph,
+                preparedSources.Graph,
                 plan,
                 plannedUpdate,
                 preparedSources.Parameters,
@@ -2788,12 +2930,15 @@ internal sealed class PackLifecycleService(
     }
 
     private sealed class PreparedExternalSourceMaterialization(
+        ResolvedPackGraph graph,
         ResolvedPackParameters parameters,
         ApprovedExternalSourcePlan plan,
         ExternalSourceMaterialization materialization
     ) : IAsyncDisposable
     {
         private bool _isOwnershipTransferred;
+
+        public ResolvedPackGraph Graph { get; } = graph;
 
         public ResolvedPackParameters Parameters { get; } = parameters;
 

@@ -36,7 +36,9 @@ packs match what you intend to add. Review configured identities separately with
 `luna sources list`; pack IDs do not prove publisher identity.
 
 `luna validate <id>@<version>` provides additional manifest and selected-file
-validation for packs in configured local sources.
+validation for packs in configured local or Git sources. An exact reference can
+validate a draft release; use `--allow-draft` to make drafts visible in
+`discover` or `search` results.
 
 ## Preview project changes
 

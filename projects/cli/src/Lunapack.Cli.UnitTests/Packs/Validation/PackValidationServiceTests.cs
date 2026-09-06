@@ -1,10 +1,40 @@
+using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Catalog;
 using Lunapack.Cli.Packs.Validation;
+using Lunapack.Cli.Sources.Git;
 
 namespace Lunapack.Cli.UnitTests.Packs.Validation;
 
 public sealed class PackValidationServiceTests
 {
+    [Test]
+    public async Task ValidateCommand_WhenExactGitPackIsDraft_ReturnsSuccess()
+    {
+        using var workspace = new TestWorkspace(gitProcessRunner: new DraftPackGitProcessRunner());
+        await workspace.Application.RunAsync(["init"], workspace.Path);
+        await workspace.Application.RunAsync(
+            [
+                "sources",
+                "add",
+                "github",
+                "remote",
+                "lunarisdigitalsolutions/lunapack",
+                "--ref",
+                "main",
+                "--path",
+                "packs",
+            ],
+            workspace.Path
+        );
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["validate", "draft-example@1.0.0"],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(0);
+    }
+
     [Test]
     public async Task ValidateAsync_WhenLatestPackSourceMissing_ReturnsItsIssues()
     {
@@ -20,7 +50,8 @@ public sealed class PackValidationServiceTests
         var validationService = new PackValidationService(
             workspace.FileSystem,
             workspace.StateStore,
-            new LocalPackDiscovery(workspace.FileSystem, TestConsole.Create())
+            new LocalPackDiscovery(workspace.FileSystem, TestConsole.Create()),
+            new PackCatalog(workspace.FileSystem, TestConsole.Create())
         );
 
         var result = await validationService.ValidateAsync(workspace.Path, "example", null);
@@ -71,6 +102,32 @@ public sealed class PackValidationServiceTests
         if (createSourceFile)
         {
             File.WriteAllText(Path.Combine(templatesDirectory, "content.txt"), "content");
+        }
+    }
+
+    private sealed class DraftPackGitProcessRunner : IGitProcessRunner
+    {
+        private const string Commit = "1111111111111111111111111111111111111111";
+
+        public Task<ManifestOperationResult<GitProcessOutput>> RunAsync(
+            IReadOnlyList<string> arguments,
+            TimeSpan timeout,
+            CancellationToken cancellationToken
+        )
+        {
+            var output =
+                string.Equals(arguments[0], "ls-remote", StringComparison.Ordinal)
+                    ? $"{Commit}\trefs/heads/main\n"
+                : arguments.Contains("ls-tree", StringComparer.Ordinal)
+                    ? "packs/draft-example/pack.yml\n"
+                : arguments.Contains("show", StringComparer.Ordinal)
+                    ? "id: draft-example\nversion: 1.0.0\ndraft: true\nauthor: Example\nlicense: MIT\n"
+                : string.Empty;
+            return Task.FromResult(
+                ManifestOperationResult<GitProcessOutput>.Success(
+                    new GitProcessOutput(output, string.Empty)
+                )
+            );
         }
     }
 }

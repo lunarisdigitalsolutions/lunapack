@@ -22,6 +22,7 @@ internal sealed class InspectPackCommandHandler(
         var packReferenceArgument = new Argument<string>("pack-reference")
         {
             Description = "Pack ID, optionally followed by @version.",
+            HelpName = "pack-reference",
         };
         packReferenceArgument.CompletionSources.Add(completionProvider.GetAvailablePackIds);
         var command = new Command("inspect", "Show a pack manifest.") { packReferenceArgument };

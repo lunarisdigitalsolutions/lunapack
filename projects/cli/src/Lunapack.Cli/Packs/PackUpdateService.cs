@@ -1,4 +1,5 @@
-﻿using Lunapack.Cli.Application.CommandExecution;
+﻿using System.IO.Abstractions;
+using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Catalog;
 using Lunapack.Cli.Packs.Planning;
 using Lunapack.Cli.Project;
@@ -7,6 +8,7 @@ using Lunapack.Cli.Trust;
 namespace Lunapack.Cli.Packs;
 
 internal sealed class PackUpdateService(
+    IFileSystem fileSystem,
     PackCatalog packCatalog,
     PackLifecycleService packLifecycleService,
     ProjectStateStore projectStateStore,
@@ -22,7 +24,9 @@ internal sealed class PackUpdateService(
         bool dryRun = false,
         ScriptExecutionMode? scriptMode = null,
         bool skipInstructions = false,
-        bool acceptSources = false
+        bool acceptSources = false,
+        PackParameterPromptCallback? promptParameters = null,
+        PackUpdateOptions? options = null
     ) =>
         await UpdateAsync(
             projectDirectory,
@@ -31,7 +35,9 @@ internal sealed class PackUpdateService(
             dryRun,
             scriptMode ?? ScriptExecutionMode.Prompt,
             skipInstructions,
-            acceptSources
+            acceptSources,
+            promptParameters,
+            options ?? new PackUpdateOptions()
         );
 
     public async Task<UpdateResult> UpdateSelectedAsync(
@@ -40,7 +46,9 @@ internal sealed class PackUpdateService(
         bool dryRun = false,
         ScriptExecutionMode? scriptMode = null,
         bool skipInstructions = false,
-        bool acceptSources = false
+        bool acceptSources = false,
+        PackParameterPromptCallback? promptParameters = null,
+        PackUpdateOptions? options = null
     ) =>
         await UpdateAsync(
             projectDirectory,
@@ -49,7 +57,9 @@ internal sealed class PackUpdateService(
             dryRun,
             scriptMode ?? ScriptExecutionMode.Prompt,
             skipInstructions,
-            acceptSources
+            acceptSources,
+            promptParameters,
+            options ?? new PackUpdateOptions()
         );
 
     private async Task<UpdateResult> UpdateAsync(
@@ -59,7 +69,9 @@ internal sealed class PackUpdateService(
         bool dryRun,
         ScriptExecutionMode scriptMode,
         bool skipInstructions,
-        bool acceptSources
+        bool acceptSources,
+        PackParameterPromptCallback? promptParameters,
+        PackUpdateOptions options
     )
     {
         var loadedState = await projectStateStore.LoadAsync(projectDirectory);
@@ -79,6 +91,8 @@ internal sealed class PackUpdateService(
             return UpdateResult.Failure(catalog.Error ?? "Unable to browse pack sources.");
         }
 
+        var cachedPromptParameters = CachePromptedParameters(promptParameters);
+
         return packReference is { } reference
             ? await UpdateNamedAsync(
                 projectDirectory,
@@ -88,7 +102,9 @@ internal sealed class PackUpdateService(
                 dryRun,
                 scriptMode,
                 skipInstructions,
-                acceptSources
+                acceptSources,
+                cachedPromptParameters,
+                options
             )
             : await UpdateAllAsync(
                 projectDirectory,
@@ -98,8 +114,41 @@ internal sealed class PackUpdateService(
                 dryRun,
                 scriptMode,
                 skipInstructions,
-                acceptSources
+                acceptSources,
+                cachedPromptParameters,
+                options
             );
+    }
+
+    internal static PackParameterPromptCallback? CachePromptedParameters(
+        PackParameterPromptCallback? promptParameters
+    )
+    {
+        if (promptParameters is null)
+        {
+            return null;
+        }
+
+        var cached = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+        return prompts =>
+        {
+            var missing = prompts.Where(prompt => !cached.ContainsKey(prompt.Id)).ToList();
+            if (missing.Count > 0)
+            {
+                foreach (var (name, values) in promptParameters(missing))
+                {
+                    cached[name] = values;
+                }
+            }
+
+            return prompts
+                .Where(prompt => cached.ContainsKey(prompt.Id))
+                .ToDictionary(
+                    prompt => prompt.Id,
+                    prompt => cached[prompt.Id],
+                    StringComparer.Ordinal
+                );
+        };
     }
 
     private async Task<UpdateResult> UpdateNamedAsync(
@@ -110,7 +159,9 @@ internal sealed class PackUpdateService(
         bool dryRun,
         ScriptExecutionMode scriptMode,
         bool skipInstructions,
-        bool acceptSources
+        bool acceptSources,
+        PackParameterPromptCallback? promptParameters,
+        PackUpdateOptions options
     )
     {
         var selectedUpdate = SelectNamedUpdate(state, catalog, packReference);
@@ -138,7 +189,8 @@ internal sealed class PackUpdateService(
             update.RequestedRoot.Id,
             update.CurrentPack.Version,
             update.SelectedPack.Manifest.Version,
-            IsCurrent: false
+            IsCurrent: false,
+            update.SourceSelection
         );
         if (update.IsCurrent)
         {
@@ -150,7 +202,9 @@ internal sealed class PackUpdateService(
                 dryRun,
                 scriptMode,
                 skipInstructions,
-                acceptSources
+                acceptSources,
+                promptParameters,
+                options
             );
             if (previewResult is not null)
             {
@@ -167,6 +221,8 @@ internal sealed class PackUpdateService(
             scriptMode,
             skipInstructions,
             acceptSources,
+            promptParameters,
+            options,
             update.SourceSwitch
         );
     }
@@ -181,7 +237,8 @@ internal sealed class PackUpdateService(
                         update.RequestedRoot.Id,
                         update.CurrentPack.Version,
                         update.SelectedPack.Manifest.Version,
-                        IsCurrent: true
+                        IsCurrent: true,
+                        update.SourceSelection
                     ),
                 ],
                 dryRun ? new PackUpdatePlan([]) : null
@@ -212,7 +269,9 @@ internal sealed class PackUpdateService(
         bool dryRun,
         ScriptExecutionMode scriptMode,
         bool skipInstructions,
-        bool acceptSources
+        bool acceptSources,
+        PackParameterPromptCallback? promptParameters,
+        PackUpdateOptions options
     )
     {
         var preview = await ApplyAsync(
@@ -223,7 +282,9 @@ internal sealed class PackUpdateService(
             dryRun: true,
             scriptMode,
             skipInstructions,
-            acceptSources
+            acceptSources,
+            promptParameters,
+            options
         );
         if (preview.Error is not null || preview.IsLifecycleFailure)
         {
@@ -300,7 +361,8 @@ internal sealed class PackUpdateService(
                 selection.Candidate,
                 nextRequestedRoot,
                 isCurrent.Value,
-                selection.SourceSwitch
+                selection.SourceSwitch,
+                PackCatalog.GetSourceSelection(catalog, selection.Candidate)
             )
         );
     }
@@ -328,7 +390,9 @@ internal sealed class PackUpdateService(
         bool dryRun,
         ScriptExecutionMode scriptMode,
         bool skipInstructions,
-        bool acceptSources
+        bool acceptSources,
+        PackParameterPromptCallback? promptParameters,
+        PackUpdateOptions options
     )
     {
         var selectedUpdates = SelectVersionUpdates(state, catalog, selectedUpdateIds);
@@ -360,7 +424,7 @@ internal sealed class PackUpdateService(
                 versionUpdateIds.Contains(root.Id) ? root with { Version = null } : root
             )
             .ToList();
-        var outcomes = CreateUpdateOutcomes(updates);
+        var outcomes = CreateUpdateOutcomes(updates, catalog);
         if (externalRefreshRoots.Count > 0)
         {
             var previewResult = await PreviewExternalRefreshAsync(
@@ -373,7 +437,9 @@ internal sealed class PackUpdateService(
                 dryRun,
                 scriptMode,
                 skipInstructions,
-                acceptSources
+                acceptSources,
+                promptParameters,
+                options
             );
             if (previewResult is not null)
             {
@@ -389,7 +455,9 @@ internal sealed class PackUpdateService(
             dryRun,
             scriptMode,
             skipInstructions,
-            acceptSources
+            acceptSources,
+            promptParameters,
+            options
         );
     }
 
@@ -417,14 +485,16 @@ internal sealed class PackUpdateService(
     }
 
     private static List<UpdateOutcome> CreateUpdateOutcomes(
-        IEnumerable<AvailablePackUpdate> updates
+        IEnumerable<AvailablePackUpdate> updates,
+        IReadOnlyList<CatalogPack> catalog
     ) =>
         [
             .. updates.Select(update => new UpdateOutcome(
                 update.RequestedRoot.Id,
                 update.Current.Version,
                 update.Latest.Manifest.Version,
-                IsCurrent: false
+                IsCurrent: false,
+                PackCatalog.GetSourceSelection(catalog, update.Latest)
             )),
         ];
 
@@ -453,7 +523,9 @@ internal sealed class PackUpdateService(
         bool dryRun,
         ScriptExecutionMode scriptMode,
         bool skipInstructions,
-        bool acceptSources
+        bool acceptSources,
+        PackParameterPromptCallback? promptParameters,
+        PackUpdateOptions options
     )
     {
         var externalOutcomes = externalRefreshRoots
@@ -473,7 +545,9 @@ internal sealed class PackUpdateService(
             dryRun: true,
             scriptMode,
             skipInstructions,
-            acceptSources
+            acceptSources,
+            promptParameters,
+            options
         );
         if (preview.Error is not null || preview.IsLifecycleFailure)
         {
@@ -504,19 +578,68 @@ internal sealed class PackUpdateService(
         ScriptExecutionMode scriptMode,
         bool skipInstructions,
         bool acceptSources,
+        PackParameterPromptCallback? promptParameters,
+        PackUpdateOptions options,
         LockedSourceUpdateSelector.SourceSwitch? proposedSourceSwitch = null
     )
     {
-        var updateRequest = new PackInstallationRequest(
-            new PackReference(updateRequestRoot.Id, updateRequestRoot.Version),
+        var updateRequestResult = PackInstallationRequest.Create(
+            fileSystem,
+            projectDirectory,
+            updateRequestRoot.Version is null
+                ? updateRequestRoot.Id
+                : $"{updateRequestRoot.Id}@{updateRequestRoot.Version}",
             updateRequestRoot.Destination,
-            false
-        )
+            adoptExisting: false,
+            options.Parameters,
+            options.NoVariables,
+            options.SkippedVariables,
+            options.DirectoryRemappings,
+            options.FileRemappings,
+            scriptMode,
+            skipInstructions,
+            options.SaveRemapping
+        );
+        if (updateRequestResult.Value is not { } updateRequest)
         {
-            ScriptMode = scriptMode,
-            SkipInstructions = skipInstructions,
-            AcceptSources = acceptSources,
-        };
+            return UpdateResult.Failure(
+                updateRequestResult.Error ?? "Unable to create update request."
+            );
+        }
+
+        updateRequest = updateRequest with { AcceptSources = acceptSources };
+        if (options.SaveRemapping)
+        {
+            selectedRequestedRoots =
+            [
+                .. selectedRequestedRoots.Select(root =>
+                    string.Equals(root.Id, updateRequestRoot.Id, StringComparison.Ordinal)
+                        ? root with
+                        {
+                            Remap = updateRequest.TargetRemapping?.MergeInto(root.Remap),
+                        }
+                        : root
+                ),
+            ];
+        }
+        if (promptParameters is not null)
+        {
+            var parameters = await packLifecycleService.PromptUpdateParametersAsync(
+                projectDirectory,
+                selectedRequestedRoots,
+                updateRequest,
+                promptParameters
+            );
+            if (parameters.Value is not { } promptedValues)
+            {
+                return UpdateResult.Failure(
+                    parameters.Error ?? "Unable to resolve update parameters."
+                );
+            }
+
+            updateRequest = updateRequest with { ParameterValues = promptedValues };
+        }
+
         if (dryRun)
         {
             var plannedUpdate = await packLifecycleService.DryRunUpdateAsync(
@@ -564,7 +687,8 @@ internal sealed class PackUpdateService(
         string Id,
         string CurrentVersion,
         string SelectedVersion,
-        bool IsCurrent
+        bool IsCurrent,
+        PackSourceSelection? SourceSelection = null
     );
 
     private sealed record NamedPackUpdate(
@@ -573,6 +697,7 @@ internal sealed class PackUpdateService(
         CatalogPack SelectedPack,
         ProjectConfiguration.RequestedPack NextRequestedRoot,
         bool IsCurrent,
-        LockedSourceUpdateSelector.SourceSwitch? SourceSwitch
+        LockedSourceUpdateSelector.SourceSwitch? SourceSwitch,
+        PackSourceSelection? SourceSelection
     );
 }

@@ -36,6 +36,10 @@ internal static partial class ManifestModelValidator
         ValidateOptionalValue(manifest.Author, "author", issues);
         ValidateOptionalValue(manifest.License, "license", issues);
         ValidateHomepage(manifest.Homepage, issues);
+        if (manifest.LegacyScripts is not null)
+        {
+            issues.Add("Pack scripts are no longer supported; use hooks instead.");
+        }
 
         if (!IsSemanticVersion(manifest.Version))
         {
@@ -184,7 +188,98 @@ internal static partial class ManifestModelValidator
                 issues.Add($"Parameter '{name}' cannot define values.");
             }
         }
+
+        ValidateRequiredWhen(parameters, issues);
     }
+
+    private static void ValidateRequiredWhen(
+        IReadOnlyDictionary<string, PackManifest.PackParameter> parameters,
+        List<string> issues
+    )
+    {
+        var declarations = parameters
+            .Where(parameter => parameter.Value is not null)
+            .ToDictionary(
+                parameter => parameter.Key,
+                parameter => CreateConditionDefinition(parameter.Value),
+                StringComparer.Ordinal
+            );
+        var earlierParameters = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var (name, parameter) in parameters)
+        {
+            if (parameter is null)
+            {
+                continue;
+            }
+
+            if (parameter.Required is not null && parameter.RequiredWhen is not null)
+            {
+                issues.Add($"Parameter '{name}' cannot declare both required and requiredWhen.");
+            }
+
+            if (parameter.RequiredWhen is not null)
+            {
+                ValidateRequiredWhen(
+                    name,
+                    parameter.RequiredWhen,
+                    declarations,
+                    earlierParameters,
+                    issues
+                );
+            }
+
+            earlierParameters.Add(name);
+        }
+    }
+
+    private static void ValidateRequiredWhen(
+        string name,
+        string requiredWhen,
+        IReadOnlyDictionary<string, PackParameterDefinition> declarations,
+        HashSet<string> earlierParameters,
+        List<string> issues
+    )
+    {
+        if (requiredWhen.Length == 0)
+        {
+            issues.Add($"Parameter '{name}' requiredWhen cannot be empty.");
+            return;
+        }
+
+        var parsed = ManagedFileConditionParser.Parse(requiredWhen, declarations);
+        if (parsed.Value is not { } condition)
+        {
+            issues.Add($"Parameter '{name}' requiredWhen is invalid: {parsed.Error}");
+            return;
+        }
+
+        foreach (var referencedParameter in condition.ReferencedParameters)
+        {
+            if (!earlierParameters.Contains(referencedParameter))
+            {
+                issues.Add(
+                    $"Parameter '{name}' requiredWhen references parameter '{referencedParameter}', which must be defined earlier."
+                );
+            }
+        }
+    }
+
+    private static PackParameterDefinition CreateConditionDefinition(
+        PackManifest.PackParameter parameter
+    ) =>
+        new(
+            parameter.Type switch
+            {
+                "bool" => PackParameterType.Bool,
+                "enum" => PackParameterType.Enum,
+                _ => PackParameterType.String,
+            },
+            parameter.Required is true,
+            parameter.Values ?? [],
+            Default: parameter.Default,
+            Multiple: parameter.Multiple is true,
+            RequiredWhen: parameter.RequiredWhen
+        );
 
     private static void ValidateParameterDefault(
         string name,
@@ -470,6 +565,11 @@ internal static partial class ManifestModelValidator
             else
             {
                 ValidatePackId(packReference.Id, "Pack reference", issues);
+            }
+
+            if (packReference.Condition is "")
+            {
+                issues.Add("Pack reference condition cannot be empty.");
             }
 
             foreach (var (name, value) in packReference.Parameters)

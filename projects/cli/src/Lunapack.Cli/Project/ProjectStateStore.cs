@@ -19,6 +19,7 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
     private static readonly IDeserializer _deserializer = new StaticDeserializerBuilder(
         new LunapackYamlContext()
     )
+        .IgnoreUnmatchedProperties()
         .WithNamingConvention(CamelCaseNamingConvention.Instance)
         .WithTypeConverter(new ProjectConfigurationSourceYamlTypeConverter())
         .WithTypeConverter(new ScalarValueDictionaryYamlTypeConverter())

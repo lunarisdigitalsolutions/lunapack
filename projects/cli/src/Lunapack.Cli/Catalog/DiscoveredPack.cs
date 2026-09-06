@@ -13,6 +13,8 @@ internal sealed record DiscoveredPack(
     string? RepositoryPath = null
 )
 {
+    public PackSourceSelection? SourceSelection { get; init; }
+
     public DiscoveredPack(
         string sourcePath,
         string packDirectory,

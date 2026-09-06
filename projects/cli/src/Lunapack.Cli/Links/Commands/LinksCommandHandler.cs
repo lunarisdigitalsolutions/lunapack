@@ -88,6 +88,7 @@ internal sealed class LinksCommandHandler(
         var option = new Option<string?>("--source", "-s")
         {
             Description = "Configured source name to select files from.",
+            HelpName = "source",
         };
         option.CompletionSources.Add(completionProvider.GetConfiguredSourceNames);
         return option;

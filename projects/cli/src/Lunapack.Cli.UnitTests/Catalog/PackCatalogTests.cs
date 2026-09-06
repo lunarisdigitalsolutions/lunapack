@@ -272,6 +272,9 @@ public sealed class PackCatalogTests
 
         await Assert.That(result.IsSuccess).IsTrue();
         await Assert.That(result.RequireValue().SourcePath).IsEqualTo(_firstDirectory);
+        await Assert
+            .That(result.RequireValue().SourceSelection)
+            .IsEqualTo(new PackSourceSelection("example", "source-0", "local"));
     }
 
     [Test]

@@ -50,8 +50,8 @@ luna inspect example-documentation-standard@1.1.0
 
 Unlike `luna pack validate`, `luna validate <pack-reference>` runs from an
 initialized consumer project. It resolves the requested release from configured
-local sources and validates that selected catalog entry and its local source
-files.
+local or Git sources and validates the selected catalog entry and its source
+files. An exact reference can select a draft release.
 
 Preview before writing files:
 

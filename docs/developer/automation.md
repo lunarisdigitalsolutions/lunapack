@@ -46,6 +46,7 @@ luna sources add github engineering `
   --path projects/packs
 luna install dotnet-project@1.0.0 `
   --dry-run `
+  --skip-parameters `
   --scripts skip `
   --skip-instructions `
   --suppress-next-steps
@@ -54,8 +55,10 @@ luna install dotnet-project@1.0.0 `
 Replace `REPLACE_WITH_FULL_COMMIT_SHA` with a commit available from your source,
 and replace the pack release with a version available at that commit. The dry
 run resolves and preflights changes without writing managed files or changing
-LunaPack state. Initialization and source registration do write `lunapack.yml`
-and `lunapack-lock.yml` in the fixture.
+LunaPack state. `--skip-parameters` suppresses prompts but still applies declared
+defaults and explicit values; the preview fails if a required parameter remains
+unresolved. Initialization and source registration do write `lunapack.yml` and
+`lunapack-lock.yml` in the fixture.
 
 When a pack declares additional Git sources, add `--accept-sources` only after
 reviewing them. It approves conflict-free source additions; it does not bypass

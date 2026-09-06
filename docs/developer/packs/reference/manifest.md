@@ -48,24 +48,56 @@ programs, `fixtures/` for isolated lifecycle test workspaces, and `examples/`
 for content that is not installed. Folder names explain purpose; only manifest
 selectors install content.
 
-| Field                  | Rules                                                                                                                                                                           |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                   | Required stable identifier: alphanumeric segments joined by single hyphens.                                                                                                     |
-| `version`              | Required Semantic Version.                                                                                                                                                      |
-| `name`                 | Optional non-empty human-readable name.                                                                                                                                         |
-| `author`               | Required non-empty author or maintainer attribution.                                                                                                                            |
-| `draft`                | Optional visibility marker. Defaults to `false`; drafts require `--allow-draft` in discovery and search but remain available to direct commands.                                |
-| `homepage`             | Optional absolute HTTP or HTTPS URI.                                                                                                                                            |
-| `license`              | Required non-empty license identifier or expression.                                                                                                                            |
-| `managedFiles`         | Each entry has one `source`, `directory`, or `glob` selector and a non-empty project-relative `target` that cannot contain `.` or `..` segments.                                |
-| `packs`                | Each composite reference has a hyphen-separated alphanumeric ID and an exact version.                                                                                           |
-| `parameters`           | Identifier-named `string`, `bool`, or `enum` declarations. Enums require unique values and may set `multiple: true`; multi-select defaults are unique arrays of allowed values. |
-| Reference `parameters` | String, Boolean, or unique string-array bindings for a referenced pack. Runtime validation checks arrays against the target multi-select enum.                                  |
-| `condition`            | Boolean, comparison, membership, and `isDefault(identifier)` expressions joined with logical operators.                                                                         |
-| `strategy`             | `copy` with `overwrite`, `fail-if-exists`, `skip-if-exists`, or `backup-and-overwrite`; or `merge` with `lines`, `section`, or `json`.                                          |
-| `tags`                 | Optional list of up to 15 unique, non-empty tags. Search matches tags; discover lists them, and inspect previews the first five.                                                |
-| `template`             | Enables Scriban parsing. Defaults to `false`; set `true` only when this source uses parameters or Scriban functions.                                                            |
-| `hooks`                | Ordered `script` or `instruction` declarations grouped by lifecycle event.                                                                                                      |
+| Field                  | Rules                                                                                                                                                                                   |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                   | Required stable identifier: alphanumeric segments joined by single hyphens.                                                                                                             |
+| `version`              | Required Semantic Version.                                                                                                                                                              |
+| `name`                 | Optional non-empty human-readable name.                                                                                                                                                 |
+| `author`               | Required non-empty author or maintainer attribution.                                                                                                                                    |
+| `draft`                | Optional visibility marker. Defaults to `false`; drafts require `--allow-draft` in discovery and search but remain available to direct commands.                                        |
+| `homepage`             | Optional absolute HTTP or HTTPS URI.                                                                                                                                                    |
+| `license`              | Required non-empty license identifier or expression.                                                                                                                                    |
+| `managedFiles`         | Each entry has one `source`, `directory`, or `glob` selector and a non-empty project-relative `target` that cannot contain `.` or `..` segments.                                        |
+| `packs`                | Each composite reference has a hyphen-separated alphanumeric ID and an exact version. Optional `condition` selects whether the reference participates in lifecycle planning.            |
+| `parameters`           | Ordered identifier-named `string`, `bool`, or `enum` declarations. Enums require unique values and may set `multiple: true`; multi-select defaults are unique arrays of allowed values. |
+| Reference `parameters` | String, Boolean, or unique string-array bindings for a referenced pack. Runtime validation checks arrays against the target multi-select enum.                                          |
+| `condition`            | Boolean, comparison, membership, and `isDefault(identifier)` expressions joined with logical operators.                                                                                 |
+| `strategy`             | `copy` with `overwrite`, `fail-if-exists`, `skip-if-exists`, or `backup-and-overwrite`; or `merge` with `lines`, `section`, or `json`.                                                  |
+| `tags`                 | Optional list of up to 15 unique, non-empty tags. Search matches tags; discover lists them, and inspect previews the first five.                                                        |
+| `template`             | Enables Scriban parsing. Defaults to `false`; set `true` only when this source uses parameters or Scriban functions.                                                                    |
+| `hooks`                | Ordered `script` or `instruction` declarations grouped by lifecycle event.                                                                                                              |
+
+## Parameters
+
+Parameter declaration order is prompt order. Luna prompts each root pack's
+parameters before walking its references, then follows active references in
+manifest order. When a reference condition is false, parameters belonging only
+to that inactive branch are not prompted. A shared dependency remains
+promptable when another active reference reaches it.
+
+Use `required: true` for an unconditional input or `requiredWhen` for a
+conditional input. These properties are mutually exclusive. `requiredWhen`
+uses the same Boolean, comparison, membership, `isDefault(identifier)`, `&&`,
+`||`, `!`, and parenthesized expressions as `condition`. Every parameter named
+by `requiredWhen` must appear earlier in the same `parameters` mapping.
+
+```yml
+parameters:
+  features:
+    type: enum
+    multiple: true
+    values: [api, web]
+    default: [api]
+  useDefaults:
+    type: bool
+    default: true
+  apiName:
+    type: string
+    requiredWhen: isDefault(useDefaults) && "api" in features
+```
+
+`apiName` is required only when both predicates are true. Do not alphabetize
+parameters when their prompt dependency requires another declaration first.
 
 ## Lifecycle hooks
 

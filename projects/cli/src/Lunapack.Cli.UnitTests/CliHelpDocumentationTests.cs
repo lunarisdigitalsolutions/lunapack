@@ -48,8 +48,14 @@ public sealed class CliHelpDocumentationTests
             ["--description", "-d", "--replace"]
         ),
         new("pack add hook instruction", "<event> <file>", ["--templating", "--replace"]),
+        new(
+            "pack add reference",
+            "<id> <version>",
+            ["--parameter", "-p", "--condition", "-c", "--disable-hook", "--replace"]
+        ),
         new("pack rm hook", "<event> <position>"),
         new("pack hooks"),
+        new("pack set parameter", "<name> <type>", ["--required", "--required-when"]),
         new(
             "install",
             "<pack-reference> [<pack-reference>...]",
@@ -66,6 +72,8 @@ public sealed class CliHelpDocumentationTests
                 "--save-remap",
                 "--parameter",
                 "-p",
+                "--prompt-parameters",
+                "--skip-parameters",
                 "--no-variables",
                 "-nv",
                 "--skip-variable",
@@ -85,6 +93,16 @@ public sealed class CliHelpDocumentationTests
                 "--no-file-change-output",
                 "--prompt",
                 "-p",
+                "--prompt-parameters",
+                "--skip-parameters",
+                "--parameter",
+                "--no-variables",
+                "-nv",
+                "--skip-variable",
+                "-sv",
+                "--remap-directory",
+                "--remap-file",
+                "--save-remap",
                 "--scripts",
                 "--skip-instructions",
             ]

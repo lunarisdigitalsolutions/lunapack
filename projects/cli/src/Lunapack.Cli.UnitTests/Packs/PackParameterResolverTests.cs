@@ -34,6 +34,210 @@ public sealed class PackParameterResolverTests
     }
 
     [Test]
+    public async Task FindPromptable_WhenOptionalParameterHasDefault_ReturnsPromptMetadata()
+    {
+        var pack = CreatePack("ci", "bool");
+        pack.Manifest.Parameters["companyName"].Default = false;
+
+        var result = PackParameterResolver.FindPromptable(
+            new ResolvedPackGraph([pack]),
+            new ProjectConfiguration(),
+            CreateRequest(),
+            includeOptional: true
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert.That(result.RequireValue().Single().Id).IsEqualTo("companyName");
+        await Assert.That(result.RequireValue().Single().Definition.Default is false).IsTrue();
+    }
+
+    [Test]
+    public async Task Prompt_WhenRequiredWhenIsTrue_PromptsInDefinitionOrder()
+    {
+        var pack = CreatePackWithoutParameters("root");
+        pack.Manifest.Parameters["includeApi"] = new PackManifest.PackParameter
+        {
+            Type = "bool",
+            Default = false,
+        };
+        pack.Manifest.Parameters["apiName"] = new PackManifest.PackParameter
+        {
+            Type = "string",
+            RequiredWhen = "includeApi",
+        };
+        var prompted = new List<string>();
+
+        var result = PackParameterResolver.Prompt(
+            new ResolvedPackGraph([pack]),
+            new ProjectConfiguration(),
+            CreateRequest(),
+            includeOptional: true,
+            prompts =>
+            {
+                var prompt = prompts.Single();
+                prompted.Add(prompt.Id);
+                return new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
+                {
+                    [prompt.Id] = string.Equals(prompt.Id, "includeApi", StringComparison.Ordinal)
+                        ? ["true"]
+                        : ["api"],
+                };
+            }
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert.That(prompted).IsEquivalentTo(["includeApi", "apiName"]);
+    }
+
+    [Test]
+    public async Task FindUnresolvedRequired_WhenRequiredWhenIsTrue_ReturnsConditionalPrompt()
+    {
+        var pack = CreatePackWithoutParameters("root");
+        pack.Manifest.Parameters["includeApi"] = new PackManifest.PackParameter
+        {
+            Type = "bool",
+            Default = true,
+        };
+        pack.Manifest.Parameters["apiName"] = new PackManifest.PackParameter
+        {
+            Type = "string",
+            RequiredWhen = "includeApi",
+        };
+
+        var result = PackParameterResolver.FindUnresolvedRequired(
+            new ResolvedPackGraph([pack]),
+            new ProjectConfiguration(),
+            CreateRequest()
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert.That(result.RequireValue().Single().Id).IsEqualTo("apiName");
+    }
+
+    [Test]
+    public async Task Resolve_WhenRequiredWhenIsFalse_UsesOptionalValue()
+    {
+        var pack = CreatePackWithoutParameters("root");
+        pack.Manifest.Parameters["includeApi"] = new PackManifest.PackParameter
+        {
+            Type = "bool",
+            Default = false,
+        };
+        pack.Manifest.Parameters["apiName"] = new PackManifest.PackParameter
+        {
+            Type = "string",
+            RequiredWhen = "includeApi",
+        };
+
+        var result = PackParameterResolver.Resolve(
+            new ResolvedPackGraph([pack]),
+            new ProjectConfiguration(),
+            CreateRequest()
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert.That(result.RequireValue().Values["apiName"].StringValue).IsEmpty();
+    }
+
+    [Test]
+    public async Task Prompt_WhenReferenceBranchIsInactive_SkipsItsParameters()
+    {
+        var dependency = CreatePack("dependency", "string");
+        var root = CreatePackWithoutParameters("root");
+        root.Manifest.Parameters["includeDependency"] = new PackManifest.PackParameter
+        {
+            Type = "bool",
+            Default = true,
+        };
+        root.Manifest.Packs.Add(
+            new PackManifest.PackReference
+            {
+                Id = "dependency",
+                Version = "1.0.0",
+                Condition = "includeDependency",
+            }
+        );
+        var prompted = new List<string>();
+
+        var result = PackParameterResolver.Prompt(
+            new ResolvedPackGraph(
+                [dependency, root],
+                new HashSet<string>(["root"], StringComparer.Ordinal)
+            ),
+            new ProjectConfiguration(),
+            CreateRequest(),
+            includeOptional: true,
+            prompts =>
+            {
+                var prompt = prompts.Single();
+                prompted.Add(prompt.Id);
+                return new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
+                {
+                    [prompt.Id] = ["false"],
+                };
+            }
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert.That(prompted).IsEquivalentTo(["includeDependency"]);
+    }
+
+    [Test]
+    public async Task Prompt_WhenDependencyHasAnotherActivePath_IncludesItsParameters()
+    {
+        var shared = CreatePack("shared", "string");
+        var bridge = CreatePackWithoutParameters("bridge");
+        bridge.Manifest.Packs.Add(
+            new PackManifest.PackReference { Id = "shared", Version = "1.0.0" }
+        );
+        var root = CreatePackWithoutParameters("root");
+        root.Manifest.Parameters["includeDirect"] = new PackManifest.PackParameter
+        {
+            Type = "bool",
+            Default = true,
+        };
+        root.Manifest.Packs =
+        [
+            new PackManifest.PackReference
+            {
+                Id = "shared",
+                Version = "1.0.0",
+                Condition = "includeDirect",
+            },
+            new PackManifest.PackReference { Id = "bridge", Version = "1.0.0" },
+        ];
+        var prompted = new List<string>();
+
+        var result = PackParameterResolver.Prompt(
+            new ResolvedPackGraph(
+                [shared, bridge, root],
+                new HashSet<string>(["root"], StringComparer.Ordinal)
+            ),
+            new ProjectConfiguration(),
+            CreateRequest(),
+            includeOptional: true,
+            prompts =>
+            {
+                var prompt = prompts.Single();
+                prompted.Add(prompt.Id);
+                return new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
+                {
+                    [prompt.Id] = string.Equals(
+                        prompt.Id,
+                        "includeDirect",
+                        StringComparison.Ordinal
+                    )
+                        ? ["false"]
+                        : ["value"],
+                };
+            }
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert.That(prompted).IsEquivalentTo(["includeDirect", "companyName"]);
+    }
+
+    [Test]
     public async Task Resolve_WhenExplicitParameterProvided_TakesPrecedenceOverProjectVariable()
     {
         var result = PackParameterResolver.Resolve(
@@ -481,6 +685,19 @@ public sealed class PackParameterResolverTests
                         Values = values ?? [],
                     },
                 },
+            }
+        );
+
+    private static DiscoveredPack CreatePackWithoutParameters(string packId) =>
+        new(
+            "source",
+            packId,
+            new PackManifest
+            {
+                Id = packId,
+                Version = "1.0.0",
+                Author = "Example Author",
+                License = "MIT",
             }
         );
 

@@ -183,6 +183,73 @@ public sealed class ManifestSchemaTests
     }
 
     [Test]
+    public async Task PackManifest_WhenRequiredWhenUsesEarlierParameters_IsAccepted()
+    {
+        var manifest = CreateValidPackManifest();
+        manifest.Parameters = new Dictionary<string, PackManifest.PackParameter>(
+            StringComparer.Ordinal
+        )
+        {
+            ["features"] = new()
+            {
+                Type = "enum",
+                Multiple = true,
+                Values = ["api"],
+                Default = new List<object> { "api" },
+            },
+            ["includeApi"] = new() { Type = "bool", Default = true },
+            ["apiName"] = new()
+            {
+                Type = "string",
+                RequiredWhen = "isDefault(includeApi) && \"api\" in features",
+            },
+        };
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert.That(issues).IsEmpty();
+    }
+
+    [Test]
+    public async Task PackManifest_WhenRequiredWhenReferencesLaterParameter_IsRejected()
+    {
+        var manifest = CreateValidPackManifest();
+        manifest.Parameters = new Dictionary<string, PackManifest.PackParameter>(
+            StringComparer.Ordinal
+        )
+        {
+            ["apiName"] = new() { Type = "string", RequiredWhen = "includeApi" },
+            ["includeApi"] = new() { Type = "bool", Default = true },
+        };
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert
+            .That(issues)
+            .Contains(
+                "Parameter 'apiName' requiredWhen references parameter 'includeApi', which must be defined earlier."
+            );
+    }
+
+    [Test]
+    public async Task PackManifest_WhenRequiredAndRequiredWhenAreDeclared_IsRejected()
+    {
+        var manifest = CreateValidPackManifest();
+        manifest.Parameters["apiName"] = new PackManifest.PackParameter
+        {
+            Type = "string",
+            Required = true,
+            RequiredWhen = "includeApi",
+        };
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert
+            .That(issues)
+            .Contains("Parameter 'apiName' cannot declare both required and requiredWhen.");
+    }
+
+    [Test]
     public async Task PackManifest_WhenEnumDefaultIsNotAllowed_IsRejected()
     {
         var manifest = new PackManifest
@@ -322,6 +389,31 @@ public sealed class ManifestSchemaTests
             .Contains(
                 "Pack reference ID 'example_pack' must use hyphen-separated alphanumeric segments."
             );
+    }
+
+    [Test]
+    public async Task PackManifest_WhenCompositeReferenceConditionIsEmpty_IsRejected()
+    {
+        var manifest = new PackManifest
+        {
+            Id = "example",
+            Version = "1.0.0",
+            Author = "Example Author",
+            License = "MIT",
+            Packs =
+            [
+                new PackManifest.PackReference
+                {
+                    Id = "dependency",
+                    Version = "1.0.0",
+                    Condition = string.Empty,
+                },
+            ],
+        };
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert.That(issues).Contains("Pack reference condition cannot be empty.");
     }
 
     [Test]
@@ -513,6 +605,27 @@ public sealed class ManifestSchemaTests
         await Assert
             .That(definitions.GetProperty("stringArray").GetProperty("uniqueItems").GetBoolean())
             .IsTrue();
+    }
+
+    [Test]
+    public async Task PackSchema_WhenRequiredWhenDeclared_DefinesExclusiveConditionContract()
+    {
+        using var schema = JsonDocument.Parse(
+            File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "pack.schema.json"))
+        );
+        var parameter = schema.RootElement.GetProperty("definitions").GetProperty("parameter");
+        var exclusion = parameter
+            .GetProperty("allOf")[0]
+            .GetProperty("not")
+            .GetProperty("required")
+            .EnumerateArray()
+            .Select(property => property.GetString() ?? string.Empty)
+            .ToArray();
+
+        await Assert
+            .That(parameter.GetProperty("properties").TryGetProperty("requiredWhen", out _))
+            .IsTrue();
+        await Assert.That(exclusion).IsEquivalentTo(["required", "requiredWhen"]);
     }
 
     [Test]
