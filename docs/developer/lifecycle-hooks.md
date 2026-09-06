@@ -67,13 +67,13 @@ script declaration's state in the same pack and event: `succeeded`, `failed`,
 
 ```yml
 hooks:
- preInstall:
-  - type: script
-   command: dotnet
-   arguments: [tool, restore]
-  - type: instruction
-   file: instructions/manual-restore.md
-   condition: previousScriptState() == "skipped" || scriptsSkipped()
+   preInstall:
+      - type: script
+         command: dotnet
+         arguments: [tool, restore]
+      - type: instruction
+         file: instructions/manual-restore.md
+         condition: previousScriptState() == "skipped" || scriptsSkipped()
 ```
 
 A false script condition produces `ignored`; an individual authorization

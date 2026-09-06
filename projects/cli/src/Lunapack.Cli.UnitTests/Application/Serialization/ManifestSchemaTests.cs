@@ -1038,6 +1038,7 @@ public sealed class ManifestSchemaTests
     [Arguments("${{ parentName }}")]
     [Arguments("${{ iif(isAngular, \"angular\", \"react\") }}")]
     [Arguments("prefix-${{ parentName }}")]
+    [Arguments("${{ parentName }} suffix")]
     public async Task PackManifest_WhenReferenceParameterExpressionValid_IsAccepted(string value)
     {
         var manifest = CreateValidPackManifest();

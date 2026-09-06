@@ -39,8 +39,15 @@ internal static class ManagedFileConditionParser
             );
     }
 
-    public static bool IsBindingExpression(string value) =>
-        value.TrimStart().StartsWith("${{", StringComparison.Ordinal);
+    public static bool IsBindingExpression(string value)
+    {
+        var trimmed = value.Trim();
+        return trimmed.StartsWith("${{", StringComparison.Ordinal)
+            && (
+                !trimmed.Contains("}}", StringComparison.Ordinal)
+                || trimmed.EndsWith("}}", StringComparison.Ordinal)
+            );
+    }
 
     private static ManifestOperationResult<ManagedFileCondition> Parse(
         string condition,

@@ -630,12 +630,15 @@ public sealed class PackAuthoringCommandTests
                 "reference",
                 "dependency",
                 "1.0.0",
+                "--remap-directory",
+                "docs=handbook",
                 "--remap-file",
                 "source.txt=second.txt",
             ],
             workspace.Path
         );
         var replaced = (await LoadAsync(workspace)).Packs.Single();
+        var listExit = await workspace.Application.RunAsync(["pack", "list"], workspace.Path);
         var removeExit = await workspace.Application.RunAsync(
             ["pack", "rm", "reference", "dependency"],
             workspace.Path
@@ -643,7 +646,11 @@ public sealed class PackAuthoringCommandTests
 
         await Assert.That(addExit).IsEqualTo(0);
         await Assert.That(replaceExit).IsEqualTo(0);
+        await Assert.That(replaced.Remap!.Directories["docs"]).IsEqualTo("handbook");
         await Assert.That(replaced.Remap!.Files["source.txt"]).IsEqualTo("second.txt");
+        await Assert.That(listExit).IsEqualTo(0);
+        await Assert.That(console.Output).Contains("directory: docs -> handbook");
+        await Assert.That(console.Output).Contains("file: source.txt -> second.txt");
         await Assert.That(removeExit).IsEqualTo(0);
         await Assert.That((await LoadAsync(workspace)).Packs).IsEmpty();
     }
