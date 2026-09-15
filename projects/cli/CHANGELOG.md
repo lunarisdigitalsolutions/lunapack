@@ -17,6 +17,11 @@ Update this section before creating a release tag.
   selection. Invalid references, cycles, and target-type mismatches stop before
   project changes.
 
+### Conditional Packs
+
+- Lock files now persist only active conditional composite references, preventing
+  inactive dependencies from invalidating later project state validation.
+
 ### Lifecycle Hooks
 
 - Hook conditions now support `scriptsSkipped()` and
