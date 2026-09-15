@@ -2531,11 +2531,16 @@ internal sealed class PackLifecycleService(
                             ),
                     Packs =
                     [
-                        .. pack.Manifest.Packs.Select(reference => new ProjectLockFile.PackReference
-                        {
-                            Id = reference.Id,
-                            Version = reference.Version,
-                        }),
+                        .. pack
+                            .Manifest.Packs.Where(reference =>
+                                graph.ActiveReferences is null
+                                || graph.ActiveReferences.Contains(reference)
+                            )
+                            .Select(reference => new ProjectLockFile.PackReference
+                            {
+                                Id = reference.Id,
+                                Version = reference.Version,
+                            }),
                     ],
                     ManagedFiles = managedFiles,
                 }

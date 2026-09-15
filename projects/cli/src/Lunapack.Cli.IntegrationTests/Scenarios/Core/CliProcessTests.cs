@@ -1945,6 +1945,42 @@ public sealed class CliProcessTests
     }
 
     [Test]
+    public async Task Install_WhenConditionalCompositeReferenceInactive_ExcludesInactiveReferenceFromLock()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreateCompositePackSource(
+            workspace.Path,
+            (
+                "first",
+                "id: first\nversion: 1.0.0\nmanagedFiles:\n  - source: templates/content.txt\n    target: first.txt\n",
+                "first"
+            ),
+            (
+                "second",
+                "id: second\nversion: 1.0.0\nmanagedFiles:\n  - source: templates/content.txt\n    target: second.txt\n",
+                "second"
+            ),
+            (
+                "selector",
+                "id: selector\nversion: 1.0.0\nparameters:\n  platform:\n    type: enum\n    values: [first, second]\n    default: first\npacks:\n  - id: first\n    version: 1.0.0\n    condition: 'platform == \"first\"'\n  - id: second\n    version: 1.0.0\n    condition: 'platform == \"second\"'\n",
+                null
+            )
+        );
+        await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
+
+        var install = await CliProcess.InvokeAsync(workspace.Path, "install", "selector");
+
+        await Assert.That(install.ExitCode).IsEqualTo(0);
+        await Assert
+            .That(File.ReadAllText(Path.Combine(workspace.Path, "first.txt")))
+            .IsEqualTo("first");
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, "second.txt"))).IsFalse();
+        var lockFile = File.ReadAllText(Path.Combine(workspace.Path, "lunapack-lock.yml"));
+        await Assert.That(lockFile).Contains("id: first");
+        await Assert.That(lockFile).DoesNotContain("id: second");
+    }
+
+    [Test]
     public async Task Scenario_PlatformCompositionReferences_ResolveFromConsumerSource()
     {
         using var workspace = new TestWorkspace();
