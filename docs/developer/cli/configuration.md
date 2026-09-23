@@ -27,6 +27,9 @@ Local-source paths must be relative to the project. A Git source requires a
 repository URL or absolute local filesystem repository path; it may select a
 branch or commit and a repository-relative subdirectory. Git operations use a
 configurable timeout from 1 through 300 seconds, with 300 seconds by default.
+For Git repository identity checks, a trailing slash or `.git` suffix does not
+make an otherwise equivalent URL a different source. A URL that identifies a
+different repository is still rejected.
 
 Git must be available on the process path. LunaPack caches discovered Git metadata
 under the workspace `.lunapack` directory and never stores Git credentials there.

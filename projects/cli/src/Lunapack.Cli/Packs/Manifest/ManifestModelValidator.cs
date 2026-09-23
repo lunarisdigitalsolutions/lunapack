@@ -1557,20 +1557,52 @@ internal static partial class ManifestModelValidator
         }
 
         ValidateGitSource(provenance, issues);
+        if (resolvedPack.SourceIdentity is not { } identity)
+        {
+            return;
+        }
+
+        var identityRepository = SourceIdentityNormalizer.NormalizeRepository(identity.Url ?? "");
+        var provenanceRepository = SourceIdentityNormalizer.NormalizeRepository(provenance.Url);
         var hasInvalidSourceIdentity =
-            resolvedPack.SourceIdentity is { } identity
-            && (
-                !string.Equals(identity.Type, "git", StringComparison.Ordinal)
-                || string.IsNullOrEmpty(identity.Url)
-                || identity.Ref is ""
-                || (identity.Path is not null && !IsSafeProjectRelativePath(identity.Path))
-                || !string.Equals(identity.Url, provenance.Url, StringComparison.Ordinal)
-                || !string.Equals(identity.Ref, provenance.Ref, StringComparison.Ordinal)
-                || !string.Equals(identity.Path, provenance.Path, StringComparison.Ordinal)
-            );
+            !string.Equals(identity.Type, "git", StringComparison.Ordinal)
+            || !identityRepository.IsSuccess
+            || identity.Ref is ""
+            || (identity.Path is not null && !IsSafeProjectRelativePath(identity.Path));
         if (hasInvalidSourceIdentity)
         {
-            issues.Add("Git resolved pack source identity is invalid.");
+            issues.Add(
+                $"Resolved pack '{resolvedPack.Id}' source '{resolvedPack.SourceName}' has an invalid Git source identity."
+            );
+        }
+
+        if (
+            identityRepository.Value is { } identityRepositoryName
+            && provenanceRepository.Value is { } provenanceRepositoryName
+            && !string.Equals(
+                identityRepositoryName,
+                provenanceRepositoryName,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            issues.Add(
+                $"Resolved pack '{resolvedPack.Id}' from source '{resolvedPack.SourceName}' has a Git repository URL mismatch between source identity and provenance. Ensure both identify the same repository."
+            );
+        }
+
+        if (!string.Equals(identity.Ref, provenance.Ref, StringComparison.Ordinal))
+        {
+            issues.Add(
+                $"Resolved pack '{resolvedPack.Id}' source '{resolvedPack.SourceName}' Git source identity ref does not match Git provenance."
+            );
+        }
+
+        if (!string.Equals(identity.Path, provenance.Path, StringComparison.Ordinal))
+        {
+            issues.Add(
+                $"Resolved pack '{resolvedPack.Id}' source '{resolvedPack.SourceName}' Git source identity path does not match Git provenance."
+            );
         }
     }
 

@@ -1424,13 +1424,50 @@ public sealed class ManifestSchemaTests
                     SourceIdentity = new ConfiguredSourceIdentity
                     {
                         Type = "git",
-                        Url = "https://example.test/packs.git",
+                        Url = GetTestGitSourceUrl("example.test"),
                         Ref = "main",
                         Path = "packs",
                     },
                     GitSource = new GitSourceProvenance
                     {
-                        Url = "https://example.test/packs.git",
+                        Url = GetTestGitSourceUrl("example.test"),
+                        Ref = "main",
+                        Path = "packs",
+                        ResolvedCommit = "0123456789abcdef0123456789abcdef01234567",
+                    },
+                    PackPath = "example",
+                },
+            ],
+        };
+
+        var issues = ManifestModelValidator.Validate(lockFile);
+
+        await Assert.That(issues).IsEmpty();
+    }
+
+    [Test]
+    public async Task ProjectLockFile_WhenGitUrlsDifferOnlyByTrailingSlash_IsAccepted()
+    {
+        var lockFile = new ProjectLockFile
+        {
+            SchemaVersion = 1,
+            Packs =
+            [
+                new ProjectLockFile.ResolvedPack
+                {
+                    Id = "example",
+                    Version = "1.0.0",
+                    SourceName = "git",
+                    SourceIdentity = new ConfiguredSourceIdentity
+                    {
+                        Type = "git",
+                        Url = GetTestGitSourceUrl("example.test"),
+                        Ref = "main",
+                        Path = "packs",
+                    },
+                    GitSource = new GitSourceProvenance
+                    {
+                        Url = $"{GetTestGitSourceUrl("example.test")}/",
                         Ref = "main",
                         Path = "packs",
                         ResolvedCommit = "0123456789abcdef0123456789abcdef01234567",
@@ -1461,11 +1498,11 @@ public sealed class ManifestSchemaTests
                     SourceIdentity = new ConfiguredSourceIdentity
                     {
                         Type = "git",
-                        Url = "https://other.example.test/packs.git",
+                        Url = GetTestGitSourceUrl("other.example.test"),
                     },
                     GitSource = new GitSourceProvenance
                     {
-                        Url = "https://example.test/packs.git",
+                        Url = GetTestGitSourceUrl("example.test"),
                         ResolvedCommit = "0123456789abcdef0123456789abcdef01234567",
                     },
                     PackPath = "example",
@@ -1476,6 +1513,17 @@ public sealed class ManifestSchemaTests
         var issues = ManifestModelValidator.Validate(lockFile);
 
         await Assert.That(issues).IsNotEmpty();
+        await Assert
+            .That(
+                issues.Any(issue =>
+                    issue.Contains(
+                        "Resolved pack 'example' from source 'git' has a Git repository URL mismatch between source identity and provenance.",
+                        StringComparison.Ordinal
+                    )
+                )
+            )
+            .IsTrue();
+        await Assert.That(string.Join("; ", issues)).DoesNotContain("other.example.test");
     }
 
     [Test]
@@ -1558,6 +1606,8 @@ public sealed class ManifestSchemaTests
             SchemaVersion = 1,
             Sources = [new ProjectConfiguration.LocalSource { Name = "local", Path = "packs" }],
         };
+
+    private static string GetTestGitSourceUrl(string host) => $"https://{host}/packs.git";
 
     private static PackManifest CreateValidPackManifest() =>
         new()

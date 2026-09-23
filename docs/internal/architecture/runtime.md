@@ -32,7 +32,10 @@ Manifest and lock documents are deserialized into typed CLI models before the
 CLI validates required fields, semantic versions, paths, hashes, selector and
 strategy combinations, and source provenance. The JSON schemas remain the
 published contract reference; runtime validation does not load a reflective
-schema engine.
+schema engine. Git pack source identity and provenance URLs are compared by
+normalized repository identity, while configured ref and repository-relative
+path must still match. Project-state writes report model-validation issues with
+the affected configuration or lock-file name.
 
 Resolution builds one exact graph from requested roots and composite
 references. It rejects unavailable packs, cycles, and conflicting versions
