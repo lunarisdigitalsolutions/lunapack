@@ -31,8 +31,8 @@ Update this section before creating a release tag.
 ### Fixed
 
 - Pack installation no longer rejects equivalent Git repository URLs solely
-  because one has a trailing slash. Genuine source identity mismatches still
-  fail with pack- and source-specific diagnostics.
+  because one has a trailing slash or `.git` suffix. Genuine source identity
+  mismatches still fail with pack- and source-specific diagnostics.
 - Project-state save failures now identify the affected state file and report
   its validation issues instead of returning a generic schema error.
 
