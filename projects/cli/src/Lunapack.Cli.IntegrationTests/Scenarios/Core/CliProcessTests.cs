@@ -120,6 +120,38 @@ public sealed class CliProcessTests
     }
 
     [Test]
+    public async Task GitPack_WhenConfiguredUrlHasTrailingSlash_InstallsSuccessfully()
+    {
+        using var workspace = new TestWorkspace();
+        using var repository = await CreateGitPackSourceAsync();
+        var repositoryUrl = $"{repository.Path}/";
+        var initialized = await CliProcess.InvokeAsync(workspace.Path, "init");
+        var source = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "sources",
+            "add",
+            "git",
+            "git",
+            repositoryUrl,
+            "--ref",
+            "main",
+            "--path",
+            "packs"
+        );
+
+        var install = await CliProcess.InvokeAsync(workspace.Path, "install", "example");
+        var lockFile = File.ReadAllText(Path.Combine(workspace.Path, "lunapack-lock.yml"));
+
+        await Assert.That(initialized.ExitCode).IsEqualTo(0);
+        await Assert.That(source.ExitCode).IsEqualTo(0);
+        await Assert.That(install.ExitCode).IsEqualTo(0).Because(install.StandardOutput);
+        await Assert
+            .That(File.ReadAllText(Path.Combine(workspace.Path, ".pack")))
+            .IsEqualTo("from git");
+        await Assert.That(lockFile).Contains(repositoryUrl);
+    }
+
+    [Test]
     public async Task PackLifecycle_WhenManagedContentUnchanged_InstallsAndUninstalls()
     {
         using var workspace = new TestWorkspace();

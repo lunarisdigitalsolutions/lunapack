@@ -183,6 +183,8 @@ public sealed class ProjectStateStoreTests
         var saved = await stateStore.SaveAsync(projectDirectory, invalidState);
 
         await Assert.That(saved.IsSuccess).IsFalse();
+        await Assert.That(saved.Error ?? string.Empty).Contains("lunapack.yml validation failed");
+        await Assert.That(saved.Error ?? string.Empty).Contains("schema version must be 1");
         await Assert
             .That(
                 fileSystem.File.Exists(
@@ -239,6 +241,58 @@ public sealed class ProjectStateStoreTests
         await Assert.That(gitSource.Ref).IsEqualTo("main");
         await Assert.That(gitSource.Path).IsEqualTo("packs");
         await Assert.That(gitSource.TimeoutSeconds).IsEqualTo(120);
+    }
+
+    [Test]
+    public async Task Save_WhenGitProvenanceUrlHasTrailingSlash_PersistsState()
+    {
+        var fileSystem = CreateFileSystem();
+        const string projectDirectory = @"C:\project";
+        fileSystem.AddDirectory(projectDirectory);
+        var stateStore = new ProjectStateStore(fileSystem);
+
+        var saved = await stateStore.SaveAsync(
+            projectDirectory,
+            CreateGitSourceState($"{GetTestGitSourceUrl()}/")
+        );
+        var loaded = await stateStore.LoadAsync(projectDirectory);
+
+        await Assert.That(saved.IsSuccess).IsTrue().Because(saved.Error ?? string.Empty);
+        var persistedState = loaded.RequireValue();
+        await Assert
+            .That(persistedState.LockFile.Packs.Single().GitSource?.Url)
+            .IsEqualTo($"{GetTestGitSourceUrl()}/");
+    }
+
+    [Test]
+    public async Task Save_WhenGitRepositoryDoesNotMatchProvenance_ReturnsContextualError()
+    {
+        var fileSystem = CreateFileSystem();
+        const string projectDirectory = @"C:\project";
+        fileSystem.AddDirectory(projectDirectory);
+        var stateStore = new ProjectStateStore(fileSystem);
+
+        var saved = await stateStore.SaveAsync(
+            projectDirectory,
+            CreateGitSourceState(GetTestGitSourceUrl("other.example.test"))
+        );
+        var error = saved.Error ?? string.Empty;
+
+        await Assert.That(saved.IsSuccess).IsFalse();
+        await Assert.That(error).Contains("lunapack-lock.yml validation failed");
+        await Assert
+            .That(error)
+            .Contains(
+                "Resolved pack 'example' from source 'git' has a Git repository URL mismatch between source identity and provenance."
+            );
+        await Assert.That(error).DoesNotContain("other.example.test");
+        await Assert
+            .That(
+                fileSystem.File.Exists(
+                    fileSystem.Path.Combine(projectDirectory, ProjectStateStore.LockFileName)
+                )
+            )
+            .IsFalse();
     }
 
     [Test]
@@ -378,12 +432,62 @@ public sealed class ProjectStateStoreTests
             },
         };
 
+    private static ProjectState CreateGitSourceState(string provenanceUrl)
+    {
+        var source = new ProjectConfiguration.GitSource
+        {
+            Name = "git",
+            Url = GetTestGitSourceUrl(),
+            Ref = "main",
+            Path = "packs",
+            TimeoutSeconds = 120,
+        };
+
+        return new ProjectState
+        {
+            Configuration = new ProjectConfiguration
+            {
+                SchemaVersion = 1,
+                Sources = [source],
+                Packs =
+                [
+                    new ProjectConfiguration.RequestedPack { Id = "example", Version = "1.0.0" },
+                ],
+            },
+            LockFile = new ProjectLockFile
+            {
+                SchemaVersion = 1,
+                Packs =
+                [
+                    new ProjectLockFile.ResolvedPack
+                    {
+                        Id = "example",
+                        Version = "1.0.0",
+                        SourceName = source.Name,
+                        SourceIdentity = ConfiguredSourceIdentity.Create(source),
+                        GitSource = new GitSourceProvenance
+                        {
+                            Url = provenanceUrl,
+                            Ref = source.Ref,
+                            Path = source.Path,
+                            ResolvedCommit = "0123456789abcdef0123456789abcdef01234567",
+                        },
+                        PackPath = "example",
+                    },
+                ],
+            },
+        };
+    }
+
     private static ProjectState CreateValidState() =>
         new()
         {
             Configuration = new ProjectConfiguration { SchemaVersion = 1 },
             LockFile = new ProjectLockFile { SchemaVersion = 1 },
         };
+
+    private static string GetTestGitSourceUrl(string host = "example.test") =>
+        $"https://{host}/packs.git";
 
     private static MockFileSystem CreateFileSystem() => new();
 }

@@ -76,7 +76,11 @@ source identity contains `type: git`, required `url`, and optional configured
 
 Git provenance contains `type: git`, `url`, and `resolvedCommit`. It also keeps
 the configured `ref` and repository-relative `path` when present. A resolved
-commit is a 40- or 64-character hexadecimal object ID.
+commit is a 40- or 64-character hexadecimal object ID. Luna compares the
+normalized repository identities in `sourceIdentity.url` and `gitSource.url`;
+a trailing slash or `.git` suffix alone does not make them different. A real
+repository mismatch is rejected with a pack- and source-specific validation
+error.
 
 Each entry in `externalSources` is keyed by the alias declared in `pack.yml` and
 contains:

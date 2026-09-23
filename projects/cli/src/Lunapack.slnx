@@ -1,4 +1,9 @@
 <Solution>
+  <Folder Name="/Solution Items/">
+    <File Path="../../../Directory.Build.props" />
+    <File Path="../../../Directory.Packages.props" />
+    <File Path="../../../global.json" />
+  </Folder>
   <Project Path="Lunapack.Cli.IntegrationTests/Lunapack.Cli.IntegrationTests.csproj" />
   <Project Path="Lunapack.Cli.SecurityTests/Lunapack.Cli.SecurityTests.csproj" />
   <Project Path="Lunapack.Cli.UnitTests/Lunapack.Cli.UnitTests.csproj" />

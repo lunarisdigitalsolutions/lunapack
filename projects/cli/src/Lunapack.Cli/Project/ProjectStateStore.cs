@@ -159,13 +159,31 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
     )
     {
         var normalizedState = NormalizeState(state);
-        var hasInvalidState =
-            !await IsValidAsync(normalizedState.Configuration, ManifestModelValidator.Validate)
-            || !await IsValidAsync(normalizedState.LockFile, ManifestModelValidator.Validate);
-        if (hasInvalidState)
+        var lockFileIssues = await ValidateAsync(
+            normalizedState.LockFile,
+            ManifestModelValidator.Validate
+        );
+        var configurationIssues = await ValidateAsync(
+            normalizedState.Configuration,
+            ManifestModelValidator.Validate
+        );
+        if (lockFileIssues.Count > 0 || configurationIssues.Count > 0)
         {
+            var documentErrors = new List<string>();
+            if (configurationIssues.Count > 0)
+            {
+                documentErrors.Add(
+                    FormatValidationIssues(ConfigurationFileName, configurationIssues)
+                );
+            }
+
+            if (lockFileIssues.Count > 0)
+            {
+                documentErrors.Add(FormatValidationIssues(LockFileName, lockFileIssues));
+            }
+
             return ManifestOperationResult<bool>.Failure(
-                "Refusing to write project state that does not match the schemas."
+                $"Cannot write project state: {string.Join("; ", documentErrors)}"
             );
         }
 
@@ -282,8 +300,19 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
     )
         where TDocument : class
     {
-        return await Task.FromResult(validate(document).Count == 0);
+        return (await ValidateAsync(document, validate)).Count == 0;
     }
+
+    private static Task<IReadOnlyList<string>> ValidateAsync<TDocument>(
+        TDocument document,
+        Func<TDocument, IReadOnlyList<string>> validate
+    )
+        where TDocument : class => Task.FromResult(validate(document));
+
+    private static string FormatValidationIssues(
+        string documentName,
+        IReadOnlyList<string> issues
+    ) => $"{documentName} validation failed: {string.Join("; ", issues)}";
 
     private static string? ValidateState(
         ProjectConfiguration configuration,
