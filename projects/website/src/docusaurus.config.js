@@ -108,6 +108,36 @@ const config = {
                 href: 'https://github.com/lunarisdigitalsolutions/lunapack'
               }
             ]
+          },
+          {
+            title: 'Legal',
+            items: [
+              {
+                label: 'Imprint',
+                href: 'https://lunaris.digital/impressum'
+              },
+              {
+                label: 'Data Privacy',
+                href: 'https://lunaris.digital/datenschutz'
+              }
+            ]
+          },
+          {
+            title: 'Support',
+            items: [
+              {
+                label: 'Report a vulnerability',
+                href: 'https://lunaris.digital/security'
+              },
+              {
+                label: 'Report an issue',
+                href: 'https://github.com/lunarisdigitalsolutions/lunapack/issues'
+              },
+              {
+                label: 'Request a feature',
+                href: 'https://github.com/lunarisdigitalsolutions/lunapack/issues'
+              }
+            ]
           }
         ],
         copyright: `Copyright ${new Date().getFullYear()} <a href="https://lunaris.digital">Lunaris Digital Solutions</a>.`
