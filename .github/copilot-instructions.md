@@ -88,3 +88,17 @@ Fragments OK. Short synonyms. Code unchanged.
 Pattern: [thing] [action] [reason]. [next step].
 ACTIVE EVERY RESPONSE. No revert after many turns. No filler drift.
 Code/commits/PRs: normal. Off: "stop caveman" / "normal mode".
+
+## Cloud Sandbox Environment
+
+At the beginning of every new cloud session:
+
+1. Check whether ripgrep (`rg`) is installed.
+2. If missing, install it using apt.
+3. Check whether RTK is installed.
+4. If missing, install RTK using its official installer.
+5. Register RTK for GitHub Copilot using `rtk init --global --copilot`.
+6. Verify both tools are available before proceeding.
+
+Prefer `rg` for searching files and RTK optimized commands
+for shell operations whenever applicable.
