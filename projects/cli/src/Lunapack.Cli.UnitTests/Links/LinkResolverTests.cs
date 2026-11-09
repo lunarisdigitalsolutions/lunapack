@@ -97,6 +97,30 @@ public sealed class LinkResolverTests
     }
 
     [Test]
+    public async Task ResolveAsync_WhenLinkUsesOciSource_FailsWithPackSourceGuidance()
+    {
+        var fileSystem = CreateFileSystem();
+        var configuration = new ProjectConfiguration
+        {
+            Sources =
+            [
+                new ProjectConfiguration.OciSource
+                {
+                    Name = "private",
+                    Url = "https://registry.example.test",
+                },
+            ],
+        };
+        var link = CreateLink();
+        link.Source = "private";
+
+        var resolution = await ResolveAsync(fileSystem, link, configuration);
+
+        await Assert.That(resolution.Error).Contains("validated pack releases");
+        await Assert.That(resolution.Error).Contains("local or Git source");
+    }
+
+    [Test]
     public async Task ResolveAsync_WhenLocalLinkDeclaresRef_Fails()
     {
         var fileSystem = CreateFileSystem();

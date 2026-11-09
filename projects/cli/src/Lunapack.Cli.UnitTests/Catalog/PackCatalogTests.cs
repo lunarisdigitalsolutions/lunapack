@@ -1,6 +1,9 @@
 using System.IO.Abstractions.TestingHelpers;
+using Lunapack.Cli.Application;
 using Lunapack.Cli.Catalog;
 using Lunapack.Cli.Project;
+using Lunapack.Cli.Sources;
+using Lunapack.Cli.Trust;
 
 namespace Lunapack.Cli.UnitTests.Catalog;
 
@@ -210,6 +213,45 @@ public sealed class PackCatalogTests
 
         var result = await catalog.BrowseAsync(_projectDirectory, CreateManifest(_packsDirectory));
 
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert.That(result.RequireValue()).IsEmpty();
+    }
+
+    [Test]
+    public async Task Scenario_Browse_WhenLocalSourceIsIgnored_DoesNotAccessSourceDirectory()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = Path.Combine(workspace.Path, "missing");
+        var settingsStore = new UserSettingsStore(
+            workspace.FileSystem,
+            Path.Combine(workspace.Path, "profile")
+        );
+        var projectKey = settingsStore.GetProjectKey(workspace.Path).RequireValue();
+        var savedSettings = await settingsStore.SaveAsync(
+            new UserSettings
+            {
+                Projects =
+                {
+                    [projectKey] = new LocalProjectTrust
+                    {
+                        IgnoredSources = [ConfiguredSourceIdentity.CreateLocal(sourcePath)],
+                    },
+                },
+            }
+        );
+        var catalog = new PackCatalog(
+            workspace.FileSystem,
+            TestConsole.Create(),
+            userSettingsStore: settingsStore
+        );
+        var configuration = new ProjectConfiguration
+        {
+            Sources = [new ProjectConfiguration.LocalSource { Name = "ignored", Path = "missing" }],
+        };
+
+        var result = await catalog.BrowseAsync(workspace.Path, configuration);
+
+        await Assert.That(savedSettings.IsSuccess).IsTrue();
         await Assert.That(result.IsSuccess).IsTrue();
         await Assert.That(result.RequireValue()).IsEmpty();
     }

@@ -1,6 +1,7 @@
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Catalog;
 using Lunapack.Cli.Project;
+using Lunapack.Cli.Sources;
 using NuGet.Versioning;
 
 namespace Lunapack.Cli.Packs.Planning;
@@ -8,53 +9,190 @@ namespace Lunapack.Cli.Packs.Planning;
 internal sealed class PackUpdateSelectionService(
     PackCatalog packCatalog,
     ProjectStateStore projectStateStore,
-    PackLifecycleService packLifecycleService
+    PackLifecycleService packLifecycleService,
+    ConfiguredSourceIgnoreService? configuredSourceIgnoreService = null
 )
 {
-    public async Task<
-        ManifestOperationResult<IReadOnlyList<AvailablePackUpdate>>
-    > GetAvailableAsync(string projectDirectory, bool offline = false)
+    private readonly ConfiguredSourceIgnoreService? _sourceIgnoreService =
+        configuredSourceIgnoreService;
+
+    public async Task<ManifestOperationResult<PackUpdateAvailability>> GetAvailableAsync(
+        string projectDirectory,
+        bool offline = false
+    )
     {
         var loadedState = await projectStateStore.LoadAsync(projectDirectory);
         if (loadedState.Value is not { } state)
         {
-            return ManifestOperationResult<IReadOnlyList<AvailablePackUpdate>>.Failure(
+            return ManifestOperationResult<PackUpdateAvailability>.Failure(
                 loadedState.Error ?? "Unable to load project state."
             );
         }
 
         if (state.Configuration.Sources.Count == 0)
         {
-            return ManifestOperationResult<IReadOnlyList<AvailablePackUpdate>>.Failure(
+            return ManifestOperationResult<PackUpdateAvailability>.Failure(
                 "No sources are configured."
             );
         }
 
         if (offline)
         {
-            return ManifestOperationResult<IReadOnlyList<AvailablePackUpdate>>.Success([]);
+            return ManifestOperationResult<PackUpdateAvailability>.Success(
+                CreateOfflineAvailability(state)
+            );
+        }
+
+        var ignoredRootError = await FindIgnoredRootPackErrorAsync(projectDirectory, state);
+        if (!ignoredRootError.IsSuccess)
+        {
+            return ManifestOperationResult<PackUpdateAvailability>.Failure(
+                ignoredRootError.Error ?? "Unable to check local source ignore settings."
+            );
+        }
+
+        if (ignoredRootError.Value is { } ignoredError)
+        {
+            return ManifestOperationResult<PackUpdateAvailability>.Failure(ignoredError);
         }
 
         var catalog = await packCatalog.BrowseAsync(projectDirectory, state.Configuration);
         if (catalog.Value is not { } catalogPacks)
         {
-            return ManifestOperationResult<IReadOnlyList<AvailablePackUpdate>>.Failure(
+            return ManifestOperationResult<PackUpdateAvailability>.Failure(
                 catalog.Error ?? "Unable to browse pack sources."
+            );
+        }
+
+        var integrity = await CheckLockedOciReleasesAsync(projectDirectory, state);
+        if (integrity.Value is not { } integrityViolations)
+        {
+            return ManifestOperationResult<PackUpdateAvailability>.Failure(
+                integrity.Error ?? "Unable to verify locked OCI releases."
             );
         }
 
         var selected = SelectAvailable(state, catalogPacks);
         if (selected.Value is not { } versionUpdates)
         {
-            return selected;
+            return ManifestOperationResult<PackUpdateAvailability>.Failure(
+                selected.Error ?? "Unable to select available updates."
+            );
         }
 
-        return await AddExternalContentUpdatesAsync(
+        var updates = await AddExternalContentUpdatesAsync(
             projectDirectory,
             state,
             catalogPacks,
             versionUpdates
         );
+        return updates.Value is { } availableUpdates
+            ? ManifestOperationResult<PackUpdateAvailability>.Success(
+                new(availableUpdates, integrityViolations, [])
+            )
+            : ManifestOperationResult<PackUpdateAvailability>.Failure(
+                updates.Error ?? "Unable to inspect external source content."
+            );
+    }
+
+    private static PackUpdateAvailability CreateOfflineAvailability(ProjectState state) =>
+        new(
+            [],
+            [],
+            [
+                .. state
+                    .LockFile.Packs.Where(pack => pack.OciSource is not null)
+                    .OrderBy(pack => pack.Id, StringComparer.Ordinal),
+            ]
+        );
+
+    private async Task<ManifestOperationResult<string?>> FindIgnoredRootPackErrorAsync(
+        string projectDirectory,
+        ProjectState state
+    )
+    {
+        if (_sourceIgnoreService is null)
+        {
+            return ManifestOperationResult<string?>.Success(null);
+        }
+
+        var rootIds = state
+            .Configuration.Packs.Select(pack => pack.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        return await _sourceIgnoreService.FindIgnoredLockedPackErrorAsync(
+            projectDirectory,
+            state.Configuration,
+            state.LockFile.Packs.Where(pack => rootIds.Contains(pack.Id))
+        );
+    }
+
+    private async Task<
+        ManifestOperationResult<IReadOnlyList<OciReleaseIntegrityViolation>>
+    > CheckLockedOciReleasesAsync(string projectDirectory, ProjectState state)
+    {
+        var violations = new List<OciReleaseIntegrityViolation>();
+        foreach (var lockedPack in state.LockFile.Packs)
+        {
+            if (lockedPack.OciSource is null)
+            {
+                continue;
+            }
+
+            var observed = await packCatalog.ResolveLockedOciTagAsync(
+                projectDirectory,
+                state.Configuration,
+                lockedPack
+            );
+            if (!observed.IsSuccess)
+            {
+                return ManifestOperationResult<IReadOnlyList<OciReleaseIntegrityViolation>>.Failure(
+                    observed.Error
+                        ?? $"Unable to verify locked OCI release '{lockedPack.Id}@{lockedPack.Version}'.",
+                    observed.ErrorKind
+                );
+            }
+
+            var violation = CompareLockedOciRelease(lockedPack, observed.Value);
+            if (violation is not null)
+            {
+                violations.Add(violation);
+            }
+        }
+
+        return ManifestOperationResult<IReadOnlyList<OciReleaseIntegrityViolation>>.Success(
+            violations
+        );
+    }
+
+    internal static OciReleaseIntegrityViolation? CompareLockedOciRelease(
+        ProjectLockFile.ResolvedPack lockedPack,
+        CatalogPack? observedPack
+    )
+    {
+        if (lockedPack.OciSource is not { } lockedProvenance)
+        {
+            return null;
+        }
+
+        if (observedPack?.OciSource is not { } observedProvenance)
+        {
+            return new OciReleaseIntegrityViolation(lockedPack, observedPack);
+        }
+
+        return
+            string.Equals(
+                lockedProvenance.ManifestDigest,
+                observedProvenance.ManifestDigest,
+                StringComparison.Ordinal
+            )
+            && string.Equals(
+                lockedProvenance.ContentDigest,
+                observedProvenance.ContentDigest,
+                StringComparison.Ordinal
+            )
+            && lockedProvenance.ContentSize == observedProvenance.ContentSize
+            ? null
+            : new OciReleaseIntegrityViolation(lockedPack, observedPack);
     }
 
     private async Task<

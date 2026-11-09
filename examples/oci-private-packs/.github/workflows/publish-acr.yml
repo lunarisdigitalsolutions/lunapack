@@ -1,0 +1,69 @@
+name: Publish private packs to ACR
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'packs/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-acr-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Test changed-pack detection
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Find changed pack folders
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          python3 scripts/find_changed_packs.py "$BEFORE" "$AFTER" > "$RUNNER_TEMP/changed-packs.bin"
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install pinned Luna
+        env:
+          LUNA_VERSION: ${{ vars.LUNA_VERSION }}
+        run: |
+          set -euo pipefail
+          : "${LUNA_VERSION:?Set the LUNA_VERSION repository variable to an OCI-capable release}"
+          dotnet tool install --global Lunaris.Lunapack.Luna --version "$LUNA_VERSION"
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+
+      - name: Authenticate to Azure with OIDC
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Publish changed packs
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' pack; do
+            if [[ -f "$pack/pack.yml" ]]; then
+              luna publish "$pack" --target acr
+            fi
+          done < "$RUNNER_TEMP/changed-packs.bin"

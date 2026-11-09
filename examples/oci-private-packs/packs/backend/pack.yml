@@ -1,0 +1,15 @@
+id: example-backend
+name: Example backend pack
+version: 1.0.0
+license: MIT
+author: Example Platform Team
+description: Shared backend documentation and a reviewed install hook.
+managedFiles:
+  - source: content/README.md
+    target: docs/backend-standards.md
+hooks:
+  postInstall:
+    - type: script
+      file: scripts/post-install.sh
+      runner: bash
+      description: Print a reminder to review the backend standards.

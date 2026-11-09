@@ -14,7 +14,8 @@
       "items": {
         "oneOf": [
           { "$ref": "#/definitions/localSource" },
-          { "$ref": "#/definitions/gitSource" }
+          { "$ref": "#/definitions/gitSource" },
+          { "$ref": "#/definitions/ociSource" }
         ]
       }
     },
@@ -149,6 +150,30 @@
         },
         "path": {
           "$ref": "#/definitions/relativePath"
+        }
+      }
+    },
+    "ociSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type", "url"],
+      "properties": {
+        "name": {
+          "$ref": "#/definitions/sourceName"
+        },
+        "type": {
+          "enum": ["oci"]
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "$ref": "#/definitions/repositoryRelativePath"
+        },
+        "username": {
+          "type": "string",
+          "minLength": 1
         }
       }
     },

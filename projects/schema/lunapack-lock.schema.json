@@ -212,6 +212,80 @@
             "$ref": "#/definitions/packReference"
           }
         },
+        "ociResolvedPack": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "version",
+            "packPath",
+            "sourceName",
+            "sourceIdentity",
+            "ociSource",
+            "packs",
+            "managedFiles"
+          ],
+          "properties": {
+            "destination": {
+              "$ref": "#/definitions/destination"
+            },
+            "sourceName": {
+              "$ref": "#/definitions/sourceName"
+            },
+            "sourceIdentity": {
+              "$ref": "#/definitions/ociSourceIdentity"
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "version": {
+              "$ref": "#/definitions/semanticVersion"
+            },
+            "packPath": {
+              "$ref": "#/definitions/relativePath"
+            },
+            "ociSource": {
+              "$ref": "#/definitions/ociSourceProvenance"
+            },
+            "externalSources": {
+              "$ref": "#/definitions/externalSources"
+            },
+            "packs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/packReference"
+              }
+            },
+            "managedFiles": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/managedFile"
+              }
+            }
+          }
+        },
+        "ociSourceProvenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["repository", "manifestDigest", "contentDigest"],
+          "properties": {
+            "repository": {
+              "type": "string",
+              "minLength": 1
+            },
+            "manifestDigest": {
+              "$ref": "#/definitions/ociDigest"
+            },
+            "contentDigest": {
+              "$ref": "#/definitions/ociDigest"
+            }
+          }
+        },
+        "ociDigest": {
+          "type": "string",
+          "pattern": "^sha256:[A-Fa-f0-9]{64}$"
+        },
         "managedFiles": {
           "type": "array",
           "items": {
@@ -299,6 +373,23 @@
         }
       }
     },
+    "ociSourceIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "url"],
+      "properties": {
+        "type": {
+          "enum": ["oci"]
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "$ref": "#/definitions/repositoryRelativePath"
+        }
+      }
+    },
     "localSourceIdentity": {
       "type": "object",
       "additionalProperties": false,
@@ -369,7 +460,8 @@
     "resolvedPack": {
       "oneOf": [
         { "$ref": "#/definitions/localResolvedPack" },
-        { "$ref": "#/definitions/gitResolvedPack" }
+        { "$ref": "#/definitions/gitResolvedPack" },
+        { "$ref": "#/definitions/ociResolvedPack" }
       ]
     },
     "sourceName": {

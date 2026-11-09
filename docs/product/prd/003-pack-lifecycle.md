@@ -23,6 +23,13 @@ graph-wide approval, and source additions, files, and provenance commit in one
 transaction. Updates compare selected paths and hashes at current symbolic refs;
 audit reports each external file's pack ownership and source mapping.
 
+OCI registry releases use the same graph resolution, install planning,
+transaction, script trust, ownership, audit, and removal behavior as local and
+Git packs. Lock state retains normalized source identity plus registry,
+repository, version tag, and manifest/content digests. Locked releases cannot
+silently move to different bytes; registry-side immutable tags remain necessary
+to protect future first-time resolutions and concurrent publishing.
+
 Consumers can map portable declared managed-file targets to repository-specific
 directories or exact files through project configuration, `luna remap
 set <directory|file> <target> <newTarget>`, or one installation command.

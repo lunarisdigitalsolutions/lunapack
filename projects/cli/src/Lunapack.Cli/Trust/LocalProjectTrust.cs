@@ -8,6 +8,8 @@ internal sealed record LocalProjectTrust
 
     public ScriptDenial? Deny { get; set; }
 
+    public List<ConfiguredSourceIdentity> IgnoredSources { get; set; } = [];
+
     public List<TrustedPackIdentity> Packs { get; set; } = [];
 
     public List<ConfiguredSourceIdentity> Sources { get; set; } = [];

@@ -199,6 +199,35 @@ public sealed class ContextualGuidanceTests
     }
 
     [Test]
+    public async Task SourcesAddOci_WhenRegistryIsUnavailable_AddsSourceWithoutAccessingRegistry()
+    {
+        using var workspace = new TestWorkspace();
+        await workspace.Application.RunAsync(["init"], workspace.Path);
+
+        var output = await InvokeWithFreshConsoleAsync(
+            workspace,
+            [
+                "sources",
+                "add",
+                "oci",
+                "private",
+                "https://127.0.0.1:1",
+                "--path",
+                @"packs\private",
+                "--username",
+                "publisher",
+            ]
+        );
+        var state = (await workspace.StateStore.LoadAsync(workspace.Path)).RequireValue();
+
+        await Assert.That(output).Contains("Source 'private' added");
+        var source = (ProjectConfiguration.OciSource)state.Configuration.Sources.Single();
+        await Assert.That(source.Url).IsEqualTo("https://127.0.0.1:1");
+        await Assert.That(source.Path).IsEqualTo("packs/private");
+        await Assert.That(source.Username).IsEqualTo("publisher");
+    }
+
+    [Test]
     public async Task SourcesRm_WhenNameUnknown_PreservesConfiguration()
     {
         using var workspace = new TestWorkspace();

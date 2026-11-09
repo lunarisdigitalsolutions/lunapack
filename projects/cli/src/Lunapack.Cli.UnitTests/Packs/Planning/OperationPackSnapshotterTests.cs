@@ -79,11 +79,23 @@ public sealed class OperationPackSnapshotterTests
 
         await Assert.That(result.IsSuccess).IsTrue();
         await Assert.That(File.ReadAllText(snapshotFile)).IsEqualTo("original");
-        await Assert.That(() => File.WriteAllText(snapshotFile, "tampered")).ThrowsException();
+        await Assert.That(IsReadOnly(snapshotFile)).IsTrue();
 
         security.PrepareForDelete(new FileSystem(), snapshotRoot);
         GitTemporaryWorkspace.Delete(new FileSystem(), snapshotRoot);
         await Assert.That(Directory.Exists(snapshotRoot)).IsFalse();
+    }
+
+    private static bool IsReadOnly(string path)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return (File.GetAttributes(path) & FileAttributes.ReadOnly) != FileAttributes.Normal;
+        }
+
+        var writePermissions =
+            UnixFileMode.UserWrite | UnixFileMode.GroupWrite | UnixFileMode.OtherWrite;
+        return (File.GetUnixFileMode(path) & writePermissions) == UnixFileMode.None;
     }
 
     private static string CreatePack(string root)

@@ -4,20 +4,35 @@
 
 Local sources are project-relative directories. Git sources use a URL and may
 select a branch or commit and a repository-relative path. Git discovery resolves
-one commit before use, caches validated metadata under `.lunapack`, and records the
-commit in lock state. Catalog browsing excludes invalid candidate packs instead
-of failing a whole reachable source; explicit validation reports a selected
-pack's issues. The catalog applies Semantic Version precedence, then configured
-source order for ties.
+one commit before use, caches validated metadata under `.lunapack`, and records
+the commit in lock state. OCI sources use a normalized HTTPS registry origin
+and optional repository prefix. A direct, AOT-safe .NET HTTP adapter implements
+the required OCI Distribution operations; domain models validate a single
+ZIP-layer LunaPack artifact and record registry, repository, tag, manifest
+digest, and content digest in lock state. Metadata reads are bounded, pagination
+and bearer realms remain on the registry origin, and uploads stay within the
+target repository. OCI content is materialized in a private operation directory
+and is not persistently cached. Publication resolves the tag and verifies the
+registry's manifest digest. Native credentials use Windows Credential Manager,
+macOS Keychain, or Linux Secret Service through isolated platform adapters.
+See [ADR-0089](adr/0089-use-aot-safe-oci-http-and-native-credential-stores.md).
+
+Catalog browsing excludes invalid candidate packs and preserves valid
+candidates when another source fails. Typed per-source failures remain visible;
+all-active-source failure is nonzero. The catalog applies Semantic Version
+precedence, then configured source order for ties. OCI registry-wide discovery
+may be incomplete when catalog enumeration is denied. Explicit and locked IDs
+resolve directly to known repositories without requiring a global catalog.
 
 Every configured source normalizes into a source fingerprint: a Git
 fingerprint combines a sanitized repository identity, a canonical ref, and a
-normalized base path, and a local fingerprint uses a canonical project-relative
-path. `lunapack.yml` may contain at most one source per fingerprint; loading,
-validating, and writing configuration all reject a duplicate. Adding a Git or
-GitHub source resolves a supplied short ref through `git ls-remote` to its
-complete form and rejects an ambiguous match before the fingerprint or ref is
-persisted.
+normalized base path; an OCI fingerprint combines its normalized registry
+origin and repository prefix; a local fingerprint uses a canonical
+project-relative path. `lunapack.yml` may contain at most one source per
+fingerprint; loading, validating, and writing configuration all reject a
+duplicate. Adding a Git or GitHub source resolves a supplied short ref through
+`git ls-remote` to its complete form and rejects an ambiguous match before the
+fingerprint or ref is persisted.
 
 Pack manifests may declare Git sources under pack-local aliases. After graph
 resolution, the external-source planner collects only aliases referenced by
@@ -28,21 +43,33 @@ immutable commit in a private operation directory and shares content for equal
 fingerprint-and-commit pairs. External content never becomes a pack catalog and
 never supplies lifecycle scripts.
 
+OCI authentication is operation-scoped and source-bound. Anonymous access is
+attempted first; an authentication challenge can select a native credential,
+source-bound environment credential, one interactive prompt, or optional ACR
+identity. Native entries are keyed by canonical project, configured source name,
+registry origin, and repository prefix. Bearer challenges must use an HTTPS
+realm on the registry origin; cross-origin realms are rejected before sending
+credentials. Generic OCI transport has no Azure identity dependency.
+User-local source ignores are keyed by the same configured identity and gate
+browsing, resolution, links, materialization, credentials, and publishing
+before source access.
+
 Manifest and lock documents are deserialized into typed CLI models before the
 CLI validates required fields, semantic versions, paths, hashes, selector and
 strategy combinations, and source provenance. The JSON schemas remain the
 published contract reference; runtime validation does not load a reflective
 schema engine. Git pack source identity and provenance URLs are compared by
 normalized repository identity, while configured ref and repository-relative
-path must still match. Project-state writes report model-validation issues with
-the affected configuration or lock-file name.
+path must still match. OCI lock provenance must agree with the configured
+registry identity and verified manifest/content digests. Project-state writes
+report model-validation issues with the affected configuration or lock-file name.
 
 Resolution builds one exact graph from requested roots and composite
 references. It rejects unavailable packs, cycles, and conflicting versions
 before lifecycle planning. A resolved graph has one version per pack ID.
 
 Link resolution remains outside pack catalogs and dependency graphs. It binds
-an exact configured source name, evaluates selectors, and snapshots selected
+an exact configured local or Git source name, evaluates selectors, and snapshots selected
 regular-file bytes before planning. Local snapshots prevent live source changes
 from separating hashed bytes from copied bytes. Git snapshots resolve one
 immutable commit, enumerate regular blobs without requiring `pack.yml`, and
@@ -134,6 +161,9 @@ workspace per lifecycle or validation operation. One operation reuses a sparse
 checkout only when fingerprint and resolved commit both match. Disposal and
 every handled failure prepare that workspace for deletion and remove it; no
 pack-declared alias or fetched working tree becomes persistent source authority.
+OCI downloads and extracted trees follow the same private-operation lifetime and
+are removed after validation or lifecycle work; they are not kept as a registry
+cache.
 
 ## Workflow Guidance
 
@@ -154,6 +184,11 @@ transaction, leaving pack-local aliases untouched. State loading therefore
 accepts resolved source identities that are no longer configured, while
 ordinary state writes continue to validate configured source matching.
 Source, rename, and uninstall writes use the narrow unavailable-source path.
+
+Ignoring a source changes only per-project user settings. The configured
+sequence and lock evidence remain untouched. Required resolution of ignored
+locked provenance fails with unignore guidance instead of selecting another
+source.
 
 Link install, update, uninstall, and forced removal use the same transaction
 boundary as managed pack files. Configuration, lock evidence, and file actions

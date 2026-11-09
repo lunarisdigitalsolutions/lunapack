@@ -116,7 +116,15 @@ suggestions until an argument-taking command or option is selected.
   repository as a Git pack source. LunaPack stores its HTTPS Git URL; `--ref`
   (`-r`) is required and resolved the same way as `git`; `--path` (`-p`)
   matches `git`.
-- `luna sources list`: Lists configured local and Git sources.
+- `luna sources add oci <name> <registry-url>`: Registers an HTTPS OCI registry
+  source without connecting to it. `--path` (`-p`) selects a repository prefix;
+  a safe path embedded in the URL is accepted. `--username` stores a non-secret
+  username for later authentication. See [Add an OCI registry source](../sources.md#add-an-oci-registry-source).
+- `luna sources list`: Lists configured local, Git, and OCI sources and marks
+  sources ignored in local user settings.
+- `luna sources ignore <name>`: Ignores one configured source for this project
+  and user. This does not change shared project configuration or revoke trust.
+- `luna sources unignore <name>`: Restores one locally ignored source.
 - `luna sources rename <current-id> <new-id>`: Renames a configured source,
   atomically updating trust and lock-file references bound to its previous
   name.
@@ -168,11 +176,12 @@ project. Pack trust and pack-trust revocation require `--source` or `-s`. See
   results include their latest releases; link results include source, target,
   and installation status.
 - `luna validate <pack-reference>`: Validates the selected release from configured
-  local or Git sources, or the latest release when version is omitted. Direct
-  references can select draft packs even though discovery and search hide them
-  by default.
+  local, Git, or OCI sources, or the latest release when version is omitted.
+  Direct references can select draft packs even though discovery and search hide
+  them by default.
 - `luna inspect <pack-reference>`: Shows the selected pack's identity,
-  description, license, author, parameters, and referenced packs.
+  description, license, author, parameters, and referenced packs. OCI lock
+  provenance includes the registry, repository, version tag, and verified digests.
 
 ## Pack Authoring
 
@@ -243,6 +252,21 @@ and persists with `/`. Every pack manifest requires a non-empty `author` and
 Pack and composite-reference IDs use alphanumeric segments separated by single
 hyphens. Successful pack commands print contextual next actions, such as
 adding content, viewing the manifest, or validating it.
+
+## Pack Publishing
+
+- `luna publish <folder> --target <source>`: Publishes a validated pack folder
+  to a configured OCI source. `<folder>` is a project-relative directory with
+  its root `pack.yml`; `--target` is required and must name a non-ignored OCI
+  source.
+
+Luna reads the pack ID and version only from the root `pack.yml`, validates the
+complete authoring tree, and publishes one ZIP/config/manifest artifact. It
+does not run pack hooks or change project configuration or lock state. It
+rejects an existing version tag rather than overwriting it; successful output
+includes the registry reference and verified manifest digest. There are no
+`--id`, `--version`, or `--type` overrides. For GitHub Actions templates, see
+[Publish private packs from GitHub Actions](../advanced/publish-private-packs.md).
 
 ## Pack Lifecycle
 

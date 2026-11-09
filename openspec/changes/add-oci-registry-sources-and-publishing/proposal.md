@@ -13,8 +13,9 @@ accessible packs unavailable to users without access to every configured source.
 
 - Add first-class `oci` sources with separate registry URL and repository path;
   map each pack to its own repository and each version to a tag.
-- Use ORAS .NET behind a narrow registry abstraction. Represent a pack as a
-  LunaPack OCI artifact containing metadata and one complete ZIP content layer.
+- Use an AOT-safe direct HTTP adapter behind a narrow registry abstraction.
+  Represent a pack as a LunaPack OCI artifact containing metadata and one
+  complete ZIP content layer.
 - Integrate OCI discovery, inspection, version selection, dependencies,
   installation, dry runs, updates, audit, and removal with existing pipelines.
   Query current registry state directly; do not add a persistent OCI cache.
@@ -26,11 +27,12 @@ accessible packs unavailable to users without access to every configured source.
   without managing Git passwords, and add project/user-local source ignore state.
 - Add `luna publish <folder> --target <source>` with manifest-derived ID/version,
   full validation, shared authentication, and immutable release protection.
-- Plan user/developer/CLI documentation, threat-model updates, comprehensive
-  tests, and a private-pack example that publishes changed folders in CI.
+- Update user/developer/CLI documentation and threat models, add comprehensive
+  tests, and maintain a private-pack example that publishes changed folders in
+  CI.
 
-This change contains planning artifacts only. No CLI, schema, dependency,
-workflow, documentation of available features, or accepted ADR is implemented.
+This change implements the capability deltas below. Implementation and
+verification status is tracked in [tasks.md](tasks.md).
 
 ## Capabilities
 
@@ -62,25 +64,26 @@ workflow, documentation of available features, or accepted ADR is implemented.
 
 ## Impact
 
-- Proposed code surfaces: `projects/cli/src/Lunapack.Cli/{Sources,Catalog,Project,
-  Packs,Trust,Application}`, CLI composition, command handlers and completion.
+- Implemented code surfaces: `projects/cli/src/Lunapack.Cli/{Sources,Catalog,Project,
+Packs,Trust,Application}`, CLI composition, command handlers and completion.
   Extend existing source models, identity/fingerprint helpers, `PackCatalog`,
   materialization and lifecycle boundaries; do not build an OCI install engine.
-- Proposed contract surfaces: `projects/schema/lunapack.schema.json`,
+- Implemented contract surfaces: `projects/schema/lunapack.schema.json`,
   `lunapack-lock.schema.json`, `lunapack-user-settings.schema.json`, serialization,
   runtime validators, package-distributed schemas, and their tests.
   `github` remains a CLI shorthand that persists a `git` source.
-- Future dependencies: ORAS .NET and optional Azure.Identity; native credential
-  adapters to be selected and license/platform-reviewed during implementation.
-  No package references are added by this proposal.
+- Dependencies: `Azure.Containers.ContainerRegistry` 1.4.0 (MIT) and optional
+  `Azure.Identity` 1.21.0 (MIT). OCI transport and native credential storage
+  use .NET and operating-system APIs without ORAS or credential-cache packages.
+  Azure package metadata and licenses were reviewed during implementation.
 - Product documentation: `docs/product` requirements, roadmap, and acceptance
   criteria for registry distribution and private-pack consumption.
 - Maintainer documentation: `docs/internal` source/catalog/lifecycle boundaries,
-  schemas, credential resolution, security, testing, and proposed ADRs when
-  decisions become accepted during implementation.
+  schemas, credential resolution, security, testing, and accepted ADRs 0084-0089.
 - Public documentation: `docs/developer/sources.md`, `cli/commands.md`,
   `install-packs.md`, `update-packs.md`, `automation.md`, `github-actions`,
   `threat-model.md`, troubleshooting and authoring guidance; update relevant
   website navigation and schema reference delivery together.
-- Tests: focused unit/security/regression coverage plus real-registry CI,
-  GHCR/ACR compatibility, and Harbor smoke coverage where practical.
+- Tests: focused unit/security/regression coverage, authenticated local TLS
+  registry integration, and changed-pack workflow fixtures. Live GHCR/ACR/Harbor
+  verification remains dependent on controlled external identities.

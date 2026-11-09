@@ -170,3 +170,17 @@ authentication failures and SHALL not continually prompt on authenticated
 - **WHEN** a validated identity can read but cannot push the target repository
 - **THEN** Luna reports insufficient publishing permission for that source rather
   than falsely reporting successful publication or looping through passwords
+
+### Requirement: Restrict bearer token realms to the registry origin
+
+Luna SHALL accept bearer-token realms only when they use HTTPS on the exact
+configured registry origin and contain no user information, query, or fragment.
+It SHALL reject other realms before sending source credentials or following
+the challenge.
+
+#### Scenario: Reject a cross-origin token realm
+
+- **WHEN** a registry challenges with a bearer realm on another host, scheme,
+  or port, or with embedded credentials, a query, or a fragment
+- **THEN** Luna reports an invalid authentication challenge without sending
+  source credentials to that realm

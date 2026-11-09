@@ -27,8 +27,7 @@ internal sealed class ExternalSourceMaterializer(
             Path.GetTempPath(),
             "lunapack",
             "operations",
-            Guid.NewGuid().ToString("N"),
-            "external"
+            Guid.NewGuid().ToString("N")
         );
         try
         {

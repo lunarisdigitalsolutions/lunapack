@@ -2,13 +2,14 @@
 
 ## Context
 
-See [proposal.md](proposal.md) for motivation and affected surfaces. This is a
-proposed design, not an accepted implementation or documentation of available
-commands.
+See [proposal.md](proposal.md) for motivation and affected surfaces. This
+document records the design implemented by this change; public usage guidance
+lives under `docs/developer`.
 
-Current source configuration uses a named YAML map represented internally by
-`ProjectConfiguration.Source` variants and custom serialization. `github` is
-CLI shorthand for a persisted `GitSource`, not a third runtime source class.
+Current source configuration uses an ordered YAML sequence of named entries
+represented internally by `ProjectConfiguration.Source` variants and custom
+serialization. `github` is CLI shorthand for a persisted `GitSource`, not a
+third runtime source class.
 `PackCatalog.BrowseAsync` dispatches local/Git discovery and returns on the first
 failed source. `CatalogService`, graph resolution, source selection, materializers,
 and lifecycle operations currently consume these results.
@@ -25,7 +26,8 @@ it is not a credential store.
 **Goals:**
 
 - Extend discovery/materialization and source identity boundaries without
-  spreading ORAS types into domain, CLI, graph resolution, or trust.
+  spreading registry transport or native credential-store APIs into domain,
+  graph resolution, or trust.
 - Preserve existing transactional lifecycle, ownership, external-content
   approval, hook authorization, semantic-version, and source-switch rules.
 - Make credentials, source availability, and ignore policy consistent across
@@ -35,8 +37,8 @@ it is not a credential store.
 
 **Non-Goals:**
 
-- No feature code, dependency/schema changes, executable workflow, or accepted
-  ADR in this PR. Implementation tasks remain unchecked.
+- No hosted catalog, global discovery guarantee, or registry-side publisher
+  identity is introduced by this change.
 - No Docker/ORAS subprocesses, persistent OCI cache, explicit authentication
   sessions, Git-password storage, or registry-specific install engine.
 - No new pack-ID/version CLI overrides, forced publication overwrite, automatic
@@ -52,21 +54,27 @@ Introduce an OCI source model alongside local/Git and integrate a narrowly
 defined source-provider boundary where catalog and materialization currently
 dispatch by source type. Use an `OciSource` implementation and
 `IOciRegistryClient` with domain-owned repository, version, descriptor, and
-failure models. The ORAS adapter implements repository/tag queries,
-manifest/blob retrieval, and push operations using ORAS .NET.
+failure models. The direct .NET HTTP adapter implements repository/tag queries,
+manifest/blob retrieval, and push operations using the required OCI Distribution
+endpoints. Metadata reads are bounded; pagination, bearer realms, and upload
+locations are validated before they are followed. Bearer realms must use the
+registry's HTTPS origin so registry credentials are never forwarded to an
+untrusted token service.
 
 The adapter accepts credentials, cancellation, timeouts, and destination
 streams; it never prompts, selects project state, executes hooks, or logs
-secrets. No ORAS types cross the adapter boundary. The publisher uses the same
-client. Optional Azure credentials live in a separate adapter/provider, not in
-the generic OCI source or client interface.
+secrets. No transport or platform credential-store types cross the adapter
+boundary. The publisher uses the same client. Optional Azure credentials live
+in a separate adapter/provider, not in the generic OCI source or client
+interface.
 
-Use ORAS .NET, not subprocess calls or a home-grown parallel OCI transport.
-Select and pin compatible SDK versions during implementation after validating
-artifact push/pull, pagination, credential-provider integration, and catalog
-capabilities. A narrow adapter keeps SDK churn local. Bicep is architectural
-inspiration only: folder -> CLI -> owned artifact -> registry -> CLI -> normal
-pipeline.
+Use direct .NET HTTP and platform-native credential APIs, not subprocess calls
+or reflection-dependent OCI and credential-cache packages. The implementation
+uses `Azure.Containers.ContainerRegistry` 1.4.0 (MIT) and optional
+`Azure.Identity` 1.21.0 (MIT) only for ACR token exchange. OCI transport and
+credential storage remain AOT-compatible without ORAS or
+`ktsu.CredentialCache`. Bicep is architectural inspiration only: folder -> CLI
+-> owned artifact -> registry -> CLI -> normal pipeline.
 
 ### 2. Keep endpoint, repository path, and credentials distinct
 
@@ -197,13 +205,13 @@ source per invocation, preventing hostname-based reuse; separate invocations
 can publish different sources with different secrets. This provider has
 precedence over stored credentials. Secrets exist only in process memory.
 
-Optional Azure provider uses `Azure.Identity`/`DefaultAzureCredential` behind an
-ORAS `ICredentialProvider` integration. Select it only for detected ACR endpoints
-or explicit source-bound identity-provider configuration; do not try Azure for
-GHCR/Harbor/generic hosts. Acquire an Azure token and perform the required ACR
-token exchange/scoping through the credential adapter; an Azure management
-token alone is not a registry password. Never persist acquired access/refresh
-tokens in project/user settings.
+Optional Azure provider uses `Azure.Identity`/`DefaultAzureCredential` behind
+the `IOciAccessTokenProvider` boundary. Select it only for detected ACR
+endpoints or explicit source-bound identity-provider configuration; do not try
+Azure for GHCR/Harbor/generic hosts. Acquire an Azure token and perform the
+required ACR token exchange/scoping through the credential adapter; an Azure
+management token alone is not a registry password. Never persist acquired
+access/refresh tokens in project/user settings.
 
 Support available developer identity chains and workload federation. The sample
 below uses `azure/login` with GitHub OIDC; the resulting Azure CLI identity can
@@ -318,11 +326,10 @@ unsupported-source guidance; OCI packs can still use existing approved local/Git
 external-content references. Do not broaden pack-local external-source schemas
 implicitly.
 
-Public docs explain available commands only after implementation. Internal docs
-record architecture, source-required failure handling, credential resolution,
-artifact format and threat model. Product docs record the delivery milestone.
-Create accepted ADRs from the repository template and update the ADR index when
-these proposed decisions are accepted; do not mark them accepted in this PR.
+Public docs explain the shipped commands and limits. Internal docs record
+architecture, source-required failure handling, credential resolution, artifact
+format and threat model. Product docs record the delivery milestone. Accepted
+decisions are recorded in ADRs 0084-0089 and indexed.
 
 ## Risks / Trade-offs
 
@@ -350,15 +357,16 @@ these proposed decisions are accepted; do not mark them accepted in this PR.
 
 ## Migration Plan
 
-1. This PR introduces only the OpenSpec change. Merge does not change runtime,
-   public schemas, package dependencies, or installed project state.
-2. Implement the unchecked task groups through the existing apply workflow,
-   adding contract/runtime changes together with focused tests.
+1. This change implements OCI sources, credentials, local ignore state,
+   lifecycle integration, publishing, schemas, documentation, and the
+   private-pack example.
+2. Track implementation and verification status in `tasks.md`; focused unit,
+   security, integration, and workflow-fixture tests cover the shipped behavior.
 3. Preserve existing schema-version-compatible local/Git configurations and user
    settings. Add OCI provenance only for successfully resolved OCI records.
-4. Verify generic TLS registry integration and GHCR/ACR compatibility; smoke-test
-   Harbor where credentials/infrastructure are available. Publish explicit
-   limitations, not unsupported compatibility claims.
+4. Verify the generic TLS registry integration. Live GHCR/ACR identities and
+   Harbor smoke coverage require controlled external registry infrastructure;
+   document this limitation rather than claim provider validation.
 5. Ship documentation, threat model, supported CLI version, and sample together.
    Older CLIs cannot read new OCI declarations; document minimum version rather
    than reinterpreting them as Git.
@@ -367,10 +375,10 @@ these proposed decisions are accepted; do not mark them accepted in this PR.
    never strip provenance from live ownership records. Native credentials and
    user-local ignore state remain outside project files.
 
-## Planned Private-Pack Example
+## Private-Pack Example
 
-The following is a design example for future documentation, not an active
-workflow or an available `luna publish` command.
+The maintained example lives in `examples/oci-private-packs`. Its workflows
+are consumer templates, not workflows run by the LunaPack repository.
 
 ```text
 lunapack.yml
@@ -385,7 +393,7 @@ packs/
 ```yaml
 schemaVersion: 1
 sources:
-  private:
+  - name: private
     type: oci
     url: https://lunapack.azurecr.io
     path: packs
@@ -403,7 +411,7 @@ name: Publish changed LunaPacks
 on:
   push:
     branches: [main]
-    paths: ["packs/**"]
+    paths: ['packs/**']
 
 permissions:
   contents: read

@@ -1,0 +1,66 @@
+name: Publish private packs to an OCI registry
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'packs/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-generic-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Check out full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Test changed-pack detection
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Find changed pack folders
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          python3 scripts/find_changed_packs.py "$BEFORE" "$AFTER" > "$RUNNER_TEMP/changed-packs.bin"
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install pinned Luna
+        env:
+          LUNA_VERSION: ${{ vars.LUNA_VERSION }}
+        run: |
+          set -euo pipefail
+          : "${LUNA_VERSION:?Set the LUNA_VERSION repository variable to an OCI-capable release}"
+          dotnet tool install --global Lunaris.Lunapack.Luna --version "$LUNA_VERSION"
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+
+      - name: Publish changed packs
+        env:
+          LUNAPACK_OCI_SOURCE: ${{ vars.LUNAPACK_OCI_SOURCE }}
+          LUNAPACK_OCI_USERNAME: ${{ secrets.OCI_USERNAME }}
+          LUNAPACK_OCI_PASSWORD: ${{ secrets.OCI_PASSWORD }}
+        run: |
+          set -euo pipefail
+          : "${LUNAPACK_OCI_SOURCE:?Set the LUNAPACK_OCI_SOURCE repository variable}"
+          while IFS= read -r -d '' pack; do
+            if [[ -f "$pack/pack.yml" ]]; then
+              luna publish "$pack" --target "$LUNAPACK_OCI_SOURCE"
+            fi
+          done < "$RUNNER_TEMP/changed-packs.bin"

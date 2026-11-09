@@ -1,9 +1,11 @@
 ﻿using System.Collections;
 using System.Text.RegularExpressions;
+using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Application.Paths;
 using Lunapack.Cli.Packs.ManagedFiles;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources;
+using Lunapack.Cli.Sources.Oci;
 using Lunapack.Cli.Trust;
 
 namespace Lunapack.Cli.Packs.Manifest;
@@ -875,6 +877,9 @@ internal static partial class ManifestModelValidator
                 case ProjectConfiguration.GitSource gitSource:
                     ValidateGitSource(gitSource, issues);
                     break;
+                case ProjectConfiguration.OciSource ociSource:
+                    ValidateOciSource(ociSource, issues);
+                    break;
                 default:
                     issues.Add("Project configuration contains an unsupported source type.");
                     break;
@@ -1086,6 +1091,17 @@ internal static partial class ManifestModelValidator
                 $"Local project trust '{projectPath}'",
                 issues
             );
+            var hasInvalidIgnoredSources =
+                projectTrust.IgnoredSources.Any(source => !IsValidSourceIdentity(source))
+                || projectTrust.IgnoredSources.Distinct().Count()
+                    != projectTrust.IgnoredSources.Count;
+            if (hasInvalidIgnoredSources)
+            {
+                issues.Add(
+                    $"Local project settings '{projectPath}' ignored sources must contain unique configured-source identities."
+                );
+            }
+
             ValidateTrustEntries(
                 projectTrust.Acknowledgements.Sources,
                 projectTrust.Acknowledgements.Packs,
@@ -1136,8 +1152,22 @@ internal static partial class ManifestModelValidator
             "git" => !string.IsNullOrEmpty(source.Url)
                 && source.Ref is not ""
                 && (source.Path is null || IsSafeProjectRelativePath(source.Path)),
+            "oci" => IsValidOciSourceIdentity(source),
             _ => false,
         };
+
+    private static bool IsValidOciSourceIdentity(ConfiguredSourceIdentity source)
+    {
+        if (source.Url is null || source.Ref is not null)
+        {
+            return false;
+        }
+
+        var normalized = SourceIdentityNormalizer.NormalizeOciLocation(source.Url, source.Path);
+        return normalized.Value is { } location
+            && string.Equals(location.Url, source.Url, StringComparison.Ordinal)
+            && string.Equals(location.Path, source.Path, StringComparison.Ordinal);
+    }
 
     private static bool IsCanonicalAbsolutePath(string? value)
     {
@@ -1229,6 +1259,27 @@ internal static partial class ManifestModelValidator
         if (!repository.IsSuccess)
         {
             issues.Add($"Git source '{source.Name}' URL is invalid.");
+        }
+    }
+
+    private static void ValidateOciSource(
+        ProjectConfiguration.OciSource source,
+        List<string> issues
+    )
+    {
+        var location = SourceIdentityNormalizer.NormalizeOciLocation(source.Url, source.Path);
+        var hasInvalidSource =
+            !string.Equals(source.Type, "oci", StringComparison.Ordinal)
+            || !location.IsSuccess
+            || (
+                source.Username is { } username
+                && (string.IsNullOrWhiteSpace(username) || username.Any(char.IsControl))
+            );
+        if (hasInvalidSource)
+        {
+            issues.Add(
+                $"OCI source '{source.Name}' must define an HTTPS registry URL and valid optional repository path and username."
+            );
         }
     }
 
@@ -1361,13 +1412,21 @@ internal static partial class ManifestModelValidator
             issues.Add("Resolved packs must define source name and identity.");
         }
 
-        if (resolvedPack.GitSource is not { } provenance)
+        if (resolvedPack.GitSource is not null && resolvedPack.OciSource is not null)
         {
-            ValidateLocalResolvedPackSource(resolvedPack, issues);
+            issues.Add($"Resolved pack '{resolvedPack.Id}' has conflicting source provenance.");
+        }
+        else if (resolvedPack.GitSource is { } provenance)
+        {
+            ValidateGitResolvedPackSource(resolvedPack, provenance, issues);
+        }
+        else if (resolvedPack.OciSource is { } ociProvenance)
+        {
+            ValidateOciResolvedPackSource(resolvedPack, ociProvenance, issues);
         }
         else
         {
-            ValidateGitResolvedPackSource(resolvedPack, provenance, issues);
+            ValidateLocalResolvedPackSource(resolvedPack, issues);
         }
 
         foreach (var packReference in resolvedPack.Packs)
@@ -1604,6 +1663,88 @@ internal static partial class ManifestModelValidator
                 $"Resolved pack '{resolvedPack.Id}' source '{resolvedPack.SourceName}' Git source identity path does not match Git provenance."
             );
         }
+    }
+
+    private static void ValidateOciResolvedPackSource(
+        ProjectLockFile.ResolvedPack resolvedPack,
+        OciSourceProvenance provenance,
+        List<string> issues
+    )
+    {
+        if (
+            resolvedPack.SourcePath is not null
+            || !string.Equals(resolvedPack.PackPath, ".", StringComparison.Ordinal)
+        )
+        {
+            issues.Add(
+                $"OCI resolved pack '{resolvedPack.Id}' must identify its archive root without a local source path."
+            );
+        }
+
+        if (resolvedPack.SourceIdentity is not { } identity)
+        {
+            issues.Add($"OCI resolved pack '{resolvedPack.Id}' is missing its source identity.");
+            return;
+        }
+
+        var sourceName = resolvedPack.SourceName;
+        if (string.IsNullOrWhiteSpace(sourceName))
+        {
+            issues.Add($"OCI resolved pack '{resolvedPack.Id}' is missing its source name.");
+            return;
+        }
+
+        var source = new ProjectConfiguration.OciSource
+        {
+            Name = sourceName,
+            Url = identity.Url ?? string.Empty,
+            Path = identity.Path,
+        };
+        var location = SourceIdentityNormalizer.NormalizeOciLocation(source.Url, source.Path);
+        var repository = OciRepositoryTagMapper.CreateRepository(source, resolvedPack.Id);
+        var version = string.IsNullOrWhiteSpace(provenance.Tag)
+            ? ManifestOperationResult<string>.Failure("OCI tag is required.")
+            : OciRepositoryTagMapper.ReadVersion(provenance.Tag);
+        var hasInvalidIdentity =
+            !string.Equals(identity.Type, "oci", StringComparison.Ordinal)
+            || identity.Ref is not null
+            || !location.IsSuccess
+            || !repository.IsSuccess
+            || !version.IsSuccess
+            || string.IsNullOrWhiteSpace(provenance.RegistryUrl)
+            || string.IsNullOrWhiteSpace(provenance.Repository)
+            || !string.Equals(identity.Url, location.Value.Url, StringComparison.Ordinal)
+            || !string.Equals(identity.Path, location.Value.Path, StringComparison.Ordinal)
+            || !IsOciDigest(provenance.ManifestDigest)
+            || !IsOciDigest(provenance.ContentDigest)
+            || provenance.ContentSize is < 1 or > OciPackArchive.MaximumArchiveBytes
+            || !string.Equals(provenance.RegistryUrl, location.Value.Url, StringComparison.Ordinal)
+            || !string.Equals(provenance.Repository, repository.Value, StringComparison.Ordinal)
+            || !string.Equals(version.Value, resolvedPack.Version, StringComparison.Ordinal);
+        if (hasInvalidIdentity)
+        {
+            issues.Add(
+                $"Resolved pack '{resolvedPack.Id}' has invalid OCI identity or digest provenance."
+            );
+        }
+    }
+
+    private static bool IsOciDigest(string? value)
+    {
+        if (value is not { Length: 71 } || !value.StartsWith("sha256:", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        foreach (var character in value.AsSpan(7))
+        {
+            if (character is not (>= '0' and <= '9') and not (>= 'a' and <= 'f'))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static void ValidateGitSource(GitSourceProvenance source, List<string> issues)

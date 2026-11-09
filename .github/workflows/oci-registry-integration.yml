@@ -1,0 +1,94 @@
+name: CLI OCI registry integration
+
+on:
+  pull_request:
+    paths:
+      - 'projects/cli/**'
+      - 'projects/schema/**'
+      - 'examples/oci-private-packs/**'
+      - '.github/workflows/oci-registry-integration.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'projects/cli/**'
+      - 'projects/schema/**'
+      - 'examples/oci-private-packs/**'
+      - '.github/workflows/oci-registry-integration.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oci-registry-integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore projects/cli/src/Lunapack.slnx --locked-mode
+
+      - name: Create trusted TLS registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/oci-certs" "$RUNNER_TEMP/oci-auth"
+          registry_username=lunapack-test
+          registry_password="$(openssl rand -hex 32)"
+          printf '::add-mask::%s\n' "$registry_password"
+          printf 'LUNAPACK_TEST_OCI_USERNAME=%s\nLUNAPACK_TEST_OCI_PASSWORD=%s\n' \
+            "$registry_username" "$registry_password" >> "$GITHUB_ENV"
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+            -keyout "$RUNNER_TEMP/oci-certs/registry.key" \
+            -out "$RUNNER_TEMP/oci-certs/registry.crt" \
+            -subj '/CN=localhost' \
+            -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1'
+          docker run --rm --entrypoint htpasswd \
+            httpd:2.4-alpine@sha256:d72968666c0a6961b07036d85fc053bc3cf640583cb1ff8360e1617818f164dc \
+            -Bbn "$registry_username" "$registry_password" \
+            > "$RUNNER_TEMP/oci-auth/htpasswd"
+          sudo cp "$RUNNER_TEMP/oci-certs/registry.crt" \
+            /usr/local/share/ca-certificates/lunapack-oci-registry.crt
+          sudo update-ca-certificates
+          docker run --detach --rm --name lunapack-oci-registry \
+            --publish 5443:5000 \
+            --volume "$RUNNER_TEMP/oci-certs:/certs:ro" \
+            --volume "$RUNNER_TEMP/oci-auth:/auth:ro" \
+            --env REGISTRY_HTTP_TLS_CERTIFICATE=/certs/registry.crt \
+            --env REGISTRY_HTTP_TLS_KEY=/certs/registry.key \
+            --env REGISTRY_AUTH=htpasswd \
+            --env REGISTRY_AUTH_HTPASSWD_REALM='LunaPack-integration' \
+            --env REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd \
+            registry:2.8.3
+          for attempt in $(seq 1 30); do
+            if curl --silent --show-error --fail \
+              --user lunapack-test:ci-test-password \
+              https://localhost:5443/v2/ >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo 'The TLS-enabled OCI registry did not become ready.' >&2
+          exit 1
+
+      - name: Run OCI registry integration tests
+        env:
+          LUNAPACK_TEST_OCI_REGISTRY: https://localhost:5443
+        run: |
+          test -n "$LUNAPACK_TEST_OCI_REGISTRY"
+          test -n "$LUNAPACK_TEST_OCI_USERNAME"
+          test -n "$LUNAPACK_TEST_OCI_PASSWORD"
+          dotnet test projects/cli/src/Lunapack.Cli.IntegrationTests/Lunapack.Cli.IntegrationTests.csproj \
+            --configuration Release \
+            --no-restore
