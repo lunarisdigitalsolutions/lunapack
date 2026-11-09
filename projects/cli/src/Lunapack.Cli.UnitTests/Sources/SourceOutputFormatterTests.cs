@@ -43,4 +43,23 @@ public sealed class SourceOutputFormatterTests
                 "shared - git - url: https://example.test/platform-packs.git - ref: main - path: packs/platform - timeoutSeconds: 120 - identity: git(url=https://example.test/platform-packs.git, ref=main, path=packs/platform)"
             );
     }
+
+    [Test]
+    public async Task Scenario_OciSourceHasProperties_FormatsTypeAndConfiguredProperties()
+    {
+        var source = new ProjectConfiguration.OciSource
+        {
+            Name = "private",
+            Url = "https://registry.example.test",
+            Path = "packs/private",
+        };
+
+        var output = SourceOutputFormatter.Format(source);
+
+        await Assert
+            .That(output)
+            .IsEqualTo(
+                "private - oci - url: https://registry.example.test - path: packs/private - identity: oci(url=https://registry.example.test, path=packs/private)"
+            );
+    }
 }

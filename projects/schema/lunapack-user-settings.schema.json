@@ -19,10 +19,28 @@
     }
   },
   "definitions": {
+    "ociSourceIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "url"],
+      "properties": {
+        "type": {
+          "enum": ["oci"]
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "$ref": "#/definitions/repositoryRelativePath"
+        }
+      }
+    },
     "configuredSourceIdentity": {
       "oneOf": [
         { "$ref": "#/definitions/localSourceIdentity" },
-        { "$ref": "#/definitions/gitSourceIdentity" }
+        { "$ref": "#/definitions/gitSourceIdentity" },
+        { "$ref": "#/definitions/ociSourceIdentity" }
       ]
     },
     "gitSourceIdentity": {
@@ -55,6 +73,9 @@
         },
         "deny": {
           "$ref": "#/definitions/scriptDenial"
+        },
+        "ignoredSources": {
+          "$ref": "#/definitions/trustedSources"
         },
         "packs": {
           "$ref": "#/definitions/trustedPacks"

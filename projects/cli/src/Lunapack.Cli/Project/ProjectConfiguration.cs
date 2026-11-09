@@ -62,6 +62,17 @@ internal sealed record ProjectConfiguration
         public string Type { get; set; } = "local";
     }
 
+    internal sealed record OciSource : Source
+    {
+        public string? Path { get; set; }
+
+        public string Type { get; set; } = "oci";
+
+        public string? Username { get; set; }
+
+        public required string Url { get; set; }
+    }
+
     internal sealed record Remapping
     {
         public Dictionary<string, string> Directories { get; set; } = [];

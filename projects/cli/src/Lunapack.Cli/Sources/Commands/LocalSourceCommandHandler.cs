@@ -6,6 +6,7 @@ using Lunapack.Cli.Application.Guidance;
 using Lunapack.Cli.Application.Paths;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources.Git;
+using Lunapack.Cli.Trust;
 
 namespace Lunapack.Cli.Sources.Commands;
 
@@ -17,9 +18,12 @@ internal sealed class LocalSourceCommandHandler(
     NextStepRenderer nextStepRenderer,
     CliConsole console,
     GitRefResolver? gitRefResolver = null,
-    CliCompletionProvider? completionProvider = null
+    CliCompletionProvider? completionProvider = null,
+    UserSettingsStore? userSettingsStore = null
 )
 {
+    private readonly UserSettingsStore? _userSettingsStore = userSettingsStore;
+
     public Command CreateCommand(string projectDirectory, Option<string?> workspaceOption)
     {
         return new Command("sources", "Manage pack sources.")
@@ -28,6 +32,8 @@ internal sealed class LocalSourceCommandHandler(
             CreateListCommand(projectDirectory, workspaceOption),
             CreateRemoveCommand(projectDirectory, workspaceOption),
             CreateRenameCommand(projectDirectory, workspaceOption),
+            CreateSourceStateCommand(projectDirectory, workspaceOption, ignored: true),
+            CreateSourceStateCommand(projectDirectory, workspaceOption, ignored: false),
         };
     }
 
@@ -63,6 +69,7 @@ internal sealed class LocalSourceCommandHandler(
                 gitRefOption,
                 gitPathOption
             ),
+            CreateAddOciCommand(projectDirectory, workspaceOption, sourceNameArgument),
         };
     }
 
@@ -194,6 +201,52 @@ internal sealed class LocalSourceCommandHandler(
         return addGitHubSourceCommand;
     }
 
+    private Command CreateAddOciCommand(
+        string projectDirectory,
+        Option<string?> workspaceOption,
+        Argument<string> sourceNameArgument
+    )
+    {
+        var registryUrlArgument = new Argument<string>("registry-url")
+        {
+            Description = "HTTPS registry origin or repository URL prefix.",
+        };
+        var pathOption = new Option<string?>("--path", "-p")
+        {
+            Description = "Repository path prefix under the registry.",
+        };
+        var usernameOption = new Option<string?>("--username")
+        {
+            Description = "Non-secret username for registry authentication.",
+        };
+        var addOciSourceCommand = new Command("oci", "Add an OCI registry pack source.")
+        {
+            sourceNameArgument,
+            registryUrlArgument,
+            pathOption,
+            usernameOption,
+        };
+        addOciSourceCommand.SetAction(async parseResult =>
+        {
+            var sourceName = parseResult.GetValue(sourceNameArgument);
+            var registryUrl = parseResult.GetValue(registryUrlArgument);
+            return sourceName is null || registryUrl is null
+                ? console.Fail("A source name and OCI registry URL are required.")
+                : await AddOciSourceAsync(
+                    workspaceDirectoryResolver.Resolve(
+                        projectDirectory,
+                        parseResult.GetValue(workspaceOption)
+                    ),
+                    sourceName,
+                    registryUrl,
+                    parseResult.GetValue(pathOption),
+                    parseResult.GetValue(usernameOption)
+                );
+        });
+
+        return addOciSourceCommand;
+    }
+
     private Command CreateListCommand(string projectDirectory, Option<string?> workspaceOption)
     {
         var listSourcesCommand = new Command("list", "List configured pack sources.");
@@ -207,6 +260,44 @@ internal sealed class LocalSourceCommandHandler(
         );
 
         return listSourcesCommand;
+    }
+
+    private Command CreateSourceStateCommand(
+        string projectDirectory,
+        Option<string?> workspaceOption,
+        bool ignored
+    )
+    {
+        var nameArgument = new Argument<string>("name")
+        {
+            Description = $"Name of the configured source to {(ignored ? "ignore" : "unignore")}.",
+        };
+        if (completionProvider is not null)
+        {
+            nameArgument.CompletionSources.Add(completionProvider.GetConfiguredSourceNames);
+        }
+
+        var verb = ignored ? "ignore" : "unignore";
+        var command = new Command(verb, $"{(ignored ? "Ignore" : "Unignore")} a source locally.")
+        {
+            nameArgument,
+        };
+        command.SetAction(async parseResult =>
+        {
+            var name = parseResult.GetValue(nameArgument);
+            if (name is null)
+            {
+                return console.Fail("A source name is required.");
+            }
+
+            var resolvedProjectDirectory = workspaceDirectoryResolver.Resolve(
+                projectDirectory,
+                parseResult.GetValue(workspaceOption)
+            );
+            return await SetIgnoredAsync(resolvedProjectDirectory, name, ignored);
+        });
+
+        return command;
     }
 
     private Command CreateRemoveCommand(string projectDirectory, Option<string?> workspaceOption)
@@ -295,10 +386,160 @@ internal sealed class LocalSourceCommandHandler(
 
         if (state.Configuration.Sources.Count > 0)
         {
-            console.Render(SourceOutputFormatter.CreateListTable(state.Configuration.Sources));
+            var ignoredSources = await GetIgnoredSourcesAsync(projectDirectory);
+            if (!ignoredSources.IsSuccess)
+            {
+                return console.Fail(ignoredSources.Error);
+            }
+            if (ignoredSources.Value is not { } ignoredSourceIdentities)
+            {
+                return console.Fail("Unable to load local source ignore identities.");
+            }
+
+            var ignoredSourceNames = new HashSet<string>(StringComparer.Ordinal);
+            if (ignoredSourceIdentities.Count > 0 && _userSettingsStore is not null)
+            {
+                var projectKey = _userSettingsStore.GetProjectKey(projectDirectory);
+                if (projectKey.Value is not { } key)
+                {
+                    return console.Fail(projectKey.Error);
+                }
+
+                foreach (var source in state.Configuration.Sources)
+                {
+                    var identity = ConfiguredSourceIdentity.CreateForIgnore(
+                        fileSystem,
+                        key,
+                        source
+                    );
+                    if (identity.Value is not { } configuredIdentity)
+                    {
+                        return console.Fail(identity.Error);
+                    }
+
+                    if (ignoredSourceIdentities.Contains(configuredIdentity))
+                    {
+                        ignoredSourceNames.Add(source.Name);
+                    }
+                }
+            }
+
+            console.Render(
+                SourceOutputFormatter.CreateListTable(
+                    state.Configuration.Sources,
+                    ignoredSourceNames
+                )
+            );
         }
 
         return 0;
+    }
+
+    public async Task<int> SetIgnoredAsync(string projectDirectory, string name, bool ignored)
+    {
+        if (_userSettingsStore is null)
+        {
+            return console.Fail("Local source settings are unavailable.");
+        }
+
+        var loadedState = await projectStateStore.LoadAsync(projectDirectory);
+        if (loadedState.Value is not { } state)
+        {
+            return console.Fail(loadedState.Error);
+        }
+
+        var source = state.Configuration.Sources.Find(configured =>
+            string.Equals(configured.Name, name, StringComparison.Ordinal)
+        );
+        if (source is null)
+        {
+            return console.Fail($"Source '{name}' is not configured.");
+        }
+
+        var settings = await _userSettingsStore.LoadAsync();
+        if (settings.Value is not { } userSettings)
+        {
+            return console.Fail(settings.Error);
+        }
+
+        var projectKey = _userSettingsStore.GetProjectKey(projectDirectory);
+        if (projectKey.Value is not { } key)
+        {
+            return console.Fail(projectKey.Error);
+        }
+
+        userSettings.Projects.TryGetValue(key, out var projectSettings);
+        projectSettings ??= new LocalProjectTrust();
+        var identityResult = ConfiguredSourceIdentity.CreateForIgnore(fileSystem, key, source);
+        if (identityResult.Value is not { } identity)
+        {
+            return console.Fail(identityResult.Error);
+        }
+
+        var wasIgnored = projectSettings.IgnoredSources.Contains(identity);
+        if (wasIgnored == ignored)
+        {
+            console.Info(
+                ignored
+                    ? $"Source '{name}' is already ignored locally"
+                    : $"Source '{name}' is not ignored locally"
+            );
+            return 0;
+        }
+
+        var ignoredSources = projectSettings.IgnoredSources;
+        if (ignored)
+        {
+            ignoredSources.Add(identity);
+        }
+        else
+        {
+            ignoredSources.RemoveAll(candidate => candidate == identity);
+        }
+
+        userSettings.Projects[key] = projectSettings;
+        var savedSettings = await _userSettingsStore.SaveAsync(userSettings);
+        if (!savedSettings.IsSuccess)
+        {
+            return console.Fail(savedSettings.Error);
+        }
+
+        console.Success(
+            ignored ? $"Source '{name}' ignored locally" : $"Source '{name}' restored locally"
+        );
+        return 0;
+    }
+
+    private async Task<
+        ManifestOperationResult<IReadOnlyList<ConfiguredSourceIdentity>>
+    > GetIgnoredSourcesAsync(string projectDirectory)
+    {
+        if (_userSettingsStore is null)
+        {
+            return ManifestOperationResult<IReadOnlyList<ConfiguredSourceIdentity>>.Success([]);
+        }
+
+        var settings = await _userSettingsStore.LoadAsync();
+        if (settings.Value is not { } userSettings)
+        {
+            return ManifestOperationResult<IReadOnlyList<ConfiguredSourceIdentity>>.Failure(
+                settings.Error ?? "Unable to load local source settings."
+            );
+        }
+
+        var projectKey = _userSettingsStore.GetProjectKey(projectDirectory);
+        if (projectKey.Value is not { } key)
+        {
+            return ManifestOperationResult<IReadOnlyList<ConfiguredSourceIdentity>>.Failure(
+                projectKey.Error ?? "Unable to identify local source settings."
+            );
+        }
+
+        return ManifestOperationResult<IReadOnlyList<ConfiguredSourceIdentity>>.Success(
+            userSettings.Projects.TryGetValue(key, out var projectSettings)
+                ? projectSettings.IgnoredSources
+                : []
+        );
     }
 
     public async Task<int> AddLocalSourceAsync(string projectDirectory, string name, string path)
@@ -387,6 +628,70 @@ internal sealed class LocalSourceCommandHandler(
         }
 
         state.Configuration.Sources.Add(candidateGitSource);
+        var savedState = await projectStateStore.SaveAllowingUnavailableSourcesAsync(
+            projectDirectory,
+            state
+        );
+
+        return CompleteSourceAddition(savedState, name);
+    }
+
+    public async Task<int> AddOciSourceAsync(
+        string projectDirectory,
+        string name,
+        string registryUrl,
+        string? repositoryPath,
+        string? username
+    )
+    {
+        if (string.IsNullOrEmpty(name))
+        {
+            return console.Fail("A source name is required.");
+        }
+
+        if (
+            username is not null
+            && (string.IsNullOrWhiteSpace(username) || username.Any(char.IsControl))
+        )
+        {
+            return console.Fail(
+                "An OCI source username must not be empty or contain control characters."
+            );
+        }
+
+        var location = SourceIdentityNormalizer.NormalizeOciLocation(registryUrl, repositoryPath);
+        if (!location.IsSuccess)
+        {
+            return console.Fail(location.Error);
+        }
+
+        var normalizedLocation = location.Value;
+        var loadedState = await projectStateStore.LoadAsync(projectDirectory);
+        if (loadedState.Value is not { } state)
+        {
+            return console.Fail(loadedState.Error);
+        }
+
+        if (SourceNameExists(state.Configuration, name))
+        {
+            return console.Fail($"Source name '{name}' is already configured.");
+        }
+
+        var candidate = new ProjectConfiguration.OciSource
+        {
+            Name = name,
+            Url = normalizedLocation.Url,
+            Path = normalizedLocation.Path,
+            Username = username?.Trim(),
+        };
+        if (FindFingerprintConflict(state.Configuration, candidate) is { } conflict)
+        {
+            return console.Fail(
+                $"OCI source endpoint and path are already configured as '{conflict}'."
+            );
+        }
+
+        state.Configuration.Sources.Add(candidate);
         var savedState = await projectStateStore.SaveAllowingUnavailableSourcesAsync(
             projectDirectory,
             state

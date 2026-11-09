@@ -38,7 +38,11 @@ const sidebars = {
         'advanced/adopt-existing-files',
         'advanced/install-multiple-packs',
         'advanced/audit-and-recover',
-        'automation'
+        {
+          type: 'category',
+          label: 'Automation',
+          items: ['automation', 'advanced/publish-private-packs']
+        }
       ]
     },
     {

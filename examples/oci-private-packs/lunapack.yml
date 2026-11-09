@@ -1,0 +1,19 @@
+schemaVersion: 1
+sources:
+  - name: ghcr
+    type: oci
+    url: https://ghcr.io
+    path: your-org/private-packs
+  - name: acr
+    type: oci
+    url: https://yourregistry.azurecr.io
+    path: private-packs
+  - name: harbor
+    type: oci
+    url: https://harbor.example.com
+    path: private-packs
+  - name: generic
+    type: oci
+    url: https://registry.example.com
+    path: private-packs
+packs: []

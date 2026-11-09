@@ -10,37 +10,41 @@ internal sealed class CompositePackGraphResolver(PackCatalog packCatalog)
         string projectDirectory,
         ProjectConfiguration configuration,
         string packId,
-        string? requestedVersion
+        string? requestedVersion,
+        ProjectLockFile? lockFile = null,
+        bool resolveLockedRootPacks = false
     ) =>
         await ResolveAsync(
             projectDirectory,
             configuration,
-            [new ProjectConfiguration.RequestedPack { Id = packId, Version = requestedVersion }]
+            [new ProjectConfiguration.RequestedPack { Id = packId, Version = requestedVersion }],
+            lockFile,
+            resolveLockedRootPacks
         );
 
     public async Task<ManifestOperationResult<ResolvedPackGraph>> ResolveAsync(
         string projectDirectory,
         ProjectConfiguration configuration,
-        IReadOnlyList<ProjectConfiguration.RequestedPack> requestedPacks
+        IReadOnlyList<ProjectConfiguration.RequestedPack> requestedPacks,
+        ProjectLockFile? lockFile = null,
+        bool resolveLockedRootPacks = false
     )
     {
-        var catalog = await packCatalog.BrowseAsync(projectDirectory, configuration);
-        if (catalog.Value is not { } catalogPacks)
-        {
-            return ManifestOperationResult<ResolvedPackGraph>.Failure(
-                catalog.Error ?? "Unable to browse pack sources."
-            );
-        }
-
         var resolvedById = new Dictionary<string, DiscoveredPack>(StringComparer.Ordinal);
         var resolvedPacks = new List<DiscoveredPack>();
         var visiting = new HashSet<PackIdentity>();
+        var resolutionCache =
+            new Dictionary<PackRequest, ManifestOperationResult<DiscoveredPack>>();
         foreach (var rootRequest in requestedPacks)
         {
-            var root = PackCatalog.ResolveFromCatalog(
-                catalogPacks,
+            var root = await ResolvePackAsync(
+                projectDirectory,
+                configuration,
                 rootRequest.Id,
-                rootRequest.Version
+                rootRequest.Version,
+                lockFile,
+                resolveLockedRootPacks,
+                resolutionCache
             );
             if (root.Value is not { } rootPack)
             {
@@ -50,12 +54,15 @@ internal sealed class CompositePackGraphResolver(PackCatalog packCatalog)
                 );
             }
 
-            var error = ResolveDepthFirst(
+            var error = await ResolveDepthFirstAsync(
                 rootPack,
-                catalogPacks,
+                projectDirectory,
+                configuration,
                 resolvedById,
                 resolvedPacks,
-                visiting
+                visiting,
+                lockFile,
+                resolutionCache
             );
             if (error is not null)
             {
@@ -71,12 +78,15 @@ internal sealed class CompositePackGraphResolver(PackCatalog packCatalog)
         );
     }
 
-    private static string? ResolveDepthFirst(
+    private async Task<string?> ResolveDepthFirstAsync(
         DiscoveredPack pack,
-        IReadOnlyList<CatalogPack> catalog,
+        string projectDirectory,
+        ProjectConfiguration configuration,
         IDictionary<string, DiscoveredPack> resolvedById,
         ICollection<DiscoveredPack> resolvedPacks,
-        ISet<PackIdentity> visiting
+        ISet<PackIdentity> visiting,
+        ProjectLockFile? lockFile,
+        IDictionary<PackRequest, ManifestOperationResult<DiscoveredPack>> resolutionCache
     )
     {
         if (resolvedById.TryGetValue(pack.Manifest.Id, out var resolvedPack))
@@ -98,10 +108,14 @@ internal sealed class CompositePackGraphResolver(PackCatalog packCatalog)
 
         foreach (var reference in pack.Manifest.Packs)
         {
-            var dependency = PackCatalog.ResolveFromCatalog(
-                catalog,
+            var dependency = await ResolvePackAsync(
+                projectDirectory,
+                configuration,
                 reference.Id,
-                reference.Version
+                reference.Version,
+                lockFile,
+                true,
+                resolutionCache
             );
             if (dependency.Value is not { } dependencyPack)
             {
@@ -109,12 +123,15 @@ internal sealed class CompositePackGraphResolver(PackCatalog packCatalog)
                     ?? $"Pack '{reference.Id}@{reference.Version}' is unavailable.";
             }
 
-            var error = ResolveDepthFirst(
+            var error = await ResolveDepthFirstAsync(
                 dependencyPack,
-                catalog,
+                projectDirectory,
+                configuration,
                 resolvedById,
                 resolvedPacks,
-                visiting
+                visiting,
+                lockFile,
+                resolutionCache
             );
             if (error is not null)
             {
@@ -129,5 +146,44 @@ internal sealed class CompositePackGraphResolver(PackCatalog packCatalog)
         return null;
     }
 
+    private async Task<ManifestOperationResult<DiscoveredPack>> ResolvePackAsync(
+        string projectDirectory,
+        ProjectConfiguration configuration,
+        string packId,
+        string? requestedVersion,
+        ProjectLockFile? lockFile,
+        bool resolveLockedSource,
+        IDictionary<PackRequest, ManifestOperationResult<DiscoveredPack>> resolutionCache
+    )
+    {
+        var key = new PackRequest(packId, requestedVersion);
+        if (resolutionCache.TryGetValue(key, out var cachedResolution))
+        {
+            return cachedResolution;
+        }
+
+        var lockedPack =
+            !resolveLockedSource || requestedVersion is null
+                ? null
+                : lockFile?.Packs.Find(pack =>
+                    string.Equals(pack.Id, packId, StringComparison.Ordinal)
+                    && string.Equals(pack.Version, requestedVersion, StringComparison.Ordinal)
+                );
+        var resolution =
+            lockedPack is not null
+            && (lockedPack.SourceIdentity is not null || lockedPack.OciSource is not null)
+                ? await packCatalog.ResolveLockedAsync(projectDirectory, configuration, lockedPack)
+                : await packCatalog.ResolveAsync(
+                    projectDirectory,
+                    configuration,
+                    packId,
+                    requestedVersion
+                );
+        resolutionCache.Add(key, resolution);
+        return resolution;
+    }
+
     private sealed record PackIdentity(string Id, string Version);
+
+    private sealed record PackRequest(string Id, string? Version);
 }

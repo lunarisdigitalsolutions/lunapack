@@ -10,9 +10,13 @@ namespace Lunapack.Cli.Links;
 internal sealed class LinkResolver(
     IFileSystem fileSystem,
     LinkTargetMapper targetMapper,
-    IReadOnlyList<ILinkSourceProvider> sourceProviders
+    IReadOnlyList<ILinkSourceProvider> sourceProviders,
+    ConfiguredSourceIgnoreService? configuredSourceIgnoreService = null
 )
 {
+    private readonly ConfiguredSourceIgnoreService? _sourceIgnoreService =
+        configuredSourceIgnoreService;
+
     public async Task<ManifestOperationResult<LinkResolution>> ResolveAsync(
         string projectDirectory,
         ProjectConfiguration configuration,
@@ -36,6 +40,32 @@ internal sealed class LinkResolver(
         }
 
         var (source, provider) = (boundSource.Source, boundSource.Provider);
+
+        var ignoreContext = await LoadSourceIgnoreContextAsync(projectDirectory);
+        if (ignoreContext.Value is not { } context)
+        {
+            return ManifestOperationResult<LinkResolution>.Failure(
+                ignoreContext.Error ?? "Unable to load local source ignore settings."
+            );
+        }
+
+        if (_sourceIgnoreService is not null)
+        {
+            var ignored = _sourceIgnoreService.IsIgnored(context, source);
+            if (!ignored.IsSuccess)
+            {
+                return ManifestOperationResult<LinkResolution>.Failure(
+                    ignored.Error ?? $"Unable to identify source '{source.Name}'."
+                );
+            }
+
+            if (ignored.Value)
+            {
+                return ManifestOperationResult<LinkResolution>.Failure(
+                    $"Link '{linkName}' requires source '{source.Name}', which is ignored locally. Run 'luna sources unignore {source.Name}' to continue."
+                );
+            }
+        }
 
         var listingResult = await provider.ListAsync(
             projectDirectory,
@@ -141,6 +171,13 @@ internal sealed class LinkResolver(
             );
         }
 
+        if (source is ProjectConfiguration.OciSource)
+        {
+            return ManifestOperationResult<BoundLinkSource>.Failure(
+                $"Link '{linkName}' cannot use OCI source '{source.Name}' because OCI sources provide validated pack releases, not individual files. Use a local or Git source for Luna Links."
+            );
+        }
+
         var provider = sourceProviders.FirstOrDefault(candidate => candidate.CanProvide(source));
         return provider is null
             ? ManifestOperationResult<BoundLinkSource>.Failure(
@@ -150,6 +187,17 @@ internal sealed class LinkResolver(
                 new BoundLinkSource(source, provider)
             );
     }
+
+    private Task<
+        ManifestOperationResult<ConfiguredSourceIgnoreService.SourceIgnoreContext>
+    > LoadSourceIgnoreContextAsync(string projectDirectory) =>
+        _sourceIgnoreService is null
+            ? Task.FromResult(
+                ManifestOperationResult<ConfiguredSourceIgnoreService.SourceIgnoreContext>.Success(
+                    ConfiguredSourceIgnoreService.SourceIgnoreContext.Empty
+                )
+            )
+            : _sourceIgnoreService.LoadAsync(projectDirectory);
 
     private async Task<ManifestOperationResult<LinkResolution>> SnapshotAsync(
         ILinkSourceProvider provider,

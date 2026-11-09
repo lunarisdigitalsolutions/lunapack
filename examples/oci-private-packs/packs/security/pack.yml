@@ -1,0 +1,9 @@
+id: example-security
+name: Example security pack
+version: 1.0.0
+license: MIT
+author: Example Platform Team
+description: Shared security baseline documentation.
+managedFiles:
+  - source: content/README.md
+    target: docs/security-baseline.md

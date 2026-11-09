@@ -65,10 +65,11 @@ Each `packs` item records one exact pack release.
 | `managedFiles`    | Managed-file array           | Yes      | Files selected and owned for this pack.       |
 | `externalSources` | Map of external source locks | No       | Pack aliases mapped to approved sources.      |
 | `gitSource`       | Git provenance               | Git only | Git coordinates and resolved commit.          |
+| `ociSource`       | OCI provenance               | OCI only | Registry coordinates and verified digests.    |
 
 A pack reference contains required `id` and exact `version` fields.
 
-## Source identity and Git provenance
+## Source identity and provenance
 
 A local source identity contains `type: local` and its source `path`. A Git
 source identity contains `type: git`, required `url`, and optional configured
@@ -81,6 +82,23 @@ normalized repository identities in `sourceIdentity.url` and `gitSource.url`;
 a trailing slash or `.git` suffix alone does not make them different. A real
 repository mismatch is rejected with a pack- and source-specific validation
 error.
+
+An OCI source identity contains `type: oci`, a normalized HTTPS registry `url`,
+and an optional repository-prefix `path`. OCI provenance records the artifact
+coordinates and verified content:
+
+| Field            | Type           | Meaning                                     |
+| ---------------- | -------------- | ------------------------------------------- |
+| `registryUrl`    | HTTPS origin   | Registry used for the release.              |
+| `repository`     | OCI repository | Canonical repository containing the pack.   |
+| `tag`            | String         | Exact version tag selected for the release. |
+| `manifestDigest` | SHA-256 digest | OCI manifest bytes used for resolution.     |
+| `contentDigest`  | SHA-256 digest | Pack ZIP layer bytes used for installation. |
+| `contentSize`    | Integer        | Verified ZIP layer size in bytes.           |
+
+The lock stores both digests. A later resolution of the locked release must
+match the recorded manifest and content; it does not silently substitute
+another source or accept a moved tag.
 
 Each entry in `externalSources` is keyed by the alias declared in `pack.yml` and
 contains:

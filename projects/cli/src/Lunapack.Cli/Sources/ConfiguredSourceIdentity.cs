@@ -24,6 +24,7 @@ internal sealed record ConfiguredSourceIdentity
                 gitSource.Ref,
                 gitSource.Path
             ),
+            ProjectConfiguration.OciSource ociSource => CreateOci(ociSource.Url, ociSource.Path),
             _ => throw new ArgumentException("Unsupported configured source type.", nameof(source)),
         };
 
@@ -38,6 +39,54 @@ internal sealed record ConfiguredSourceIdentity
             Ref = reference?.Trim(),
             Path = ProjectPath.NormalizeOptional(path)?.Trim('/'),
         };
+
+    public static ConfiguredSourceIdentity CreateOci(string url, string? path)
+    {
+        var normalized = SourceIdentityNormalizer.NormalizeOciLocation(url, path);
+        if (!normalized.IsSuccess)
+        {
+            throw new ArgumentException(
+                normalized.Error ?? "OCI source identity is invalid.",
+                nameof(url)
+            );
+        }
+
+        var location = normalized.Value;
+        return new ConfiguredSourceIdentity
+        {
+            Type = "oci",
+            Url = location.Url,
+            Path = location.Path,
+        };
+    }
+
+    public static ManifestOperationResult<ConfiguredSourceIdentity> CreateForIgnore(
+        IFileSystem fileSystem,
+        string canonicalProjectDirectory,
+        ProjectConfiguration.Source source
+    )
+    {
+        if (source is not ProjectConfiguration.LocalSource localSource)
+        {
+            return ManifestOperationResult<ConfiguredSourceIdentity>.Success(Create(source));
+        }
+
+        try
+        {
+            return ManifestOperationResult<ConfiguredSourceIdentity>.Success(
+                CreateLocal(
+                    fileSystem.Path.GetFullPath(localSource.Path, canonicalProjectDirectory)
+                )
+            );
+        }
+        catch (Exception exception)
+            when (exception is ArgumentException or IOException or NotSupportedException)
+        {
+            return ManifestOperationResult<ConfiguredSourceIdentity>.Failure(
+                $"Unable to identify local source '{localSource.Name}': {exception.Message}"
+            );
+        }
+    }
 
     public static ManifestOperationResult<ConfiguredSourceIdentity> CreateForTrust(
         IFileSystem fileSystem,

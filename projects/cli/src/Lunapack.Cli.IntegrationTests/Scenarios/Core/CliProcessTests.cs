@@ -935,7 +935,10 @@ public sealed class CliProcessTests
         var discover = await CliProcess.InvokeAsync(workspace.Path, "discover");
 
         await Assert.That(discover.ExitCode).IsEqualTo(1);
-        await Assert.That(discover.StandardOutput).Contains("error: Git exited with code");
+        await Assert
+            .That(discover.StandardOutput)
+            .Contains("warning: Skipping unavailable pack source 'git'");
+        await Assert.That(discover.StandardOutput).Contains("Git exited with code 128");
         await Assert.That(File.ReadAllText(configurationPath)).IsEqualTo(initialConfiguration);
         await Assert.That(File.ReadAllText(lockFilePath)).IsEqualTo(initialLockFile);
         await Assert.That(File.Exists(Path.Combine(workspace.Path, ".pack"))).IsFalse();

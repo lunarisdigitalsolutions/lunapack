@@ -13,6 +13,7 @@ using Lunapack.Cli.Packs.ManagedFiles;
 using Lunapack.Cli.Packs.Manifest;
 using Lunapack.Cli.Packs.Planning;
 using Lunapack.Cli.Project;
+using Lunapack.Cli.Sources;
 using Lunapack.Cli.Sources.Git;
 using Lunapack.Cli.Trust;
 
@@ -32,7 +33,8 @@ internal sealed class PackLifecycleService(
     LifecycleHookExecutor? configuredHookExecutor = null,
     ExternalSourceRequirementPlanner? configuredExternalSourceRequirementPlanner = null,
     ExternalSourceMaterializer? configuredExternalSourceMaterializer = null,
-    ExternalSourceConsentCoordinator? configuredExternalSourceConsentCoordinator = null
+    ExternalSourceConsentCoordinator? configuredExternalSourceConsentCoordinator = null,
+    ConfiguredSourceIgnoreService? configuredSourceIgnoreService = null
 )
 {
     private static readonly UTF8Encoding _utf8 = new(
@@ -44,6 +46,8 @@ internal sealed class PackLifecycleService(
         configuredGitPackMaterializer
         ?? new GitPackMaterializer(fileSystem, new GitProcessRunner(), console);
     private readonly CliConsole _console = console;
+    private readonly ConfiguredSourceIgnoreService? _sourceIgnoreService =
+        configuredSourceIgnoreService;
     private readonly LifecycleHookPlanner _hookPlanner = configuredHookPlanner ?? new(fileSystem);
     private readonly LifecycleHookAuthorizer _hookAuthorizer =
         configuredHookAuthorizer
@@ -767,7 +771,8 @@ internal sealed class PackLifecycleService(
             projectDirectory,
             configuration,
             packReference.Id,
-            packReference.Version
+            packReference.Version,
+            lockFile
         );
         if (graph.Value is not { } resolvedGraph)
         {
@@ -878,7 +883,8 @@ internal sealed class PackLifecycleService(
         var graph = await graphResolver.ResolveAsync(
             projectDirectory,
             nextConfiguration,
-            selectedRequestedRoots
+            selectedRequestedRoots,
+            state.LockFile
         );
         return graph.Value is { } resolvedGraph
             ? PackParameterResolver.FindPromptable(
@@ -914,7 +920,8 @@ internal sealed class PackLifecycleService(
         var graph = await graphResolver.ResolveAsync(
             projectDirectory,
             nextConfiguration,
-            selectedRequestedRoots
+            selectedRequestedRoots,
+            state.LockFile
         );
         return graph.Value is { } resolvedGraph
             ? PackParameterResolver.Prompt(
@@ -1000,6 +1007,7 @@ internal sealed class PackLifecycleService(
                 PlanningMode = PackManagedFilePlanningMode.Update,
             };
             var sourcePreparation = await PrepareExternalSourceMaterializationAsync(
+                projectDirectory,
                 preparedGraph.Materialization.Graph,
                 preparedGraph.Configuration,
                 updatePlanningRequest,
@@ -1082,6 +1090,7 @@ internal sealed class PackLifecycleService(
         }
 
         var materializationResult = await _gitPackMaterializer.MaterializeAsync(
+            projectDirectory,
             resolvedGraph,
             nextConfiguration
         );
@@ -1100,6 +1109,7 @@ internal sealed class PackLifecycleService(
     private async Task<
         ManifestOperationResult<PreparedExternalSourceMaterialization>
     > PrepareExternalSourceMaterializationAsync(
+        string projectDirectory,
         ResolvedPackGraph graph,
         ProjectConfiguration configuration,
         PackInstallationRequest planningRequest,
@@ -1140,6 +1150,7 @@ internal sealed class PackLifecycleService(
         }
 
         var externalSources = await PrepareExternalSourcesAsync(
+            projectDirectory,
             selectedGraph,
             configuration,
             resolvedParameters,
@@ -1311,6 +1322,7 @@ internal sealed class PackLifecycleService(
                 PlanningMode = PackManagedFilePlanningMode.Update,
             };
             var sourcePreparation = await PrepareExternalSourceMaterializationAsync(
+                projectDirectory,
                 preparedGraph.Materialization.Graph,
                 preparedGraph.Configuration,
                 updatePlanningRequest,
@@ -1363,7 +1375,8 @@ internal sealed class PackLifecycleService(
         var graph = await graphResolver.ResolveAsync(
             projectDirectory,
             nextConfiguration,
-            nextConfiguration.Packs
+            nextConfiguration.Packs,
+            state.LockFile
         );
         if (graph.Value is not { } resolvedGraph)
         {
@@ -1373,6 +1386,7 @@ internal sealed class PackLifecycleService(
         }
 
         var materializationResult = await _gitPackMaterializer.MaterializeAsync(
+            projectDirectory,
             resolvedGraph,
             nextConfiguration
         );
@@ -1439,6 +1453,7 @@ internal sealed class PackLifecycleService(
     private async Task<
         ManifestOperationResult<ApprovedExternalSourcePlan>
     > PrepareExternalSourcesAsync(
+        string projectDirectory,
         ResolvedPackGraph graph,
         ProjectConfiguration configuration,
         ResolvedPackParameters parameters,
@@ -1446,10 +1461,25 @@ internal sealed class PackLifecycleService(
         bool previewSources
     )
     {
+        IReadOnlyCollection<ConfiguredSourceIdentity>? ignoredSources = null;
+        if (_sourceIgnoreService is not null)
+        {
+            var ignoreContext = await _sourceIgnoreService.LoadAsync(projectDirectory);
+            if (ignoreContext.Value is not { } context)
+            {
+                return ManifestOperationResult<ApprovedExternalSourcePlan>.Failure(
+                    ignoreContext.Error ?? "Unable to load local source ignore settings."
+                );
+            }
+
+            ignoredSources = context.IgnoredSources;
+        }
+
         var requirements = await _externalSourceRequirementPlanner.PlanAsync(
             graph,
             configuration,
-            parameters
+            parameters,
+            ignoredSources: ignoredSources
         );
         return requirements.Value is { } plan
             ? previewSources
@@ -1745,7 +1775,9 @@ internal sealed class PackLifecycleService(
             projectDirectory,
             state.Configuration,
             requestedRoot.Id,
-            installedRoot?.Version ?? requestedRoot.Version
+            installedRoot?.Version ?? requestedRoot.Version,
+            state.LockFile,
+            resolveLockedRootPacks: true
         );
         if (graph.Value is not { } resolvedGraph)
         {
@@ -1754,6 +1786,7 @@ internal sealed class PackLifecycleService(
         }
 
         var materialization = await _gitPackMaterializer.MaterializeAsync(
+            projectDirectory,
             resolvedGraph,
             state.Configuration
         );
@@ -2499,6 +2532,7 @@ internal sealed class PackLifecycleService(
         foreach (var pack in graph.Packs)
         {
             var gitSource = pack.GitSource;
+            var ociSource = pack.OciSource;
             var managedFiles = CreateLockManagedFiles(
                 pack,
                 installationPlan,
@@ -2515,20 +2549,24 @@ internal sealed class PackLifecycleService(
                         )
                         ?.Destination,
                     GitSource = gitSource,
+                    OciSource = ociSource,
                     Id = pack.Manifest.Id,
                     Version = pack.Manifest.Version,
                     SourceName = pack.SourceName,
                     SourceIdentity = pack.SourceIdentity,
-                    SourcePath = gitSource is null ? pack.SourceIdentity.Path : null,
+                    SourcePath =
+                        gitSource is null && ociSource is null ? pack.SourceIdentity.Path : null,
                     ExternalSources = externalSources,
-                    PackPath = gitSource is null
-                        ? ProjectPath.Normalize(
+                    PackPath =
+                        gitSource is not null
+                            ? pack.RepositoryPath
+                                ?? throw new InvalidOperationException(
+                                    "Git-sourced packs require a repository-relative pack path."
+                                )
+                        : ociSource is not null ? "."
+                        : ProjectPath.Normalize(
                             fileSystem.Path.GetRelativePath(pack.SourcePath, pack.PackDirectory)
-                        )
-                        : pack.RepositoryPath
-                            ?? throw new InvalidOperationException(
-                                "Git-sourced packs require a repository-relative pack path."
-                            ),
+                        ),
                     Packs =
                     [
                         .. pack

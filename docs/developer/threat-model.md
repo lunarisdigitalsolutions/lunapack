@@ -1,15 +1,19 @@
 # LunaPack Usage Threat Model
 
 This explanation describes threats, controls, and residual risks when you use
-LunaPack with local or Git sources. LunaPack manages project files and can run
-pack-provided lifecycle scripts. It is not a sandbox or privilege boundary.
+LunaPack with local, Git, or OCI sources. LunaPack manages project files and can
+run pack-provided lifecycle scripts. It is not a sandbox or privilege boundary.
 Treat every pack and source as publisher code.
 
 ## Trust Boundaries
 
 - A project owner chooses local directories or Git repositories as pack sources.
+- OCI registries, their authentication services, and optional Azure identities
+  supply remote artifacts and credentials.
 - Luna reads project configuration, lock state, manifests, templates, selected
   files, and the current workspace.
+- Registry artifacts cross a trust boundary before manifest validation,
+  digest verification, and confined archive extraction.
 - Managed-file transactions cross from resolved pack content into the workspace.
 - Approved lifecycle scripts cross into a process with the current user's authority.
 - Git hosts are external identity and transport boundaries.
@@ -20,175 +24,229 @@ Treat every pack and source as publisher code.
 
 ### TM-S01: Source or Publisher Impersonation
 
-| Field | Assessment |
-| --- | --- |
-| Component | Configured local and Git sources, pack resolution |
-| Asset | Pack identity, selected source, resolved content |
-| Scenario | An attacker presents a repository, moved tag, or duplicate pack ID as content from the expected publisher. |
-| Preconditions | The consumer adds the source, accepts a mutable ref, or resolves an ambiguous ID. |
-| Likelihood | Medium |
-| Impact | Malicious files or hooks can be selected under a trusted-looking pack ID. |
-| Severity | High |
-| Controls | Normalized source identities, source-name binding, exact Git commit lock evidence, ID conflict rejection, graph-wide external-source consent, and dry-run reporting. |
-| Fix | Use full commit IDs for immutable automation. Publisher signatures and rollback-resistant metadata are required before introducing a hosted catalog. |
-| Priority | Future hardening before hosted-catalog launch |
-| Status | Mitigated for current local and configured Git sources |
-| Verification | Source identity, mutable-ref, conflict, consent, and lock-provenance tests. |
-| Residual risk | A pack ID and locked commit establish provenance, not cryptographic publisher identity. Protected tags remain a Git-host policy. |
+| Field         | Assessment                                                                                                                                                           |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Component     | Configured local and Git sources, pack resolution                                                                                                                    |
+| Asset         | Pack identity, selected source, resolved content                                                                                                                     |
+| Scenario      | An attacker presents a repository, moved tag, or duplicate pack ID as content from the expected publisher.                                                           |
+| Preconditions | The consumer adds the source, accepts a mutable ref, or resolves an ambiguous ID.                                                                                    |
+| Likelihood    | Medium                                                                                                                                                               |
+| Impact        | Malicious files or hooks can be selected under a trusted-looking pack ID.                                                                                            |
+| Severity      | High                                                                                                                                                                 |
+| Controls      | Normalized source identities, source-name binding, exact Git commit lock evidence, ID conflict rejection, graph-wide external-source consent, and dry-run reporting. |
+| Fix           | Use full commit IDs for immutable automation. Publisher signatures and rollback-resistant metadata are required before introducing a hosted catalog.                 |
+| Priority      | Future hardening before hosted-catalog launch                                                                                                                        |
+| Status        | Mitigated for current local and configured Git sources                                                                                                               |
+| Verification  | Source identity, mutable-ref, conflict, consent, and lock-provenance tests.                                                                                          |
+| Residual risk | A pack ID and locked commit establish provenance, not cryptographic publisher identity. Protected tags remain a Git-host policy.                                     |
+
+### TM-S02: OCI Registry or Tag Substitution
+
+| Field         | Assessment                                                                                                                                                               |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Component     | Configured OCI sources, registry tags, pack resolution                                                                                                                   |
+| Asset         | Pack identity, registry publisher, selected release bytes                                                                                                                |
+| Scenario      | A registry owner or compromised credential publishes an untrusted artifact or moves a version tag after installation.                                                    |
+| Preconditions | A consumer trusts the registry, installs a new release, or resolves a mutable tag.                                                                                       |
+| Likelihood    | Medium                                                                                                                                                                   |
+| Impact        | Unreviewed files or scripts can be selected under an expected pack ID and version.                                                                                       |
+| Severity      | High                                                                                                                                                                     |
+| Controls      | Normalized source identity, repository-derived pack IDs, artifact/media-type validation, manifest and content SHA-256 verification, and digest provenance in lock state. |
+| Fix           | Enforce immutable version tags in the registry. Review a release before first install; LunaPack does not verify publisher signatures.                                    |
+| Priority      | Registry policy and publisher verification                                                                                                                               |
+| Status        | Digest substitution is detected for locked releases; first-use publisher identity remains registry-controlled                                                            |
+| Verification  | OCI manifest/config/content integrity, moved-tag, and locked-digest integration tests.                                                                                   |
+| Residual risk | A digest proves byte identity, not who authored or approved the bytes.                                                                                                   |
 
 ## Tampering
 
 ### TM-T01: Workspace Escape Through Filesystem Aliases
 
-| Field | Assessment |
-| --- | --- |
-| Component | Install, update, Luna Link, move, uninstall, rollback, and project-state persistence |
-| Asset | Files inside and outside the selected workspace |
-| Scenario | A workspace path component is a symbolic link, junction, or reparse point, or a destination is hard-linked to a file outside the project. |
-| Preconditions | The alias exists before mutation or another same-user process can alter the workspace. |
-| Likelihood | Medium |
-| Impact | Arbitrary file overwrite or deletion with the invoking user's permissions. |
-| Severity | High |
-| Controls | Rooted and traversal rejection, full-plan alias preflight, direct-path alias checks, and sibling-file replacement for hard-linked destinations. |
-| Fix | Implemented for deterministic aliases. Handle-relative no-follow traversal remains future hardening. |
-| Priority | Implemented release control; race hardening deferred |
-| Status | Fixed with residual same-user race |
-| Verification | Deterministic reparse-point tests, real symbolic-link security tests, and hard-link replacement tests. |
-| Residual risk | Path inspection and mutation are separate operations; a same-user process can race component replacement. |
+| Field         | Assessment                                                                                                                                      |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Component     | Install, update, Luna Link, move, uninstall, rollback, and project-state persistence                                                            |
+| Asset         | Files inside and outside the selected workspace                                                                                                 |
+| Scenario      | A workspace path component is a symbolic link, junction, or reparse point, or a destination is hard-linked to a file outside the project.       |
+| Preconditions | The alias exists before mutation or another same-user process can alter the workspace.                                                          |
+| Likelihood    | Medium                                                                                                                                          |
+| Impact        | Arbitrary file overwrite or deletion with the invoking user's permissions.                                                                      |
+| Severity      | High                                                                                                                                            |
+| Controls      | Rooted and traversal rejection, full-plan alias preflight, direct-path alias checks, and sibling-file replacement for hard-linked destinations. |
+| Fix           | Implemented for deterministic aliases. Handle-relative no-follow traversal remains future hardening.                                            |
+| Priority      | Implemented release control; race hardening deferred                                                                                            |
+| Status        | Fixed with residual same-user race                                                                                                              |
+| Verification  | Deterministic reparse-point tests, real symbolic-link security tests, and hard-link replacement tests.                                          |
+| Residual risk | Path inspection and mutation are separate operations; a same-user process can race component replacement.                                       |
 
 ### TM-T02: Lock or Git Cache Poisoning
 
-| Field | Assessment |
-| --- | --- |
-| Component | `lunapack-lock.yml`, project Git cache, source materialization |
-| Asset | Resolved source identity, commit, manifest, target ownership, and selected bytes |
-| Scenario | An attacker edits local lock or cache data so Luna reuses content from another source, commit, path, or manifest. |
-| Preconditions | The attacker can modify the project or cache as the same user. |
-| Likelihood | Medium |
-| Impact | Unreviewed bytes can enter planning, overwrite owned files, or influence lifecycle selection. |
-| Severity | High |
-| Controls | Typed lock validation, configured-source ownership matching, immutable Git commit resolution, cache identity and commit validation, manifest checks, and blob verification before reuse. |
-| Fix | Cache entries now fail validation or are repaired before project mutation. Keep lock changes under source review. |
-| Priority | Implemented |
-| Status | Fixed for cache substitution; local lock integrity remains user-controlled |
-| Verification | Invalid, escaping, identity-mismatched, commit-mismatched, and content-mismatched cache tests. |
-| Residual risk | A same-user attacker who can modify the workspace can also modify project configuration and lock evidence. Luna does not sign local state. |
+| Field         | Assessment                                                                                                                                                                               |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Component     | `lunapack-lock.yml`, project Git cache, source materialization                                                                                                                           |
+| Asset         | Resolved source identity, commit, manifest, target ownership, and selected bytes                                                                                                         |
+| Scenario      | An attacker edits local lock or cache data so Luna reuses content from another source, commit, path, or manifest.                                                                        |
+| Preconditions | The attacker can modify the project or cache as the same user.                                                                                                                           |
+| Likelihood    | Medium                                                                                                                                                                                   |
+| Impact        | Unreviewed bytes can enter planning, overwrite owned files, or influence lifecycle selection.                                                                                            |
+| Severity      | High                                                                                                                                                                                     |
+| Controls      | Typed lock validation, configured-source ownership matching, immutable Git commit resolution, cache identity and commit validation, manifest checks, and blob verification before reuse. |
+| Fix           | Cache entries now fail validation or are repaired before project mutation. Keep lock changes under source review.                                                                        |
+| Priority      | Implemented                                                                                                                                                                              |
+| Status        | Fixed for cache substitution; local lock integrity remains user-controlled                                                                                                               |
+| Verification  | Invalid, escaping, identity-mismatched, commit-mismatched, and content-mismatched cache tests.                                                                                           |
+| Residual risk | A same-user attacker who can modify the workspace can also modify project configuration and lock evidence. Luna does not sign local state.                                               |
 
 ### TM-T03: Ambiguous or Malformed Documents
 
-| Field | Assessment |
-| --- | --- |
-| Component | Project configuration, lock files, pack manifests, custom YAML converters, JSON Schemas |
-| Asset | Parsed source, parameter, target, variable, and ownership semantics |
-| Scenario | Duplicate keys, unknown properties, malformed numeric values, or escaping paths are interpreted inconsistently or bypass intended validation. |
-| Preconditions | A user opens or consumes an attacker-controlled repository or pack. |
-| Likelihood | Medium |
-| Impact | Configuration confusion, denial of service, or unsafe target selection. |
-| Severity | Medium |
-| Controls | Typed parsing, duplicate and unknown-property rejection, handled YAML errors, runtime validation, and schema parity for managed and lock targets. |
-| Fix | Implemented for source, pack-parameter, and scalar-dictionary converters and target confinement. |
-| Priority | Implemented |
-| Status | Fixed for reviewed version-1 documents |
-| Verification | Malformed configuration, duplicate parameter, target traversal, and runtime/schema parity tests. |
-| Residual risk | Complete parser byte, nesting, and collection ceilings are not yet defined; see TM-D01. |
+| Field         | Assessment                                                                                                                                        |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Component     | Project configuration, lock files, pack manifests, custom YAML converters, JSON Schemas                                                           |
+| Asset         | Parsed source, parameter, target, variable, and ownership semantics                                                                               |
+| Scenario      | Duplicate keys, unknown properties, malformed numeric values, or escaping paths are interpreted inconsistently or bypass intended validation.     |
+| Preconditions | A user opens or consumes an attacker-controlled repository or pack.                                                                               |
+| Likelihood    | Medium                                                                                                                                            |
+| Impact        | Configuration confusion, denial of service, or unsafe target selection.                                                                           |
+| Severity      | Medium                                                                                                                                            |
+| Controls      | Typed parsing, duplicate and unknown-property rejection, handled YAML errors, runtime validation, and schema parity for managed and lock targets. |
+| Fix           | Implemented for source, pack-parameter, and scalar-dictionary converters and target confinement.                                                  |
+| Priority      | Implemented                                                                                                                                       |
+| Status        | Fixed for reviewed version-1 documents                                                                                                            |
+| Verification  | Malformed configuration, duplicate parameter, target traversal, and runtime/schema parity tests.                                                  |
+| Residual risk | Complete parser byte, nesting, and collection ceilings are not yet defined; see TM-D01.                                                           |
+
+### TM-T04: Unsafe OCI Archive Extraction
+
+| Field         | Assessment                                                                                                                                                                                                                                     |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Component     | OCI pack ZIP validation and temporary extraction                                                                                                                                                                                               |
+| Asset         | Workspace files and temporary operation data                                                                                                                                                                                                   |
+| Scenario      | A crafted archive uses traversal, rooted paths, collisions, or oversized entries to escape extraction or exhaust resources.                                                                                                                    |
+| Preconditions | A consumer validates or installs an untrusted registry artifact.                                                                                                                                                                               |
+| Likelihood    | Medium                                                                                                                                                                                                                                         |
+| Impact        | Files outside the operation directory could be overwritten, or the CLI could consume excessive disk and memory.                                                                                                                                |
+| Severity      | High                                                                                                                                                                                                                                           |
+| Controls      | Verify descriptors and digests before extraction; reject rooted, traversing, duplicate, conflicting, or link-like entries; confine extraction to a private temporary directory; enforce archive, entry, expanded-size, and entry-count limits. |
+| Fix           | Validate and reject unsafe artifacts before project mutation.                                                                                                                                                                                  |
+| Priority      | Implemented release control                                                                                                                                                                                                                    |
+| Status        | Fixed for defined archive limits and path rules                                                                                                                                                                                                |
+| Verification  | Traversal, rooted-path, collision, link-like-entry, corrupt ZIP, size-boundary, cleanup, and no-mutation tests.                                                                                                                                |
+| Residual risk | An authorized publisher can still supply harmful but structurally valid pack content or scripts.                                                                                                                                               |
 
 ## Repudiation
 
 ### TM-R01: Lifecycle Action Denial
 
-| Field | Assessment |
-| --- | --- |
-| Component | Lifecycle trust decisions, lock evidence, CLI diagnostics |
-| Asset | Evidence of what source, script, and version was authorized |
-| Scenario | A publisher or operator disputes which pack code ran after an incident. |
-| Preconditions | Local output was not retained or mutable source metadata was used. |
-| Likelihood | Low |
-| Impact | Incident response cannot reconstruct authorization confidently. |
-| Severity | Medium |
-| Controls | Source fingerprints, exact Git commits, rendered hook arguments before consent, and lock records. |
-| Fix | Retain relevant redacted diagnostics and prefer immutable refs. |
-| Priority | Operational requirement |
-| Status | Mitigated |
-| Verification | Trust and lock-provenance tests. |
-| Residual risk | LunaPack collects no telemetry and does not maintain an independent append-only audit log. |
+| Field         | Assessment                                                                                        |
+| ------------- | ------------------------------------------------------------------------------------------------- |
+| Component     | Lifecycle trust decisions, lock evidence, CLI diagnostics                                         |
+| Asset         | Evidence of what source, script, and version was authorized                                       |
+| Scenario      | A publisher or operator disputes which pack code ran after an incident.                           |
+| Preconditions | Local output was not retained or mutable source metadata was used.                                |
+| Likelihood    | Low                                                                                               |
+| Impact        | Incident response cannot reconstruct authorization confidently.                                   |
+| Severity      | Medium                                                                                            |
+| Controls      | Source fingerprints, exact Git commits, rendered hook arguments before consent, and lock records. |
+| Fix           | Retain relevant redacted diagnostics and prefer immutable refs.                                   |
+| Priority      | Operational requirement                                                                           |
+| Status        | Mitigated                                                                                         |
+| Verification  | Trust and lock-provenance tests.                                                                  |
+| Residual risk | LunaPack collects no telemetry and does not maintain an independent append-only audit log.        |
 
 ## Information Disclosure
 
 ### TM-I01: Secret Disclosure to Approved Hooks
 
-| Field | Assessment |
-| --- | --- |
-| Component | Lifecycle process execution |
-| Asset | Credentials and private values in the parent environment or accessible files |
-| Scenario | An approved hook reads ambient cloud tokens, CI variables, credentials, or unrelated user files and sends or prints them. |
-| Preconditions | The user authorizes the hook or uses `--scripts run`. |
-| Likelihood | Medium |
-| Impact | Credential theft and access to resources available to the current user. |
-| Severity | High |
-| Controls | Explicit script modes, scoped trust, dominant persistent denial, pre-authorization of every hook, literal argument lists, and clear non-sandbox documentation. |
-| Fix | Use `--scripts skip` for untrusted automation and minimize credentials. A future environment allowlist should remove ambient secrets. |
-| Priority | Should address soon after release |
-| Status | Open, explicitly accepted execution boundary |
-| Verification | Trust-policy and process argument tests; environment-minimization tests are pending. |
-| Residual risk | Even with a smaller environment, approved code retains the invoking user's filesystem, process, and network authority. |
+| Field         | Assessment                                                                                                                                                     |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Component     | Lifecycle process execution                                                                                                                                    |
+| Asset         | Credentials and private values in the parent environment or accessible files                                                                                   |
+| Scenario      | An approved hook reads ambient cloud tokens, CI variables, credentials, or unrelated user files and sends or prints them.                                      |
+| Preconditions | The user authorizes the hook or uses `--scripts run`.                                                                                                          |
+| Likelihood    | Medium                                                                                                                                                         |
+| Impact        | Credential theft and access to resources available to the current user.                                                                                        |
+| Severity      | High                                                                                                                                                           |
+| Controls      | Explicit script modes, scoped trust, dominant persistent denial, pre-authorization of every hook, literal argument lists, and clear non-sandbox documentation. |
+| Fix           | Use `--scripts skip` for untrusted automation and minimize credentials. A future environment allowlist should remove ambient secrets.                          |
+| Priority      | Should address soon after release                                                                                                                              |
+| Status        | Open, explicitly accepted execution boundary                                                                                                                   |
+| Verification  | Trust-policy and process argument tests; environment-minimization tests are pending.                                                                           |
+| Residual risk | Even with a smaller environment, approved code retains the invoking user's filesystem, process, and network authority.                                         |
 
 ### TM-I02: Source Disclosure Through Snapshot Entries
 
-| Field | Assessment |
-| --- | --- |
-| Component | Operation pack snapshotting |
-| Asset | Files outside the selected pack root |
-| Scenario | A pack contains a link or special object that redirects snapshot copying to unrelated local data. |
-| Preconditions | The source tree contains an unsupported entry or is changed concurrently by another same-user process. |
-| Likelihood | Low |
-| Impact | Unrelated bytes could be staged, hashed, rendered, copied, or exposed to an approved hook. |
-| Severity | Medium |
-| Controls | Linked roots fail; child links, reparse points, devices, and unsupported objects emit warnings and are skipped while regular siblings continue. |
-| Fix | Deterministic alias following is fixed. Handle-relative no-follow copying remains future hardening. |
-| Priority | Implemented release control; race hardening deferred |
-| Status | Fixed with residual same-user race |
-| Verification | Deterministic warning-and-skip test plus real file-link, directory-link, install, and update tests on symlink-capable hosts. |
-| Residual risk | A concurrent same-user attacker may replace an inspected entry before it is opened. Skipping an entry may leave a pack incomplete. |
+| Field         | Assessment                                                                                                                                      |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Component     | Operation pack snapshotting                                                                                                                     |
+| Asset         | Files outside the selected pack root                                                                                                            |
+| Scenario      | A pack contains a link or special object that redirects snapshot copying to unrelated local data.                                               |
+| Preconditions | The source tree contains an unsupported entry or is changed concurrently by another same-user process.                                          |
+| Likelihood    | Low                                                                                                                                             |
+| Impact        | Unrelated bytes could be staged, hashed, rendered, copied, or exposed to an approved hook.                                                      |
+| Severity      | Medium                                                                                                                                          |
+| Controls      | Linked roots fail; child links, reparse points, devices, and unsupported objects emit warnings and are skipped while regular siblings continue. |
+| Fix           | Deterministic alias following is fixed. Handle-relative no-follow copying remains future hardening.                                             |
+| Priority      | Implemented release control; race hardening deferred                                                                                            |
+| Status        | Fixed with residual same-user race                                                                                                              |
+| Verification  | Deterministic warning-and-skip test plus real file-link, directory-link, install, and update tests on symlink-capable hosts.                    |
+| Residual risk | A concurrent same-user attacker may replace an inspected entry before it is opened. Skipping an entry may leave a pack incomplete.              |
+
+### TM-I03: Registry Credential Reuse or Disclosure
+
+| Field         | Assessment                                                                                                                                                                                            |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Component     | OCI authentication, environment providers, native credential store                                                                                                                                    |
+| Asset         | Registry usernames, passwords, access tokens, and private repository names                                                                                                                            |
+| Scenario      | A credential is reused for another project/source or appears in shared configuration, logs, diagnostics, or hook environment.                                                                         |
+| Preconditions | A registry operation uses stored credentials, CI variables, or interactive authentication.                                                                                                            |
+| Likelihood    | Medium                                                                                                                                                                                                |
+| Impact        | An attacker may read or publish private artifacts using the credential's permissions.                                                                                                                 |
+| Severity      | High                                                                                                                                                                                                  |
+| Controls      | HTTPS-only registry URLs; source-bound environment selection; native operating-system storage keyed by project and source identity; no plaintext project fallback; bounded prompts; secret redaction. |
+| Fix           | Use narrow registry scopes and short-lived CI credentials. Remove unnecessary credentials from the environment before running approved hooks.                                                         |
+| Priority      | Implemented release control; minimize ambient hook credentials                                                                                                                                        |
+| Status        | Mitigated with residual process-environment exposure                                                                                                                                                  |
+| Verification  | Source-isolation, redaction, no-plaintext, prompt-bounding, and environment-provider tests.                                                                                                           |
+| Residual risk | Approved hooks inherit the invoking process environment; users remain responsible for ambient credentials.                                                                                            |
 
 ## Denial of Service
 
 ### TM-D01: Resource Exhaustion From Crafted Content
 
-| Field | Assessment |
-| --- | --- |
-| Component | YAML parsing, source discovery, graph resolution, selection, snapshotting, and Scriban rendering |
-| Asset | CLI availability, memory, CPU, disk, and workspace integrity |
-| Scenario | A very large or deeply nested pack, graph, template, or selected file set exhausts resources. |
-| Preconditions | The consumer evaluates or installs attacker-controlled content. |
-| Likelihood | Medium |
-| Impact | Process termination, disk exhaustion, long execution, or partial external hook effects. |
-| Severity | Medium |
-| Controls | Graph cycle and conflict checks, template computation limits, cancellation paths, private temporary workspaces, and transactional project mutation. |
-| Fix | Add one fixed resource-limit policy covering document bytes and depth, graph nodes, files, byte totals, parameter sizes, and rendered output. |
-| Priority | Should address soon after release |
-| Status | Open |
-| Verification | Existing cycle, conflict, malformed-input, and template tests; exact-boundary resource tests are pending. |
-| Residual risk | Current public schemas do not define complete resource ceilings. Use disposable workspaces for unfamiliar packs. |
+| Field         | Assessment                                                                                                                                                                                |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Component     | YAML parsing, source discovery, graph resolution, selection, snapshotting, and Scriban rendering                                                                                          |
+| Asset         | CLI availability, memory, CPU, disk, and workspace integrity                                                                                                                              |
+| Scenario      | A very large or deeply nested pack, graph, template, or selected file set exhausts resources.                                                                                             |
+| Preconditions | The consumer evaluates or installs attacker-controlled content.                                                                                                                           |
+| Likelihood    | Medium                                                                                                                                                                                    |
+| Impact        | Process termination, disk exhaustion, long execution, or partial external hook effects.                                                                                                   |
+| Severity      | Medium                                                                                                                                                                                    |
+| Controls      | Graph cycle and conflict checks, template computation limits, cancellation paths, private temporary workspaces, transactional project mutation, and explicit OCI metadata/archive limits. |
+| Fix           | Extend documented resource ceilings to non-OCI documents, graphs, and rendered output.                                                                                                    |
+| Priority      | Remaining parser and graph limits                                                                                                                                                         |
+| Status        | Open                                                                                                                                                                                      |
+| Verification  | Existing cycle, conflict, malformed-input, and template tests plus OCI archive boundary tests; exact limits for non-OCI inputs remain pending.                                            |
+| Residual risk | Resource ceilings are not defined for every YAML document or resolution graph. Use disposable workspaces for unfamiliar packs.                                                            |
 
 ## Elevation of Privilege
 
 ### TM-E01: User-Authority Execution by Lifecycle Scripts
 
-| Field | Assessment |
-| --- | --- |
-| Component | Lifecycle hook authorization and process launch |
-| Asset | Current user's files, credentials, processes, and network access |
-| Scenario | A malicious pack convinces a user or automation to approve a hook that performs arbitrary actions. |
-| Preconditions | Script execution is explicitly approved, previously trusted, or selected with `--scripts run`. |
-| Likelihood | Medium |
-| Impact | Arbitrary code execution with the invoking user's full ambient authority. |
-| Severity | High |
-| Controls | Prompt, run, and skip modes; source-scoped trust; dominant denial; escaped preview; direct executable resolution; literal argv; snapshot hashing; and pre-mutation authorization. |
-| Fix | Treat approval as code execution. Use denial or skip mode where hooks are not required. LunaPack does not claim sandboxing. |
-| Priority | Permanent trust boundary |
-| Status | Accepted by design |
-| Verification | Trust-scope, denial, argument, digest, cancellation, and rollback tests. |
-| Residual risk | Authorized code can create irreversible external effects that no transaction can restore. |
+| Field         | Assessment                                                                                                                                                                        |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Component     | Lifecycle hook authorization and process launch                                                                                                                                   |
+| Asset         | Current user's files, credentials, processes, and network access                                                                                                                  |
+| Scenario      | A malicious pack convinces a user or automation to approve a hook that performs arbitrary actions.                                                                                |
+| Preconditions | Script execution is explicitly approved, previously trusted, or selected with `--scripts run`.                                                                                    |
+| Likelihood    | Medium                                                                                                                                                                            |
+| Impact        | Arbitrary code execution with the invoking user's full ambient authority.                                                                                                         |
+| Severity      | High                                                                                                                                                                              |
+| Controls      | Prompt, run, and skip modes; source-scoped trust; dominant denial; escaped preview; direct executable resolution; literal argv; snapshot hashing; and pre-mutation authorization. |
+| Fix           | Treat approval as code execution. Use denial or skip mode where hooks are not required. LunaPack does not claim sandboxing.                                                       |
+| Priority      | Permanent trust boundary                                                                                                                                                          |
+| Status        | Accepted by design                                                                                                                                                                |
+| Verification  | Trust-scope, denial, argument, digest, cancellation, and rollback tests.                                                                                                          |
+| Residual risk | Authorized code can create irreversible external effects that no transaction can restore.                                                                                         |
 
 ## Safer Operation
 
@@ -200,8 +258,10 @@ Treat every pack and source as publisher code.
 5. Use `--scripts skip` or the narrowest trust scope that satisfies the workflow.
 6. Keep `lunapack-lock.yml` under review and use `luna audit` for drift.
 7. Run untrusted evaluation in a disposable workspace with minimal credentials.
-8. Verify release archives with `SHA256SUMS.txt`; prefer immutable image digests
-   when available.
+8. Configure immutable registry tags and retain OCI digest lock evidence; a
+   digest does not replace publisher review or signature verification.
+9. Verify Luna release archives with `SHA256SUMS.txt`; prefer immutable image
+   digests when available.
 
 Diagnostics and hook output may contain private paths, URLs, usernames, or tool
 output. Redact them before sharing. LunaPack does not collect telemetry.

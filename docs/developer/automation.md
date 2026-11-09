@@ -99,5 +99,8 @@ The preview succeeds when Luna prints a complete plan and the process returns
 `0`. Remove `--dry-run` only when the job is intended to apply managed files and
 commit or publish the resulting workspace state.
 
+For a private-pack repository that publishes changed directories to an OCI
+registry, follow [Publish private packs from GitHub Actions](advanced/publish-private-packs.md).
+
 See [Scripts and trust](cli/trust-and-scripts.md) for policy scopes and
 [Command reference](cli/commands.md) for all options and failure behavior.
