@@ -179,16 +179,11 @@ public sealed class OciPackPublisherTests
             fileSystem.Path.Combine(projectDirectory, "profile")
         );
         var projectKey = settingsStore.GetProjectKey(projectDirectory).RequireValue();
-        var savedSettings = await settingsStore.SaveAsync(
-            new UserSettings
+        var sourceIgnoreStore = new SourceIgnoreStore(fileSystem, settingsStore.SettingsDirectory);
+        var savedSettings = await sourceIgnoreStore.SaveAsync(
+            new SourceIgnoreSettings
             {
-                Projects =
-                {
-                    [projectKey] = new LocalProjectTrust
-                    {
-                        IgnoredSources = [ConfiguredSourceIdentity.Create(source)],
-                    },
-                },
+                Projects = { [projectKey] = [ConfiguredSourceIdentity.Create(source)] },
             }
         );
         using var ociPackSource = new OciPackSource(
@@ -228,6 +223,55 @@ public sealed class OciPackPublisherTests
         await Assert.That(registry.RequestCalls).IsEqualTo(0);
         await Assert.That(store.GetCalls).IsEqualTo(0);
         await Assert.That(prompt.Calls).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task GetAvailableAsync_WhenRepositoryEnumerationIsDenied_QueriesLockedOciReleaseDirectly()
+    {
+        using var environment = new OciCredentialEnvironment();
+        var fileSystem = CreateFileSystem();
+        var registry = new FakeOciRegistryClient();
+        var source = CreateSource();
+        var currentRelease = await PublishPackVersionAsync(fileSystem, registry, source, "1.0.0");
+        await PublishPackVersionAsync(fileSystem, registry, source, "1.1.0");
+        registry.DenyRepositoryEnumeration = true;
+
+        var stateStore = new ProjectStateStore(fileSystem);
+        var stateSaved = await stateStore.SaveAsync(
+            _projectDirectory,
+            CreateOciProjectState(source, currentRelease)
+        );
+        var ansiConsole = new Spectre.Console.Testing.TestConsole();
+        var console = new CliConsole(ansiConsole, CliLogLevel.Info);
+        using var ociPackSource = new OciPackSource(
+            fileSystem,
+            console,
+            registry,
+            new FakeCredentialStore(),
+            new FakeCredentialPrompt(null),
+            operationSnapshotSecurity: new NoOpOperationSnapshotSecurity()
+        );
+        using var catalog = new PackCatalog(
+            fileSystem,
+            console,
+            ociPackSource: ociPackSource,
+            operationSnapshotSecurity: new NoOpOperationSnapshotSecurity()
+        );
+        var lifecycle = CreatePackLifecycleService(fileSystem, catalog, stateStore, console);
+        var selectionService = new PackUpdateSelectionService(catalog, stateStore, lifecycle);
+
+        var availability = await selectionService.GetAvailableAsync(_projectDirectory);
+
+        await Assert.That(stateSaved.IsSuccess).IsTrue().Because(stateSaved.Error ?? string.Empty);
+        await Assert
+            .That(availability.IsSuccess)
+            .IsTrue()
+            .Because(availability.Error ?? string.Empty);
+        await Assert
+            .That(availability.RequireValue().Updates.Single().Latest.Manifest.Version)
+            .IsEqualTo("1.1.0");
+        await Assert.That(ansiConsole.Output).Contains("catalog enumeration");
+        await Assert.That(ansiConsole.Output).Contains("incomplete");
     }
 
     [Test]
@@ -482,6 +526,92 @@ public sealed class OciPackPublisherTests
         );
     }
 
+    private static async Task<OciSourceProvenance> PublishPackVersionAsync(
+        MockFileSystem fileSystem,
+        FakeOciRegistryClient registry,
+        ProjectConfiguration.OciSource source,
+        string version
+    )
+    {
+        var manifestPath = fileSystem.Path.Combine(_packDirectory, PackManifestStore.FileName);
+        fileSystem.File.WriteAllText(
+            manifestPath,
+            fileSystem
+                .File.ReadAllText(manifestPath)
+                .Replace("version: 1.0.0", $"version: {version}", StringComparison.Ordinal)
+        );
+        using var coordinator = CreateCoordinator();
+        var publisher = CreatePublisher(fileSystem, registry, coordinator);
+        var publication = await publisher.PublishAsync(
+            _projectDirectory,
+            _packDirectory,
+            source,
+            CancellationToken.None
+        );
+        await Assert
+            .That(publication.IsSuccess)
+            .IsTrue()
+            .Because(publication.Error ?? string.Empty);
+
+        var publishedPack = publication.Value.RequireNotNull();
+        var artifact = OciPackArtifact.ReadManifest(registry.ManifestContent!).RequireValue();
+        return new OciSourceProvenance
+        {
+            RegistryUrl = source.Url,
+            Repository = OciRepositoryTagMapper.CreateRepository(source, "backend").RequireValue(),
+            Tag = OciRepositoryTagMapper.CreateTag(version).RequireValue(),
+            ManifestDigest = publishedPack.ManifestDigest,
+            ContentDigest = artifact.Content.Digest,
+            ContentSize = artifact.Content.Size,
+        };
+    }
+
+    private static ProjectState CreateOciProjectState(
+        ProjectConfiguration.OciSource source,
+        OciSourceProvenance lockedRelease
+    ) =>
+        new()
+        {
+            Configuration = new ProjectConfiguration
+            {
+                SchemaVersion = 1,
+                Sources = [source],
+                Packs = [new ProjectConfiguration.RequestedPack { Id = "backend" }],
+            },
+            LockFile = new ProjectLockFile
+            {
+                SchemaVersion = 1,
+                Packs =
+                [
+                    new ProjectLockFile.ResolvedPack
+                    {
+                        Id = "backend",
+                        Version = "1.0.0",
+                        PackPath = ".",
+                        SourceName = source.Name,
+                        SourceIdentity = ConfiguredSourceIdentity.Create(source),
+                        OciSource = lockedRelease,
+                    },
+                ],
+            },
+        };
+
+    private static PackLifecycleService CreatePackLifecycleService(
+        MockFileSystem fileSystem,
+        PackCatalog catalog,
+        ProjectStateStore stateStore,
+        CliConsole console
+    ) =>
+        new(
+            fileSystem,
+            new CompositePackGraphResolver(catalog),
+            new PackInstallationPlanner(fileSystem, new PackTemplateRenderer(fileSystem)),
+            new PackUpdatePlanner(fileSystem),
+            new PackUpdateTransaction(fileSystem, console),
+            stateStore,
+            console
+        );
+
     private static OciSourceCredentialCoordinator CreateCoordinator(
         FakeCredentialStore? store = null,
         FakeCredentialPrompt? prompt = null,
@@ -625,6 +755,8 @@ public sealed class OciPackPublisherTests
 
         public bool RequireAuthentication { get; init; }
 
+        public bool DenyRepositoryEnumeration { get; set; }
+
         public bool DenyPush { get; init; }
 
         public bool EnforceImmutableTags { get; init; }
@@ -663,7 +795,13 @@ public sealed class OciPackPublisherTests
         )
         {
             RequestCalls++;
-            return Task.FromResult(OciRegistryResult<IReadOnlyList<string>>.Succeeded([]));
+            return Task.FromResult(
+                DenyRepositoryEnumeration
+                    ? OciRegistryResult<IReadOnlyList<string>>.Failed(
+                        new(OciRegistryFailureKind.AuthorizationDenied, "catalog access denied")
+                    )
+                    : OciRegistryResult<IReadOnlyList<string>>.Succeeded([])
+            );
         }
 
         public Task<OciRegistryResult<IReadOnlyList<string>>> ListTagsAsync(
@@ -675,7 +813,20 @@ public sealed class OciPackPublisherTests
         )
         {
             RequestCalls++;
-            return Task.FromResult(OciRegistryResult<IReadOnlyList<string>>.Succeeded([]));
+            var prefix = $"{repository}:";
+            IReadOnlyList<string> tags;
+            lock (_stateLock)
+            {
+                tags =
+                [
+                    .. _manifests
+                        .Keys.Where(key => key.StartsWith(prefix, StringComparison.Ordinal))
+                        .Select(key => key[prefix.Length..])
+                        .OrderBy(tag => tag, StringComparer.Ordinal),
+                ];
+            }
+
+            return Task.FromResult(OciRegistryResult<IReadOnlyList<string>>.Succeeded(tags));
         }
 
         public Task<OciRegistryResult<OciRegistryManifest>> FetchManifestAsync(

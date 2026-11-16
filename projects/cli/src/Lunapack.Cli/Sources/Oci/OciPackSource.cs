@@ -4,6 +4,7 @@ using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Catalog;
 using Lunapack.Cli.Packs.Authoring;
 using Lunapack.Cli.Packs.Manifest;
+using Lunapack.Cli.Packs.Planning;
 using Lunapack.Cli.Packs.Publishing;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources.Git;
@@ -23,7 +24,8 @@ internal sealed class OciPackSource : IDisposable
         IOciRegistryClient? registryClient = null,
         ISourceCredentialStore? credentialStore = null,
         IOciCredentialPrompt? credentialPrompt = null,
-        IOciAccessTokenProvider? accessTokenProvider = null
+        IOciAccessTokenProvider? accessTokenProvider = null,
+        IOperationSnapshotSecurity? operationSnapshotSecurity = null
     )
     {
         _registryClient =
@@ -46,7 +48,8 @@ internal sealed class OciPackSource : IDisposable
             _registryClient,
             _credentialCoordinator,
             _releaseLoader,
-            console
+            console,
+            operationSnapshotSecurity
         );
     }
 
@@ -71,6 +74,21 @@ internal sealed class OciPackSource : IDisposable
         int sourceOrder,
         CancellationToken cancellationToken = default
     ) => _discovery.BrowseAsync(projectDirectory, source, sourceOrder, cancellationToken);
+
+    public Task<ManifestOperationResult<IReadOnlyList<CatalogPack>>> BrowseForUpdatesAsync(
+        string projectDirectory,
+        ProjectConfiguration.OciSource source,
+        int sourceOrder,
+        IReadOnlyDictionary<string, string?> requestedPacks,
+        CancellationToken cancellationToken = default
+    ) =>
+        _discovery.BrowseForUpdatesAsync(
+            projectDirectory,
+            source,
+            sourceOrder,
+            requestedPacks,
+            cancellationToken
+        );
 
     public static ManifestOperationResult<IReadOnlyList<CatalogPack>> BrowseCached(
         ProjectConfiguration.OciSource source

@@ -73,7 +73,7 @@ jobs:
             registry:2.8.3
           for attempt in $(seq 1 30); do
             if curl --silent --show-error --fail \
-              --user lunapack-test:ci-test-password \
+              --user "$registry_username:$registry_password" \
               https://localhost:5443/v2/ >/dev/null; then
               exit 0
             fi

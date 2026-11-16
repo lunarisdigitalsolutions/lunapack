@@ -121,7 +121,7 @@ suggestions until an argument-taking command or option is selected.
   a safe path embedded in the URL is accepted. `--username` stores a non-secret
   username for later authentication. See [Add an OCI registry source](../sources.md#add-an-oci-registry-source).
 - `luna sources list`: Lists configured local, Git, and OCI sources and marks
-  sources ignored in local user settings.
+  sources ignored in the user-local source-ignore sidecar.
 - `luna sources ignore <name>`: Ignores one configured source for this project
   and user. This does not change shared project configuration or revoke trust.
 - `luna sources unignore <name>`: Restores one locally ignored source.

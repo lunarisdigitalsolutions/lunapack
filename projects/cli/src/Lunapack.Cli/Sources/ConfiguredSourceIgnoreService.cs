@@ -10,20 +10,24 @@ internal sealed class ConfiguredSourceIgnoreService(
     UserSettingsStore? userSettingsStore
 )
 {
+    private readonly SourceIgnoreStore? _sourceIgnoreStore = userSettingsStore is null
+        ? null
+        : new SourceIgnoreStore(fileSystem, userSettingsStore.SettingsDirectory);
+
     public async Task<ManifestOperationResult<SourceIgnoreContext>> LoadAsync(
         string projectDirectory
     )
     {
-        if (userSettingsStore is null)
+        if (_sourceIgnoreStore is null || userSettingsStore is null)
         {
             return ManifestOperationResult<SourceIgnoreContext>.Success(SourceIgnoreContext.Empty);
         }
 
-        var settings = await userSettingsStore.LoadAsync();
-        if (settings.Value is not { } userSettings)
+        var settings = await _sourceIgnoreStore.LoadAsync();
+        if (settings.Value is not { } sourceIgnoreSettings)
         {
             return ManifestOperationResult<SourceIgnoreContext>.Failure(
-                settings.Error ?? "Unable to load local source settings."
+                settings.Error ?? "Unable to load local source ignore settings."
             );
         }
 
@@ -35,11 +39,11 @@ internal sealed class ConfiguredSourceIgnoreService(
             );
         }
 
-        var ignoredSources = userSettings.Projects.TryGetValue(
+        var ignoredSources = sourceIgnoreSettings.Projects.TryGetValue(
             canonicalProjectDirectory,
-            out var projectSettings
+            out var projectSources
         )
-            ? projectSettings.IgnoredSources
+            ? projectSources
             : [];
         return ManifestOperationResult<SourceIgnoreContext>.Success(
             new SourceIgnoreContext(
@@ -47,6 +51,79 @@ internal sealed class ConfiguredSourceIgnoreService(
                 new HashSet<ConfiguredSourceIdentity>(ignoredSources)
             )
         );
+    }
+
+    public async Task<ManifestOperationResult<bool>> SetIgnoredAsync(
+        string projectDirectory,
+        ProjectConfiguration.Source source,
+        bool ignored
+    )
+    {
+        if (_sourceIgnoreStore is null || userSettingsStore is null)
+        {
+            return ManifestOperationResult<bool>.Failure("Local source settings are unavailable.");
+        }
+
+        var projectKey = userSettingsStore.GetProjectKey(projectDirectory);
+        if (projectKey.Value is not { } canonicalProjectDirectory)
+        {
+            return ManifestOperationResult<bool>.Failure(
+                projectKey.Error ?? "Unable to identify local source settings."
+            );
+        }
+
+        var settingsResult = await _sourceIgnoreStore.LoadAsync();
+        if (settingsResult.Value is not { } settings)
+        {
+            return ManifestOperationResult<bool>.Failure(
+                settingsResult.Error ?? "Unable to load local source ignore settings."
+            );
+        }
+
+        var identityResult = ConfiguredSourceIdentity.CreateForIgnore(
+            fileSystem,
+            canonicalProjectDirectory,
+            source
+        );
+        if (identityResult.Value is not { } identity)
+        {
+            return ManifestOperationResult<bool>.Failure(
+                identityResult.Error ?? $"Unable to identify source '{source.Name}'."
+            );
+        }
+
+        settings.Projects.TryGetValue(canonicalProjectDirectory, out var ignoredSources);
+        ignoredSources ??= [];
+        var wasIgnored = ignoredSources.Contains(identity);
+        if (wasIgnored == ignored)
+        {
+            return ManifestOperationResult<bool>.Success(false);
+        }
+
+        if (ignored)
+        {
+            ignoredSources.Add(identity);
+        }
+        else
+        {
+            ignoredSources.RemoveAll(candidate => candidate == identity);
+        }
+
+        if (ignoredSources.Count == 0)
+        {
+            settings.Projects.Remove(canonicalProjectDirectory);
+        }
+        else
+        {
+            settings.Projects[canonicalProjectDirectory] = ignoredSources;
+        }
+
+        var savedSettings = await _sourceIgnoreStore.SaveAsync(settings);
+        return savedSettings.IsSuccess
+            ? ManifestOperationResult<bool>.Success(true)
+            : ManifestOperationResult<bool>.Failure(
+                savedSettings.Error ?? "Unable to save local source ignore settings."
+            );
     }
 
     public ManifestOperationResult<bool> IsIgnored(

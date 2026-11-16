@@ -86,9 +86,21 @@ internal sealed class PackCatalog : IDisposable
             }
         );
 
-    public async Task<ManifestOperationResult<IReadOnlyList<CatalogPack>>> BrowseAsync(
+    public Task<ManifestOperationResult<IReadOnlyList<CatalogPack>>> BrowseAsync(
         string projectDirectory,
         ProjectConfiguration configuration
+    ) => BrowseAsync(projectDirectory, configuration, requestedPacks: null);
+
+    public Task<ManifestOperationResult<IReadOnlyList<CatalogPack>>> BrowseForUpdatesAsync(
+        string projectDirectory,
+        ProjectConfiguration configuration,
+        IReadOnlyDictionary<string, string?> requestedPacks
+    ) => BrowseAsync(projectDirectory, configuration, requestedPacks);
+
+    private async Task<ManifestOperationResult<IReadOnlyList<CatalogPack>>> BrowseAsync(
+        string projectDirectory,
+        ProjectConfiguration configuration,
+        IReadOnlyDictionary<string, string?>? requestedPacks
     )
     {
         _console.Debug($"Browsing {configuration.Sources.Count} configured pack sources");
@@ -100,7 +112,12 @@ internal sealed class PackCatalog : IDisposable
             );
         }
 
-        return await BrowseConfiguredSourcesAsync(projectDirectory, configuration, ignoreContext);
+        return await BrowseConfiguredSourcesAsync(
+            projectDirectory,
+            configuration,
+            ignoreContext,
+            requestedPacks
+        );
     }
 
     private async Task<
@@ -108,7 +125,8 @@ internal sealed class PackCatalog : IDisposable
     > BrowseConfiguredSourcesAsync(
         string projectDirectory,
         ProjectConfiguration configuration,
-        ConfiguredSourceIgnoreService.SourceIgnoreContext ignoreContext
+        ConfiguredSourceIgnoreService.SourceIgnoreContext ignoreContext,
+        IReadOnlyDictionary<string, string?>? requestedPacks
     )
     {
         var catalog = new List<CatalogPack>();
@@ -133,7 +151,12 @@ internal sealed class PackCatalog : IDisposable
             }
 
             activeSourceCount++;
-            var sourceCatalog = await BrowseSourceAsync(projectDirectory, source, sourceOrder);
+            var sourceCatalog = await BrowseSourceAsync(
+                projectDirectory,
+                source,
+                sourceOrder,
+                requestedPacks
+            );
             if (sourceCatalog.Value is not { } sourcePacks)
             {
                 var error = sourceCatalog.Error ?? "Source returned no catalog.";
@@ -257,7 +280,8 @@ internal sealed class PackCatalog : IDisposable
     private Task<ManifestOperationResult<IReadOnlyList<CatalogPack>>> BrowseSourceAsync(
         string projectDirectory,
         ProjectConfiguration.Source source,
-        int sourceOrder
+        int sourceOrder,
+        IReadOnlyDictionary<string, string?>? requestedPacks = null
     ) =>
         source switch
         {
@@ -272,11 +296,14 @@ internal sealed class PackCatalog : IDisposable
                 gitSource,
                 sourceOrder
             ),
-            ProjectConfiguration.OciSource ociSource => _ociPackSource.BrowseAsync(
-                projectDirectory,
-                ociSource,
-                sourceOrder
-            ),
+            ProjectConfiguration.OciSource ociSource => requestedPacks is null
+                ? _ociPackSource.BrowseAsync(projectDirectory, ociSource, sourceOrder)
+                : _ociPackSource.BrowseForUpdatesAsync(
+                    projectDirectory,
+                    ociSource,
+                    sourceOrder,
+                    requestedPacks
+                ),
             _ => Task.FromResult(
                 ManifestOperationResult<IReadOnlyList<CatalogPack>>.Failure(
                     "Pack source type is unsupported."

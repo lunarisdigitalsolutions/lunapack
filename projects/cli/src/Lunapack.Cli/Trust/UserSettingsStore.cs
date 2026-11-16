@@ -44,6 +44,8 @@ internal sealed class UserSettingsStore
 
     public string SettingsPath { get; }
 
+    public string SettingsDirectory => _settingsDirectory;
+
     public ManifestOperationResult<string> GetProjectKey(string projectDirectory) =>
         CanonicalProjectPath.Resolve(_fileSystem, projectDirectory);
 

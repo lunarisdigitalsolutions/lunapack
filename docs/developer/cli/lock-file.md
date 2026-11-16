@@ -90,7 +90,7 @@ coordinates and verified content:
 | Field            | Type           | Meaning                                     |
 | ---------------- | -------------- | ------------------------------------------- |
 | `registryUrl`    | HTTPS origin   | Registry used for the release.              |
-| `repository`     | OCI repository | Canonical repository containing the pack.   |
+| `repository`     | OCI repository | Lowercase valid components; at most 255 characters. |
 | `tag`            | String         | Exact version tag selected for the release. |
 | `manifestDigest` | SHA-256 digest | OCI manifest bytes used for resolution.     |
 | `contentDigest`  | SHA-256 digest | Pack ZIP layer bytes used for installation. |
@@ -99,6 +99,9 @@ coordinates and verified content:
 The lock stores both digests. A later resolution of the locked release must
 match the recorded manifest and content; it does not silently substitute
 another source or accept a moved tag.
+The published lock schema requires an HTTPS registry origin without URL
+credentials, queries, or fragments and validates repository paths against OCI
+component rules.
 
 Each entry in `externalSources` is keyed by the alias declared in `pack.yml` and
 contains:

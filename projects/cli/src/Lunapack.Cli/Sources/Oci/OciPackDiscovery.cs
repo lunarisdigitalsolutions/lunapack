@@ -3,6 +3,7 @@ using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Application.Paths;
 using Lunapack.Cli.Catalog;
+using Lunapack.Cli.Packs.Planning;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources;
 using NuGet.Versioning;
@@ -14,14 +15,32 @@ internal sealed class OciPackDiscovery(
     IOciRegistryClient registryClient,
     OciSourceCredentialCoordinator credentialCoordinator,
     OciPackReleaseLoader releaseLoader,
-    CliConsole console
+    CliConsole console,
+    IOperationSnapshotSecurity? operationSnapshotSecurity = null
 )
 {
-    public async Task<ManifestOperationResult<IReadOnlyList<CatalogPack>>> BrowseAsync(
+    public Task<ManifestOperationResult<IReadOnlyList<CatalogPack>>> BrowseAsync(
         string projectDirectory,
         ProjectConfiguration.OciSource source,
         int sourceOrder,
         CancellationToken cancellationToken = default
+    ) =>
+        BrowseAsync(projectDirectory, source, sourceOrder, requestedPacks: null, cancellationToken);
+
+    public Task<ManifestOperationResult<IReadOnlyList<CatalogPack>>> BrowseForUpdatesAsync(
+        string projectDirectory,
+        ProjectConfiguration.OciSource source,
+        int sourceOrder,
+        IReadOnlyDictionary<string, string?> requestedPacks,
+        CancellationToken cancellationToken = default
+    ) => BrowseAsync(projectDirectory, source, sourceOrder, requestedPacks, cancellationToken);
+
+    private async Task<ManifestOperationResult<IReadOnlyList<CatalogPack>>> BrowseAsync(
+        string projectDirectory,
+        ProjectConfiguration.OciSource source,
+        int sourceOrder,
+        IReadOnlyDictionary<string, string?>? requestedPacks,
+        CancellationToken cancellationToken
     )
     {
         var context = CreateContext(projectDirectory, source);
@@ -40,6 +59,31 @@ internal sealed class OciPackDiscovery(
         );
         if (repositories.Value is not { } repositoryNames)
         {
+            if (requestedPacks is { Count: > 0 })
+            {
+                var directPacks = await DiscoverRequestedPacksAsync(
+                    projectDirectory,
+                    source,
+                    sourceOrder,
+                    requestedPacks,
+                    cancellationToken
+                );
+                var enumerationError =
+                    repositories.Error
+                    ?? $"Unable to enumerate OCI repositories for source '{source.Name}'.";
+                console.Warning(
+                    $"{enumerationError}; catalog enumeration is unavailable; directly queried {requestedPacks.Count} requested pack ID(s), so discovery remains incomplete."
+                );
+                if (directPacks.Count == 0)
+                {
+                    return Failure<IReadOnlyList<CatalogPack>>(
+                        $"{enumerationError}; no requested OCI releases were found by direct lookup."
+                    );
+                }
+
+                return ManifestOperationResult<IReadOnlyList<CatalogPack>>.Success(directPacks);
+            }
+
             return Failure<IReadOnlyList<CatalogPack>>(
                 repositories.Error ?? $"Unable to list repositories for '{source.Name}'."
             );
@@ -68,6 +112,41 @@ internal sealed class OciPackDiscovery(
         }
 
         return ManifestOperationResult<IReadOnlyList<CatalogPack>>.Success(result.Packs);
+    }
+
+    private async Task<List<CatalogPack>> DiscoverRequestedPacksAsync(
+        string projectDirectory,
+        ProjectConfiguration.OciSource source,
+        int sourceOrder,
+        IReadOnlyDictionary<string, string?> requestedPacks,
+        CancellationToken cancellationToken
+    )
+    {
+        var packs = new List<CatalogPack>();
+        foreach (
+            var requestedPack in requestedPacks.OrderBy(pack => pack.Key, StringComparer.Ordinal)
+        )
+        {
+            var result = await ResolveCandidatesAsync(
+                projectDirectory,
+                source,
+                sourceOrder,
+                requestedPack.Key,
+                requestedPack.Value,
+                cancellationToken
+            );
+            if (result.Value is { } candidates)
+            {
+                packs.AddRange(candidates);
+                continue;
+            }
+
+            console.Warning(
+                $"OCI source '{source.Name}' could not query requested pack '{requestedPack.Key}' directly: {result.Error ?? "Unknown registry error."}"
+            );
+        }
+
+        return packs;
     }
 
     public static ManifestOperationResult<IReadOnlyList<CatalogPack>> BrowseCached(
@@ -454,7 +533,10 @@ internal sealed class OciPackDiscovery(
         CancellationToken cancellationToken
     )
     {
-        var temporaryWorkspace = OciTemporaryWorkspace.Create(fileSystem);
+        var temporaryWorkspace = OciTemporaryWorkspace.Create(
+            fileSystem,
+            operationSnapshotSecurity
+        );
         if (temporaryWorkspace.Value is not { } workspace)
         {
             return ManifestOperationResult<CatalogPack?>.Failure(

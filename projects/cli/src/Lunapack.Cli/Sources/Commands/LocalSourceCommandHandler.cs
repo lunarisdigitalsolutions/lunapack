@@ -22,7 +22,10 @@ internal sealed class LocalSourceCommandHandler(
     UserSettingsStore? userSettingsStore = null
 )
 {
-    private readonly UserSettingsStore? _userSettingsStore = userSettingsStore;
+    private readonly ConfiguredSourceIgnoreService _sourceIgnoreService = new(
+        fileSystem,
+        userSettingsStore
+    );
 
     public Command CreateCommand(string projectDirectory, Option<string?> workspaceOption)
     {
@@ -386,41 +389,28 @@ internal sealed class LocalSourceCommandHandler(
 
         if (state.Configuration.Sources.Count > 0)
         {
-            var ignoredSources = await GetIgnoredSourcesAsync(projectDirectory);
-            if (!ignoredSources.IsSuccess)
+            var ignoreContext = await _sourceIgnoreService.LoadAsync(projectDirectory);
+            if (ignoreContext.Value is not { } context)
             {
-                return console.Fail(ignoredSources.Error);
-            }
-            if (ignoredSources.Value is not { } ignoredSourceIdentities)
-            {
-                return console.Fail("Unable to load local source ignore identities.");
+                return console.Fail(
+                    ignoreContext.Error ?? "Unable to load local source ignore settings."
+                );
             }
 
             var ignoredSourceNames = new HashSet<string>(StringComparer.Ordinal);
-            if (ignoredSourceIdentities.Count > 0 && _userSettingsStore is not null)
+            foreach (var source in state.Configuration.Sources)
             {
-                var projectKey = _userSettingsStore.GetProjectKey(projectDirectory);
-                if (projectKey.Value is not { } key)
+                var ignored = _sourceIgnoreService.IsIgnored(context, source);
+                if (!ignored.IsSuccess)
                 {
-                    return console.Fail(projectKey.Error);
+                    return console.Fail(
+                        ignored.Error ?? $"Unable to determine ignore state for '{source.Name}'."
+                    );
                 }
 
-                foreach (var source in state.Configuration.Sources)
+                if (ignored.Value)
                 {
-                    var identity = ConfiguredSourceIdentity.CreateForIgnore(
-                        fileSystem,
-                        key,
-                        source
-                    );
-                    if (identity.Value is not { } configuredIdentity)
-                    {
-                        return console.Fail(identity.Error);
-                    }
-
-                    if (ignoredSourceIdentities.Contains(configuredIdentity))
-                    {
-                        ignoredSourceNames.Add(source.Name);
-                    }
+                    ignoredSourceNames.Add(source.Name);
                 }
             }
 
@@ -437,11 +427,6 @@ internal sealed class LocalSourceCommandHandler(
 
     public async Task<int> SetIgnoredAsync(string projectDirectory, string name, bool ignored)
     {
-        if (_userSettingsStore is null)
-        {
-            return console.Fail("Local source settings are unavailable.");
-        }
-
         var loadedState = await projectStateStore.LoadAsync(projectDirectory);
         if (loadedState.Value is not { } state)
         {
@@ -456,28 +441,17 @@ internal sealed class LocalSourceCommandHandler(
             return console.Fail($"Source '{name}' is not configured.");
         }
 
-        var settings = await _userSettingsStore.LoadAsync();
-        if (settings.Value is not { } userSettings)
+        var updateResult = await _sourceIgnoreService.SetIgnoredAsync(
+            projectDirectory,
+            source,
+            ignored
+        );
+        if (!updateResult.IsSuccess)
         {
-            return console.Fail(settings.Error);
+            return console.Fail(updateResult.Error);
         }
 
-        var projectKey = _userSettingsStore.GetProjectKey(projectDirectory);
-        if (projectKey.Value is not { } key)
-        {
-            return console.Fail(projectKey.Error);
-        }
-
-        userSettings.Projects.TryGetValue(key, out var projectSettings);
-        projectSettings ??= new LocalProjectTrust();
-        var identityResult = ConfiguredSourceIdentity.CreateForIgnore(fileSystem, key, source);
-        if (identityResult.Value is not { } identity)
-        {
-            return console.Fail(identityResult.Error);
-        }
-
-        var wasIgnored = projectSettings.IgnoredSources.Contains(identity);
-        if (wasIgnored == ignored)
+        if (!updateResult.Value)
         {
             console.Info(
                 ignored
@@ -487,59 +461,10 @@ internal sealed class LocalSourceCommandHandler(
             return 0;
         }
 
-        var ignoredSources = projectSettings.IgnoredSources;
-        if (ignored)
-        {
-            ignoredSources.Add(identity);
-        }
-        else
-        {
-            ignoredSources.RemoveAll(candidate => candidate == identity);
-        }
-
-        userSettings.Projects[key] = projectSettings;
-        var savedSettings = await _userSettingsStore.SaveAsync(userSettings);
-        if (!savedSettings.IsSuccess)
-        {
-            return console.Fail(savedSettings.Error);
-        }
-
         console.Success(
             ignored ? $"Source '{name}' ignored locally" : $"Source '{name}' restored locally"
         );
         return 0;
-    }
-
-    private async Task<
-        ManifestOperationResult<IReadOnlyList<ConfiguredSourceIdentity>>
-    > GetIgnoredSourcesAsync(string projectDirectory)
-    {
-        if (_userSettingsStore is null)
-        {
-            return ManifestOperationResult<IReadOnlyList<ConfiguredSourceIdentity>>.Success([]);
-        }
-
-        var settings = await _userSettingsStore.LoadAsync();
-        if (settings.Value is not { } userSettings)
-        {
-            return ManifestOperationResult<IReadOnlyList<ConfiguredSourceIdentity>>.Failure(
-                settings.Error ?? "Unable to load local source settings."
-            );
-        }
-
-        var projectKey = _userSettingsStore.GetProjectKey(projectDirectory);
-        if (projectKey.Value is not { } key)
-        {
-            return ManifestOperationResult<IReadOnlyList<ConfiguredSourceIdentity>>.Failure(
-                projectKey.Error ?? "Unable to identify local source settings."
-            );
-        }
-
-        return ManifestOperationResult<IReadOnlyList<ConfiguredSourceIdentity>>.Success(
-            userSettings.Projects.TryGetValue(key, out var projectSettings)
-                ? projectSettings.IgnoredSources
-                : []
-        );
     }
 
     public async Task<int> AddLocalSourceAsync(string projectDirectory, string name, string path)

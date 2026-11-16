@@ -26,21 +26,73 @@ public sealed class LocalSourceIgnoreCommandTests
             ["sources", "add", "local", "upstream", "source"],
             workspace.Path
         );
+        var projectKey = settingsStore.GetProjectKey(workspace.Path).RequireValue();
+        var identity = ConfiguredSourceIdentity.CreateLocal(sourcePath);
+        var savedSettings = await settingsStore.SaveAsync(
+            new UserSettings
+            {
+                Projects = { [projectKey] = new LocalProjectTrust { Sources = [identity] } },
+            }
+        );
+        var configBeforeIgnore = File.ReadAllText(settingsStore.SettingsPath);
 
         var exitCode = await application.RunAsync(
             ["sources", "ignore", "upstream"],
             workspace.Path
         );
         var listExitCode = await application.RunAsync(["sources", "list"], workspace.Path);
-        var projectKey = settingsStore.GetProjectKey(workspace.Path).RequireValue();
-        var projectSettings = (await settingsStore.LoadAsync()).RequireValue().Projects[projectKey];
+        var configAfterIgnore = File.ReadAllText(settingsStore.SettingsPath);
+        var legacyRead = await settingsStore.LoadAsync();
+        var sidecarPath = Path.Combine(
+            Path.GetDirectoryName(settingsStore.SettingsPath).RequireNotNull(),
+            "source-ignores.yml"
+        );
 
+        await Assert.That(savedSettings.IsSuccess).IsTrue();
         await Assert.That(exitCode).IsEqualTo(0);
         await Assert.That(listExitCode).IsEqualTo(0);
-        await Assert
-            .That(projectSettings.IgnoredSources)
-            .Contains(ConfiguredSourceIdentity.CreateLocal(sourcePath));
+        await Assert.That(configAfterIgnore).IsEqualTo(configBeforeIgnore);
+        await Assert.That(configAfterIgnore).DoesNotContain("ignoredSources");
+        await Assert.That(legacyRead.IsSuccess).IsTrue();
+        await Assert.That(File.Exists(sidecarPath)).IsTrue();
+        var sidecarContents = File.ReadAllText(sidecarPath);
+        await Assert.That(sidecarContents).Contains("type: local");
+        await Assert.That(sidecarContents).Contains(identity.Path.RequireNotNull());
         await Assert.That(console.Output).Contains("ignored locally");
+    }
+
+    [Test]
+    public async Task Scenario_SourceList_WhenIgnoreSidecarIsInvalid_FailsClearly()
+    {
+        using var workspace = new TestWorkspace();
+        var console = new SpectreTestConsole();
+        var settingsStore = CreateSettingsStore(workspace);
+        var application = new CliApplication(
+            workspace.FileSystem,
+            console,
+            userSettingsStore: settingsStore
+        );
+        Directory.CreateDirectory(Path.Combine(workspace.Path, "source"));
+        await application.RunAsync(["init"], workspace.Path);
+        await application.RunAsync(
+            ["sources", "add", "local", "upstream", "source"],
+            workspace.Path
+        );
+
+        var settingsDirectory = Path.GetDirectoryName(settingsStore.SettingsPath).RequireNotNull();
+        Directory.CreateDirectory(settingsDirectory);
+        UserSettingsPathSecurity.Apply(settingsDirectory, directory: true);
+        var sidecarPath = Path.Combine(settingsDirectory, SourceIgnoreStore.FileName);
+        File.WriteAllText(sidecarPath, "projects: [\n");
+        UserSettingsPathSecurity.Apply(sidecarPath, directory: false);
+
+        var ignoreService = new ConfiguredSourceIgnoreService(workspace.FileSystem, settingsStore);
+        var ignoreSettings = await ignoreService.LoadAsync(workspace.Path);
+        var exitCode = await application.RunAsync(["sources", "list"], workspace.Path);
+
+        await Assert.That(ignoreSettings.IsSuccess).IsFalse();
+        await Assert.That(ignoreSettings.Error).Contains("Unable to read source-ignore settings");
+        await Assert.That(exitCode).IsEqualTo(1);
     }
 
     [Test]
@@ -134,6 +186,7 @@ public sealed class LocalSourceIgnoreCommandTests
         var savedSettings = await settingsStore.SaveAsync(
             new UserSettings { Projects = { [projectKey] = existingSettings } }
         );
+        var configBeforeIgnore = File.ReadAllText(settingsStore.SettingsPath);
 
         var firstIgnore = await application.RunAsync(
             ["sources", "ignore", "upstream"],
@@ -151,6 +204,12 @@ public sealed class LocalSourceIgnoreCommandTests
             ["sources", "unignore", "upstream"],
             workspace.Path
         );
+        var configAfterIgnore = File.ReadAllText(settingsStore.SettingsPath);
+        var sidecarPath = Path.Combine(
+            Path.GetDirectoryName(settingsStore.SettingsPath).RequireNotNull(),
+            SourceIgnoreStore.FileName
+        );
+        var sidecarContents = File.ReadAllText(sidecarPath);
         var projectSettings = (await settingsStore.LoadAsync()).RequireValue().Projects[projectKey];
 
         await Assert.That(savedSettings.IsSuccess).IsTrue();
@@ -158,7 +217,8 @@ public sealed class LocalSourceIgnoreCommandTests
         await Assert.That(repeatedIgnore).IsEqualTo(0);
         await Assert.That(firstUnignore).IsEqualTo(0);
         await Assert.That(repeatedUnignore).IsEqualTo(0);
-        await Assert.That(projectSettings.IgnoredSources).IsEmpty();
+        await Assert.That(configAfterIgnore).IsEqualTo(configBeforeIgnore);
+        await Assert.That(sidecarContents).DoesNotContain(identity.Path.RequireNotNull());
         await Assert.That(projectSettings.Acknowledgements.Sources).Contains(identity);
         await Assert.That(projectSettings.Deny?.Scripts).IsTrue();
         await Assert

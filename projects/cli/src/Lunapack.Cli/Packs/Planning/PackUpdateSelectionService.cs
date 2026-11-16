@@ -56,7 +56,16 @@ internal sealed class PackUpdateSelectionService(
             return ManifestOperationResult<PackUpdateAvailability>.Failure(ignoredError);
         }
 
-        var catalog = await packCatalog.BrowseAsync(projectDirectory, state.Configuration);
+        var requestedPacks = state.Configuration.Packs.ToDictionary(
+            root => root.Id,
+            _ => (string?)null,
+            StringComparer.Ordinal
+        );
+        var catalog = await packCatalog.BrowseForUpdatesAsync(
+            projectDirectory,
+            state.Configuration,
+            requestedPacks
+        );
         if (catalog.Value is not { } catalogPacks)
         {
             return ManifestOperationResult<PackUpdateAvailability>.Failure(

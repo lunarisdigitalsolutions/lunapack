@@ -101,9 +101,10 @@ environment. Refer to [design.md](design.md) and the capability deltas in `specs
 
 ## 6. User-Local Ignore State
 
-- [x] 6.1 Extend existing per-project user settings with ignored source identities
-      and `ignore`/`unignore` handlers; verify atomic/idempotent writes, unknown-name
-      rejection, canonical-project isolation, and preservation of unrelated trust,
+- [x] 6.1 Store ignored source identities in a dedicated per-project sidecar,
+      separate from `config.yml`, and add `ignore`/`unignore` handlers; verify
+      atomic/idempotent writes, unknown-name rejection, canonical-project isolation,
+      strict legacy-reader compatibility, and preservation of unrelated trust,
       acknowledgements and denial settings.
 - [x] 6.2 Display `ignored locally` in configured-order source listings and
       inspection without source access; verify local, Git/GitHub-shorthand and OCI

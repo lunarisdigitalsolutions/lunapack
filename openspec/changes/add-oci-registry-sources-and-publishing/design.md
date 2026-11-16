@@ -18,8 +18,10 @@ Source fingerprints are separate from configured names, reject equivalent
 duplicates, and participate in trust/provenance. Existing source rename updates
 workspace references atomically. Existing user settings live outside the
 repository at `~/.lunapack/config.yml`, keyed by canonical project directory,
-with trust, acknowledgement, and denial state. Reuse this store for ignoring;
-it is not a credential store.
+with trust, acknowledgement, and denial state. Keep source-ignore state in a
+separate `~/.lunapack/source-ignores.yml` sidecar keyed by canonical project so
+new ignore fields do not break older strict readers of `config.yml`. Neither
+file is a credential store.
 
 ## Goals / Non-Goals
 
@@ -220,16 +222,18 @@ component in that example, never required for ordinary username/password use.
 Document direct workload-identity environment requirements for environments
 that supply a federated token without Azure CLI.
 
-### 7. Reuse project/user settings for ignore policy
+### 7. Store ignore policy in a compatible sidecar
 
-Add `ignoredSources` configured-source identities to the existing per-project
-user-settings record in `~/.lunapack/config.yml`. Identity, rather than name-only
-storage, preserves ignore state across rename and prevents inheritance after an
-endpoint/path change. Matching is restricted to the canonical current project.
-No global ignore scope or new repo-local file is needed.
+Store ignored configured-source identities in
+`~/.lunapack/source-ignores.yml`, separate from the strict
+`~/.lunapack/config.yml` user-settings format. Key entries by canonical project
+and source identity, not name alone, to preserve ignore state across rename and
+prevent inheritance after an endpoint/path change. No global ignore scope or
+repo-local file is introduced.
 
 Commands validate names, resolve current identities, and atomically save through
-`UserSettingsStore`, preserving trust/acknowledgement/denial fields. Listing
+a dedicated sidecar store. Existing trust, acknowledgement, and denial settings
+remain in `config.yml` and are not rewritten by ignore operations. Listing
 projects identities back to current names and shows `ignored locally`.
 Repeated operations are idempotent. Removed/different source identities do not
 silently match stale state. Ignoring is never source removal or trust revocation.

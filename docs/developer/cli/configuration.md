@@ -60,10 +60,12 @@ identity. `luna trust ... --project` writes both records for the current user;
 committed project trust alone does not authorize scripts for other users or
 fresh automation profiles.
 
-Source-ignore state is also stored in user settings and scoped to the canonical
-project and source identity. It is not shared through project configuration or
-the lock file. Ignoring a source leaves existing trust and installed ownership
-evidence intact.
+Source-ignore state is stored in the user-local
+`<profile>/.lunapack/source-ignores.yml` sidecar and scoped to the canonical
+project and source identity. Keeping it separate leaves `config.yml` unchanged
+for older strict CLI readers. It is not shared through project configuration
+or the lock file. Ignoring a source leaves existing trust and installed
+ownership evidence intact.
 
 All three scopes support `deny.scripts`. Any active denial overrides grants and
 `--scripts run`. Project denial uses `trust.deny.scripts`; user settings use

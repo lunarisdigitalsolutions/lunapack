@@ -12,8 +12,11 @@ configuration, installed provenance, or other users' source access.
 `luna sources ignore <name>` and `luna sources unignore <name>` SHALL change
 only the current user's state for the canonical current project. State SHALL
 remain outside the repository and SHALL NOT be written to `lunapack.yml` or
-`lunapack-lock.yml`. Unknown names SHALL fail without mutation; repeated
-ignore/unignore operations SHALL be idempotent.
+`lunapack-lock.yml`. Ignore identities SHALL be stored in
+`~/.lunapack/source-ignores.yml`, separate from the existing `config.yml`
+user-settings file, so older strict readers can continue loading it. Unknown
+names SHALL fail without mutation; repeated ignore/unignore operations SHALL
+be idempotent.
 
 #### Scenario: Ignore a private source
 
@@ -26,6 +29,12 @@ ignore/unignore operations SHALL be idempotent.
 - **WHEN** the user runs `luna sources unignore company`
 - **THEN** `company` participates in future source access without changing trust
   grants or forcing authentication at unignore time
+
+#### Scenario: Preserve compatibility with older settings readers
+
+- **WHEN** a newer CLI saves a source ignore
+- **THEN** `config.yml` remains unchanged and loadable by older strict CLI
+  readers, and the ignore identity is stored only in the sidecar
 
 ### Requirement: Apply ignoring consistently across source types
 

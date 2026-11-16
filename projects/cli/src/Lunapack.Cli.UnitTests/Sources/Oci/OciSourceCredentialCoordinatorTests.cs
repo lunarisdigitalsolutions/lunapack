@@ -1,4 +1,7 @@
 using System.IO.Abstractions.TestingHelpers;
+using System.Net;
+using System.Net.Http;
+using System.Text;
 using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Project;
@@ -480,6 +483,121 @@ public sealed class OciSourceCredentialCoordinatorTests
 
         await Assert.That(results.All(result => result.IsSuccess)).IsTrue();
         await Assert.That(prompt.Calls).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task ExecuteAsync_WhenAnonymousRegistryReturnsForbiddenChallenge_PromptsAndRetries()
+    {
+        using var environment = new OciCredentialEnvironment();
+        var source = CreateSource();
+        var authorizationSchemes = new List<string?>();
+        var client = CreateRegistryClient(
+            (request, _) =>
+            {
+                authorizationSchemes.Add(request.Headers.Authorization?.Scheme);
+                return Task.FromResult(
+                    request.Headers.Authorization is null
+                        ? CreateForbiddenChallenge()
+                        : CreateCatalogResponse()
+                );
+            }
+        );
+        var ansiConsole = new SpectreTestConsole();
+        ansiConsole.Profile.Capabilities.Interactive = true;
+        var console = new CliConsole(ansiConsole, CliLogLevel.Info);
+        var store = new FakeCredentialStore();
+        var prompt = new FakeCredentialPrompt(new OciRegistryCredential("user", "secret"));
+        using var coordinator = CreateCoordinator(store, prompt, console);
+
+        var result = await coordinator.ExecuteAsync(
+            _projectDirectory,
+            source,
+            credential =>
+                client.ListRepositoriesAsync(
+                    new Uri(source.Url),
+                    credential,
+                    "partition",
+                    CancellationToken.None
+                ),
+            CancellationToken.None
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert.That(prompt.Calls).IsEqualTo(1);
+        await Assert.That(store.SaveCalls).IsEqualTo(1);
+        await Assert.That(authorizationSchemes.Count).IsEqualTo(3);
+        await Assert.That(authorizationSchemes[0]).IsNull();
+        await Assert.That(authorizationSchemes[1]).IsNull();
+        await Assert.That(authorizationSchemes[2]).IsEqualTo("Basic");
+    }
+
+    [Test]
+    public async Task ExecuteAsync_WhenStoredCredentialGetsForbiddenChallenge_DoesNotPromptAgain()
+    {
+        using var environment = new OciCredentialEnvironment();
+        var source = CreateSource();
+        var client = CreateRegistryClient((_, _) => Task.FromResult(CreateForbiddenChallenge()));
+        var ansiConsole = new SpectreTestConsole();
+        ansiConsole.Profile.Capabilities.Interactive = true;
+        var console = new CliConsole(ansiConsole, CliLogLevel.Info);
+        var store = new FakeCredentialStore(new OciRegistryCredential("user", "secret"));
+        var prompt = new FakeCredentialPrompt(new OciRegistryCredential("other", "replacement"));
+        using var coordinator = CreateCoordinator(store, prompt, console);
+
+        var result = await coordinator.ExecuteAsync(
+            _projectDirectory,
+            source,
+            credential =>
+                client.ListRepositoriesAsync(
+                    new Uri(source.Url),
+                    credential,
+                    "partition",
+                    CancellationToken.None
+                ),
+            CancellationToken.None
+        );
+
+        await Assert
+            .That(result.Failure?.Kind)
+            .IsEqualTo(OciRegistryFailureKind.AuthorizationDenied);
+        await Assert.That(prompt.Calls).IsEqualTo(0);
+    }
+
+    private static OciDistributionRegistryClient CreateRegistryClient(
+        Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send
+    ) => new(httpMessageHandlerFactory: () => new CallbackHttpMessageHandler(send));
+
+    private static HttpResponseMessage CreateForbiddenChallenge()
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.Forbidden)
+        {
+            Content = new StringContent(
+                "{\"errors\":[{\"code\":\"DENIED\",\"message\":\"registry request failed\"}]}",
+                Encoding.UTF8,
+                "application/json"
+            ),
+        };
+        response.Headers.TryAddWithoutValidation(
+            "WWW-Authenticate",
+            "Basic realm=\"https://registry.example.test/auth\""
+        );
+        return response;
+    }
+
+    private static HttpResponseMessage CreateCatalogResponse() =>
+        new(HttpStatusCode.OK)
+        {
+            Content = new StringContent("{\"repositories\":[]}", Encoding.UTF8, "application/json"),
+        };
+
+    private sealed class CallbackHttpMessageHandler(
+        Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send
+    ) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken
+        ) => send(request, cancellationToken);
     }
 
     private static OciSourceCredentialCoordinator CreateCoordinator(

@@ -43,7 +43,9 @@ fragment. The optional `--path` is an OCI repository prefix, not a filesystem
 path. Luna appends each pack ID to that prefix. An empty path uses the pack ID
 as the repository. A safe repository prefix embedded in the URL is accepted; if you also provide
 `--path`, it must match the embedded prefix. OCI repository components must be
-lowercase and use valid OCI characters.
+lowercase and use valid OCI characters. The published project, lock, and
+user-settings schemas enforce the same HTTPS-origin and lowercase-path
+constraints; repository paths cannot exceed 255 characters.
 
 OCI sources persist as entries in the ordered `sources` YAML sequence. Their
 identity is the normalized registry origin and repository prefix, so one
@@ -60,9 +62,11 @@ continue to select regular files from configured local or Git sources.
 
 Use `luna sources ignore <name>` to hide one configured source for the current
 user and project, or `luna sources unignore <name>` to restore access. Ignore
-state lives in user settings, not `lunapack.yml` or the lock file. `luna sources
-list` continues to show ignored entries as `ignored locally`. Ignoring a source
-does not revoke trust, and ignored sources are not contacted for discovery,
+state lives in the user-local `~/.lunapack/source-ignores.yml` sidecar, not
+`config.yml`, `lunapack.yml`, or the lock file. Keeping it separate preserves
+compatibility with older strict CLI readers of `config.yml`. `luna sources list`
+continues to show ignored entries as `ignored locally`. Ignoring a source does
+not revoke trust, and ignored sources are not contacted for discovery,
 resolution, credentials, or prompts.
 
 Run `luna sources list` to inspect configured sources. LunaPack records source

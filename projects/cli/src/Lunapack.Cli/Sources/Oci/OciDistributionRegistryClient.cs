@@ -1090,6 +1090,7 @@ internal sealed class OciDistributionRegistryClient(
         private readonly Dictionary<string, AuthenticationHeaderValue> _authorizationCache = new(
             StringComparer.Ordinal
         );
+        private bool _hasSourceAuthentication = credential is not null;
 
         public async Task<HttpResponseMessage> SendAsync(
             Func<HttpRequestMessage> requestFactory,
@@ -1105,7 +1106,14 @@ internal sealed class OciDistributionRegistryClient(
             );
             if (response.StatusCode != HttpStatusCode.Unauthorized)
             {
-                return response;
+                return response.StatusCode == HttpStatusCode.Forbidden
+                    ? await RetryForbiddenRequestAsync(
+                        requestFactory,
+                        response,
+                        requestedScopes,
+                        cancellationToken
+                    )
+                    : response;
             }
 
             return await RetryUnauthorizedRequestAsync(
@@ -1166,6 +1174,69 @@ internal sealed class OciDistributionRegistryClient(
             throw new InvalidOperationException(
                 "Registry authentication retry limit was exceeded."
             );
+        }
+
+        private async Task<HttpResponseMessage> RetryForbiddenRequestAsync(
+            Func<HttpRequestMessage> requestFactory,
+            HttpResponseMessage initialResponse,
+            IReadOnlyList<string> requestedScopes,
+            CancellationToken cancellationToken
+        )
+        {
+            AuthenticationHeaderValue? authorization;
+            try
+            {
+                var challenge = ParseAuthenticationChallenge(initialResponse);
+                if (challenge is null)
+                {
+                    return initialResponse;
+                }
+
+                authorization = await ResolveAuthorizationAsync(
+                    challenge,
+                    requestedScopes,
+                    forceRefresh: false,
+                    cancellationToken
+                );
+            }
+            catch
+            {
+                initialResponse.Dispose();
+                throw;
+            }
+
+            if (authorization is null)
+            {
+                if (!_hasSourceAuthentication)
+                {
+                    initialResponse.StatusCode = HttpStatusCode.Unauthorized;
+                }
+
+                return initialResponse;
+            }
+
+            initialResponse.Dispose();
+            var retriedResponse = await SendWithAuthorizationAsync(
+                requestFactory,
+                authorization,
+                cancellationToken
+            );
+            if (retriedResponse.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                return await RetryUnauthorizedRequestAsync(
+                    requestFactory,
+                    retriedResponse,
+                    requestedScopes,
+                    cancellationToken
+                );
+            }
+
+            if (retriedResponse.StatusCode == HttpStatusCode.Forbidden && !_hasSourceAuthentication)
+            {
+                retriedResponse.StatusCode = HttpStatusCode.Unauthorized;
+            }
+
+            return retriedResponse;
         }
 
         private async Task<HttpResponseMessage> SendWithAuthorizationAsync(
@@ -1250,6 +1321,7 @@ internal sealed class OciDistributionRegistryClient(
                     forceRefresh,
                     cancellationToken
                 );
+                _hasSourceAuthentication |= token is not null;
             }
 
             token ??= await RequestBearerTokenAsync(

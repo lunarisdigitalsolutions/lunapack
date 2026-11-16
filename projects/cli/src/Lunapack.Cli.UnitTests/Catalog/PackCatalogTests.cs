@@ -227,16 +227,14 @@ public sealed class PackCatalogTests
             Path.Combine(workspace.Path, "profile")
         );
         var projectKey = settingsStore.GetProjectKey(workspace.Path).RequireValue();
-        var savedSettings = await settingsStore.SaveAsync(
-            new UserSettings
+        var sourceIgnoreStore = new SourceIgnoreStore(
+            workspace.FileSystem,
+            settingsStore.SettingsDirectory
+        );
+        var savedSettings = await sourceIgnoreStore.SaveAsync(
+            new SourceIgnoreSettings
             {
-                Projects =
-                {
-                    [projectKey] = new LocalProjectTrust
-                    {
-                        IgnoredSources = [ConfiguredSourceIdentity.CreateLocal(sourcePath)],
-                    },
-                },
+                Projects = { [projectKey] = [ConfiguredSourceIdentity.CreateLocal(sourcePath)] },
             }
         );
         var catalog = new PackCatalog(

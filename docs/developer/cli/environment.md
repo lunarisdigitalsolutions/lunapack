@@ -14,6 +14,8 @@ Luna stores local-user and global-user trust in
 `<profile>/.lunapack/config.yml`. A non-empty `LUNAPACK_USER_PROFILE` replaces
 the current user profile for this location. It does not change the selected
 workspace, source cache, or process environment.
+Source-ignore preferences are stored alongside it in
+`<profile>/.lunapack/source-ignores.yml`.
 
 Use an isolated profile for automation:
 

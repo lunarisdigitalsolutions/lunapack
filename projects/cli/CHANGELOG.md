@@ -12,6 +12,8 @@ Update this section before creating a release tag.
 - `luna sources add oci` registers normalized HTTPS OCI registry sources without
   contacting the registry. `luna sources ignore` and `unignore` manage
   per-project, per-user source state; source listings show local ignore status.
+  Ignore updates leave `config.yml` unchanged for compatibility with older CLI
+  readers.
 - OCI registry releases now participate in discovery, direct resolution,
   validation, inspection, installation, and updates. Lock files retain the
   registry, repository, version tag, and verified manifest/content digests.

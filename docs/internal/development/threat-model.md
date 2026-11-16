@@ -76,7 +76,7 @@ when consuming packs and running Luna.
 | Fix           | Protect workflow and pack changes with review; scope registry roles to the required repository.                                                                                                                                 |
 | Priority      | Maintainer and registry policy                                                                                                                                                                                                  |
 | Status        | Mitigated by the maintained example; external permissions remain operator-owned                                                                                                                                                 |
-| Verification  | Changed-pack fixtures, workflow contract checks, and authenticated local TLS registry integration; live provider identities require configured infrastructure.                                                                  |
+| Verification  | Changed-pack fixtures and authenticated local TLS OCI publish/resolve tests; live provider identities require configured infrastructure.                                                                                       |
 | Residual risk | A compromised trusted branch can publish a structurally valid but harmful pack with its granted write identity.                                                                                                                 |
 
 ## Elevation of Privilege

@@ -118,7 +118,28 @@ internal sealed class PackUpdateService(
             }
         }
 
-        var catalog = await packCatalog.BrowseAsync(projectDirectory, state.Configuration);
+        var requestedPacks = new Dictionary<string, string?>(StringComparer.Ordinal);
+        if (packReference is { } requestedPack)
+        {
+            requestedPacks[requestedPack.Id] = requestedPack.Version;
+        }
+        else
+        {
+            foreach (
+                var root in state.Configuration.Packs.Where(root =>
+                    selectedUpdateIds is null || selectedUpdateIds.Contains(root.Id)
+                )
+            )
+            {
+                requestedPacks[root.Id] = null;
+            }
+        }
+
+        var catalog = await packCatalog.BrowseForUpdatesAsync(
+            projectDirectory,
+            state.Configuration,
+            requestedPacks
+        );
         if (catalog.Value is not { } catalogPacks)
         {
             return UpdateResult.Failure(catalog.Error ?? "Unable to browse pack sources.");

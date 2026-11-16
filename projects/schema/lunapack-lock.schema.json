@@ -212,79 +212,58 @@
             "$ref": "#/definitions/packReference"
           }
         },
-        "ociResolvedPack": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "id",
-            "version",
-            "packPath",
-            "sourceName",
-            "sourceIdentity",
-            "ociSource",
-            "packs",
-            "managedFiles"
-          ],
-          "properties": {
-            "destination": {
-              "$ref": "#/definitions/destination"
-            },
-            "sourceName": {
-              "$ref": "#/definitions/sourceName"
-            },
-            "sourceIdentity": {
-              "$ref": "#/definitions/ociSourceIdentity"
-            },
-            "id": {
-              "type": "string",
-              "minLength": 1
-            },
-            "version": {
-              "$ref": "#/definitions/semanticVersion"
-            },
-            "packPath": {
-              "$ref": "#/definitions/relativePath"
-            },
-            "ociSource": {
-              "$ref": "#/definitions/ociSourceProvenance"
-            },
-            "externalSources": {
-              "$ref": "#/definitions/externalSources"
-            },
-            "packs": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/packReference"
-              }
-            },
-            "managedFiles": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/managedFile"
-              }
-            }
+        "managedFiles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/managedFile"
           }
+        }
+      }
+    },
+    "ociResolvedPack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "packPath",
+        "sourceName",
+        "sourceIdentity",
+        "ociSource",
+        "packs",
+        "managedFiles"
+      ],
+      "properties": {
+        "destination": {
+          "$ref": "#/definitions/destination"
         },
-        "ociSourceProvenance": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["repository", "manifestDigest", "contentDigest"],
-          "properties": {
-            "repository": {
-              "type": "string",
-              "minLength": 1
-            },
-            "manifestDigest": {
-              "$ref": "#/definitions/ociDigest"
-            },
-            "contentDigest": {
-              "$ref": "#/definitions/ociDigest"
-            }
-          }
+        "sourceName": {
+          "$ref": "#/definitions/sourceName"
         },
-        "ociDigest": {
+        "sourceIdentity": {
+          "$ref": "#/definitions/ociSourceIdentity"
+        },
+        "id": {
           "type": "string",
-          "pattern": "^sha256:[A-Fa-f0-9]{64}$"
+          "minLength": 1
+        },
+        "version": {
+          "$ref": "#/definitions/semanticVersion"
+        },
+        "packPath": {
+          "$ref": "#/definitions/relativePath"
+        },
+        "ociSource": {
+          "$ref": "#/definitions/ociSourceProvenance"
+        },
+        "externalSources": {
+          "$ref": "#/definitions/externalSources"
+        },
+        "packs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/packReference"
+          }
         },
         "managedFiles": {
           "type": "array",
@@ -293,6 +272,56 @@
           }
         }
       }
+    },
+    "ociRegistryOrigin": {
+      "type": "string",
+      "minLength": 1,
+      "format": "uri",
+      "pattern": "^[Hh][Tt][Tt][Pp][Ss]://(?:\\[[A-Fa-f0-9:.]+\\]|[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\\.?)(?::(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?$"
+    },
+    "ociRepositoryPath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*$"
+    },
+    "ociSourceProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contentSize",
+        "contentDigest",
+        "manifestDigest",
+        "registryUrl",
+        "repository",
+        "tag"
+      ],
+      "properties": {
+        "contentSize": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "contentDigest": {
+          "$ref": "#/definitions/ociDigest"
+        },
+        "manifestDigest": {
+          "$ref": "#/definitions/ociDigest"
+        },
+        "registryUrl": {
+          "$ref": "#/definitions/ociRegistryOrigin"
+        },
+        "repository": {
+          "$ref": "#/definitions/ociRepositoryPath"
+        },
+        "tag": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "ociDigest": {
+      "type": "string",
+      "pattern": "^sha256:[A-Fa-f0-9]{64}$"
     },
     "localResolvedPack": {
       "type": "object",
@@ -382,11 +411,10 @@
           "enum": ["oci"]
         },
         "url": {
-          "type": "string",
-          "minLength": 1
+          "$ref": "#/definitions/ociRegistryOrigin"
         },
         "path": {
-          "$ref": "#/definitions/repositoryRelativePath"
+          "$ref": "#/definitions/ociRepositoryPath"
         }
       }
     },

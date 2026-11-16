@@ -1091,23 +1091,45 @@ internal static partial class ManifestModelValidator
                 $"Local project trust '{projectPath}'",
                 issues
             );
-            var hasInvalidIgnoredSources =
-                projectTrust.IgnoredSources.Any(source => !IsValidSourceIdentity(source))
-                || projectTrust.IgnoredSources.Distinct().Count()
-                    != projectTrust.IgnoredSources.Count;
-            if (hasInvalidIgnoredSources)
-            {
-                issues.Add(
-                    $"Local project settings '{projectPath}' ignored sources must contain unique configured-source identities."
-                );
-            }
-
             ValidateTrustEntries(
                 projectTrust.Acknowledgements.Sources,
                 projectTrust.Acknowledgements.Packs,
                 $"Project trust acknowledgement '{projectPath}'",
                 issues
             );
+        }
+
+        return issues;
+    }
+
+    public static IReadOnlyList<string> Validate(SourceIgnoreSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+
+        var issues = new List<string>();
+        if (settings.Projects is null)
+        {
+            issues.Add("Source-ignore settings must contain project identities.");
+            return issues;
+        }
+
+        foreach (var (projectPath, identities) in settings.Projects)
+        {
+            if (!IsCanonicalAbsolutePath(projectPath))
+            {
+                issues.Add($"Source-ignore project key '{projectPath}' is not a canonical path.");
+            }
+
+            var hasInvalidIdentities =
+                identities is null
+                || identities.Any(source => source is null || !IsValidSourceIdentity(source))
+                || identities.Distinct().Count() != identities.Count;
+            if (hasInvalidIdentities)
+            {
+                issues.Add(
+                    $"Source-ignore identities for project '{projectPath}' must be unique configured-source identities."
+                );
+            }
         }
 
         return issues;

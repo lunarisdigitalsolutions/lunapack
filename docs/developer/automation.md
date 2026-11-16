@@ -23,7 +23,7 @@ $env:LUNAPACK_USER_PROFILE = "$PWD/.ci-profile"
 ```
 
 Do not cache this directory across untrusted jobs. It can contain persisted
-source and pack trust decisions.
+source and pack trust decisions, plus source-ignore preferences.
 
 Committed project trust does not authorize hooks by itself. Project trust also
 requires an acknowledgement in the selected user profile for the canonical
