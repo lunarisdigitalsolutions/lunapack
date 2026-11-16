@@ -319,7 +319,12 @@ public sealed class CliProcessTests
             "Installed 'example' (version '1.0.0') in ",
             StringComparison.Ordinal
         );
-        await Assert.That(first >= 0 && first < script && script < last && last < success).IsTrue();
+        await Assert
+            .That(first >= 0 && first < script && script < last && last < success)
+            .IsTrue()
+            .Because(
+                $"stdout: {install.StandardOutput}{Environment.NewLine}stderr: {install.StandardError}"
+            );
         await Assert.That(install.StandardOutput).DoesNotContain("Press Enter to continue...");
         await Assert.That(install.StandardOutput).DoesNotContain("Applied managed-file changes");
     }
