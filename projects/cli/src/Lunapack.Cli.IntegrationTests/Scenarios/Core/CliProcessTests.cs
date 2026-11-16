@@ -311,7 +311,17 @@ public sealed class CliProcessTests
             "Installed 'example' (version '1.0.0') in ",
             StringComparison.Ordinal
         );
-        await Assert.That(first >= 0 && first < script && script < last && last < success).IsTrue();
+        var outputIsOrdered = first >= 0 && first < script && script < last && last < success;
+        if (!outputIsOrdered)
+        {
+            Console.Error.WriteLine(
+                $"[DEBUG-lifecycle-order] indexes: first={first}, script={script}, last={last}, success={success}"
+            );
+            Console.Error.WriteLine($"[DEBUG-lifecycle-order] stdout:\n{install.StandardOutput}");
+            Console.Error.WriteLine($"[DEBUG-lifecycle-order] stderr:\n{install.StandardError}");
+        }
+
+        await Assert.That(outputIsOrdered).IsTrue();
         await Assert.That(install.StandardOutput).DoesNotContain("Press Enter to continue...");
         await Assert.That(install.StandardOutput).DoesNotContain("Applied managed-file changes");
     }
