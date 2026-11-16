@@ -305,22 +305,23 @@ public sealed class CliProcessTests
 
         await Assert.That(install.ExitCode).IsEqualTo(0);
         var first = install.StandardOutput.IndexOf("static-instruction", StringComparison.Ordinal);
-        var script = install.StandardOutput.IndexOf("10.0.", StringComparison.Ordinal);
+        var scriptOutput = install
+            .StandardOutput.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.Trim())
+            .FirstOrDefault(line =>
+            {
+                var version = line.Split('-', '+')[0];
+                return Version.TryParse(version, out _);
+            });
+        var script = scriptOutput is null
+            ? -1
+            : install.StandardOutput.IndexOf(scriptOutput, StringComparison.Ordinal);
         var last = install.StandardOutput.IndexOf("Hello Example Corp", StringComparison.Ordinal);
         var success = install.StandardOutput.IndexOf(
             "Installed 'example' (version '1.0.0') in ",
             StringComparison.Ordinal
         );
         var outputIsOrdered = first >= 0 && first < script && script < last && last < success;
-        if (!outputIsOrdered)
-        {
-            Console.Error.WriteLine(
-                $"[DEBUG-lifecycle-order] indexes: first={first}, script={script}, last={last}, success={success}"
-            );
-            Console.Error.WriteLine($"[DEBUG-lifecycle-order] stdout:\n{install.StandardOutput}");
-            Console.Error.WriteLine($"[DEBUG-lifecycle-order] stderr:\n{install.StandardError}");
-        }
-
         await Assert.That(outputIsOrdered).IsTrue();
         await Assert.That(install.StandardOutput).DoesNotContain("Press Enter to continue...");
         await Assert.That(install.StandardOutput).DoesNotContain("Applied managed-file changes");
