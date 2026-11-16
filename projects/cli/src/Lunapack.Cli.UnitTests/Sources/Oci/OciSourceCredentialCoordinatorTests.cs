@@ -30,9 +30,8 @@ public sealed class OciSourceCredentialCoordinatorTests
     }
 
     [Test]
-    public async Task ExecuteAsync_WhenNoEnvironmentCredentialIsConfigured_UsesAnonymousAccess()
+    public async Task ExecuteAsync_WhenNoStoredCredentialExists_UsesAnonymousAccess()
     {
-        using var environment = new OciCredentialEnvironment();
         var store = new FakeCredentialStore();
         var prompt = new FakeCredentialPrompt(new OciRegistryCredential("user", "secret"));
         using var coordinator = CreateCoordinator(store, prompt);
@@ -56,21 +55,34 @@ public sealed class OciSourceCredentialCoordinatorTests
     }
 
     [Test]
-    public async Task ExecuteAsync_WhenEnvironmentCredentialBundleIsIncomplete_FailsClosed()
+    public async Task ExecuteAsync_WhenLegacyEnvironmentVariablesAreSet_IgnoresThem()
     {
-        using var environment = new OciCredentialEnvironment("private", "user", null);
+        using var environment = new OciCredentialEnvironment(
+            "private",
+            "legacy-user-sentinel",
+            "legacy-password-sentinel"
+        );
+        var ansiConsole = new SpectreTestConsole();
+        var console = new CliConsole(ansiConsole, CliLogLevel.Info);
         var store = new FakeCredentialStore();
         var prompt = new FakeCredentialPrompt(new OciRegistryCredential("user", "secret"));
-        using var coordinator = CreateCoordinator(store, prompt);
-        var operationCalled = false;
+        using var coordinator = CreateCoordinator(store, prompt, console);
+        var attemptedCredentials = new List<OciRegistryCredential?>();
 
         var result = await coordinator.ExecuteAsync(
             _projectDirectory,
             CreateSource(),
-            _ =>
+            credential =>
             {
-                operationCalled = true;
-                return Task.FromResult(OciRegistryResult<OciRegistryUnit>.Succeeded(new()));
+                attemptedCredentials.Add(credential);
+                return Task.FromResult(
+                    OciRegistryResult<OciRegistryUnit>.Failed(
+                        new(
+                            OciRegistryFailureKind.AuthenticationRequired,
+                            "authentication required"
+                        )
+                    )
+                );
             },
             CancellationToken.None
         );
@@ -78,71 +90,18 @@ public sealed class OciSourceCredentialCoordinatorTests
         await Assert
             .That(result.Failure?.Kind)
             .IsEqualTo(OciRegistryFailureKind.AuthenticationRequired);
-        await Assert.That(result.Failure?.Message).Contains("must be supplied together");
-        await Assert.That(operationCalled).IsFalse();
-        await Assert.That(store.GetCalls).IsEqualTo(0);
-        await Assert.That(prompt.Calls).IsEqualTo(0);
-    }
-
-    [Test]
-    public async Task Scenario_EnvironmentCredentialTargetsAnotherSource_UsesAnonymousAccess()
-    {
-        using var environment = new OciCredentialEnvironment("other", "user", "secret");
-        var store = new FakeCredentialStore();
-        var prompt = new FakeCredentialPrompt(new OciRegistryCredential("user", "secret"));
-        using var coordinator = CreateCoordinator(store, prompt);
-        OciRegistryCredential? operationCredential = new("unexpected", "unexpected");
-
-        var result = await coordinator.ExecuteAsync(
-            _projectDirectory,
-            CreateSource(),
-            credential =>
-            {
-                operationCredential = credential;
-                return Task.FromResult(OciRegistryResult<OciRegistryUnit>.Succeeded(new()));
-            },
-            CancellationToken.None
-        );
-
-        await Assert.That(result.IsSuccess).IsTrue();
-        await Assert.That(operationCredential).IsNull();
-        await Assert.That(store.GetCalls).IsEqualTo(0);
-        await Assert.That(prompt.Calls).IsEqualTo(0);
-    }
-
-    [Test]
-    public async Task ExecuteAsync_WhenEnvironmentCredentialIsComplete_UsesItWithoutPersistence()
-    {
-        using var environment = new OciCredentialEnvironment("private", "user", "secret");
-        var store = new FakeCredentialStore();
-        var prompt = new FakeCredentialPrompt(new OciRegistryCredential("other", "other-secret"));
-        using var coordinator = CreateCoordinator(store, prompt);
-        OciRegistryCredential? operationCredential = null;
-
-        var result = await coordinator.ExecuteAsync(
-            _projectDirectory,
-            CreateSource(),
-            credential =>
-            {
-                operationCredential = credential;
-                return Task.FromResult(OciRegistryResult<OciRegistryUnit>.Succeeded(new()));
-            },
-            CancellationToken.None
-        );
-
-        await Assert.That(result.IsSuccess).IsTrue();
         await Assert
-            .That(operationCredential)
-            .IsEqualTo(new OciRegistryCredential("user", "secret"));
-        await Assert.That(store.GetCalls).IsEqualTo(0);
-        await Assert.That(store.SaveCalls).IsEqualTo(0);
+            .That(attemptedCredentials)
+            .IsEquivalentTo(new OciRegistryCredential?[] { null });
+        await Assert.That(store.GetCalls).IsEqualTo(1);
         await Assert.That(prompt.Calls).IsEqualTo(0);
+        await Assert.That(ansiConsole.Output).DoesNotContain("legacy-user-sentinel");
+        await Assert.That(ansiConsole.Output).DoesNotContain("legacy-password-sentinel");
     }
 
     [Test]
     public async Task ExecuteAsync_WhenInteractiveAuthenticationSucceeds_PersistsAndReportsIt()
     {
-        using var environment = new OciCredentialEnvironment();
         var ansiConsole = new SpectreTestConsole();
         ansiConsole.Profile.Capabilities.Interactive = true;
         var console = new CliConsole(ansiConsole, CliLogLevel.Info);
@@ -176,7 +135,6 @@ public sealed class OciSourceCredentialCoordinatorTests
     [Test]
     public async Task ExecuteAsync_WhenStoredCredentialIsRejected_PromptsForReplacement()
     {
-        using var environment = new OciCredentialEnvironment();
         var oldCredential = new OciRegistryCredential("old-user", "old-secret");
         var newCredential = new OciRegistryCredential("new-user", "new-secret");
         var ansiConsole = new SpectreTestConsole();
@@ -213,7 +171,7 @@ public sealed class OciSourceCredentialCoordinatorTests
         await Assert.That(result.IsSuccess).IsTrue();
         await Assert
             .That(attemptedCredentials)
-            .IsEquivalentTo(new OciRegistryCredential?[] { null, oldCredential, newCredential });
+            .IsEquivalentTo([null, oldCredential, newCredential]);
         await Assert.That(prompt.Calls).IsEqualTo(1);
         await Assert.That(store.SaveCalls).IsEqualTo(1);
         await Assert.That(store.SavedCredential).IsEqualTo(newCredential);
@@ -222,7 +180,6 @@ public sealed class OciSourceCredentialCoordinatorTests
     [Test]
     public async Task ExecuteAsync_WhenCredentialStoreCannotSave_ReportsWarningAfterSuccess()
     {
-        using var environment = new OciCredentialEnvironment();
         var ansiConsole = new SpectreTestConsole();
         ansiConsole.Profile.Capabilities.Interactive = true;
         var credential = new OciRegistryCredential("user", "secret-sentinel");
@@ -260,7 +217,6 @@ public sealed class OciSourceCredentialCoordinatorTests
     [Test]
     public async Task ExecuteAsync_WhenCredentialStoreCannotLoad_WarnsAndContinuesWithoutPrompt()
     {
-        using var environment = new OciCredentialEnvironment();
         var ansiConsole = new SpectreTestConsole();
         var store = new FakeCredentialStore(failGet: true);
         var prompt = new FakeCredentialPrompt(new OciRegistryCredential("user", "secret"));
@@ -296,7 +252,6 @@ public sealed class OciSourceCredentialCoordinatorTests
     [Test]
     public async Task ExecuteAsync_WhenRegistryDeniesAuthorization_DoesNotPromptOrReadStore()
     {
-        using var environment = new OciCredentialEnvironment();
         var store = new FakeCredentialStore();
         var prompt = new FakeCredentialPrompt(new OciRegistryCredential("user", "secret"));
         using var coordinator = CreateCoordinator(store, prompt);
@@ -323,7 +278,6 @@ public sealed class OciSourceCredentialCoordinatorTests
     [Test]
     public async Task ExecuteAsync_WhenCanceledAfterAuthenticationFailure_DoesNotPrompt()
     {
-        using var environment = new OciCredentialEnvironment();
         using var cancellation = new CancellationTokenSource();
         var store = new FakeCredentialStore();
         var prompt = new FakeCredentialPrompt(new OciRegistryCredential("user", "secret"));
@@ -363,7 +317,6 @@ public sealed class OciSourceCredentialCoordinatorTests
     [Test]
     public async Task ExecuteAsync_WhenAuthenticatedRequestReturnsNotFound_PersistsCredential()
     {
-        using var environment = new OciCredentialEnvironment();
         var store = new FakeCredentialStore();
         var prompt = new FakeCredentialPrompt(new OciRegistryCredential("user", "secret"));
         var ansiConsole = new SpectreTestConsole();
@@ -402,7 +355,6 @@ public sealed class OciSourceCredentialCoordinatorTests
     [Test]
     public async Task ExecuteAsync_WhenStoredCredentialIsInvalid_DoesNotSendIt()
     {
-        using var environment = new OciCredentialEnvironment();
         var store = new FakeCredentialStore(new OciRegistryCredential("user", "bad\nsecret"));
         var prompt = new FakeCredentialPrompt(new OciRegistryCredential("user", "secret"));
         using var coordinator = CreateCoordinator(store, prompt);
@@ -436,7 +388,6 @@ public sealed class OciSourceCredentialCoordinatorTests
     [Test]
     public async Task ExecuteAsync_WhenParallelRequestsNeedAuthentication_PromptsOnce()
     {
-        using var environment = new OciCredentialEnvironment();
         var ansiConsole = new SpectreTestConsole();
         ansiConsole.Profile.Capabilities.Interactive = true;
         var console = new CliConsole(ansiConsole, CliLogLevel.Info);
@@ -488,7 +439,6 @@ public sealed class OciSourceCredentialCoordinatorTests
     [Test]
     public async Task ExecuteAsync_WhenAnonymousRegistryReturnsForbiddenChallenge_PromptsAndRetries()
     {
-        using var environment = new OciCredentialEnvironment();
         var source = CreateSource();
         var authorizationSchemes = new List<string?>();
         var client = CreateRegistryClient(
@@ -534,7 +484,6 @@ public sealed class OciSourceCredentialCoordinatorTests
     [Test]
     public async Task ExecuteAsync_WhenStoredCredentialGetsForbiddenChallenge_DoesNotPromptAgain()
     {
-        using var environment = new OciCredentialEnvironment();
         var source = CreateSource();
         var client = CreateRegistryClient((_, _) => Task.FromResult(CreateForbiddenChallenge()));
         var ansiConsole = new SpectreTestConsole();

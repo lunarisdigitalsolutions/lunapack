@@ -28,27 +28,24 @@ Do not share that directory between jobs with different trust boundaries. See
 [Scripts and trust](trust-and-scripts.md) for stored scopes and
 [Automation](../automation.md) for a complete noninteractive workflow.
 
-## OCI registry credentials
+## OCI registry authentication
 
-| Variable                | Required with         | Behavior                                                              |
-| ----------------------- | --------------------- | --------------------------------------------------------------------- |
-| `LUNAPACK_OCI_SOURCE`   | Username and password | Selects the exact configured OCI source name for this credential set. |
-| `LUNAPACK_OCI_USERNAME` | Source and password   | Supplies the registry username for one source.                        |
-| `LUNAPACK_OCI_PASSWORD` | Source and username   | Supplies a token or password for one source.                          |
+Luna does not expose LunaPack-specific environment variables for OCI usernames,
+passwords, tokens, or source selection. It tries anonymous access first. After
+an authentication challenge, Luna checks the operating-system credential
+store; an interactive command can prompt once and save validated credentials.
+Credentials are scoped to the canonical project, source name, registry, and
+repository prefix. They are not stored in project files or the Luna user
+profile. There are no registry login or logout commands.
 
-Supply all three variables together for one configured source. A set selected
-for a different source is not reused; an incomplete set for the selected source
-fails with an authentication diagnostic. Environment credentials are used only
-for the current process and are not saved to the operating-system store.
-
-Without environment credentials, Luna tries anonymous access first. After an
-authentication challenge it checks the operating-system credential store and,
-in an interactive session, can prompt once for that source. Successfully
-validated interactive credentials are saved in Windows Credential Manager,
-macOS Keychain, or the Linux Secret Service/keyring. Credentials are scoped to
-the canonical project, source name, registry, and repository prefix; they are
-not stored in project files or the Luna user profile. There are no registry
-login or logout commands.
+Noninteractive generic OCI and GHCR operations need credentials already present
+in the runner user's native credential store. The corresponding
+[publishing workflow packs](../advanced/publish-private-packs.md) require a
+persistent Linux self-hosted runner. They do not consume `GITHUB_TOKEN` or
+registry credential environment variables. For ACR, Luna can use Azure
+Identity's `DefaultAzureCredential`, including the identity established by
+`azure/login` with GitHub OIDC. Azure Identity follows its own configured
+credential chain; Luna adds no registry-credential environment provider.
 
 Credential-store availability depends on the operating system. Linux requires
 the `libsecret` and GLib runtime libraries and an available Secret Service.
@@ -81,6 +78,8 @@ clones there. Discovery and pack materialization use best-effort-cleaned system
 temporary directories; OCI content is not kept in a persistent cache. See
 [Understand Git source behavior](../advanced/git-source-behavior.md) for cache
 contents, temporary paths, and default-branch reuse.
+`luna init` adds `/.lunapack/` to the project-root `.gitignore`, preserving
+existing entries.
 
 ## Lifecycle command lookup
 

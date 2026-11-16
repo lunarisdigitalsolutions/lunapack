@@ -87,13 +87,10 @@ Create a new architecture decision record from the [MADR-based template](templat
 | [ADR-0081][adr-0081]                                                            | Inherit composite remaps and evaluate runtime hook state during ordered dispatch.       |
 | [ADR-0082][adr-0082]                                                            | Require pack changelog entries only after the initial release.                          |
 | [ADR-0083][adr-0083]                                                            | Evaluate explicitly marked composite parameter expressions as typed values.             |
-| [ADR-0084][adr-0084]                                                            | Keep OCI artifact and lock contracts; transport choice superseded by ADR-0089.          |
+| [ADR-0084][adr-0084]                                                            | Use AOT-safe OCI Distribution artifacts for pack releases.                              |
 | [ADR-0085][adr-0085]                                                            | Bind registry credentials to configured source identities.                              |
-| [ADR-0086][adr-0086]                                                            | Superseded by ADR-0090.                                                                 |
-| [ADR-0087][adr-0087]                                                            | Preserve partial catalog results with typed source failures.                            |
-| [ADR-0088][adr-0088]                                                            | Superseded by ADR-0089.                                                                 |
-| [ADR-0089][adr-0089]                                                            | Use direct OCI HTTP transport and native credential stores for Native AOT.              |
-| [ADR-0090][adr-0090]                                                            | Keep source-ignore state in a per-project sidecar for settings compatibility.           |
+| [ADR-0086][adr-0086]                                                            | Preserve partial catalog results with typed source failures.                            |
+| [ADR-0087][adr-0087]                                                            | Keep source-ignore state in a per-project sidecar for settings compatibility.           |
 
 [adr-0070]: 0070-bind-privileged-workflows-to-trusted-provenance.md
 [adr-0071]: 0071-reject-filesystem-aliases-at-mutation-boundaries.md
@@ -111,8 +108,5 @@ Create a new architecture decision record from the [MADR-based template](templat
 [adr-0083]: 0083-evaluate-typed-composite-parameter-expressions.md
 [adr-0084]: 0084-use-oci-distribution-artifacts-for-pack-releases.md
 [adr-0085]: 0085-bind-registry-credentials-to-source-identities.md
-[adr-0086]: 0086-store-source-ignores-in-user-settings.md
-[adr-0087]: 0087-preserve-partial-catalog-results.md
-[adr-0088]: 0088-keep-oci-registry-operations-native-aot-compatible.md
-[adr-0089]: 0089-use-aot-safe-oci-http-and-native-credential-stores.md
-[adr-0090]: 0090-store-source-ignores-in-compatible-sidecar.md
+[adr-0086]: 0086-preserve-partial-catalog-results.md
+[adr-0087]: 0087-store-source-ignores-in-compatible-sidecar.md

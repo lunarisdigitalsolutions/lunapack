@@ -1,0 +1,15 @@
+id: github-ghcr-publish-workflow
+version: 1.0.0
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Publish changed LunaPack directories to GitHub Container Registry with GitHub Actions.
+tags:
+  - github-actions
+  - github
+  - ghcr
+  - publishing
+managedFiles:
+  - source: targets/.github/workflows/publish-lunapacks-ghcr.yml
+    target: .github/workflows/publish-lunapacks-ghcr.yml
+  - source: targets/.github/scripts/find_changed_packs_ghcr.py
+    target: .github/scripts/find_changed_packs_ghcr.py

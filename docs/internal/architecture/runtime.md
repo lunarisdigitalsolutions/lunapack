@@ -15,7 +15,7 @@ target repository. OCI content is materialized in a private operation directory
 and is not persistently cached. Publication resolves the tag and verifies the
 registry's manifest digest. Native credentials use Windows Credential Manager,
 macOS Keychain, or Linux Secret Service through isolated platform adapters.
-See [ADR-0089](adr/0089-use-aot-safe-oci-http-and-native-credential-stores.md).
+See [ADR-0084](adr/0084-use-oci-distribution-artifacts-for-pack-releases.md).
 
 Catalog browsing excludes invalid candidate packs and preserves valid
 candidates when another source fails. Typed per-source failures remain visible;
@@ -45,11 +45,11 @@ never supplies lifecycle scripts.
 
 OCI authentication is operation-scoped and source-bound. Anonymous access is
 attempted first; an authentication challenge can select a native credential,
-source-bound environment credential, one interactive prompt, or optional ACR
-identity. Native entries are keyed by canonical project, configured source name,
-registry origin, and repository prefix. Bearer challenges must use an HTTPS
-realm on the registry origin; cross-origin realms are rejected before sending
-credentials. Generic OCI transport has no Azure identity dependency.
+one interactive prompt, or optional ACR identity. Native entries are keyed by
+canonical project, configured source name, registry origin, and repository
+prefix. Bearer challenges must use an HTTPS realm on the registry origin;
+cross-origin realms are rejected before sending credentials. Generic OCI
+transport has no Azure identity dependency.
 User-local source ignores are keyed by the same configured identity and gate
 browsing, resolution, links, materialization, credentials, and publishing
 before source access.

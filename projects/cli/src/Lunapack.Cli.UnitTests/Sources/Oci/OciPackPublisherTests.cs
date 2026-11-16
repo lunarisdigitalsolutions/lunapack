@@ -30,7 +30,6 @@ public sealed class OciPackPublisherTests
     [Test]
     public async Task PublishAsync_WhenPackIsValid_PublishesAndVerifiesImmutableRelease()
     {
-        using var environment = new OciCredentialEnvironment();
         var fileSystem = CreateFileSystem();
         var registry = new FakeOciRegistryClient();
         using var coordinator = CreateCoordinator();
@@ -72,7 +71,6 @@ public sealed class OciPackPublisherTests
     [Test]
     public async Task Scenario_Publish_WhenGitMetadataIsAvailable_AddsSanitizedSourceAnnotations()
     {
-        using var environment = new OciCredentialEnvironment();
         var fileSystem = CreateFileSystem();
         var registry = new FakeOciRegistryClient();
         using var coordinator = CreateCoordinator();
@@ -105,7 +103,6 @@ public sealed class OciPackPublisherTests
     [Test]
     public async Task Scenario_ResolveLockedOci_DoesNotReturnDisposedWorkspacePaths()
     {
-        using var environment = new OciCredentialEnvironment();
         var fileSystem = CreateFileSystem();
         var registry = new FakeOciRegistryClient();
         using var publisherCoordinator = CreateCoordinator();
@@ -166,7 +163,6 @@ public sealed class OciPackPublisherTests
     [Test]
     public async Task Scenario_BrowseAndResolve_WhenOciSourceIsIgnored_SkipsRegistryAndCredentials()
     {
-        using var environment = new OciCredentialEnvironment();
         using var workspace = new TestWorkspace();
         var fileSystem = workspace.FileSystem;
         var projectDirectory = workspace.Path;
@@ -228,7 +224,6 @@ public sealed class OciPackPublisherTests
     [Test]
     public async Task GetAvailableAsync_WhenRepositoryEnumerationIsDenied_QueriesLockedOciReleaseDirectly()
     {
-        using var environment = new OciCredentialEnvironment();
         var fileSystem = CreateFileSystem();
         var registry = new FakeOciRegistryClient();
         var source = CreateSource();
@@ -277,7 +272,6 @@ public sealed class OciPackPublisherTests
     [Test]
     public async Task PublishAsync_WhenReleaseTagAlreadyExists_DoesNotPushAgain()
     {
-        using var environment = new OciCredentialEnvironment();
         var fileSystem = CreateFileSystem();
         var registry = new FakeOciRegistryClient();
         registry.SeedManifest("team/packs/backend", "1.0.0", "sha256:existing");
@@ -300,7 +294,6 @@ public sealed class OciPackPublisherTests
     [Test]
     public async Task PublishAsync_WhenExistingTagMatchesContent_DoesNotOverwriteIt()
     {
-        using var environment = new OciCredentialEnvironment();
         var fileSystem = CreateFileSystem();
         var registry = new FakeOciRegistryClient();
         using var coordinator = CreateCoordinator();
@@ -331,7 +324,6 @@ public sealed class OciPackPublisherTests
     [Test]
     public async Task PublishAsync_WhenConcurrentPublishersRace_ImmutableRegistryRejectsOne()
     {
-        using var environment = new OciCredentialEnvironment();
         var firstFileSystem = CreateFileSystem();
         var secondFileSystem = CreateFileSystem();
         secondFileSystem.File.WriteAllText(
@@ -376,7 +368,6 @@ public sealed class OciPackPublisherTests
     [Test]
     public async Task PublishAsync_WhenExistingTagHasAnotherArtifact_DoesNotOverwriteIt()
     {
-        using var environment = new OciCredentialEnvironment();
         var fileSystem = CreateFileSystem();
         var registry = new FakeOciRegistryClient();
         registry.SeedManifest("team/packs/backend", "1.0.0", "sha256:other-artifact");
@@ -399,7 +390,6 @@ public sealed class OciPackPublisherTests
     [Test]
     public async Task PublishAsync_WhenCompletionDigestDiffers_FailsWithoutSuccess()
     {
-        using var environment = new OciCredentialEnvironment();
         var fileSystem = CreateFileSystem();
         var registry = new FakeOciRegistryClient { CompletionDigestOverride = "sha256:different" };
         using var coordinator = CreateCoordinator();
@@ -421,7 +411,6 @@ public sealed class OciPackPublisherTests
     [Test]
     public async Task PublishAsync_WhenRegistryRequiresAuthentication_ResumesAndPersistsCredential()
     {
-        using var environment = new OciCredentialEnvironment();
         var fileSystem = CreateFileSystem();
         var registry = new FakeOciRegistryClient { RequireAuthentication = true };
         var store = new FakeCredentialStore();
@@ -451,7 +440,6 @@ public sealed class OciPackPublisherTests
     [Test]
     public async Task PublishAsync_WhenRegistryDeniesPush_DoesNotPromptOrReportSuccess()
     {
-        using var environment = new OciCredentialEnvironment();
         var fileSystem = CreateFileSystem();
         var registry = new FakeOciRegistryClient { DenyPush = true };
         var prompt = new FakeCredentialPrompt(new OciRegistryCredential("publisher", "secret"));
@@ -474,7 +462,6 @@ public sealed class OciPackPublisherTests
     [Test]
     public async Task PublishAsync_WhenManifestIsInvalid_FailsBeforeRegistryAccess()
     {
-        using var environment = new OciCredentialEnvironment();
         var fileSystem = CreateFileSystem();
         fileSystem.File.WriteAllText(
             fileSystem.Path.Combine(_packDirectory, PackManifestStore.FileName),
@@ -1073,31 +1060,6 @@ public sealed class OciPackPublisherTests
             return OciRegistryResult<OciBlobTransfer>.Succeeded(
                 new OciBlobTransfer(content.LongLength, OciPackArtifact.ComputeDigest(content))
             );
-        }
-    }
-
-    private sealed class OciCredentialEnvironment : IDisposable
-    {
-        private readonly Dictionary<string, string?> _originalValues = new(StringComparer.Ordinal)
-        {
-            ["LUNAPACK_OCI_SOURCE"] = Environment.GetEnvironmentVariable("LUNAPACK_OCI_SOURCE"),
-            ["LUNAPACK_OCI_USERNAME"] = Environment.GetEnvironmentVariable("LUNAPACK_OCI_USERNAME"),
-            ["LUNAPACK_OCI_PASSWORD"] = Environment.GetEnvironmentVariable("LUNAPACK_OCI_PASSWORD"),
-        };
-
-        public OciCredentialEnvironment()
-        {
-            Environment.SetEnvironmentVariable("LUNAPACK_OCI_SOURCE", null);
-            Environment.SetEnvironmentVariable("LUNAPACK_OCI_USERNAME", null);
-            Environment.SetEnvironmentVariable("LUNAPACK_OCI_PASSWORD", null);
-        }
-
-        public void Dispose()
-        {
-            foreach (var (name, value) in _originalValues)
-            {
-                Environment.SetEnvironmentVariable(name, value);
-            }
         }
     }
 }

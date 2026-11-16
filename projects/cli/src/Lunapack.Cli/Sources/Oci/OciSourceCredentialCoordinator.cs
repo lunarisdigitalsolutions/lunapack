@@ -42,17 +42,6 @@ internal sealed class OciSourceCredentialCoordinator(
             );
         }
 
-        var environmentCredential = ResolveEnvironmentCredential(source);
-        if (environmentCredential.Failure is { } environmentFailure)
-        {
-            return OciRegistryResult<T>.Failed(environmentFailure);
-        }
-
-        if (environmentCredential.Credential is { } suppliedCredential)
-        {
-            return await operation(suppliedCredential);
-        }
-
         var session = _sessions.GetOrAdd(key, _ => new AuthenticationSession());
         var credential = await GetInMemoryCredentialAsync(session, cancellationToken);
         var result = await operation(credential);
@@ -240,53 +229,6 @@ internal sealed class OciSourceCredentialCoordinator(
         }
     }
 
-    private static EnvironmentCredential ResolveEnvironmentCredential(
-        ProjectConfiguration.OciSource source
-    )
-    {
-        var selectedSource = Environment.GetEnvironmentVariable("LUNAPACK_OCI_SOURCE");
-        var username = Environment.GetEnvironmentVariable("LUNAPACK_OCI_USERNAME");
-        var password = Environment.GetEnvironmentVariable("LUNAPACK_OCI_PASSWORD");
-        var hasUsername = !string.IsNullOrEmpty(username);
-        var hasPassword = !string.IsNullOrEmpty(password);
-        var hasSelectedSource = !string.IsNullOrWhiteSpace(selectedSource);
-
-        if (
-            hasSelectedSource
-            && !string.Equals(selectedSource, source.Name, StringComparison.Ordinal)
-        )
-        {
-            return new EnvironmentCredential(null, null);
-        }
-
-        if (!hasUsername && !hasPassword && !hasSelectedSource)
-        {
-            return new EnvironmentCredential(null, null);
-        }
-
-        if (!hasUsername || !hasPassword || !hasSelectedSource)
-        {
-            return new EnvironmentCredential(
-                null,
-                new OciRegistryFailure(
-                    OciRegistryFailureKind.AuthenticationRequired,
-                    "LUNAPACK_OCI_SOURCE, LUNAPACK_OCI_USERNAME, and LUNAPACK_OCI_PASSWORD must be supplied together."
-                )
-            );
-        }
-
-        var credential = new OciRegistryCredential(username!, password!);
-        return IsValidCredential(credential)
-            ? new EnvironmentCredential(credential, null)
-            : new EnvironmentCredential(
-                null,
-                new OciRegistryFailure(
-                    OciRegistryFailureKind.AuthenticationRequired,
-                    "Environment registry credentials must include a non-empty username and password without control characters."
-                )
-            );
-    }
-
     private static bool IsValidCredential(OciRegistryCredential credential) =>
         IsValidUsername(credential.Username)
         && !string.IsNullOrEmpty(credential.Password)
@@ -297,11 +239,6 @@ internal sealed class OciSourceCredentialCoordinator(
 
     private static OciRegistryResult<T> Failure<T>(OciRegistryFailureKind kind, string message)
         where T : class => OciRegistryResult<T>.Failed(new OciRegistryFailure(kind, message));
-
-    private sealed record EnvironmentCredential(
-        OciRegistryCredential? Credential,
-        OciRegistryFailure? Failure
-    );
 
     private sealed class AuthenticationSession : IDisposable
     {

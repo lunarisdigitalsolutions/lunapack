@@ -13,6 +13,22 @@ internal static class OciPackArchive
     public const long MaximumEntryBytes = 512L * 1024 * 1024;
     public const long MaximumExpandedBytes = 2L * 1024 * 1024 * 1024;
 
+    public sealed record Limits(
+        int MaximumEntryCount,
+        long MaximumArchiveBytes,
+        long MaximumEntryBytes,
+        long MaximumExpandedBytes
+    )
+    {
+        public static Limits Default { get; } =
+            new(
+                OciPackArchive.MaximumEntryCount,
+                OciPackArchive.MaximumArchiveBytes,
+                OciPackArchive.MaximumEntryBytes,
+                OciPackArchive.MaximumExpandedBytes
+            );
+    }
+
     private static readonly DateTimeOffset _reproducibleTimestamp = new(
         1980,
         1,
@@ -27,10 +43,12 @@ internal static class OciPackArchive
         IFileSystem fileSystem,
         string packDirectory,
         Stream destination,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        Limits? limits = null
     )
     {
-        var sourceEntries = EnumerateSourceEntries(fileSystem, packDirectory);
+        var archiveLimits = limits ?? Limits.Default;
+        var sourceEntries = EnumerateSourceEntries(fileSystem, packDirectory, archiveLimits);
         if (sourceEntries.Value is not { } entries)
         {
             return ManifestOperationResult<OciBlobTransfer>.Failure(
@@ -38,14 +56,17 @@ internal static class OciPackArchive
             );
         }
 
-        if (entries.Count > MaximumEntryCount)
+        if (entries.Count > archiveLimits.MaximumEntryCount)
         {
             return ManifestOperationResult<OciBlobTransfer>.Failure(
                 "Pack contains more than 100,000 archive entries."
             );
         }
 
-        using var output = new BoundedHashingWriteStream(destination, MaximumArchiveBytes);
+        using var output = new BoundedHashingWriteStream(
+            destination,
+            archiveLimits.MaximumArchiveBytes
+        );
         try
         {
             long expandedBytes = 0;
@@ -70,8 +91,8 @@ internal static class OciPackArchive
                         source,
                         target,
                         sourceEntry.Length,
-                        MaximumEntryBytes,
-                        MaximumExpandedBytes - expandedBytes,
+                        archiveLimits.MaximumEntryBytes,
+                        archiveLimits.MaximumExpandedBytes - expandedBytes,
                         cancellationToken
                     );
                     expandedBytes += sourceEntry.Length;
@@ -104,13 +125,15 @@ internal static class OciPackArchive
         IFileSystem fileSystem,
         Stream archiveStream,
         string extractionRoot,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        Limits? limits = null
     )
     {
+        var archiveLimits = limits ?? Limits.Default;
         try
         {
             using var archive = new ZipArchive(archiveStream, ZipArchiveMode.Read, leaveOpen: true);
-            var validated = ValidateEntries(archive);
+            var validated = ValidateEntries(archive, archiveLimits);
             if (validated.Value is not { } preparedEntries)
             {
                 return ManifestOperationResult<IReadOnlyList<string>>.Failure(
@@ -129,9 +152,9 @@ internal static class OciPackArchive
             return ManifestOperationResult<IReadOnlyList<string>>.Success(
                 await ExtractEntriesAsync(
                     fileSystem,
-                    archive,
                     preparedEntries,
                     extractionRoot,
+                    archiveLimits,
                     cancellationToken
                 )
             );
@@ -169,9 +192,9 @@ internal static class OciPackArchive
 
     private static async Task<IReadOnlyList<string>> ExtractEntriesAsync(
         IFileSystem fileSystem,
-        ZipArchive archive,
         IReadOnlyList<ValidatedEntry> entries,
         string extractionRoot,
+        Limits limits,
         CancellationToken cancellationToken
     )
     {
@@ -213,21 +236,19 @@ internal static class OciPackArchive
                 source,
                 target,
                 entry.DeclaredLength,
-                MaximumEntryBytes,
-                MaximumExpandedBytes - expandedBytes,
+                limits.MaximumEntryBytes,
+                limits.MaximumExpandedBytes - expandedBytes,
                 cancellationToken
             );
         }
 
-        return entries
-            .Where(entry => !entry.IsDirectory)
-            .Select(entry => entry.RelativePath)
-            .ToArray();
+        return [.. entries.Where(entry => !entry.IsDirectory).Select(entry => entry.RelativePath)];
     }
 
     private static ManifestOperationResult<List<SourceEntry>> EnumerateSourceEntries(
         IFileSystem fileSystem,
-        string packDirectory
+        string packDirectory,
+        Limits limits
     )
     {
         try
@@ -285,7 +306,7 @@ internal static class OciPackArchive
                             isDirectory ? 0 : fileSystem.FileInfo.New(item.FullName).Length
                         )
                     );
-                    if (entries.Count > MaximumEntryCount)
+                    if (entries.Count > limits.MaximumEntryCount)
                     {
                         throw new InvalidDataException(
                             "Pack contains more than 100,000 archive entries."
@@ -299,7 +320,7 @@ internal static class OciPackArchive
                     }
 
                     var length = entries[^1].Length;
-                    if (length < 0 || length > MaximumEntryBytes)
+                    if (length < 0 || length > limits.MaximumEntryBytes)
                     {
                         throw new InvalidDataException(
                             $"Pack file '{canonicalPath}' exceeds the 512 MiB per-file limit."
@@ -307,7 +328,7 @@ internal static class OciPackArchive
                     }
 
                     expandedBytes = checked(expandedBytes + length);
-                    if (expandedBytes > MaximumExpandedBytes)
+                    if (expandedBytes > limits.MaximumExpandedBytes)
                     {
                         throw new InvalidDataException(
                             "Pack content exceeds the 2 GiB expanded-size limit."
@@ -317,9 +338,9 @@ internal static class OciPackArchive
             }
 
             Visit(root);
-            return ManifestOperationResult<List<SourceEntry>>.Success(
-                entries.OrderBy(entry => entry.RelativePath, StringComparer.Ordinal).ToList()
-            );
+            return ManifestOperationResult<List<SourceEntry>>.Success([
+                .. entries.OrderBy(entry => entry.RelativePath, StringComparer.Ordinal),
+            ]);
         }
         catch (Exception exception)
             when (exception
@@ -337,10 +358,11 @@ internal static class OciPackArchive
     }
 
     private static ManifestOperationResult<IReadOnlyList<ValidatedEntry>> ValidateEntries(
-        ZipArchive archive
+        ZipArchive archive,
+        Limits limits
     )
     {
-        if (archive.Entries.Count > MaximumEntryCount)
+        if (archive.Entries.Count > limits.MaximumEntryCount)
         {
             return ManifestOperationResult<IReadOnlyList<ValidatedEntry>>.Failure(
                 "OCI pack archive contains more than 100,000 entries."
@@ -351,7 +373,7 @@ internal static class OciPackArchive
         var state = new EntryValidationState();
         foreach (var entry in archive.Entries)
         {
-            var validation = ValidateEntry(entry, state);
+            var validation = ValidateEntry(entry, state, limits);
             if (validation.Value is not { } validatedEntry)
             {
                 return ManifestOperationResult<IReadOnlyList<ValidatedEntry>>.Failure(
@@ -367,7 +389,8 @@ internal static class OciPackArchive
 
     private static ManifestOperationResult<ValidatedEntry> ValidateEntry(
         ZipArchiveEntry entry,
-        EntryValidationState state
+        EntryValidationState state,
+        Limits limits
     )
     {
         var isDirectory = IsDirectoryEntry(entry);
@@ -387,7 +410,7 @@ internal static class OciPackArchive
         }
 
         var entryLength = entry.Length;
-        if (entryLength < 0 || entryLength > MaximumEntryBytes)
+        if (entryLength < 0 || entryLength > limits.MaximumEntryBytes)
         {
             return ManifestOperationResult<ValidatedEntry>.Failure(
                 $"OCI pack archive entry '{relativePath}' exceeds the 512 MiB per-file limit."
@@ -396,7 +419,7 @@ internal static class OciPackArchive
 
         var validation = isDirectory
             ? ValidateDirectory(relativePath, entryLength, state)
-            : ValidateFile(relativePath, entryLength, state);
+            : ValidateFile(relativePath, entryLength, state, limits);
         return validation.IsSuccess
             ? ManifestOperationResult<ValidatedEntry>.Success(
                 new ValidatedEntry(entry, relativePath, isDirectory, entryLength)
@@ -426,7 +449,8 @@ internal static class OciPackArchive
     private static ManifestOperationResult<bool> ValidateFile(
         string relativePath,
         long entryLength,
-        EntryValidationState state
+        EntryValidationState state,
+        Limits limits
     )
     {
         if (state.Directories.Contains(relativePath))
@@ -438,7 +462,7 @@ internal static class OciPackArchive
 
         state.Files.Add(relativePath);
         state.DeclaredExpandedBytes = checked(state.DeclaredExpandedBytes + entryLength);
-        if (state.DeclaredExpandedBytes > MaximumExpandedBytes)
+        if (state.DeclaredExpandedBytes > limits.MaximumExpandedBytes)
         {
             return ManifestOperationResult<bool>.Failure(
                 "OCI pack archive exceeds the 2 GiB expanded-size limit."

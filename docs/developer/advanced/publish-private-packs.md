@@ -1,70 +1,80 @@
-# Publish private packs from GitHub Actions
+# Publish packs from GitHub Actions
 
-Publish changed pack directories from a private repository to GHCR, Azure
-Container Registry (ACR), Harbor, or another OCI Distribution registry. The
-maintained [private-pack example](https://github.com/lunarisdigitalsolutions/lunapack/tree/main/examples/oci-private-packs)
-includes manifests, changed-pack detection, tests, and three workflow templates.
+LunaPack provides three installable GitHub Actions workflow packs. Add the
+LunaPack catalog, then install the workflow matching your registry:
 
-## Prerequisites
+```powershell
+luna sources add github lunapack lunarisdigitalsolutions/lunapack --ref main --path projects/packs
+luna install github-oci-publish-workflow@1.0.0
+```
 
-- Use Luna **1.6.0 or later**, pinned to an exact release in the repository
-  variable `LUNA_VERSION`.
-- Add an OCI source to the repository's `lunapack.yml`; keep passwords and
-  tokens in GitHub secrets, not project configuration.
-- Configure the registry to reject overwrites of published version tags.
-- Protect `main` and review pack changes before they can use registry write
-  permissions.
+Choose `github-acr-publish-workflow@1.0.0` for Azure Container Registry or
+`github-ghcr-publish-workflow@1.0.0` for GitHub Container Registry. Each pack
+adds its publishing workflow and changed-pack helper under `.github/`.
+
+## Configure the publishing source
+
+Configure an OCI source in `lunapack.yml` whose name matches the workflow's
+target:
+
+```powershell
+luna sources add oci generic https://registry.example.com --path packs
+```
+
+Use source name `acr` with `https://<registry-name>.azurecr.io` for ACR, or
+source name `ghcr` with `https://ghcr.io` for GHCR. Keep project configuration
+free of passwords and tokens. Configure the registry to reject overwrites of
+published version tags, protect `main`, and review pack changes before they
+can use registry write permissions.
 
 ## Choose registry authentication
 
-Copy the matching workflow from the example repository and replace its example
-registry URL and repository path.
+| Workflow pack | Authentication                                                                                              | Runner requirements                                                                                                             |
+| ------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Generic OCI   | Source-bound native credential store                                                                        | Persistent Linux self-hosted runner; preconfigure its user's native credential store.                                           |
+| GHCR          | Source-bound native credential store                                                                        | Persistent Linux self-hosted runner; preconfigure its user's native credential store. The workflow does not use `GITHUB_TOKEN`. |
+| ACR           | GitHub OIDC through `azure/login`; grant the federated identity the narrowest role that permits publication | GitHub-hosted or self-hosted runner.                                                                                            |
 
-| Registry                       | Workflow identity                                                                                                | Minimum workflow permissions        |
-| ------------------------------ | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
-| GHCR                           | `github.actor` and `GITHUB_TOKEN`, scoped to the configured source                                               | `contents: read`, `packages: write` |
-| ACR                            | GitHub OIDC through `azure/login`; grant the federated identity `AcrPush` or the narrowest supported writer role | `contents: read`, `id-token: write` |
-| Harbor or another OCI registry | Repository-scoped robot account or token through source-bound environment variables                              | `contents: read`                    |
+Seed generic OCI or GHCR credentials with an interactive Luna operation on the
+runner before enabling the workflow. The credential is bound to the project,
+source name, registry, and repository path. Luna has no registry login command
+or Luna-specific credential environment variables.
 
-The ACR workflow needs repository variables `AZURE_CLIENT_ID`,
-`AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID`, plus a federated credential
-restricted to the repository's `main` branch. It does not need a permanent
-Azure client secret or a Luna login command. The generic workflow reads
-`LUNAPACK_OCI_SOURCE` from a repository variable and `OCI_USERNAME` and
-`OCI_PASSWORD` from repository secrets.
+For ACR, configure a federated Azure identity restricted to the repository's
+`main` branch and set repository variables `AZURE_CLIENT_ID`,
+`AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, and `LUNA_VERSION`. The workflow
+uses the Azure CLI identity established by `azure/login` through
+`DefaultAzureCredential`; no permanent client secret is needed.
 
-Luna validates the pack before publishing and does not execute its lifecycle
-hooks. Consumers still need to review and authorize pack scripts before
-installing them.
+## Publish changed pack directories
 
-## Publish changed directories
+The workflows run on pushes to `main` that change `packs/**`. They check out
+full Git history, compare the event's before and after commits, and pass
+NUL-delimited paths to `luna publish`. This preserves names containing spaces
+and avoids treating deleted directories as publishable packs. Failed Git
+comparisons stop the workflow instead of silently publishing nothing. The
+changed-pack helper expects pack directories directly below `packs/`.
 
-The example workflows run on pushes to `main` that change `packs/**`. They
-check out full Git history, compare the event's before and after commits, and
-pass NUL-delimited paths to `luna publish`. This preserves names containing
-spaces and avoids treating deleted directories as publishable packs. Failed
-Git comparisons stop the workflow instead of silently publishing nothing.
-
-Each existing pack directory is published with:
+Each pack directory is published with the target configured by its workflow:
 
 ```bash
-luna publish packs/backend --target ghcr
+luna publish packs/backend --target generic
 ```
 
-`--target` must name a configured OCI source. Luna reads the pack ID and version
-from the root `pack.yml`; it rejects invalid content and existing version tags.
-The successful output includes the published reference and verified manifest
-digest. Bump the pack version before publishing changed content. Registry-side
-immutable tags are still required to prevent later movement or races between
-independent publishers.
+Luna reads the pack ID and version from `pack.yml`, rejects invalid content and
+existing version tags, and reports the published reference and verified
+manifest digest. Bump the pack version before publishing changed content.
+Registry-side immutable tags are still required to prevent later movement or
+races between independent publishers.
 
-The sample workflows serialize runs per registry target. If one fails,
-GitHub Actions reports the failure; fix the source, credentials, or pack
-version and rerun after checking whether the registry already received the
-release.
+The workflows serialize runs per target. If a run fails, check whether the
+registry already received the release before fixing the source or pack version
+and rerunning. Luna validates the pack before publishing and does not execute
+its lifecycle hooks; consumers still need to review and authorize pack scripts
+before installing them.
 
 For source configuration, registry discovery limits, and credential behavior,
 see [Add a pack source](../sources.md#add-an-oci-registry-source) and the
-[environment reference](../cli/environment.md#oci-registry-credentials).
+[environment reference](../cli/environment.md#oci-registry-authentication).
 See the [command reference](../cli/commands.md#pack-publishing) for the full
 `luna publish` contract.

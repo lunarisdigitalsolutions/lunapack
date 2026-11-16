@@ -1,0 +1,56 @@
+name: Publish LunaPacks to OCI
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - packs/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-oci-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on:
+      - self-hosted
+      - linux
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.18.0'
+
+      - name: Install Luna
+        shell: bash
+        env:
+          LUNA_VERSION: ${{ vars.LUNA_VERSION }}
+        run: |
+          set -euo pipefail
+          : "${LUNA_VERSION:?Set the repository variable LUNA_VERSION}"
+          npm install --global "@lunarisdigitalsolutions/lunapack@$LUNA_VERSION"
+          luna --help
+
+      - name: Publish changed packs
+        shell: bash
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/find_changed_packs_oci.py "$BEFORE" "$AFTER" \
+            > "$RUNNER_TEMP/changed-packs.bin"
+          while IFS= read -r -d '' pack; do
+            luna publish "$pack" --target generic
+          done < "$RUNNER_TEMP/changed-packs.bin"

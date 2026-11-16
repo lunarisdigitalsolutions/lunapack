@@ -1,0 +1,15 @@
+id: github-acr-publish-workflow
+version: 1.0.0
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Publish changed LunaPack directories to Azure Container Registry with GitHub OIDC.
+tags:
+  - github-actions
+  - azure
+  - acr
+  - publishing
+managedFiles:
+  - source: targets/.github/workflows/publish-lunapacks-acr.yml
+    target: .github/workflows/publish-lunapacks-acr.yml
+  - source: targets/.github/scripts/find_changed_packs_acr.py
+    target: .github/scripts/find_changed_packs_acr.py

@@ -31,3 +31,6 @@ jobs:
 
       - name: Validate packs
         uses: ./.github/actions/packs/validate
+
+      - name: Test publishing workflow helpers
+        run: python3 -m unittest discover -s projects/packs/tests -v

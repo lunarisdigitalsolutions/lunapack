@@ -52,8 +52,8 @@ identity is the normalized registry origin and repository prefix, so one
 registry can be configured at different prefixes. The optional `--username`
 stores a non-secret username; passwords and tokens never belong in
 `lunapack.yml`. See
-[OCI registry credentials](cli/environment.md#oci-registry-credentials) for
-noninteractive and interactive authentication.
+[OCI registry authentication](cli/environment.md#oci-registry-authentication) for native credential
+stores, interactive prompts, and ACR identity.
 
 OCI sources provide pack releases, not arbitrary files for Luna Links. Links
 continue to select regular files from configured local or Git sources.
@@ -108,11 +108,18 @@ For authenticated access, OCI bearer challenges must use an HTTPS token realm
 on the configured registry origin. Luna rejects cross-origin realms before
 forwarding credentials.
 
-| Registry                                    | Authentication                                                   | Discovery notes                                                                                |
-| ------------------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| GHCR                                        | Source-bound username/token, including `GITHUB_TOKEN` in Actions | Catalog enumeration depends on package permissions; direct repository lookup can still work.   |
-| Azure Container Registry                    | Source-bound credentials or optional Azure Identity              | `AcrPull`/`AcrPush` permissions and registry catalog policy determine available operations.    |
-| Harbor or another OCI Distribution registry | Source-bound credentials or an operating-system credential store | Catalog enumeration depends on server permissions; direct repository lookup remains available. |
+| Registry                                    | Authentication                                                | Discovery notes                                                                                |
+| ------------------------------------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| GHCR                                        | Anonymous access or source-bound native credentials           | Catalog enumeration depends on package permissions; direct repository lookup can still work.   |
+| Azure Container Registry                    | Native credentials or optional Azure `DefaultAzureCredential` | `AcrPull`/`AcrPush` permissions and registry catalog policy determine available operations.    |
+| Harbor or another OCI Distribution registry | Anonymous access or source-bound native credentials           | Catalog enumeration depends on server permissions; direct repository lookup remains available. |
+
+Luna does not read registry credentials from LunaPack-specific environment
+variables. GHCR does not automatically use `GITHUB_TOKEN`; noninteractive
+generic OCI and GHCR workflows need credentials preconfigured in the runner
+user's native store. The installable
+[OCI publishing workflow packs](advanced/publish-private-packs.md) document
+runner setup and the ACR OIDC alternative.
 
 Registry tags are not a portable atomic create-if-absent mechanism. Luna refuses
 to overwrite an existing version, but registry-side immutable-tag policy is

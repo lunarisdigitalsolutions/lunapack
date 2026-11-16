@@ -157,11 +157,17 @@ public sealed class CliProcessTests
         using var workspace = new TestWorkspace();
 
         await InitializeAndAddSampleSourceAsync(workspace.Path);
-        var install = await CliProcess.InvokeAsync(workspace.Path, "install", "dotnet-gitignore");
         var managedFilePath = Path.Combine(workspace.Path, ".gitignore");
+        await Assert
+            .That(File.ReadAllText(managedFilePath).ReplaceLineEndings("\n"))
+            .IsEqualTo("/.lunapack/\n");
+        var install = await CliProcess.InvokeAsync(workspace.Path, "install", "dotnet-gitignore");
 
         await Assert.That(install.ExitCode).IsEqualTo(0);
         await Assert.That(File.Exists(managedFilePath)).IsTrue();
+        await Assert
+            .That(File.ReadAllText(managedFilePath).ReplaceLineEndings("\n"))
+            .Contains("/.lunapack/\n");
 
         var uninstall = await CliProcess.InvokeAsync(
             workspace.Path,
@@ -170,7 +176,9 @@ public sealed class CliProcessTests
         );
 
         await Assert.That(uninstall.ExitCode).IsEqualTo(0);
-        await Assert.That(File.ReadAllText(managedFilePath)).IsEmpty();
+        await Assert
+            .That(File.ReadAllText(managedFilePath).ReplaceLineEndings("\n"))
+            .IsEqualTo("/.lunapack/\n");
     }
 
     [Test]

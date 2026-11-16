@@ -94,7 +94,8 @@ suggestions until an argument-taking command or option is selected.
 ## Project And Sources
 
 - `luna init`: Creates version-1 `lunapack.yml` and `lunapack-lock.yml` with
-  only their schema-required properties.
+  only their schema-required properties, and adds `/.lunapack/` to the
+  project-root `.gitignore` without replacing existing content.
 - `luna variables list`: Lists configured project variables in a table.
 - `luna variables set <name> <value>`: Sets a string project variable. Names
   must start with a letter or underscore and may contain letters, digits, and

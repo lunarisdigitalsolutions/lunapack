@@ -192,21 +192,21 @@ Treat every pack and source as publisher code.
 
 ### TM-I03: Registry Credential Reuse or Disclosure
 
-| Field         | Assessment                                                                                                                                                                                            |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Component     | OCI authentication, environment providers, native credential store                                                                                                                                    |
-| Asset         | Registry usernames, passwords, access tokens, and private repository names                                                                                                                            |
-| Scenario      | A credential is reused for another project/source or appears in shared configuration, logs, diagnostics, or hook environment.                                                                         |
-| Preconditions | A registry operation uses stored credentials, CI variables, or interactive authentication.                                                                                                            |
-| Likelihood    | Medium                                                                                                                                                                                                |
-| Impact        | An attacker may read or publish private artifacts using the credential's permissions.                                                                                                                 |
-| Severity      | High                                                                                                                                                                                                  |
-| Controls      | HTTPS-only registry URLs; source-bound environment selection; native operating-system storage keyed by project and source identity; no plaintext project fallback; bounded prompts; secret redaction. |
-| Fix           | Use narrow registry scopes and short-lived CI credentials. Remove unnecessary credentials from the environment before running approved hooks.                                                         |
-| Priority      | Implemented release control; minimize ambient hook credentials                                                                                                                                        |
-| Status        | Mitigated with residual process-environment exposure                                                                                                                                                  |
-| Verification  | Source-isolation, redaction, no-plaintext, prompt-bounding, and environment-provider tests.                                                                                                           |
-| Residual risk | Approved hooks inherit the invoking process environment; users remain responsible for ambient credentials.                                                                                            |
+| Field         | Assessment                                                                                                                                                                                                         |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Component     | OCI authentication, native credential store, and optional Azure Identity                                                                                                                                           |
+| Asset         | Registry usernames, passwords, access tokens, and private repository names                                                                                                                                         |
+| Scenario      | A credential is reused for another project/source or appears in shared configuration, logs, diagnostics, or hook environment.                                                                                      |
+| Preconditions | A registry operation uses stored credentials, ACR identity, or interactive authentication.                                                                                                                         |
+| Likelihood    | Medium                                                                                                                                                                                                             |
+| Impact        | An attacker may read or publish private artifacts using the credential's permissions.                                                                                                                              |
+| Severity      | High                                                                                                                                                                                                               |
+| Controls      | HTTPS-only registry URLs; native operating-system storage keyed by project and source identity; no Luna-specific credential environment provider or plaintext project fallback; bounded prompts; secret redaction. |
+| Fix           | Use narrow registry scopes and remove unnecessary ambient credentials before running approved hooks.                                                                                                               |
+| Priority      | Implemented release control; minimize ambient hook credentials                                                                                                                                                     |
+| Status        | Mitigated with residual process-environment exposure                                                                                                                                                               |
+| Verification  | Source-isolation, redaction, no-plaintext, prompt-bounding, native-store, and legacy environment-variable non-disclosure tests.                                                                                    |
+| Residual risk | Approved hooks inherit the invoking process environment; users remain responsible for ambient credentials.                                                                                                         |
 
 ## Denial of Service
 

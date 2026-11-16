@@ -661,6 +661,190 @@ public sealed class OciDistributionRegistryClientTests
     }
 
     [Test]
+    public async Task Scenario_FetchManifest_EnforcesExactMetadataResponseLimit()
+    {
+        var exactBody = new string('x', (int)OciDistributionRegistryClient.MaximumMetadataBytes);
+        var exactClient = CreateClient(
+            (_, _) => Task.FromResult(CreateManifestResponse(exactBody))
+        );
+        var exact = await exactClient.FetchManifestAsync(
+            _registry,
+            "team/backend",
+            "1.0.0",
+            null,
+            "partition",
+            CancellationToken.None
+        );
+
+        var oversizedBody = new string(
+            'x',
+            (int)OciDistributionRegistryClient.MaximumMetadataBytes + 1
+        );
+        var oversizedClient = CreateClient(
+            (_, _) => Task.FromResult(CreateManifestResponse(oversizedBody))
+        );
+        var oversized = await oversizedClient.FetchManifestAsync(
+            _registry,
+            "team/backend",
+            "1.0.0",
+            null,
+            "partition",
+            CancellationToken.None
+        );
+
+        await Assert.That(exact.IsSuccess).IsTrue().Because(exact.Failure?.Message ?? string.Empty);
+        await Assert
+            .That(exact.Value?.Content.LongLength)
+            .IsEqualTo(OciDistributionRegistryClient.MaximumMetadataBytes);
+        await Assert.That(oversized.IsSuccess).IsFalse();
+        await Assert
+            .That(oversized.Failure?.Kind)
+            .IsEqualTo(OciRegistryFailureKind.InvalidResponse);
+    }
+
+    [Test]
+    public async Task Scenario_FetchManifest_RejectsStreamingResponseAboveMetadataLimit()
+    {
+        var oversizedBody = new byte[(int)OciDistributionRegistryClient.MaximumMetadataBytes + 1];
+        Array.Fill(oversizedBody, (byte)'x');
+        var response = CreateStreamingResponse(oversizedBody, OciPackMediaTypes.Manifest);
+        await Assert.That(response.Content.Headers.ContentLength).IsNull();
+        var client = CreateClient((_, _) => Task.FromResult(response));
+
+        var result = await client.FetchManifestAsync(
+            _registry,
+            "team/backend",
+            "1.0.0",
+            null,
+            "partition",
+            CancellationToken.None
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Failure?.Kind).IsEqualTo(OciRegistryFailureKind.InvalidResponse);
+    }
+
+    [Test]
+    public async Task Scenario_FetchBlob_AcceptsExactSizeAndRejectsAboveLimit()
+    {
+        var content = Encoding.UTF8.GetBytes("blob-content");
+        var descriptor = OciPackArtifact.CreateDescriptor(OciPackMediaTypes.ContentZip, content);
+        var client = CreateClient(
+            (_, _) =>
+                Task.FromResult(
+                    new HttpResponseMessage(HttpStatusCode.OK)
+                    {
+                        Content = new ByteArrayContent(content),
+                    }
+                )
+        );
+        using var destination = new MemoryStream();
+        var exact = await client.FetchBlobAsync(
+            _registry,
+            "team/backend",
+            descriptor,
+            destination,
+            content.LongLength,
+            null,
+            "partition",
+            CancellationToken.None
+        );
+
+        var requestCount = 0;
+        var limitedClient = CreateClient(
+            (_, _) =>
+            {
+                requestCount++;
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+            }
+        );
+        using var rejectedDestination = new MemoryStream();
+        var oversized = await limitedClient.FetchBlobAsync(
+            _registry,
+            "team/backend",
+            descriptor,
+            rejectedDestination,
+            content.LongLength - 1,
+            null,
+            "partition",
+            CancellationToken.None
+        );
+
+        await Assert.That(exact.IsSuccess).IsTrue().Because(exact.Failure?.Message ?? string.Empty);
+        await Assert.That(exact.Value?.BytesWritten).IsEqualTo(content.LongLength);
+        await Assert.That(destination.ToArray().SequenceEqual(content)).IsTrue();
+        await Assert.That(oversized.IsSuccess).IsFalse();
+        await Assert
+            .That(oversized.Failure?.Kind)
+            .IsEqualTo(OciRegistryFailureKind.InvalidResponse);
+        await Assert.That(requestCount).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Scenario_FetchBlob_RejectsStreamingResponseAboveLimitWithoutContentLength()
+    {
+        var expectedContent = Encoding.UTF8.GetBytes("blob");
+        var oversizedContent = Encoding.UTF8.GetBytes("blobs");
+        var descriptor = OciPackArtifact.CreateDescriptor(
+            OciPackMediaTypes.ContentZip,
+            expectedContent
+        );
+        var response = CreateStreamingResponse(oversizedContent, "application/octet-stream");
+        await Assert.That(response.Content.Headers.ContentLength).IsNull();
+        var client = CreateClient((_, _) => Task.FromResult(response));
+        using var destination = new MemoryStream();
+
+        var result = await client.FetchBlobAsync(
+            _registry,
+            "team/backend",
+            descriptor,
+            destination,
+            expectedContent.LongLength,
+            null,
+            "partition",
+            CancellationToken.None
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Failure?.Kind).IsEqualTo(OciRegistryFailureKind.InvalidResponse);
+    }
+
+    [Test]
+    public async Task Scenario_FetchBlob_RejectsDigestMismatch()
+    {
+        var expectedContent = Encoding.UTF8.GetBytes("expected");
+        var receivedContent = Encoding.UTF8.GetBytes("rejected");
+        var descriptor = OciPackArtifact.CreateDescriptor(
+            OciPackMediaTypes.ContentZip,
+            expectedContent
+        );
+        var client = CreateClient(
+            (_, _) =>
+                Task.FromResult(
+                    new HttpResponseMessage(HttpStatusCode.OK)
+                    {
+                        Content = new ByteArrayContent(receivedContent),
+                    }
+                )
+        );
+        using var destination = new MemoryStream();
+
+        var result = await client.FetchBlobAsync(
+            _registry,
+            "team/backend",
+            descriptor,
+            destination,
+            expectedContent.LongLength,
+            null,
+            "partition",
+            CancellationToken.None
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Failure?.Kind).IsEqualTo(OciRegistryFailureKind.InvalidResponse);
+    }
+
+    [Test]
     public async Task Scenario_ManifestPush_UsesAuthenticatedRegistryClientAndPreservesContent()
     {
         var content = Encoding.UTF8.GetBytes("{\"schemaVersion\":2}");
@@ -779,6 +963,22 @@ public sealed class OciDistributionRegistryClientTests
     ) =>
         new(statusCode) { Content = new StringContent(content, Encoding.UTF8, "application/json") };
 
+    private static HttpResponseMessage CreateManifestResponse(string content) =>
+        new(HttpStatusCode.OK)
+        {
+            Content = new StringContent(content, Encoding.UTF8, OciPackMediaTypes.Manifest),
+        };
+
+    private static HttpResponseMessage CreateStreamingResponse(byte[] content, string mediaType)
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StreamContent(new NonSeekableStream(content)),
+        };
+        response.Content.Headers.ContentType = new MediaTypeHeaderValue(mediaType);
+        return response;
+    }
+
     private sealed class CallbackHttpMessageHandler(
         Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send
     ) : HttpMessageHandler
@@ -787,5 +987,59 @@ public sealed class OciDistributionRegistryClientTests
             HttpRequestMessage request,
             CancellationToken cancellationToken
         ) => send(request, cancellationToken);
+    }
+
+    private sealed class NonSeekableStream(byte[] content) : Stream
+    {
+        private readonly MemoryStream _inner = new(content);
+
+        public override bool CanRead => true;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => false;
+
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush() => throw new NotSupportedException();
+
+        public override int Read(byte[] buffer, int offset, int count) =>
+            _inner.Read(buffer, offset, count);
+
+        public override ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default
+        ) => _inner.ReadAsync(buffer, cancellationToken);
+
+        public override Task<int> ReadAsync(
+            byte[] buffer,
+            int offset,
+            int count,
+            CancellationToken cancellationToken
+        ) => _inner.ReadAsync(buffer, offset, count, cancellationToken);
+
+        public override long Seek(long offset, SeekOrigin origin) =>
+            throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) =>
+            throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _inner.Dispose();
+            }
+
+            base.Dispose(disposing);
+        }
     }
 }

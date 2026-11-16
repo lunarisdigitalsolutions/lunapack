@@ -69,14 +69,37 @@ public sealed class OciPackArchiveTests
 
     [Test]
     [Arguments("../escape.txt")]
+    [Arguments("folder/../escape.txt")]
     [Arguments("/rooted.txt")]
+    [Arguments("//server/share/file.txt")]
     [Arguments("C:\\Windows\\file.txt")]
     [Arguments("safe\\..\\escape.txt")]
+    [Arguments("file:stream.txt")]
+    [Arguments("directory//file.txt")]
+    [Arguments(".")]
     public async Task Scenario_Extract_RejectsUnsafePathsWithoutWritingOutsideRoot(string path)
     {
         var fileSystem = new MockFileSystem();
         using var archive = CreateArchive((path, "unsafe"));
         var extractionRoot = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), "rejected");
+
+        var result = await OciPackArchive.ExtractAsync(
+            fileSystem,
+            archive,
+            extractionRoot,
+            CancellationToken.None
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(fileSystem.Directory.Exists(extractionRoot)).IsFalse();
+    }
+
+    [Test]
+    public async Task Scenario_Extract_RejectsSeparatorNormalizedDuplicateDestinations()
+    {
+        var fileSystem = new MockFileSystem();
+        using var archive = CreateArchive(("files\\one.txt", "a"), ("files/one.txt", "b"));
+        var extractionRoot = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), "duplicate");
 
         var result = await OciPackArchive.ExtractAsync(
             fileSystem,

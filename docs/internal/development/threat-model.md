@@ -12,8 +12,9 @@ when consuming packs and running Luna.
 - Release workflows cross from reviewed source and tags into published artifacts.
 - GitHub Actions, GitHub Releases, npm, NuGet, GHCR, and GitHub Pages are external
   identity, build, and publication boundaries.
-- Private-pack examples add OCI registry identities, Azure workload federation,
-  and scoped GitHub Actions tokens as external publishing boundaries.
+- Installable OCI publishing workflow packs add registry identities, Azure
+  workload federation, and self-hosted runner credential stores as external
+  publishing boundaries.
 - Trusted-publisher bindings, protected branches, package permissions, and
   deployment environments remain external service controls.
 - Website artifacts cross from a read-only build job into a privileged deployment
@@ -36,7 +37,7 @@ when consuming packs and running Luna.
 | Fix           | Enforce immutable OCI version tags and retain digest verification for registry artifacts.                                                                                                                                                                                                    |
 | Priority      | Registry-side tag immutability and publisher identity                                                                                                                                                                                                                                        |
 | Status        | OCI content integrity is mitigated; publisher identity and tag immutability remain external controls                                                                                                                                                                                         |
-| Verification  | Exact npm and NuGet trusted-publisher bindings, release workflow contract tests, release dry run, package inspection, and authenticated local TLS OCI publish/resolve tests.                                                                                                                 |
+| Verification  | Exact npm and NuGet trusted-publisher bindings, release workflow contract tests, release dry run, package inspection, OCI unit tests, and pack-validation integration tests.                                                                                                                 |
 | Residual risk | Checksums and digests prove byte identity, not publisher identity. Registry policies must prevent mutable tags and independent-publisher races.                                                                                                                                              |
 
 ## Repudiation
@@ -61,23 +62,23 @@ when consuming packs and running Luna.
 
 ## Information Disclosure
 
-### TM-I03: Private-Pack Workflow Credentials
+### TM-I03: OCI Publishing Workflow Credentials
 
-| Field         | Assessment                                                                                                                                                                                                                      |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Component     | Private-pack GitHub Actions templates and `luna publish`                                                                                                                                                                        |
-| Asset         | GHCR tokens, Azure workload identity, registry secrets, and private pack content                                                                                                                                                |
-| Scenario      | A changed workflow or overbroad job exposes a registry credential or publishes pack content to an unintended repository.                                                                                                        |
-| Preconditions | A workflow with registry write permission runs on a changed pack or compromised protected-branch commit.                                                                                                                        |
-| Likelihood    | Medium                                                                                                                                                                                                                          |
-| Impact        | Unauthorized reads or releases under the repository's registry identity.                                                                                                                                                        |
-| Severity      | High                                                                                                                                                                                                                            |
-| Controls      | Full-SHA action pins, `main`/`packs/**` triggers, minimal per-job permissions, source-bound credentials, Azure OIDC instead of a client secret, validated pack publication without hook execution, and immutable registry tags. |
-| Fix           | Protect workflow and pack changes with review; scope registry roles to the required repository.                                                                                                                                 |
-| Priority      | Maintainer and registry policy                                                                                                                                                                                                  |
-| Status        | Mitigated by the maintained example; external permissions remain operator-owned                                                                                                                                                 |
-| Verification  | Changed-pack fixtures and authenticated local TLS OCI publish/resolve tests; live provider identities require configured infrastructure.                                                                                       |
-| Residual risk | A compromised trusted branch can publish a structurally valid but harmful pack with its granted write identity.                                                                                                                 |
+| Field         | Assessment                                                                                                                                                                                                                             |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Component     | Installable GitHub Actions OCI publishing workflow packs and `luna publish`                                                                                                                                                            |
+| Asset         | Azure workload identity, native registry credentials, and private pack content                                                                                                                                                         |
+| Scenario      | A changed workflow or overbroad job exposes a registry credential or publishes pack content to an unintended repository.                                                                                                               |
+| Preconditions | A workflow with registry write permission runs on a changed pack or compromised protected-branch commit.                                                                                                                               |
+| Likelihood    | Medium                                                                                                                                                                                                                                 |
+| Impact        | Unauthorized reads or releases under the repository's registry identity.                                                                                                                                                               |
+| Severity      | High                                                                                                                                                                                                                                   |
+| Controls      | Full-SHA action pins, `main`/`packs/**` triggers, minimal per-job permissions, source-bound native credentials, Azure OIDC instead of a client secret, validated pack publication without hook execution, and immutable registry tags. |
+| Fix           | Protect workflow and pack changes with review; scope registry roles and self-hosted runner credentials to the required repository.                                                                                                     |
+| Priority      | Maintainer and registry policy                                                                                                                                                                                                         |
+| Status        | Mitigated by maintained workflow packs; external identity and runner controls remain operator-owned                                                                                                                                    |
+| Verification  | Changed-pack helper tests, pack-validation integration tests, OCI unit tests, and security tests; live provider identities require configured infrastructure.                                                                          |
+| Residual risk | A compromised trusted branch can publish a structurally valid but harmful pack with its granted write identity.                                                                                                                        |
 
 ## Elevation of Privilege
 
