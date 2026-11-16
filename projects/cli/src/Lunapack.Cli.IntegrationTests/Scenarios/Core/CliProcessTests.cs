@@ -281,7 +281,7 @@ public sealed class CliProcessTests
         await Assert.That(installOutput).Contains("Lifecycle script denied by policy:");
         await Assert.That(installOutput).Contains(scopeName);
         await Assert.That(installOutput).Contains("scripts-denied-fallback");
-        await Assert.That(installOutput).DoesNotContain("10.0.");
+        await Assert.That(FindDotnetVersionOutputIndex(install.StandardOutput)).IsEqualTo(-1);
         await Assert.That(File.Exists(Path.Combine(workspace.Path, ".pack"))).IsTrue();
     }
 
@@ -312,10 +312,11 @@ public sealed class CliProcessTests
         );
 
         await Assert.That(install.ExitCode).IsEqualTo(0);
-        var first = install.StandardOutput.IndexOf("static-instruction", StringComparison.Ordinal);
-        var script = install.StandardOutput.IndexOf("10.0.", StringComparison.Ordinal);
-        var last = install.StandardOutput.IndexOf("Hello Example Corp", StringComparison.Ordinal);
-        var success = install.StandardOutput.IndexOf(
+        var installOutput = install.StandardOutput.ReplaceLineEndings("\n");
+        var first = installOutput.IndexOf("static-instruction", StringComparison.Ordinal);
+        var script = FindDotnetVersionOutputIndex(installOutput);
+        var last = installOutput.IndexOf("Hello Example Corp", StringComparison.Ordinal);
+        var success = installOutput.IndexOf(
             "Installed 'example' (version '1.0.0') in ",
             StringComparison.Ordinal
         );
@@ -354,7 +355,7 @@ public sealed class CliProcessTests
 
         await Assert.That(install.ExitCode).IsEqualTo(0);
         await Assert.That(install.StandardOutput).Contains("script-was-ignored");
-        await Assert.That(install.StandardOutput).DoesNotContain("10.0.");
+        await Assert.That(FindDotnetVersionOutputIndex(install.StandardOutput)).IsEqualTo(-1);
     }
 
     [Test]
@@ -382,7 +383,7 @@ public sealed class CliProcessTests
 
         await Assert.That(install.ExitCode).IsEqualTo(0);
         await Assert.That(install.StandardOutput).Contains("scripts-were-skipped");
-        await Assert.That(install.StandardOutput).DoesNotContain("10.0.");
+        await Assert.That(FindDotnetVersionOutputIndex(install.StandardOutput)).IsEqualTo(-1);
     }
 
     [Test]
@@ -2332,6 +2333,30 @@ public sealed class CliProcessTests
         }
 
         return "source";
+    }
+
+    private static int FindDotnetVersionOutputIndex(string output)
+    {
+        var normalizedOutput = output.ReplaceLineEndings("\n");
+        var lineStart = 0;
+        foreach (var line in normalizedOutput.Split('\n'))
+        {
+            var versionLine = line.Trim();
+            var metadataStart = versionLine.IndexOfAny(['-', '+']);
+            if (metadataStart >= 0)
+            {
+                versionLine = versionLine[..metadataStart];
+            }
+
+            if (Version.TryParse(versionLine, out _))
+            {
+                return lineStart;
+            }
+
+            lineStart += line.Length + 1;
+        }
+
+        return -1;
     }
 
     private static string CreateInstructionPackSource(
