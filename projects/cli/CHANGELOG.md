@@ -7,6 +7,16 @@ pack-package, documentation, CI, build, test, and release-process changes.
 
 Update this section before creating a release tag.
 
+### Catalog Eligibility and Preferences
+
+- Pack manifests can set `directInstallable: false` for dependency-only
+  releases. Discover and search show directly installable raw and composite
+  packs by default, with `--only-composites` available for composite-only
+  results; install, update, and outdated selection exclude dependency-only
+  roots while preserving composite dependency resolution, validation, and
+  inspection. `luna config set|list|remove` now manages scoped preferences for
+  catalog filtering and next-step guidance.
+
 ### Composite Packs
 
 - Composite references can define file and directory remaps for their active

@@ -1,6 +1,7 @@
 using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
 using Lunapack.Cli.Application.Paths;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Sources;
 using Lunapack.Cli.Trust;
 
@@ -25,6 +26,11 @@ public sealed class UserSettingsStoreTests
             Global = new UserTrust
             {
                 Deny = new ScriptDenial { Scripts = true },
+                Preferences = new CliPreferences
+                {
+                    Discover = new CatalogPreferences { OnlyComposites = false },
+                    NextSteps = new NextStepPreferences { Enabled = false },
+                },
                 Sources = [source],
             },
             Projects =
@@ -32,6 +38,10 @@ public sealed class UserSettingsStoreTests
                 [projectKey] = new LocalProjectTrust
                 {
                     Deny = new ScriptDenial { Scripts = true },
+                    Preferences = new CliPreferences
+                    {
+                        Search = new CatalogPreferences { OnlyComposites = true },
+                    },
                     Packs = [new TrustedPackIdentity { Id = "example", Source = source }],
                 },
             },
@@ -42,11 +52,39 @@ public sealed class UserSettingsStoreTests
 
         await Assert.That(saved.IsSuccess).IsTrue();
         await Assert.That(loaded.RequireValue().Global.Deny?.Scripts).IsTrue();
+        await Assert
+            .That(loaded.RequireValue().Global.Preferences?.Discover?.OnlyComposites)
+            .IsFalse();
+        await Assert.That(loaded.RequireValue().Global.Preferences?.NextSteps?.Enabled).IsFalse();
         await Assert.That(loaded.RequireValue().Global.Sources).Contains(source);
         await Assert.That(loaded.RequireValue().Projects[projectKey].Deny?.Scripts).IsTrue();
         await Assert
+            .That(loaded.RequireValue().Projects[projectKey].Preferences?.Search?.OnlyComposites)
+            .IsTrue();
+        await Assert
             .That(loaded.RequireValue().Projects[projectKey].Packs.Single().Id)
             .IsEqualTo("example");
+    }
+
+    [Test]
+    public async Task Load_WhenPreferenceValueIsNotBoolean_ReturnsFailure()
+    {
+        using var workspace = new TestWorkspace();
+        var settingsDirectory = Directory
+            .CreateDirectory(Path.Combine(workspace.Path, UserSettingsStore.DirectoryName))
+            .FullName;
+        UserSettingsPathSecurity.Apply(settingsDirectory, directory: true);
+        var settingsPath = Path.Combine(settingsDirectory, UserSettingsStore.FileName);
+        File.WriteAllText(
+            settingsPath,
+            "global:\n  preferences:\n    discover:\n      onlyComposites: not-a-boolean\n"
+        );
+        UserSettingsPathSecurity.Apply(settingsPath, directory: false);
+        var store = new UserSettingsStore(new FileSystem(), workspace.Path);
+
+        var loaded = await store.LoadAsync();
+
+        await Assert.That(loaded.IsSuccess).IsFalse();
     }
 
     [Test]

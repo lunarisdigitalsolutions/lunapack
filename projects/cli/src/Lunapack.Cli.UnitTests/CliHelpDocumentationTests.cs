@@ -9,6 +9,9 @@ public sealed class CliHelpDocumentationTests
     [
         new("init"),
         new("completions script", "[<shell>]"),
+        new("config set", "<key> <value>", ["--local", "--user-project", "--global"]),
+        new("config list", null, ["--local", "--user-project", "--global"]),
+        new("config remove", "<key>", ["--local", "--user-project", "--global"]),
         new("variables list"),
         new("variables set", "<name> <value>"),
         new("variables rm", "<name>"),
@@ -33,8 +36,8 @@ public sealed class CliHelpDocumentationTests
             "<id>... --source <name>",
             ["--source", "-s", "--project", "--global"]
         ),
-        new("discover", null, ["--versions", "-v", "--allow-draft"]),
-        new("search", "<query>", ["--versions", "-v", "--allow-draft"]),
+        new("discover", null, ["--versions", "-v", "--allow-draft", "--only-composites"]),
+        new("search", "<term>", ["--versions", "-v", "--allow-draft", "--only-composites"]),
         new("validate", "<pack-reference>"),
         new("inspect", "<pack-reference>"),
         new(

@@ -1,3 +1,4 @@
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Packs.Authoring;
 using Lunapack.Cli.Packs.Manifest;
 using Lunapack.Cli.Project;
@@ -12,6 +13,9 @@ namespace Lunapack.Cli.Application.Serialization;
 [YamlSerializable(typeof(ProjectManifest.LocalSource))]
 [YamlSerializable(typeof(ProjectManifest.InstalledPack))]
 [YamlSerializable(typeof(ProjectManifest.ManagedFile))]
+[YamlSerializable(typeof(CliPreferences))]
+[YamlSerializable(typeof(CatalogPreferences))]
+[YamlSerializable(typeof(NextStepPreferences))]
 [YamlSerializable(typeof(PackManifest))]
 [YamlSerializable(typeof(PackManifest.PackManagedFile))]
 [YamlSerializable(typeof(PackManifest.PackManagedFileStrategy))]

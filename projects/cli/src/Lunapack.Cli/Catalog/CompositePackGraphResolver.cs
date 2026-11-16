@@ -32,18 +32,35 @@ internal sealed class CompositePackGraphResolver(PackCatalog packCatalog)
             );
         }
 
+        var directlyInstallablePacks = CatalogPackFilter.DirectInstallable(catalogPacks);
         var resolvedById = new Dictionary<string, DiscoveredPack>(StringComparer.Ordinal);
         var resolvedPacks = new List<DiscoveredPack>();
         var visiting = new HashSet<PackIdentity>();
         foreach (var rootRequest in requestedPacks)
         {
             var root = PackCatalog.ResolveFromCatalog(
-                catalogPacks,
+                directlyInstallablePacks,
                 rootRequest.Id,
                 rootRequest.Version
             );
             if (root.Value is not { } rootPack)
             {
+                var existingPack = PackCatalog.ResolveFromCatalog(
+                    catalogPacks,
+                    rootRequest.Id,
+                    rootRequest.Version
+                );
+                if (
+                    existingPack.Value is { } nonInstallablePack
+                    && !nonInstallablePack.Manifest.DirectInstallable
+                )
+                {
+                    return ManifestOperationResult<ResolvedPackGraph>.Failure(
+                        $"Pack '{rootRequest.Id}' is not directly installable (directInstallable is false).",
+                        root.ErrorKind
+                    );
+                }
+
                 return ManifestOperationResult<ResolvedPackGraph>.Failure(
                     root.Error ?? $"Pack '{rootRequest.Id}' is unavailable.",
                     root.ErrorKind

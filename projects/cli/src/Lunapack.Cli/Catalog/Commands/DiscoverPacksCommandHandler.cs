@@ -2,6 +2,7 @@ using System.CommandLine;
 using System.Diagnostics;
 using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.Guidance;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Project;
 using Spectre.Console;
 
@@ -9,6 +10,7 @@ namespace Lunapack.Cli.Catalog.Commands;
 
 internal sealed class DiscoverPacksCommandHandler(
     CatalogService catalogService,
+    CliPreferenceService preferenceService,
     WorkspaceDirectoryResolver workspaceDirectoryResolver,
     NextStepAdvisor nextStepAdvisor,
     NextStepRenderer nextStepRenderer,
@@ -33,10 +35,15 @@ internal sealed class DiscoverPacksCommandHandler(
         {
             Description = "Include draft packs.",
         };
+        var onlyCompositesOption = new Option<bool>("--only-composites")
+        {
+            Description = "Show only composite packs.",
+        };
         var command = new Command("discover", "List available packs.")
         {
             versionCountOption,
             allowDraftOption,
+            onlyCompositesOption,
         };
         command.SetAction(parseResult =>
             DiscoverAsync(
@@ -45,7 +52,8 @@ internal sealed class DiscoverPacksCommandHandler(
                     parseResult.GetValue(workspaceOption)
                 ),
                 parseResult.GetValue(versionCountOption) ?? DefaultVersionCount,
-                parseResult.GetValue(allowDraftOption)
+                parseResult.GetValue(allowDraftOption),
+                parseResult.GetValue(onlyCompositesOption)
             )
         );
 
@@ -55,7 +63,8 @@ internal sealed class DiscoverPacksCommandHandler(
     public async Task<int> DiscoverAsync(
         string projectDirectory,
         int versionCount,
-        bool allowDraft = false
+        bool allowDraft = false,
+        bool onlyComposites = false
     )
     {
         if (versionCount is < 1 or > PackCatalog.MaximumVersionCount)
@@ -81,9 +90,18 @@ internal sealed class DiscoverPacksCommandHandler(
             return console.Fail(catalog.Error);
         }
 
+        var preferences = await preferenceService.ResolveAsync(projectDirectory);
+        if (preferences.Value is not { } effectivePreferences)
+        {
+            return console.Fail(preferences.Error);
+        }
+
+        var filterComposites = onlyComposites || effectivePreferences.DiscoverOnlyComposites;
+        var eligiblePacks = CatalogPackFilter.ForBrowsing(catalogPacks, filterComposites);
+
         var packs = PackCatalog
             .GetRecentReleases(
-                allowDraft ? catalogPacks : [.. catalogPacks.Where(pack => !pack.Manifest.Draft)],
+                allowDraft ? eligiblePacks : [.. eligiblePacks.Where(pack => !pack.Manifest.Draft)],
                 versionCount
             )
             .OrderBy(pack => pack.Manifest.Id, StringComparer.Ordinal)

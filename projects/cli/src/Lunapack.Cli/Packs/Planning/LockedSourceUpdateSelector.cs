@@ -10,7 +10,12 @@ internal static class LockedSourceUpdateSelector
     public static CatalogPack? SelectOrdinary(
         ProjectLockFile.ResolvedPack currentPack,
         IReadOnlyList<CatalogPack> catalog
-    ) => SelectFromSource(currentPack, catalog, requestedVersion: null).Value;
+    ) =>
+        SelectFromSource(
+            currentPack,
+            CatalogPackFilter.DirectInstallable(catalog),
+            requestedVersion: null
+        ).Value;
 
     public static ManifestOperationResult<ExplicitSelection> SelectExplicit(
         ProjectLockFile.ResolvedPack currentPack,
@@ -18,7 +23,12 @@ internal static class LockedSourceUpdateSelector
         string requestedVersion
     )
     {
-        var lockedSource = SelectFromSource(currentPack, catalog, requestedVersion);
+        var directlyInstallableCatalog = CatalogPackFilter.DirectInstallable(catalog);
+        var lockedSource = SelectFromSource(
+            currentPack,
+            directlyInstallableCatalog,
+            requestedVersion
+        );
         if (lockedSource.Value is { } lockedCandidate)
         {
             return ManifestOperationResult<ExplicitSelection>.Success(
@@ -26,9 +36,28 @@ internal static class LockedSourceUpdateSelector
             );
         }
 
-        var selected = PackCatalog.SelectFromCatalog(catalog, currentPack.Id, requestedVersion);
+        var selected = PackCatalog.SelectFromCatalog(
+            directlyInstallableCatalog,
+            currentPack.Id,
+            requestedVersion
+        );
         if (selected.Value is not { } candidate)
         {
+            var existingPack = PackCatalog.SelectFromCatalog(
+                catalog,
+                currentPack.Id,
+                requestedVersion
+            );
+            if (
+                existingPack.Value is { } nonInstallablePack
+                && !nonInstallablePack.Manifest.DirectInstallable
+            )
+            {
+                return ManifestOperationResult<ExplicitSelection>.Failure(
+                    $"Pack '{currentPack.Id}' is not directly installable (directInstallable is false)."
+                );
+            }
+
             return ManifestOperationResult<ExplicitSelection>.Failure(
                 selected.Error ?? $"Pack '{currentPack.Id}' is unavailable."
             );

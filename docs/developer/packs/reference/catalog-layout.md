@@ -66,3 +66,17 @@ luna discover
 This lets dependencies resolve across categories through one source identity.
 To publish only part of a catalog, configure that subtree as the source root;
 manifests outside it are not discovered.
+
+## Raw and composite packs
+
+A pack is composite when its manifest contains one or more `packs` references;
+otherwise it is raw. Directory names do not affect this classification.
+`luna discover` and `luna search` show directly installable raw and composite
+releases by default. Pass `--only-composites`, or set the corresponding CLI
+preference, to hide raw packs.
+
+A manifest can set `directInstallable: false` to reserve a release for use as a
+composite dependency. Discover and search always exclude these releases, but
+composite resolution, `luna validate`, and `luna inspect` still see them. See
+the [`directInstallable` manifest field](manifest.md#direct-installability) for
+its default and compatibility limits.

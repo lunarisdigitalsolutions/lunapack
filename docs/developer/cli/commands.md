@@ -95,6 +95,11 @@ suggestions until an argument-taking command or option is selected.
 
 - `luna init`: Creates version-1 `lunapack.yml` and `lunapack-lock.yml` with
   only their schema-required properties.
+- `luna config set <key> <value>`, `luna config list`, and
+  `luna config remove <key>`: Manage Boolean CLI preferences. Each operation
+  accepts one of `--local`, `--user-project`, or `--global`; scope defaults to
+  global. See [Configuration](configuration.md#cli-preferences) for supported
+  keys and precedence.
 - `luna variables list`: Lists configured project variables in a table.
 - `luna variables set <name> <value>`: Sets a string project variable. Names
   must start with a letter or underscore and may contain letters, digits, and
@@ -163,16 +168,20 @@ project. Pack trust and pack-trust revocation require `--source` or `-s`. See
 
 ## Catalog
 
-- `luna discover`: Lists the latest available release of each pack.
-- `luna search <query>`: Lists matching packages and configured links. Package
-  results include their latest releases; link results include source, target,
-  and installation status.
+- `luna discover [--only-composites]`: Lists the latest directly installable
+  release of each pack. Raw packs have no `packs` references; composite packs
+  have one or more. Both types appear by default.
+- `luna search <term> [--only-composites]`: Lists matching directly
+  installable packs and configured links. Pack results include their latest
+  eligible releases; link results include source, target, and installation
+  status. Both raw and composite packs appear by default.
 - `luna validate <pack-reference>`: Validates the selected release from configured
   local or Git sources, or the latest release when version is omitted. Direct
-  references can select draft packs even though discovery and search hide them
-  by default.
+  references can select draft and dependency-only packs even though discovery
+  and search hide those packs by default.
 - `luna inspect <pack-reference>`: Shows the selected pack's identity,
-  description, license, author, parameters, and referenced packs.
+  description, license, author, direct-installability state, parameters, and
+  referenced packs.
 
 ## Pack Authoring
 
@@ -344,13 +353,16 @@ project-variable value, LunaPack prompts for it. Prompts use the manifest's
 display name and description when available.
 
 `discover --versions <count>` and `search --versions <count>` (or `-v`) list
-up to that many distinct releases for each package. Both commands show the
-latest release by default, use separate Pack and Version columns, and order
+up to that many distinct eligible releases for each pack. Both commands show
+the latest release by default, use separate Pack and Version columns, and order
 requested releases by descending Semantic Version. The count must be from one
-through 10. Packs whose manifests set `draft: true` are hidden from both
-commands by default. Pass `--allow-draft` to include them. Draft packs remain
-available to install, update, uninstall, validate, and inspect when referenced
-directly.
+through 10. Both raw and composite packs appear unless `--only-composites` or
+the corresponding preference enables composite-only filtering. Releases with
+`directInstallable: false` never appear, even with `--allow-draft`; draft packs
+remain hidden unless `--allow-draft` is passed. Dependency-only releases remain
+available to composite resolution, validation, and inspection. See the
+[pack manifest reference](../packs/reference/manifest.md) for
+`directInstallable`.
 
 LunaPack writes output through Spectre.Console on standard output; info output
 is plain, while
@@ -366,9 +378,9 @@ Successful initialization, source changes, catalog exploration, installation,
 updates, and uninstallation append a bounded recommendation block when a useful
 next action exists. Dry runs do not claim that workspace state advanced. Missing
 workspace or source prerequisites and unresolved pack references include
-recovery commands while retaining a nonzero exit code. Use
-`--suppress-next-steps` with any command to omit recommendation and recovery
-guidance.
+recovery commands while retaining a nonzero exit code. `next-steps.enabled`
+controls guidance by default; use `--suppress-next-steps` with any command to
+omit recommendation and recovery guidance for one invocation.
 
 Successful commands return exit code `0`. Invalid input, validation failures,
 resolution conflicts, denied trust, Git failures, and filesystem or state-write

@@ -36,6 +36,9 @@
     "remap": {
       "$ref": "#/definitions/remapping"
     },
+    "preferences": {
+      "$ref": "#/definitions/cliPreferences"
+    },
     "trust": {
       "$ref": "#/definitions/projectTrust"
     },
@@ -214,6 +217,39 @@
           "items": {
             "$ref": "#/definitions/sourceName"
           }
+        }
+      }
+    },
+    "cliPreferences": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "discover": {
+          "$ref": "#/definitions/catalogPreferences"
+        },
+        "search": {
+          "$ref": "#/definitions/catalogPreferences"
+        },
+        "nextSteps": {
+          "$ref": "#/definitions/nextStepPreferences"
+        }
+      }
+    },
+    "catalogPreferences": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "onlyComposites": {
+          "type": "boolean"
+        }
+      }
+    },
+    "nextStepPreferences": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
         }
       }
     },

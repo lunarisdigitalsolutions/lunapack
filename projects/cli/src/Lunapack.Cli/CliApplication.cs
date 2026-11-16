@@ -3,6 +3,7 @@ using System.IO.Abstractions;
 using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.Completions;
 using Lunapack.Cli.Application.Guidance;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Audit;
 using Lunapack.Cli.Catalog;
 using Lunapack.Cli.Catalog.Commands;
@@ -50,14 +51,29 @@ internal sealed class CliApplication(
         console.Debug($"Running CLI command in {projectDirectory}");
         var nextStepRenderer = new NextStepRenderer(console);
         var suppressNextStepsOption = CreateSuppressNextStepsOption();
+        var workspaceOption = CreateWorkspaceOption();
+        var services = CreateCommandServices(console, nextStepRenderer);
         var rootCommand = CreateRootCommand(
             projectDirectory,
             console,
             nextStepRenderer,
-            suppressNextStepsOption
+            suppressNextStepsOption,
+            workspaceOption,
+            services
         );
         var parseResult = rootCommand.Parse(args);
-        nextStepRenderer.Suppress = parseResult.GetValue(suppressNextStepsOption);
+        var preferenceError = await ApplyPreferencesAsync(
+            parseResult,
+            projectDirectory,
+            workspaceOption,
+            suppressNextStepsOption,
+            services,
+            nextStepRenderer
+        );
+        if (preferenceError is not null)
+        {
+            return console.Fail(preferenceError);
+        }
 
         var invocationConfiguration = new InvocationConfiguration
         {
@@ -75,20 +91,55 @@ internal sealed class CliApplication(
         return exitCode;
     }
 
+    private static async Task<string?> ApplyPreferencesAsync(
+        ParseResult parseResult,
+        string projectDirectory,
+        Option<string?> workspaceOption,
+        Option<bool> suppressNextStepsOption,
+        CommandServices services,
+        NextStepRenderer nextStepRenderer
+    )
+    {
+        nextStepRenderer.Suppress = parseResult.GetValue(suppressNextStepsOption);
+        if (
+            string.Equals(
+                parseResult.CommandResult.Command.Name,
+                "config",
+                StringComparison.Ordinal
+            )
+        )
+        {
+            return null;
+        }
+
+        var workspaceDirectory = services.WorkspaceDirectoryResolver.Resolve(
+            projectDirectory,
+            parseResult.GetValue(workspaceOption)
+        );
+        var preferences = await services.CliPreferenceService.ResolveAsync(workspaceDirectory);
+        if (preferences.Value is not { } effectivePreferences)
+        {
+            return preferences.Error ?? "Unable to resolve CLI preferences.";
+        }
+
+        nextStepRenderer.Suppress |= !effectivePreferences.NextStepsEnabled;
+        return null;
+    }
+
     private RootCommand CreateRootCommand(
         string projectDirectory,
         CliConsole console,
         NextStepRenderer nextStepRenderer,
-        Option<bool> suppressNextStepsOption
+        Option<bool> suppressNextStepsOption,
+        Option<string?> workspaceOption,
+        CommandServices services
     )
     {
         var rootCommand = new RootCommand("Manage LunaPack packs.");
-        var workspaceOption = CreateWorkspaceOption();
         var logLevelOption = CreateLogLevelOption();
         rootCommand.Options.Add(workspaceOption);
         rootCommand.Options.Add(logLevelOption);
         rootCommand.Options.Add(suppressNextStepsOption);
-        var services = CreateCommandServices(console, nextStepRenderer);
         var completionProvider = new CliCompletionProvider(
             services.CatalogService,
             services.ProjectStateStore,
@@ -97,6 +148,7 @@ internal sealed class CliApplication(
             workspaceOption
         );
         ConfigureRootAction(rootCommand, services, projectDirectory, workspaceOption, console);
+        AddPreferenceCommands(rootCommand, services, projectDirectory, workspaceOption, console);
 
         AddProjectCommands(
             rootCommand,
@@ -115,6 +167,7 @@ internal sealed class CliApplication(
         AddCatalogCommands(
             rootCommand,
             services.CatalogService,
+            services.CliPreferenceService,
             services.PackValidationService,
             services.LinkServices.LinkInspectionService,
             completionProvider,
@@ -157,6 +210,21 @@ internal sealed class CliApplication(
 
         return rootCommand;
     }
+
+    private static void AddPreferenceCommands(
+        RootCommand rootCommand,
+        CommandServices services,
+        string projectDirectory,
+        Option<string?> workspaceOption,
+        CliConsole console
+    ) =>
+        rootCommand.Add(
+            new ConfigCommandHandler(
+                services.CliPreferenceService,
+                services.WorkspaceDirectoryResolver,
+                console
+            ).CreateCommand(projectDirectory, workspaceOption)
+        );
 
     private void AddCompletionCommands(RootCommand rootCommand, CliConsole console)
     {
@@ -225,6 +293,11 @@ internal sealed class CliApplication(
     {
         var projectStateStore = new ProjectStateStore(fileSystem);
         var effectiveUserSettingsStore = userSettingsStore ?? new UserSettingsStore(fileSystem);
+        var cliPreferenceService = new CliPreferenceService(
+            fileSystem,
+            projectStateStore,
+            effectiveUserSettingsStore
+        );
         var workspaceDirectoryResolver = new WorkspaceDirectoryResolver(fileSystem);
         var effectiveGitProcessRunner = gitProcessRunner ?? new GitProcessRunner();
         var gitRefResolver = new GitRefResolver(effectiveGitProcessRunner);
@@ -247,6 +320,7 @@ internal sealed class CliApplication(
         var linkServices = CreateLinkServices(fileSystem, projectStateStore, console);
         return new CommandServices(
             projectStateStore,
+            cliPreferenceService,
             workspaceDirectoryResolver,
             new CatalogService(packCatalog, projectStateStore),
             new PackValidationService(
@@ -275,6 +349,7 @@ internal sealed class CliApplication(
     private static void AddCatalogCommands(
         RootCommand rootCommand,
         CatalogService catalogService,
+        CliPreferenceService cliPreferenceService,
         PackValidationService packValidationService,
         LinkInspectionService linkInspectionService,
         CliCompletionProvider completionProvider,
@@ -290,6 +365,7 @@ internal sealed class CliApplication(
         rootCommand.Add(
             new DiscoverPacksCommandHandler(
                 catalogService,
+                cliPreferenceService,
                 workspaceDirectoryResolver,
                 nextStepAdvisor,
                 nextStepRenderer,
@@ -300,6 +376,7 @@ internal sealed class CliApplication(
         rootCommand.Add(
             new SearchPacksCommandHandler(
                 catalogService,
+                cliPreferenceService,
                 linkInspectionService,
                 workspaceDirectoryResolver,
                 nextStepAdvisor,
@@ -737,6 +814,7 @@ internal sealed class CliApplication(
 
     private sealed record CommandServices(
         ProjectStateStore ProjectStateStore,
+        CliPreferenceService CliPreferenceService,
         WorkspaceDirectoryResolver WorkspaceDirectoryResolver,
         CatalogService CatalogService,
         PackValidationService PackValidationService,
