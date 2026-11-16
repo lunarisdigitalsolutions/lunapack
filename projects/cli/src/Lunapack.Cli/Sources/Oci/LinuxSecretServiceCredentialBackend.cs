@@ -162,10 +162,10 @@ internal sealed class LinuxSecretServiceCredentialBackend : INativeCredentialBac
             );
         }
 
-        IntPtr applicationKey = IntPtr.Zero;
-        IntPtr application = IntPtr.Zero;
-        IntPtr accountKey = IntPtr.Zero;
-        IntPtr account = IntPtr.Zero;
+        var applicationKey = IntPtr.Zero;
+        var application = IntPtr.Zero;
+        var accountKey = IntPtr.Zero;
+        var account = IntPtr.Zero;
         try
         {
             applicationKey = Marshal.StringToCoTaskMemUTF8(ApplicationAttribute);

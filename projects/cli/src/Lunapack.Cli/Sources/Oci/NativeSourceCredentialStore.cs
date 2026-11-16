@@ -6,14 +6,13 @@ using Lunapack.Cli.Application.CommandExecution;
 
 namespace Lunapack.Cli.Sources.Oci;
 
-internal sealed class NativeSourceCredentialStore : ISourceCredentialStore
+internal sealed class NativeSourceCredentialStore(
+    INativeCredentialBackend? credentialBackend = null
+) : ISourceCredentialStore
 {
-    private readonly Lazy<INativeCredentialBackend> _credentialBackend;
-
-    public NativeSourceCredentialStore(INativeCredentialBackend? credentialBackend = null) =>
-        _credentialBackend = new Lazy<INativeCredentialBackend>(() =>
-            credentialBackend ?? NativeCredentialStoreFactory.Create()
-        );
+    private readonly Lazy<INativeCredentialBackend> _credentialBackend = new(() =>
+        credentialBackend ?? NativeCredentialStoreFactory.Create()
+    );
 
     public ManifestOperationResult<OciRegistryCredential?> Get(string key)
     {

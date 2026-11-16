@@ -52,9 +52,9 @@ internal sealed class MacKeychainCredentialBackend : INativeCredentialBackend
     public void Save(string identity, byte[] payload)
     {
         var existingItem = FindItem(identity);
-        IntPtr servicePointer = IntPtr.Zero;
-        IntPtr accountPointer = IntPtr.Zero;
-        IntPtr payloadPointer = IntPtr.Zero;
+        var servicePointer = IntPtr.Zero;
+        var accountPointer = IntPtr.Zero;
+        var payloadPointer = IntPtr.Zero;
         try
         {
             servicePointer = Marshal.StringToCoTaskMemUTF8(ServiceName);

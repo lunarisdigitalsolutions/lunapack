@@ -134,7 +134,7 @@ public sealed class NativeSourceCredentialStoreTests
                 return null;
             }
 
-            LastReturnedPayload = value.ToArray();
+            LastReturnedPayload = [.. value];
             return LastReturnedPayload;
         }
 
@@ -150,10 +150,10 @@ public sealed class NativeSourceCredentialStoreTests
             FailIfRequested(CredentialStoreOperation.Save);
             LastIdentity = identity;
             LastSavedPayload = payload;
-            _values[identity] = payload.ToArray();
+            _values[identity] = [.. payload];
         }
 
-        public void Set(string identity, byte[] payload) => _values[identity] = payload.ToArray();
+        public void Set(string identity, byte[] payload) => _values[identity] = [.. payload];
 
         private void FailIfRequested(CredentialStoreOperation operation)
         {

@@ -60,7 +60,6 @@ internal sealed class OciPackPublisher(
 
             var snapshotDirectory = fileSystem.Path.Combine(workspace.Path, "pack");
             var validation = await ValidateArchiveAsync(
-                projectDirectory,
                 archivePath,
                 snapshotDirectory,
                 cancellationToken
@@ -121,7 +120,6 @@ internal sealed class OciPackPublisher(
     }
 
     private async Task<ManifestOperationResult<PackManifest>> ValidateArchiveAsync(
-        string projectDirectory,
         string archivePath,
         string snapshotDirectory,
         CancellationToken cancellationToken
@@ -303,14 +301,14 @@ internal sealed class OciPackPublisher(
             );
         }
 
-        var artifactManifest = manifest.Value;
+        var (artifactContent, artifactDescriptor) = manifest.Value;
         return ManifestOperationResult<PreparedArtifact>.Success(
             new PreparedArtifact(
                 configContent,
                 configDescriptor,
                 contentDescriptor,
-                artifactManifest.Content,
-                artifactManifest.Descriptor
+                artifactContent,
+                artifactDescriptor
             )
         );
     }

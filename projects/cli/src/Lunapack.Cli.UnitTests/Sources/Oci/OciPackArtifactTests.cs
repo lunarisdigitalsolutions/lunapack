@@ -184,19 +184,19 @@ public sealed class OciPackArtifactTests
         var manifest = OciPackArtifact.ReadManifest(CreateManifestBytes());
         var invalidConfigs = new[]
         {
-            new Dictionary<string, object>
+            new Dictionary<string, object>(StringComparer.Ordinal)
             {
                 ["id"] = "other",
                 ["formatVersion"] = 1,
                 ["version"] = "1.4.0+build.5",
             },
-            new Dictionary<string, object>
+            new Dictionary<string, object>(StringComparer.Ordinal)
             {
                 ["id"] = "backend",
                 ["formatVersion"] = 2,
                 ["version"] = "1.4.0+build.5",
             },
-            new Dictionary<string, object>
+            new Dictionary<string, object>(StringComparer.Ordinal)
             {
                 ["id"] = "backend",
                 ["formatVersion"] = 1,

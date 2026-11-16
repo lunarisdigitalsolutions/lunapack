@@ -89,56 +89,11 @@ internal sealed class PackUpdateService(
             return UpdateResult.Failure("No sources are configured.");
         }
 
-        if (_sourceIgnoreService is not null && packReference?.Version is null)
-        {
-            var rootIds = state
-                .Configuration.Packs.Select(root => root.Id)
-                .Where(id =>
-                    (
-                        packReference is null
-                        || string.Equals(id, packReference.Id, StringComparison.Ordinal)
-                    ) && (selectedUpdateIds is null || selectedUpdateIds.Contains(id))
-                )
-                .ToHashSet(StringComparer.Ordinal);
-            var ignoredLockedPack = await _sourceIgnoreService.FindIgnoredLockedPackErrorAsync(
-                projectDirectory,
-                state.Configuration,
-                state.LockFile.Packs.Where(pack => rootIds.Contains(pack.Id))
-            );
-            if (!ignoredLockedPack.IsSuccess)
-            {
-                return UpdateResult.Failure(
-                    ignoredLockedPack.Error ?? "Unable to check local source ignore settings."
-                );
-            }
-
-            if (ignoredLockedPack.Value is { } ignoredError)
-            {
-                return UpdateResult.Failure(ignoredError);
-            }
-        }
-
-        var requestedPacks = new Dictionary<string, string?>(StringComparer.Ordinal);
-        if (packReference is { } requestedPack)
-        {
-            requestedPacks[requestedPack.Id] = requestedPack.Version;
-        }
-        else
-        {
-            foreach (
-                var root in state.Configuration.Packs.Where(root =>
-                    selectedUpdateIds is null || selectedUpdateIds.Contains(root.Id)
-                )
-            )
-            {
-                requestedPacks[root.Id] = null;
-            }
-        }
-
-        var catalog = await packCatalog.BrowseForUpdatesAsync(
+        var catalog = await BrowseUpdateCatalogAsync(
             projectDirectory,
-            state.Configuration,
-            requestedPacks
+            state,
+            packReference,
+            selectedUpdateIds
         );
         if (catalog.Value is not { } catalogPacks)
         {
@@ -172,6 +127,78 @@ internal sealed class PackUpdateService(
                 cachedPromptParameters,
                 options
             );
+    }
+
+    private async Task<
+        ManifestOperationResult<IReadOnlyList<CatalogPack>>
+    > BrowseUpdateCatalogAsync(
+        string projectDirectory,
+        ProjectState state,
+        PackReference? packReference,
+        IReadOnlySet<string>? selectedUpdateIds
+    )
+    {
+        if (_sourceIgnoreService is not null && packReference?.Version is null)
+        {
+            var rootIds = state
+                .Configuration.Packs.Select(root => root.Id)
+                .Where(id =>
+                    (
+                        packReference is null
+                        || string.Equals(id, packReference.Id, StringComparison.Ordinal)
+                    ) && (selectedUpdateIds is null || selectedUpdateIds.Contains(id))
+                )
+                .ToHashSet(StringComparer.Ordinal);
+            var ignoredLockedPack = await _sourceIgnoreService.FindIgnoredLockedPackErrorAsync(
+                projectDirectory,
+                state.Configuration,
+                state.LockFile.Packs.Where(pack => rootIds.Contains(pack.Id))
+            );
+            if (!ignoredLockedPack.IsSuccess)
+            {
+                return ManifestOperationResult<IReadOnlyList<CatalogPack>>.Failure(
+                    ignoredLockedPack.Error ?? "Unable to check local source ignore settings."
+                );
+            }
+
+            if (ignoredLockedPack.Value is { } ignoredError)
+            {
+                return ManifestOperationResult<IReadOnlyList<CatalogPack>>.Failure(ignoredError);
+            }
+        }
+
+        var requestedPacks = CreateRequestedPacks(state, packReference, selectedUpdateIds);
+        return await packCatalog.BrowseForUpdatesAsync(
+            projectDirectory,
+            state.Configuration,
+            requestedPacks
+        );
+    }
+
+    private static Dictionary<string, string?> CreateRequestedPacks(
+        ProjectState state,
+        PackReference? packReference,
+        IReadOnlySet<string>? selectedUpdateIds
+    )
+    {
+        var requestedPacks = new Dictionary<string, string?>(StringComparer.Ordinal);
+        if (packReference is { } requestedPack)
+        {
+            requestedPacks[requestedPack.Id] = requestedPack.Version;
+        }
+        else
+        {
+            foreach (
+                var root in state.Configuration.Packs.Where(root =>
+                    selectedUpdateIds is null || selectedUpdateIds.Contains(root.Id)
+                )
+            )
+            {
+                requestedPacks[root.Id] = null;
+            }
+        }
+
+        return requestedPacks;
     }
 
     internal static PackParameterPromptCallback? CachePromptedParameters(

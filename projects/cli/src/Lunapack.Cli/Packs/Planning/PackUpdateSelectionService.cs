@@ -43,29 +43,7 @@ internal sealed class PackUpdateSelectionService(
             );
         }
 
-        var ignoredRootError = await FindIgnoredRootPackErrorAsync(projectDirectory, state);
-        if (!ignoredRootError.IsSuccess)
-        {
-            return ManifestOperationResult<PackUpdateAvailability>.Failure(
-                ignoredRootError.Error ?? "Unable to check local source ignore settings."
-            );
-        }
-
-        if (ignoredRootError.Value is { } ignoredError)
-        {
-            return ManifestOperationResult<PackUpdateAvailability>.Failure(ignoredError);
-        }
-
-        var requestedPacks = state.Configuration.Packs.ToDictionary(
-            root => root.Id,
-            _ => (string?)null,
-            StringComparer.Ordinal
-        );
-        var catalog = await packCatalog.BrowseForUpdatesAsync(
-            projectDirectory,
-            state.Configuration,
-            requestedPacks
-        );
+        var catalog = await BrowseAvailableCatalogAsync(projectDirectory, state);
         if (catalog.Value is not { } catalogPacks)
         {
             return ManifestOperationResult<PackUpdateAvailability>.Failure(
@@ -132,6 +110,35 @@ internal sealed class PackUpdateSelectionService(
             projectDirectory,
             state.Configuration,
             state.LockFile.Packs.Where(pack => rootIds.Contains(pack.Id))
+        );
+    }
+
+    private async Task<
+        ManifestOperationResult<IReadOnlyList<CatalogPack>>
+    > BrowseAvailableCatalogAsync(string projectDirectory, ProjectState state)
+    {
+        var ignoredRootError = await FindIgnoredRootPackErrorAsync(projectDirectory, state);
+        if (!ignoredRootError.IsSuccess)
+        {
+            return ManifestOperationResult<IReadOnlyList<CatalogPack>>.Failure(
+                ignoredRootError.Error ?? "Unable to check local source ignore settings."
+            );
+        }
+
+        if (ignoredRootError.Value is { } ignoredError)
+        {
+            return ManifestOperationResult<IReadOnlyList<CatalogPack>>.Failure(ignoredError);
+        }
+
+        var requestedPacks = state.Configuration.Packs.ToDictionary(
+            root => root.Id,
+            _ => (string?)null,
+            StringComparer.Ordinal
+        );
+        return await packCatalog.BrowseForUpdatesAsync(
+            projectDirectory,
+            state.Configuration,
+            requestedPacks
         );
     }
 

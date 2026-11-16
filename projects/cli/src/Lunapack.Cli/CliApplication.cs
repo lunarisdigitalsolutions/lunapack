@@ -1,4 +1,4 @@
-﻿using System.CommandLine;
+using System.CommandLine;
 using System.IO.Abstractions;
 using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.Completions;
@@ -57,7 +57,6 @@ internal sealed class CliApplication(
         var rootCommand = CreateRootCommand(
             projectDirectory,
             console,
-            nextStepRenderer,
             suppressNextStepsOption,
             services
         );
@@ -83,7 +82,6 @@ internal sealed class CliApplication(
     private RootCommand CreateRootCommand(
         string projectDirectory,
         CliConsole console,
-        NextStepRenderer nextStepRenderer,
         Option<bool> suppressNextStepsOption,
         CommandServices services
     )
