@@ -79,6 +79,9 @@ Git link snapshots use the operating system's user cache, keyed by configured
 source identity and commit. Cache metadata and bytes are untrusted: reuse
 requires exact identity and commit evidence plus blob-ID verification. Invalid
 or incomplete entries are repaired or rejected before project mutation.
+When selected bytes are missing, the provider fetches the resolved commit into a
+disposable repository, sparse-checks out only missing paths, verifies and caches
+their blobs, then removes the workspace before project mutation.
 
 ## Planning And Ownership
 
