@@ -40,6 +40,16 @@ that success list without hiding the dry-run plan. When the selected pack ID
 and version exist in multiple configured sources, both forms identify the
 chosen source by name and type.
 
+## Directly installable update roots
+
+`luna outdated` and update commands select only directly installable releases
+for requested root packs. A newer release marked `directInstallable: false` is
+not offered as a root update; an older eligible release remains selectable.
+An explicitly requested dependency-only version fails. Composite dependencies
+are still resolved from the full catalog, even when they are not directly
+installable. See the
+[manifest reference](packs/reference/manifest.md#direct-installability).
+
 ## Understand version intent
 
 An update without an explicit version selects the latest available release and

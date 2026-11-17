@@ -94,7 +94,13 @@ suggestions until an argument-taking command or option is selected.
 ## Project And Sources
 
 - `luna init`: Creates version-1 `lunapack.yml` and `lunapack-lock.yml` with
-  only their schema-required properties.
+  only their schema-required properties, and adds `/.lunapack/` to the
+  project-root `.gitignore` without replacing existing content.
+- `luna config set <key> <value>`, `luna config list`, and
+  `luna config remove <key>`: Manage Boolean CLI preferences. Each operation
+  accepts `--project` (`--local` alias), `--user-project`, or `--global`; scope
+  defaults to global. See [Configuration](configuration.md#cli-preferences) for
+  supported keys and precedence.
 - `luna variables list`: Lists configured project variables in a table.
 - `luna variables set <name> <value>`: Sets a string project variable. Names
   must start with a letter or underscore and may contain letters, digits, and
@@ -116,7 +122,15 @@ suggestions until an argument-taking command or option is selected.
   repository as a Git pack source. LunaPack stores its HTTPS Git URL; `--ref`
   (`-r`) is required and resolved the same way as `git`; `--path` (`-p`)
   matches `git`.
-- `luna sources list`: Lists configured local and Git sources.
+- `luna sources add oci <name> <registry-url>`: Registers an HTTPS OCI registry
+  source without connecting to it. `--path` (`-p`) selects a repository prefix;
+  a safe path embedded in the URL is accepted. `--username` stores a non-secret
+  username for later authentication. See [Add an OCI registry source](../sources.md#add-an-oci-registry-source).
+- `luna sources list`: Lists configured local, Git, and OCI sources and marks
+  sources ignored in the user-local source-ignore sidecar.
+- `luna sources ignore <name>`: Ignores one configured source for this project
+  and user. This does not change shared project configuration or revoke trust.
+- `luna sources unignore <name>`: Restores one locally ignored source.
 - `luna sources rename <current-id> <new-id>`: Renames a configured source,
   atomically updating trust and lock-file references bound to its previous
   name.
@@ -163,16 +177,21 @@ project. Pack trust and pack-trust revocation require `--source` or `-s`. See
 
 ## Catalog
 
-- `luna discover`: Lists the latest available release of each pack.
-- `luna search <query>`: Lists matching packages and configured links. Package
-  results include their latest releases; link results include source, target,
-  and installation status.
+- `luna discover [--only-composites]`: Lists the latest directly installable
+  release of each pack. Raw packs have no `packs` references; composite packs
+  have one or more. Both types appear by default.
+- `luna search <term> [--only-composites]`: Lists matching directly
+  installable packs and configured links. Pack results include their latest
+  eligible releases; link results include source, target, and installation
+  status. Both raw and composite packs appear by default.
 - `luna validate <pack-reference>`: Validates the selected release from configured
-  local or Git sources, or the latest release when version is omitted. Direct
-  references can select draft packs even though discovery and search hide them
-  by default.
+  local, Git, or OCI sources, or the latest release when version is omitted.
+  Direct references can select draft and dependency-only packs even though
+  discovery and search hide those packs by default.
 - `luna inspect <pack-reference>`: Shows the selected pack's identity,
-  description, license, author, parameters, and referenced packs.
+  description, license, author, direct-installability state, parameters, and
+  referenced packs. OCI lock provenance includes the registry, repository,
+  version tag, and verified digests.
 
 ## Pack Authoring
 
@@ -243,6 +262,21 @@ and persists with `/`. Every pack manifest requires a non-empty `author` and
 Pack and composite-reference IDs use alphanumeric segments separated by single
 hyphens. Successful pack commands print contextual next actions, such as
 adding content, viewing the manifest, or validating it.
+
+## Pack Publishing
+
+- `luna publish <folder> --target <source>`: Publishes a validated pack folder
+  to a configured OCI source. `<folder>` is a project-relative directory with
+  its root `pack.yml`; `--target` is required and must name a non-ignored OCI
+  source.
+
+Luna reads the pack ID and version only from the root `pack.yml`, validates the
+complete authoring tree, and publishes one ZIP/config/manifest artifact. It
+does not run pack hooks or change project configuration or lock state. It
+rejects an existing version tag rather than overwriting it; successful output
+includes the registry reference and verified manifest digest. There are no
+`--id`, `--version`, or `--type` overrides. For GitHub Actions templates, see
+[Publish private packs from GitHub Actions](../advanced/publish-private-packs.md).
 
 ## Pack Lifecycle
 
@@ -344,13 +378,16 @@ project-variable value, LunaPack prompts for it. Prompts use the manifest's
 display name and description when available.
 
 `discover --versions <count>` and `search --versions <count>` (or `-v`) list
-up to that many distinct releases for each package. Both commands show the
-latest release by default, use separate Pack and Version columns, and order
+up to that many distinct eligible releases for each pack. Both commands show
+the latest release by default, use separate Pack and Version columns, and order
 requested releases by descending Semantic Version. The count must be from one
-through 10. Packs whose manifests set `draft: true` are hidden from both
-commands by default. Pass `--allow-draft` to include them. Draft packs remain
-available to install, update, uninstall, validate, and inspect when referenced
-directly.
+through 10. Both raw and composite packs appear unless `--only-composites` or
+the corresponding preference enables composite-only filtering. Releases with
+`directInstallable: false` never appear, even with `--allow-draft`; draft packs
+remain hidden unless `--allow-draft` is passed. Dependency-only releases remain
+available to composite resolution, validation, and inspection. See the
+[pack manifest reference](../packs/reference/manifest.md) for
+`directInstallable`.
 
 LunaPack writes output through Spectre.Console on standard output; info output
 is plain, while
@@ -366,9 +403,9 @@ Successful initialization, source changes, catalog exploration, installation,
 updates, and uninstallation append a bounded recommendation block when a useful
 next action exists. Dry runs do not claim that workspace state advanced. Missing
 workspace or source prerequisites and unresolved pack references include
-recovery commands while retaining a nonzero exit code. Use
-`--suppress-next-steps` with any command to omit recommendation and recovery
-guidance.
+recovery commands while retaining a nonzero exit code. `next-steps.enabled`
+controls guidance by default; use `--suppress-next-steps` with any command to
+omit recommendation and recovery guidance for one invocation.
 
 Successful commands return exit code `0`. Invalid input, validation failures,
 resolution conflicts, denied trust, Git failures, and filesystem or state-write

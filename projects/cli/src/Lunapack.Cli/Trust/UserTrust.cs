@@ -1,3 +1,4 @@
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Sources;
 
 namespace Lunapack.Cli.Trust;
@@ -5,6 +6,8 @@ namespace Lunapack.Cli.Trust;
 internal sealed record UserTrust
 {
     public ScriptDenial? Deny { get; set; }
+
+    public CliPreferences? Preferences { get; set; }
 
     public List<TrustedPackIdentity> Packs { get; set; } = [];
 

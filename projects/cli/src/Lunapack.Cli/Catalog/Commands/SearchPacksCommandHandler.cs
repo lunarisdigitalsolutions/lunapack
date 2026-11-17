@@ -2,6 +2,7 @@ using System.CommandLine;
 using System.Diagnostics;
 using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.Guidance;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Links;
 using Lunapack.Cli.Project;
 using Spectre.Console;
@@ -10,6 +11,7 @@ namespace Lunapack.Cli.Catalog.Commands;
 
 internal sealed class SearchPacksCommandHandler(
     CatalogService catalogService,
+    CliPreferenceService preferenceService,
     LinkInspectionService linkInspectionService,
     WorkspaceDirectoryResolver workspaceDirectoryResolver,
     NextStepAdvisor nextStepAdvisor,
@@ -36,11 +38,16 @@ internal sealed class SearchPacksCommandHandler(
         {
             Description = "Include draft packs.",
         };
+        var onlyCompositesOption = new Option<bool>("--only-composites")
+        {
+            Description = "Show only composite packs.",
+        };
         var command = new Command("search", "Search available packs.")
         {
             searchTermArgument,
             versionCountOption,
             allowDraftOption,
+            onlyCompositesOption,
         };
         command.SetAction(async parseResult =>
         {
@@ -55,7 +62,8 @@ internal sealed class SearchPacksCommandHandler(
                     ),
                     searchTerm,
                     versionCount,
-                    parseResult.GetValue(allowDraftOption)
+                    parseResult.GetValue(allowDraftOption),
+                    parseResult.GetValue(onlyCompositesOption)
                 );
         });
 
@@ -66,7 +74,8 @@ internal sealed class SearchPacksCommandHandler(
         string projectDirectory,
         string searchTerm,
         int versionCount,
-        bool allowDraft = false
+        bool allowDraft = false,
+        bool onlyComposites = false
     )
     {
         if (string.IsNullOrWhiteSpace(searchTerm))
@@ -97,11 +106,24 @@ internal sealed class SearchPacksCommandHandler(
             return console.Fail(catalog.Error);
         }
 
+        var preferences = await preferenceService.ResolveAsync(projectDirectory);
+        if (preferences.Value is not { } effectivePreferences)
+        {
+            return console.Fail(preferences.Error);
+        }
+
+        var filterComposites = onlyComposites || effectivePreferences.SearchOnlyComposites;
         var normalizedSearchTerm = searchTerm.Trim();
-        var searchablePacks = allowDraft
-            ? catalogPacks
-            : [.. catalogPacks.Where(pack => !pack.Manifest.Draft)];
-        var packs = PackCatalog.Search(searchablePacks, normalizedSearchTerm);
+        IEnumerable<CatalogPack> searchablePacks = CatalogPackFilter.ForBrowsing(
+            catalogPacks,
+            filterComposites
+        );
+        if (!allowDraft)
+        {
+            searchablePacks = searchablePacks.Where(pack => !pack.Manifest.Draft);
+        }
+
+        var packs = PackCatalog.Search([.. searchablePacks], normalizedSearchTerm);
         var linkSummaries = await linkInspectionService.ListAsync(projectDirectory);
         if (linkSummaries.Value is not { } links)
         {

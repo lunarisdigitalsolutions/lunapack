@@ -1,5 +1,6 @@
 using Lunapack.Cli.Packs.Manifest;
 using Lunapack.Cli.Sources;
+using Lunapack.Cli.Sources.Oci;
 
 namespace Lunapack.Cli.Catalog;
 
@@ -10,7 +11,8 @@ internal sealed record DiscoveredPack(
     string SourceName,
     ConfiguredSourceIdentity SourceIdentity,
     GitSourceProvenance? GitSource = null,
-    string? RepositoryPath = null
+    string? RepositoryPath = null,
+    OciSourceProvenance? OciSource = null
 )
 {
     public PackSourceSelection? SourceSelection { get; init; }

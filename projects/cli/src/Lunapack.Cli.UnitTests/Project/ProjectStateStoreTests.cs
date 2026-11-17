@@ -244,6 +244,76 @@ public sealed class ProjectStateStoreTests
     }
 
     [Test]
+    public async Task Save_WhenStateContainsOciSource_PersistsCanonicalOriginAndPath()
+    {
+        var fileSystem = CreateFileSystem();
+        const string projectDirectory = @"C:\project";
+        fileSystem.AddDirectory(projectDirectory);
+        var stateStore = new ProjectStateStore(fileSystem);
+        var state = CreateValidState() with
+        {
+            Configuration = new ProjectConfiguration
+            {
+                SchemaVersion = 1,
+                Sources =
+                [
+                    new ProjectConfiguration.OciSource
+                    {
+                        Name = "private",
+                        Url = "HTTPS://Registry.Example.TEST:443/team//packs/",
+                        Username = "publisher",
+                    },
+                ],
+            },
+        };
+
+        var saved = await stateStore.SaveAsync(projectDirectory, state);
+        var loaded = await stateStore.LoadAsync(projectDirectory);
+        var configuration = fileSystem.File.ReadAllText(
+            fileSystem.Path.Combine(projectDirectory, ProjectStateStore.ConfigurationFileName)
+        );
+
+        await Assert.That(saved.IsSuccess).IsTrue().Because(saved.Error ?? string.Empty);
+        var source = loaded.RequireValue().Configuration.Sources.Single();
+        await Assert.That(source).IsTypeOf<ProjectConfiguration.OciSource>();
+        var ociSource = (ProjectConfiguration.OciSource)source;
+        await Assert.That(ociSource.Url).IsEqualTo("https://registry.example.test");
+        await Assert.That(ociSource.Path).IsEqualTo("team/packs");
+        await Assert.That(ociSource.Username).IsEqualTo("publisher");
+        await Assert.That(configuration).Contains("url: https://registry.example.test");
+        await Assert.That(configuration).Contains("path: team/packs");
+        await Assert.That(configuration).DoesNotContain("password");
+    }
+
+    [Test]
+    [Arguments("ref: main")]
+    [Arguments("timeoutSeconds: 120")]
+    public async Task Load_WhenOciSourceDeclaresGitOnlyProperties_ReturnsFailure(
+        string gitOnlyProperty
+    )
+    {
+        var fileSystem = CreateFileSystem();
+        const string projectDirectory = @"C:\project";
+        fileSystem.AddDirectory(projectDirectory);
+        fileSystem.AddFile(
+            fileSystem.Path.Combine(projectDirectory, ProjectStateStore.ConfigurationFileName),
+            new MockFileData(
+                $"schemaVersion: 1\nsources:\n  - name: private\n    type: oci\n    url: https://registry.example.test\n    {gitOnlyProperty}\npacks: []\n"
+            )
+        );
+        fileSystem.AddFile(
+            fileSystem.Path.Combine(projectDirectory, ProjectStateStore.LockFileName),
+            new MockFileData("schemaVersion: 1\npacks: []\n")
+        );
+        var stateStore = new ProjectStateStore(fileSystem);
+
+        var loaded = await stateStore.LoadAsync(projectDirectory);
+
+        await Assert.That(loaded.IsSuccess).IsFalse();
+        await Assert.That(loaded.Error).Contains("OCI sources do not support");
+    }
+
+    [Test]
     public async Task Save_WhenGitProvenanceUrlHasTrailingSlash_PersistsState()
     {
         var fileSystem = CreateFileSystem();

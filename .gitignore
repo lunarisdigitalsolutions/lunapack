@@ -48,6 +48,8 @@ coverage/
 *.coverage
 *.cobertura.xml
 *.lcov
+__pycache__/
+*.py[cod]
 .nyc_output/
 .eslintcache
 .stylelintcache

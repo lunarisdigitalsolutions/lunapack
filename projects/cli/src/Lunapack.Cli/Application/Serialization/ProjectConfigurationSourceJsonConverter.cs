@@ -37,6 +37,12 @@ internal sealed class ProjectConfigurationSourceJsonConverter
                 }
 
                 break;
+            case ProjectConfiguration.OciSource ociSource:
+                writer.WriteString("type", ociSource.Type);
+                writer.WriteString("url", ociSource.Url);
+                WriteOptionalString(writer, "path", ociSource.Path);
+                WriteOptionalString(writer, "username", ociSource.Username);
+                break;
             default:
                 throw new JsonException(
                     $"Unsupported project source type '{source.GetType().Name}'."

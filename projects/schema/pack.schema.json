@@ -13,6 +13,10 @@
     "description": {
       "type": "string"
     },
+    "directInstallable": {
+      "type": "boolean",
+      "default": true
+    },
     "draft": {
       "type": "boolean",
       "default": false

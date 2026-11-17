@@ -14,7 +14,8 @@
       "items": {
         "oneOf": [
           { "$ref": "#/definitions/localSource" },
-          { "$ref": "#/definitions/gitSource" }
+          { "$ref": "#/definitions/gitSource" },
+          { "$ref": "#/definitions/ociSource" }
         ]
       }
     },
@@ -35,6 +36,9 @@
     },
     "remap": {
       "$ref": "#/definitions/remapping"
+    },
+    "preferences": {
+      "$ref": "#/definitions/cliPreferences"
     },
     "trust": {
       "$ref": "#/definitions/projectTrust"
@@ -152,6 +156,47 @@
         }
       }
     },
+    "ociRegistryUrl": {
+      "type": "string",
+      "minLength": 1,
+      "format": "uri",
+      "pattern": "^[Hh][Tt][Tt][Pp][Ss]://(?:\\[[A-Fa-f0-9:.]+\\]|[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\\.?)(?::(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?(?:/(?=.{0,255}$|.{255}/$)(?:[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*)?/?)?$"
+    },
+    "ociRegistryOrigin": {
+      "type": "string",
+      "minLength": 1,
+      "format": "uri",
+      "pattern": "^[Hh][Tt][Tt][Pp][Ss]://(?:\\[[A-Fa-f0-9:.]+\\]|[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\\.?)(?::(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?$"
+    },
+    "ociRepositoryPath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*$"
+    },
+    "ociSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type", "url"],
+      "properties": {
+        "name": {
+          "$ref": "#/definitions/sourceName"
+        },
+        "type": {
+          "enum": ["oci"]
+        },
+        "url": {
+          "$ref": "#/definitions/ociRegistryUrl"
+        },
+        "path": {
+          "$ref": "#/definitions/ociRepositoryPath"
+        },
+        "username": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
     "requestedPack": {
       "type": "object",
       "additionalProperties": false,
@@ -214,6 +259,39 @@
           "items": {
             "$ref": "#/definitions/sourceName"
           }
+        }
+      }
+    },
+    "cliPreferences": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "discover": {
+          "$ref": "#/definitions/catalogPreferences"
+        },
+        "search": {
+          "$ref": "#/definitions/catalogPreferences"
+        },
+        "nextSteps": {
+          "$ref": "#/definitions/nextStepPreferences"
+        }
+      }
+    },
+    "catalogPreferences": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "onlyComposites": {
+          "type": "boolean"
+        }
+      }
+    },
+    "nextStepPreferences": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
         }
       }
     },

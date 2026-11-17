@@ -3,9 +3,9 @@
 `pack.yml` declares a pack. It requires a hyphen-separated alphanumeric `id`,
 non-empty `author` and `license` values, and a semantic `version`. Empty content
 collections remain valid during incremental authoring. `name`, `description`,
-`homepage`, `tags`, and `draft` are optional metadata. Discovery and search
-exclude manifests missing author or license attribution. They also exclude
-draft packs unless the consumer passes `--allow-draft`.
+`homepage`, `tags`, `draft`, and `directInstallable` are optional metadata.
+Discovery and search exclude manifests missing author or license attribution.
+They also exclude draft packs unless the consumer passes `--allow-draft`.
 
 ```yml
 id: example-documentation-standard
@@ -55,6 +55,7 @@ selectors install content.
 | `name`                 | Optional non-empty human-readable name.                                                                                                                                                 |
 | `author`               | Required non-empty author or maintainer attribution.                                                                                                                                    |
 | `draft`                | Optional visibility marker. Defaults to `false`; drafts require `--allow-draft` in discovery and search but remain available to direct commands.                                        |
+| `directInstallable`    | Optional Boolean. Defaults to `true`; `false` reserves a release for composite dependencies and excludes it from discover/search and install, update, and outdated root selection.      |
 | `homepage`             | Optional absolute HTTP or HTTPS URI.                                                                                                                                                    |
 | `license`              | Required non-empty license identifier or expression.                                                                                                                                    |
 | `managedFiles`         | Each entry has one `source`, `directory`, or `glob` selector and a non-empty project-relative `target` that cannot contain `.` or `..` segments.                                        |
@@ -66,6 +67,17 @@ selectors install content.
 | `tags`                 | Optional list of up to 15 unique, non-empty tags. Search matches tags; discover lists them, and inspect previews the first five.                                                        |
 | `template`             | Enables Scriban parsing. Defaults to `false`; set `true` only when this source uses parameters or Scriban functions.                                                                    |
 | `hooks`                | Ordered `script` or `instruction` declarations grouped by lifecycle event.                                                                                                              |
+
+## Direct installability
+
+Set `directInstallable: false` when a release should be used only as a composite
+dependency. It remains in the catalog and can still be resolved by composite
+packs; `luna inspect` and `luna validate` can still find it. Filtering happens
+before release selection, so a newer dependency-only release does not hide an
+older directly installable release.
+
+This metadata is a compatibility signal, not a security boundary: older Luna
+versions may ignore it and install the pack directly.
 
 ## Parameters
 

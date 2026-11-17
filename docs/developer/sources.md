@@ -1,7 +1,7 @@
 # Add a pack source
 
-A source is a local directory or Git repository that contains versioned packs.
-Add one before discovering or installing a pack.
+A source is a local directory, Git repository, or OCI registry that contains
+versioned packs. Add one before discovering or installing a pack.
 
 ## Add a local source
 
@@ -30,6 +30,45 @@ under a different URL form, casing, or name fails with a "duplicates source"
 error: Luna canonicalizes every source's URL, ref, and path and allows only
 one configured source per canonical identity.
 
+## Add an OCI registry source
+
+Register an OCI Distribution registry without connecting to it:
+
+```powershell
+luna sources add oci private https://registry.example.com --path engineering/packs
+```
+
+The registry URL must use HTTPS and cannot contain credentials, a query, or a
+fragment. The optional `--path` is an OCI repository prefix, not a filesystem
+path. Luna appends each pack ID to that prefix. An empty path uses the pack ID
+as the repository. A safe repository prefix embedded in the URL is accepted; if you also provide
+`--path`, it must match the embedded prefix. OCI repository components must be
+lowercase and use valid OCI characters. The published project, lock, and
+user-settings schemas enforce the same HTTPS-origin and lowercase-path
+constraints; repository paths cannot exceed 255 characters.
+
+OCI sources persist as entries in the ordered `sources` YAML sequence. Their
+identity is the normalized registry origin and repository prefix, so one
+registry can be configured at different prefixes. The optional `--username`
+stores a non-secret username; passwords and tokens never belong in
+`lunapack.yml`. See
+[OCI registry authentication](cli/environment.md#oci-registry-authentication) for native credential
+stores, interactive prompts, and ACR identity.
+
+OCI sources provide pack releases, not arbitrary files for Luna Links. Links
+continue to select regular files from configured local or Git sources.
+
+## Ignore a source locally
+
+Use `luna sources ignore <name>` to hide one configured source for the current
+user and project, or `luna sources unignore <name>` to restore access. Ignore
+state lives in the user-local `~/.lunapack/source-ignores.yml` sidecar, not
+`config.yml`, `lunapack.yml`, or the lock file. Keeping it separate preserves
+compatibility with older strict CLI readers of `config.yml`. `luna sources list`
+continues to show ignored entries as `ignored locally`. Ignoring a source does
+not revoke trust, and ignored sources are not contacted for discovery,
+resolution, credentials, or prompts.
+
 Run `luna sources list` to inspect configured sources. LunaPack records source
 configuration in `lunapack.yml` and the resolved Git commit in `lunapack-lock.yml`.
 Names are unique project identifiers used by trust commands. Ordinary updates
@@ -48,6 +87,43 @@ before accepting those additions.
 
 For cache locations, ref queries, temporary checkouts, and authentication
 boundaries, see [Understand Git source behavior](advanced/git-source-behavior.md).
+
+## OCI registry behavior
+
+Luna validates the registry manifest, config, ZIP layer, and SHA-256 digests
+before a release can enter the normal catalog or lifecycle. OCI releases use
+the same install, update, inspect, trust, and ownership rules as local and Git
+packs. Lock entries retain the registry, repository, tag, manifest digest, and
+content digest. A moved tag cannot replace the bytes already recorded by an
+installed lock.
+
+Registry-wide discovery depends on the registry granting repository
+enumeration. ACR, GHCR, Harbor, and repository-scoped deployments may restrict
+catalog access. Luna reports unavailable sources and continues browsing
+readable sources; direct references and locked releases query the known
+repository without requiring a global catalog. If all active sources fail,
+discovery exits nonzero rather than reporting an empty catalog as complete.
+
+For authenticated access, OCI bearer challenges must use an HTTPS token realm
+on the configured registry origin. Luna rejects cross-origin realms before
+forwarding credentials.
+
+| Registry                                    | Authentication                                                | Discovery notes                                                                                |
+| ------------------------------------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| GHCR                                        | Anonymous access or source-bound native credentials           | Catalog enumeration depends on package permissions; direct repository lookup can still work.   |
+| Azure Container Registry                    | Native credentials or optional Azure `DefaultAzureCredential` | `AcrPull`/`AcrPush` permissions and registry catalog policy determine available operations.    |
+| Harbor or another OCI Distribution registry | Anonymous access or source-bound native credentials           | Catalog enumeration depends on server permissions; direct repository lookup remains available. |
+
+Luna does not read registry credentials from LunaPack-specific environment
+variables. GHCR does not automatically use `GITHUB_TOKEN`; noninteractive
+generic OCI and GHCR workflows need credentials preconfigured in the runner
+user's native store. The installable
+[OCI publishing workflow packs](advanced/publish-private-packs.md) document
+runner setup and the ACR OIDC alternative.
+
+Registry tags are not a portable atomic create-if-absent mechanism. Luna refuses
+to overwrite an existing version, but registry-side immutable-tag policy is
+needed to protect against concurrent publishers or later tag movement.
 
 ## Rename a source
 

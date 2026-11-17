@@ -32,6 +32,10 @@ internal static class CliProcess
             WorkingDirectory = workingDirectory,
         };
         startInfo.Environment["NO_COLOR"] = "1";
+        startInfo.Environment["LUNAPACK_USER_PROFILE"] = Path.Combine(
+            workingDirectory,
+            ".lunapack-test-profile"
+        );
         if (environment is not null)
         {
             foreach (var entry in environment)

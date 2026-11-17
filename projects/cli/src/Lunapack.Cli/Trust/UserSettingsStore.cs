@@ -28,7 +28,6 @@ internal sealed class UserSettingsStore
         .Build();
 
     private readonly IFileSystem _fileSystem;
-    private readonly string _settingsDirectory;
 
     public UserSettingsStore(IFileSystem fileSystem)
         : this(fileSystem, GetUserProfileDirectory()) { }
@@ -38,11 +37,13 @@ internal sealed class UserSettingsStore
         ArgumentException.ThrowIfNullOrWhiteSpace(userProfileDirectory);
         _fileSystem = fileSystem;
         var profileDirectory = fileSystem.Path.GetFullPath(userProfileDirectory);
-        _settingsDirectory = fileSystem.Path.Combine(profileDirectory, DirectoryName);
-        SettingsPath = fileSystem.Path.Combine(_settingsDirectory, FileName);
+        SettingsDirectory = fileSystem.Path.Combine(profileDirectory, DirectoryName);
+        SettingsPath = fileSystem.Path.Combine(SettingsDirectory, FileName);
     }
 
     public string SettingsPath { get; }
+
+    public string SettingsDirectory { get; }
 
     public ManifestOperationResult<string> GetProjectKey(string projectDirectory) =>
         CanonicalProjectPath.Resolve(_fileSystem, projectDirectory);
@@ -101,7 +102,7 @@ internal sealed class UserSettingsStore
         }
 
         var temporaryPath = _fileSystem.Path.Combine(
-            _settingsDirectory,
+            SettingsDirectory,
             $".{FileName}.{Guid.NewGuid():N}.tmp"
         );
         try
@@ -140,16 +141,16 @@ internal sealed class UserSettingsStore
 
     private string? ValidateExistingPaths()
     {
-        if (_fileSystem.File.Exists(_settingsDirectory))
+        if (_fileSystem.File.Exists(SettingsDirectory))
         {
-            return $"User settings path '{_settingsDirectory}' must be a directory.";
+            return $"User settings path '{SettingsDirectory}' must be a directory.";
         }
 
-        if (_fileSystem.Directory.Exists(_settingsDirectory))
+        if (_fileSystem.Directory.Exists(SettingsDirectory))
         {
             var directoryError = UserSettingsPathSecurity.ValidateExisting(
                 _fileSystem,
-                _settingsDirectory,
+                SettingsDirectory,
                 directory: true
             );
             if (directoryError is not null)
@@ -170,10 +171,10 @@ internal sealed class UserSettingsStore
 
     private void EnsureSettingsDirectory()
     {
-        if (!_fileSystem.Directory.Exists(_settingsDirectory))
+        if (!_fileSystem.Directory.Exists(SettingsDirectory))
         {
-            _fileSystem.Directory.CreateDirectory(_settingsDirectory);
-            UserSettingsPathSecurity.Apply(_settingsDirectory, directory: true);
+            _fileSystem.Directory.CreateDirectory(SettingsDirectory);
+            UserSettingsPathSecurity.Apply(SettingsDirectory, directory: true);
         }
     }
 

@@ -4,6 +4,8 @@ using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Catalog;
 using Lunapack.Cli.Packs.Planning;
 using Lunapack.Cli.Project;
+using Lunapack.Cli.Sources;
+using Lunapack.Cli.Sources.Oci;
 
 namespace Lunapack.Cli.Sources.Git;
 
@@ -11,14 +13,17 @@ internal sealed class GitPackMaterializer(
     IFileSystem fileSystem,
     IGitProcessRunner processRunner,
     CliConsole console,
-    IOperationSnapshotSecurity? snapshotSecurity = null
+    IOperationSnapshotSecurity? snapshotSecurity = null,
+    OciPackSource? ociPackSource = null
 )
 {
     private const int DefaultTimeoutSeconds = 300;
     private readonly IOperationSnapshotSecurity _snapshotSecurity =
         snapshotSecurity ?? new OperationSnapshotSecurity();
+    private readonly OciPackSource? _ociPackSource = ociPackSource;
 
     public async Task<ManifestOperationResult<GitPackMaterialization>> MaterializeAsync(
+        string projectDirectory,
         ResolvedPackGraph graph,
         ProjectConfiguration configuration,
         CancellationToken cancellationToken = default
@@ -33,7 +38,13 @@ internal sealed class GitPackMaterializer(
         try
         {
             PrepareWorkspace(workspace);
-            return await MaterializeGraphAsync(graph, configuration, workspace, cancellationToken);
+            return await MaterializeGraphAsync(
+                projectDirectory,
+                graph,
+                configuration,
+                workspace,
+                cancellationToken
+            );
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
@@ -41,6 +52,11 @@ internal sealed class GitPackMaterializer(
                 workspace,
                 $"Unable to create Git materialization workspace: {exception.Message}"
             );
+        }
+        catch (OperationCanceledException)
+        {
+            PrepareForDelete(workspace);
+            throw;
         }
     }
 
@@ -51,6 +67,7 @@ internal sealed class GitPackMaterializer(
     }
 
     private async Task<ManifestOperationResult<GitPackMaterialization>> MaterializeGraphAsync(
+        string projectDirectory,
         ResolvedPackGraph graph,
         ProjectConfiguration configuration,
         string workspace,
@@ -62,6 +79,7 @@ internal sealed class GitPackMaterializer(
         foreach (var pack in graph.Packs)
         {
             var sourcePackResult = await MaterializeSourcePackAsync(
+                projectDirectory,
                 pack,
                 configuration,
                 workspace,
@@ -101,6 +119,7 @@ internal sealed class GitPackMaterializer(
     }
 
     private async Task<ManifestOperationResult<DiscoveredPack>> MaterializeSourcePackAsync(
+        string projectDirectory,
         DiscoveredPack pack,
         ProjectConfiguration configuration,
         string workspace,
@@ -108,32 +127,164 @@ internal sealed class GitPackMaterializer(
         CancellationToken cancellationToken
     )
     {
-        if (pack.GitSource is not { } gitSource)
+        if (pack.GitSource is { } gitSource)
         {
-            return ManifestOperationResult<DiscoveredPack>.Success(pack);
-        }
+            var configuredSource = FindConfiguredSource(configuration, gitSource);
+            if (configuredSource is null)
+            {
+                return ManifestOperationResult<DiscoveredPack>.Failure(
+                    $"Git source '{gitSource.Url}' is not configured for pack '{pack.Manifest.Id}'."
+                );
+            }
 
-        var configuredSource = FindConfiguredSource(configuration, gitSource);
-        if (configuredSource is null)
-        {
-            return ManifestOperationResult<DiscoveredPack>.Failure(
-                $"Git source '{gitSource.Url}' is not configured for pack '{pack.Manifest.Id}'."
+            var gitWorkspace = fileSystem.Path.Combine(
+                workspace,
+                "git",
+                packIndex.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            );
+            return await MaterializePackAsync(
+                pack,
+                gitSource,
+                configuredSource,
+                gitWorkspace,
+                cancellationToken
             );
         }
 
-        var gitWorkspace = fileSystem.Path.Combine(
+        if (pack.OciSource is { } ociProvenance)
+        {
+            return await MaterializeOciPackAsync(
+                projectDirectory,
+                pack,
+                ociProvenance,
+                configuration,
+                workspace,
+                packIndex,
+                cancellationToken
+            );
+        }
+
+        return ManifestOperationResult<DiscoveredPack>.Success(pack);
+    }
+
+    private async Task<ManifestOperationResult<DiscoveredPack>> MaterializeOciPackAsync(
+        string projectDirectory,
+        DiscoveredPack pack,
+        OciSourceProvenance provenance,
+        ProjectConfiguration configuration,
+        string workspace,
+        int packIndex,
+        CancellationToken cancellationToken
+    )
+    {
+        if (_ociPackSource is null)
+        {
+            return ManifestOperationResult<DiscoveredPack>.Failure(
+                $"OCI source materialization is unavailable for pack '{pack.Manifest.Id}'."
+            );
+        }
+
+        var source = FindConfiguredOciSource(configuration, pack);
+        if (source is null)
+        {
+            return ManifestOperationResult<DiscoveredPack>.Failure(
+                $"OCI source for pack '{pack.Manifest.Id}' is not configured."
+            );
+        }
+
+        var identity = ValidateOciSourceIdentity(source, pack, provenance);
+        if (!identity.IsSuccess)
+        {
+            return ManifestOperationResult<DiscoveredPack>.Failure(
+                identity.Error ?? $"OCI source identity changed for pack '{pack.Manifest.Id}'."
+            );
+        }
+
+        var ociWorkspace = fileSystem.Path.Combine(
             workspace,
-            "git",
+            "oci",
             packIndex.ToString(System.Globalization.CultureInfo.InvariantCulture)
         );
-        return await MaterializePackAsync(
-            pack,
-            gitSource,
-            configuredSource,
-            gitWorkspace,
+        fileSystem.Directory.CreateDirectory(ociWorkspace);
+        var release = await _ociPackSource.FetchReleaseAsync(
+            projectDirectory,
+            source,
+            provenance.Repository,
+            pack.Manifest.Id,
+            provenance.Tag,
+            ociWorkspace,
+            provenance.ManifestDigest,
+            provenance.ContentDigest,
             cancellationToken
         );
+        if (release.Value is not { } materializedRelease)
+        {
+            return ManifestOperationResult<DiscoveredPack>.Failure(
+                release.Error
+                    ?? $"Unable to retrieve locked OCI pack '{pack.Manifest.Id}@{pack.Manifest.Version}'."
+            );
+        }
+
+        if (
+            !string.Equals(
+                materializedRelease.Manifest.Id,
+                pack.Manifest.Id,
+                StringComparison.Ordinal
+            )
+            || !string.Equals(
+                materializedRelease.Manifest.Version,
+                pack.Manifest.Version,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            return ManifestOperationResult<DiscoveredPack>.Failure(
+                $"OCI release metadata changed for pack '{pack.Manifest.Id}@{pack.Manifest.Version}'."
+            );
+        }
+
+        return ManifestOperationResult<DiscoveredPack>.Success(
+            pack with
+            {
+                SourcePath = ociWorkspace,
+                PackDirectory = materializedRelease.PackDirectory,
+                OciSource = materializedRelease.Provenance,
+            }
+        );
     }
+
+    private static ManifestOperationResult<bool> ValidateOciSourceIdentity(
+        ProjectConfiguration.OciSource source,
+        DiscoveredPack pack,
+        OciSourceProvenance provenance
+    )
+    {
+        var location = SourceIdentityNormalizer.NormalizeOciLocation(source.Url, source.Path);
+        var repository = OciRepositoryTagMapper.CreateRepository(source, pack.Manifest.Id);
+        var tag = OciRepositoryTagMapper.CreateTag(pack.Manifest.Version);
+        var matches =
+            location.IsSuccess
+            && repository.IsSuccess
+            && tag.IsSuccess
+            && string.Equals(location.Value.Url, provenance.RegistryUrl, StringComparison.Ordinal)
+            && string.Equals(repository.Value, provenance.Repository, StringComparison.Ordinal)
+            && string.Equals(tag.Value, provenance.Tag, StringComparison.Ordinal);
+        return matches
+            ? ManifestOperationResult<bool>.Success(true)
+            : ManifestOperationResult<bool>.Failure(
+                $"OCI source identity or version changed for pack '{pack.Manifest.Id}'."
+            );
+    }
+
+    private static ProjectConfiguration.OciSource? FindConfiguredOciSource(
+        ProjectConfiguration configuration,
+        DiscoveredPack pack
+    ) =>
+        configuration
+            .Sources.OfType<ProjectConfiguration.OciSource>()
+            .SingleOrDefault(source =>
+                ConfiguredSourceIdentity.Create(source) == pack.SourceIdentity
+            );
 
     private async Task<ManifestOperationResult<DiscoveredPack>> MaterializePackAsync(
         DiscoveredPack pack,
@@ -219,9 +370,14 @@ internal sealed class GitPackMaterializer(
 
     private ManifestOperationResult<GitPackMaterialization> Failure(string workspace, string error)
     {
-        _snapshotSecurity.PrepareForDelete(fileSystem, workspace);
-        GitTemporaryWorkspace.Delete(fileSystem, workspace);
+        PrepareForDelete(workspace);
 
         return ManifestOperationResult<GitPackMaterialization>.Failure(error);
+    }
+
+    private void PrepareForDelete(string workspace)
+    {
+        _snapshotSecurity.PrepareForDelete(fileSystem, workspace);
+        GitTemporaryWorkspace.Delete(fileSystem, workspace);
     }
 }

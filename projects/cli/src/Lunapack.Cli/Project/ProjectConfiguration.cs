@@ -1,3 +1,4 @@
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Trust;
 
 namespace Lunapack.Cli.Project;
@@ -7,6 +8,8 @@ internal sealed record ProjectConfiguration
     public Dictionary<string, Link> Links { get; set; } = [];
 
     public List<RequestedPack> Packs { get; set; } = [];
+
+    public CliPreferences? Preferences { get; set; }
 
     public Remapping? Remap { get; set; }
 
@@ -60,6 +63,17 @@ internal sealed record ProjectConfiguration
         public required string Path { get; set; }
 
         public string Type { get; set; } = "local";
+    }
+
+    internal sealed record OciSource : Source
+    {
+        public string? Path { get; set; }
+
+        public string Type { get; set; } = "oci";
+
+        public string? Username { get; set; }
+
+        public required string Url { get; set; }
     }
 
     internal sealed record Remapping

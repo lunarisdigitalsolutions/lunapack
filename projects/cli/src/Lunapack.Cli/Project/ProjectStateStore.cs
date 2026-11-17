@@ -497,8 +497,24 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
             {
                 Path = ProjectPath.Normalize(localSource.Path),
             },
+            ProjectConfiguration.OciSource ociSource => NormalizeOciSource(ociSource),
             _ => source,
         };
+
+    private static ProjectConfiguration.OciSource NormalizeOciSource(
+        ProjectConfiguration.OciSource source
+    )
+    {
+        var location = SourceIdentityNormalizer.NormalizeOciLocation(source.Url, source.Path);
+        return location.Value is { } normalized
+            ? source with
+            {
+                Url = normalized.Url,
+                Path = normalized.Path,
+                Username = source.Username?.Trim(),
+            }
+            : source;
+    }
 
     private static ProjectLockFile.ResolvedPack NormalizeResolvedPack(
         ProjectLockFile.ResolvedPack pack
@@ -520,9 +536,25 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
             SourcePath = ProjectPath.NormalizeOptional(pack.SourcePath),
         };
 
-    private static ConfiguredSourceIdentity NormalizeSourceIdentity(
-        ConfiguredSourceIdentity source
-    ) => source with { Path = ProjectPath.NormalizeOptional(source.Path) };
+    private static ConfiguredSourceIdentity NormalizeSourceIdentity(ConfiguredSourceIdentity source)
+    {
+        if (string.Equals(source.Type, SourceFingerprint.OciType, StringComparison.Ordinal))
+        {
+            var location = SourceIdentityNormalizer.NormalizeOciLocation(
+                source.Url ?? string.Empty,
+                source.Path
+            );
+            if (location.Value is { } normalized)
+            {
+                return source with { Url = normalized.Url, Path = normalized.Path, Ref = null };
+            }
+        }
+
+        return source with
+        {
+            Path = ProjectPath.NormalizeOptional(source.Path),
+        };
+    }
 
     private static GitSourceProvenance? NormalizeGitSource(GitSourceProvenance? gitSource) =>
         gitSource is null

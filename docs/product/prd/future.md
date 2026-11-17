@@ -16,8 +16,10 @@ synchronization, migration orchestration, and richer rollback guidance.
 
 ## Distribution
 
-Add registry providers, hosted catalog metadata, marketplace publishing, and
-enterprise administration after trust and lifecycle evidence are mature.
+Add hosted catalog metadata, publisher identity, cross-registry search,
+marketplace publishing, and enterprise administration after trust and lifecycle
+evidence are mature. OCI Distribution sources and pack publishing are available
+in the CLI; global catalog guarantees and registry-independent identity are not.
 
 ## AI Integration
 
