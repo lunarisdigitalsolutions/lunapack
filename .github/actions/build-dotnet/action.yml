@@ -58,7 +58,7 @@ runs:
   using: composite
   steps:
     - name: Set up .NET SDK
-      uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
       with:
         global-json-file: global.json
         cache: true
@@ -169,7 +169,7 @@ runs:
 
     - name: Generate test coverage report
       if: ${{ inputs.should-run-tests == 'true' && steps.tests.outcome == 'success' }}
-      uses: danielpalme/ReportGenerator-GitHub-Action@d3ebf1f760f7d8ab92cc44d9bcfee7ad73722a31 # 5.5.11
+      uses: danielpalme/ReportGenerator-GitHub-Action@5f3701a41d14548c9b8e575a5c235230e515cbc0 # 5.6.0
       with:
         reports: '${{ runner.temp }}/dotnet-test-results/**/*.cobertura.xml'
         targetdir: TestReports
@@ -235,7 +235,7 @@ runs:
 
     - name: Upload published artifact
       if: ${{ inputs.should-upload-build-artifact == 'true' && success() }}
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: ${{ inputs.artifact-name }}
         path: ${{ inputs.artifact-output-path }}
