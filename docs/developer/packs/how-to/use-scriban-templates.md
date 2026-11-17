@@ -38,10 +38,10 @@ parameters:
 Consumers pass values with repeatable `--parameter` or `-p` options:
 
 ```powershell
-luna install example-documentation-standard@1.0.0 \
-  -p companyName="Lunaris Digital Solutions" \
-  -p projectType=service \
-  -p features=api \
+luna install example-documentation-standard@1.0.0 `
+  -p companyName="Lunaris Digital Solutions" `
+  -p projectType=service `
+  -p features=api `
   -p features=docker
 ```
 

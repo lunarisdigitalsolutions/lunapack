@@ -372,11 +372,74 @@ public sealed class LinkProcessTests
             .And.Contains("file contents changed");
         await Assert.That(updated.ExitCode).IsEqualTo(0);
 
-        var sourceCacheDirectory = Directory
-            .GetParent(Directory.GetParent(cacheMetadata).RequireNotNull().FullName)
-            .RequireNotNull()
-            .FullName;
-        Directory.Delete(sourceCacheDirectory, recursive: true);
+        var sourceCacheDirectory = Directory.GetParent(
+            Directory.GetParent(cacheMetadata).RequireNotNull().FullName
+        );
+        Directory.Delete(sourceCacheDirectory.RequireNotNull().FullName, recursive: true);
+    }
+
+    [Test]
+    public async Task GitLink_WhenSecondLinkNeedsUncachedBlob_MaterializesIt()
+    {
+        using var workspace = new TestWorkspace();
+        using var repository = new GitTestRepository();
+        Directory.CreateDirectory(Path.Combine(repository.Path, "agents"));
+        Directory.CreateDirectory(Path.Combine(repository.Path, "prompts"));
+        File.WriteAllText(Path.Combine(repository.Path, "agents", "exact.md"), "exact content");
+        File.WriteAllText(
+            Path.Combine(repository.Path, "prompts", "wildcard.md"),
+            "wildcard content"
+        );
+        await InitializeGitRepositoryAsync(
+            repository.Path,
+            $"Initial link content {Path.GetFileName(repository.Path)}"
+        );
+        var commit = (await GitProcess.InvokeAsync(repository.Path, "rev-parse", "HEAD")).Trim();
+
+        try
+        {
+            var initialized = await CliProcess.InvokeAsync(workspace.Path, "init");
+            var source = await CliProcess.InvokeAsync(
+                workspace.Path,
+                "sources",
+                "add",
+                "git",
+                "git",
+                repository.Path,
+                "--ref",
+                "main"
+            );
+            var exactLink = await AddGitLinkAsync(
+                workspace.Path,
+                "exact-agent",
+                "agents/exact.md",
+                "main",
+                ".github/agents"
+            );
+            var wildcardLink = await AddGitLinkAsync(
+                workspace.Path,
+                "wildcard-prompt",
+                "prompts/*.md",
+                "main",
+                ".github/prompts"
+            );
+
+            await Assert.That(initialized.ExitCode).IsEqualTo(0);
+            await Assert.That(source.ExitCode).IsEqualTo(0);
+            await Assert.That(exactLink.ExitCode).IsEqualTo(0);
+            await Assert.That(wildcardLink.ExitCode).IsEqualTo(0);
+            await Assert
+                .That(
+                    File.ReadAllText(
+                        Path.Combine(workspace.Path, ".github", "prompts", "prompts", "wildcard.md")
+                    )
+                )
+                .IsEqualTo("wildcard content");
+        }
+        finally
+        {
+            DeleteCacheForCommit(commit);
+        }
     }
 
     [Test]
@@ -731,13 +794,14 @@ public sealed class LinkProcessTests
         );
     }
 
-    private static async Task<CliResult> AddGitLinkAsync(
+    private static Task<CliResult> AddGitLinkAsync(
         string projectDirectory,
         string name,
         string include,
-        string reference
+        string reference,
+        string target = ".github/agents"
     ) =>
-        await CliProcess.InvokeAsync(
+        CliProcess.InvokeAsync(
             projectDirectory,
             "links",
             "add",
@@ -748,6 +812,8 @@ public sealed class LinkProcessTests
             include,
             "--ref",
             reference,
+            "--target",
+            target,
             "--install"
         );
 
@@ -780,36 +846,66 @@ public sealed class LinkProcessTests
 
     private static string FindCacheMetadata(string commit)
     {
-        var cacheRoot =
-            OperatingSystem.IsWindows()
-                ? Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "LunaPack",
-                    "cache",
-                    "sources"
-                )
-            : OperatingSystem.IsMacOS()
-                ? Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                    "Library",
-                    "Caches",
-                    "LunaPack",
-                    "sources"
-                )
-            : Path.Combine(
-                Environment.GetEnvironmentVariable("XDG_CACHE_HOME")
-                    ?? Path.Combine(
-                        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                        ".cache"
-                    ),
-                "lunapack",
-                "sources"
-            );
-
         return Directory
-            .EnumerateFiles(cacheRoot, "metadata.json", SearchOption.AllDirectories)
-            .Single(path => path.Contains(commit, StringComparison.Ordinal));
+            .EnumerateFiles(GetGitLinkCacheRoot(), "metadata.json", SearchOption.AllDirectories)
+            .Single(path => string.Equals(GetCachedCommit(path), commit, StringComparison.Ordinal));
     }
+
+    private static void DeleteCacheForCommit(string commit)
+    {
+        var cacheRoot = GetGitLinkCacheRoot();
+        if (!Directory.Exists(cacheRoot))
+        {
+            return;
+        }
+
+        var metadataPath = Directory
+            .EnumerateFiles(cacheRoot, "metadata.json", SearchOption.AllDirectories)
+            .SingleOrDefault(path =>
+                string.Equals(GetCachedCommit(path), commit, StringComparison.Ordinal)
+            );
+        if (metadataPath is null)
+        {
+            return;
+        }
+
+        var sourceCacheDirectory = Directory.GetParent(
+            Directory.GetParent(metadataPath).RequireNotNull().FullName
+        );
+        if (sourceCacheDirectory is not null)
+        {
+            Directory.Delete(sourceCacheDirectory.FullName, recursive: true);
+        }
+    }
+
+    private static string? GetCachedCommit(string metadataPath) =>
+        Path.GetFileName(Path.GetDirectoryName(metadataPath));
+
+    private static string GetGitLinkCacheRoot() =>
+        OperatingSystem.IsWindows()
+            ? Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "LunaPack",
+                "cache",
+                "sources"
+            )
+        : OperatingSystem.IsMacOS()
+            ? Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                "Library",
+                "Caches",
+                "LunaPack",
+                "sources"
+            )
+        : Path.Combine(
+            Environment.GetEnvironmentVariable("XDG_CACHE_HOME")
+                ?? Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                    ".cache"
+                ),
+            "lunapack",
+            "sources"
+        );
 
     private static async Task InitializeGitRepositoryAsync(string repositoryPath, string message)
     {

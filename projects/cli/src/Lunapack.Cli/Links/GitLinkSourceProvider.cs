@@ -143,7 +143,13 @@ internal sealed class GitLinkSourceProvider(
     )
     {
         var repository = CreateRepositoryDirectory();
-        var fetched = await FetchAsync(repository, source, provenance, cancellationToken);
+        var fetched = await FetchAsync(
+            repository,
+            source.Url,
+            provenance.ResolvedCommit,
+            CreateTimeout(source),
+            cancellationToken
+        );
         if (!fetched.IsSuccess)
         {
             GitTemporaryWorkspace.Delete(fileSystem, repository);
@@ -195,16 +201,16 @@ internal sealed class GitLinkSourceProvider(
 
     private async Task<ManifestOperationResult<bool>> FetchAsync(
         string repository,
-        ProjectConfiguration.GitSource source,
-        GitSourceProvenance provenance,
+        string sourceUrl,
+        string resolvedCommit,
+        TimeSpan timeout,
         CancellationToken cancellationToken
     )
     {
-        var timeout = CreateTimeout(source);
         var commands = new[]
         {
             new[] { "init", "--quiet", repository },
-            ["-C", repository, "remote", "add", "origin", source.Url],
+            ["-C", repository, "remote", "add", "origin", sourceUrl],
             [
                 "-C",
                 repository,
@@ -212,7 +218,7 @@ internal sealed class GitLinkSourceProvider(
                 "--depth=1",
                 "--filter=blob:none",
                 "origin",
-                provenance.ResolvedCommit,
+                resolvedCommit,
             ],
         };
         foreach (var arguments in commands)
@@ -237,23 +243,72 @@ internal sealed class GitLinkSourceProvider(
         CancellationToken cancellationToken
     )
     {
-        if (listing.RootDirectory.Length == 0)
+        var repository = listing.RootDirectory;
+        var createdRepository = repository.Length == 0;
+        var materializationListing = listing;
+        if (createdRepository)
         {
-            return ManifestOperationResult<bool>.Failure(
-                "Cached Git link content is incomplete and the source repository is unavailable."
-            );
+            repository = CreateRepositoryDirectory();
+            materializationListing = listing with { RootDirectory = repository };
         }
 
-        var basePath = gitSource.Path;
-        var repositoryPaths = missingPaths.Select(path =>
+        try
+        {
+            if (createdRepository)
+            {
+                var fetched = await FetchAsync(
+                    repository,
+                    gitSource.Url,
+                    gitSource.ResolvedCommit,
+                    TimeSpan.FromSeconds(DefaultTimeoutSeconds),
+                    cancellationToken
+                );
+                if (!fetched.IsSuccess)
+                {
+                    return ManifestOperationResult<bool>.Failure(
+                        fetched.Error ?? "Unable to fetch the Git link source."
+                    );
+                }
+            }
+
+            var checkout = await CheckoutPathsAsync(
+                repository,
+                gitSource.Path,
+                missingPaths,
+                cancellationToken
+            );
+            if (!checkout.IsSuccess)
+            {
+                return checkout;
+            }
+
+            return ReadCheckedOutFiles(materializationListing, gitSource, missingPaths, contents);
+        }
+        finally
+        {
+            if (createdRepository)
+            {
+                GitTemporaryWorkspace.Delete(fileSystem, repository);
+            }
+        }
+    }
+
+    private async Task<ManifestOperationResult<bool>> CheckoutPathsAsync(
+        string repository,
+        string? basePath,
+        IReadOnlyList<string> selectedPaths,
+        CancellationToken cancellationToken
+    )
+    {
+        var repositoryPaths = selectedPaths.Select(path =>
             string.IsNullOrEmpty(basePath) ? path : $"{basePath}/{path}"
         );
         var commands = new[]
         {
-            new[] { "-C", listing.RootDirectory, "sparse-checkout", "init", "--no-cone" },
+            new[] { "-C", repository, "sparse-checkout", "init", "--no-cone" },
             [
                 "-C",
-                listing.RootDirectory,
+                repository,
                 "sparse-checkout",
                 "set",
                 "--no-cone",
@@ -268,7 +323,7 @@ internal sealed class GitLinkSourceProvider(
                 "-c",
                 "core.symlinks=false",
                 "-C",
-                listing.RootDirectory,
+                repository,
                 "checkout",
                 "--quiet",
                 "--detach",
@@ -290,7 +345,7 @@ internal sealed class GitLinkSourceProvider(
             }
         }
 
-        return ReadCheckedOutFiles(listing, gitSource, missingPaths, contents);
+        return ManifestOperationResult<bool>.Success(true);
     }
 
     private ManifestOperationResult<bool> ReadCheckedOutFiles(
