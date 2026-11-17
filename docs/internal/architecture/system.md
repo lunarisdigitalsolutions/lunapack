@@ -11,7 +11,8 @@ evidence of selected packs, source provenance, dependency edges, effective
 targets, rendered-content digests, and resolved link selections.
 
 The CLI source groups behavior by project initialization, sources, local pack
-authoring, catalog, pack lifecycle, audit, and schema-backed persistence.
+authoring, catalog, pack lifecycle and publishing, audit, and schema-backed
+persistence.
 Project and pack initialization serialize dedicated required-property
 projections, validate them, and create files atomically. Normal stores then load
 the minimal documents and retain their established full-model write behavior.
@@ -26,6 +27,8 @@ tests invoke the built CLI in temporary projects with a real filesystem.
 
 The source boundary is consumer-owned. Pack manifests select exact pack IDs and
 versions, never sources. Project link definitions select regular files from a
-configured local or Git source. Pack graphs and resolved links become explicit
-managed roots before shared ownership, planning, audit, and transaction logic.
-Local and Git resolution retain source provenance in lock state.
+configured local or Git source. Pack graphs can resolve local, Git, and OCI
+releases; the OCI adapter and publisher share one validated artifact contract.
+Pack graphs and resolved links become explicit managed roots before shared
+ownership, planning, audit, and transaction logic. Lock state retains the
+selected source provenance and, for OCI, manifest and content digests.

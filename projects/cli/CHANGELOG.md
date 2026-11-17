@@ -7,6 +7,28 @@ pack-package, documentation, CI, build, test, and release-process changes.
 
 Update this section before creating a release tag.
 
+### OCI Registry Sources And Publishing
+
+- `luna sources add oci` registers normalized HTTPS OCI registry sources without
+  contacting the registry. `luna sources ignore` and `unignore` manage
+  per-project, per-user source state; source listings show local ignore status.
+  Ignore updates leave `config.yml` unchanged for compatibility with older CLI
+  readers.
+- `luna init` now adds `/.lunapack/` to the project-root `.gitignore` while
+  preserving existing content.
+- OCI registry releases now participate in discovery, direct resolution,
+  validation, inspection, installation, and updates. Lock files retain the
+  registry, repository, version tag, and verified manifest/content digests.
+- `luna publish <folder> --target <source>` publishes a validated pack as an
+  OCI artifact, rejects existing version tags, and reports the verified
+  manifest digest without running pack hooks or changing project state.
+- Registry authentication now supports anonymous access, source-bound
+  operating-system credential storage, interactive challenge prompts, and
+  optional Azure `DefaultAzureCredential` for ACR. Luna does not provide
+  registry credentials through LunaPack-specific environment variables.
+  Unavailable sources produce partial-result diagnostics instead of
+  success-shaped empty catalogs.
+
 ### Composite Packs
 
 - Composite references can define file and directory remaps for their active

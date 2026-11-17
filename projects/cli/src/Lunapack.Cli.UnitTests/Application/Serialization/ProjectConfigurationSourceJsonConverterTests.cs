@@ -69,4 +69,29 @@ public sealed class ProjectConfigurationSourceJsonConverterTests
         await Assert.That(root.TryGetProperty("path", out _)).IsFalse();
         await Assert.That(root.TryGetProperty("timeoutSeconds", out _)).IsFalse();
     }
+
+    [Test]
+    public async Task Serialize_WhenSourceIsOci_WritesConfiguredOptionalProperties()
+    {
+        ProjectConfiguration.Source source = new ProjectConfiguration.OciSource
+        {
+            Name = "private",
+            Url = "https://registry.example.test",
+            Path = "packs",
+            Username = "publisher",
+        };
+
+        using var document = JsonDocument.Parse(
+            JsonSerializer.Serialize(source, LunapackJsonSerializerOptions.Default)
+        );
+        var root = document.RootElement;
+
+        await Assert.That(root.GetProperty("type").GetString()).IsEqualTo("oci");
+        await Assert
+            .That(root.GetProperty("url").GetString())
+            .IsEqualTo("https://registry.example.test");
+        await Assert.That(root.GetProperty("path").GetString()).IsEqualTo("packs");
+        await Assert.That(root.GetProperty("username").GetString()).IsEqualTo("publisher");
+        await Assert.That(root.EnumerateObject().Count()).IsEqualTo(4);
+    }
 }

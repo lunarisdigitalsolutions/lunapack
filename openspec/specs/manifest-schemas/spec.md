@@ -8,7 +8,7 @@ Define machine-readable contracts for LunaPack project configuration, lock state
 
 ### Requirement: Publish project-manifest schema
 
-The repository SHALL publish a JSON Schema under `projects/schema/` for `lunapack.yml`. The schema SHALL require schema version `1`, define local and Git source entries, and define requested root pack references. A Git source SHALL require a repository URL and SHALL allow optional `ref`, optional repository-relative `path`, and optional `timeoutSeconds` from 1 through 300. Requested root pack references SHALL include an ID and MAY include an explicit Semantic Version request or managed-file target remapping. The schema SHALL reject absolute local source paths, unsafe Git source paths, unsupported source types, resolved source provenance, managed file ownership, digests, and unknown required-state omissions. Existing valid local-source configuration SHALL remain valid.
+The repository SHALL publish a JSON Schema under `projects/schema/` for `lunapack.yml`. The schema SHALL require schema version `1`, define local, Git, and OCI source entries, and define requested root pack references. A Git source SHALL require a repository URL and SHALL allow optional `ref`, optional repository-relative `path`, and optional `timeoutSeconds` from 1 through 300. Requested root pack references SHALL include an ID and MAY include an explicit Semantic Version request or managed-file target remapping. The schema SHALL reject absolute local source paths, unsafe Git source paths, unsupported source types, resolved source provenance, managed file ownership, digests, and unknown required-state omissions. Existing valid local-source configuration SHALL remain valid.
 
 #### Scenario: Validate an initialized manifest
 
@@ -27,7 +27,7 @@ The repository SHALL publish a JSON Schema under `projects/schema/` for `lunapac
 
 #### Scenario: Reject an unsupported source type
 
-- **WHEN** the schema validates a manifest containing a non-local source type
+- **WHEN** the schema validates a manifest containing a source type other than local, Git, or OCI
 - **THEN** validation fails
 
 #### Scenario: Reject an unsafe Git source path
@@ -574,12 +574,17 @@ Each composite pack reference in `pack.yml` SHALL allow an optional `disabledHoo
 
 ### Requirement: Represent named sources and project script trust in version-1 configuration
 
-The `lunapack.yml` schema SHALL require every local, Git, and GitHub-derived source entry to contain a non-empty `name`. Source names SHALL be unique within one project configuration. The schema SHALL allow a project-scoped `trust` mapping containing optional unique source-name entries, optional unique pack entries, and an optional `deny` mapping whose optional `scripts` boolean defaults to `false`. Each pack entry SHALL require a configured source name and bare pack ID without a version selector. Omitted trust, denial, source-trust, and pack-trust properties SHALL represent empty grants with scripts not denied. Existing schema version `1` SHALL be retained.
+The `lunapack.yml` schema SHALL require every local, Git, GitHub-derived, and OCI source entry to contain a non-empty `name`. Source names SHALL be unique within one project configuration. The schema SHALL allow a project-scoped `trust` mapping containing optional unique source-name entries, optional unique pack entries, and an optional `deny` mapping whose optional `scripts` boolean defaults to `false`. Each pack entry SHALL require a configured source name and bare pack ID without a version selector. Omitted trust, denial, source-trust, and pack-trust properties SHALL represent empty grants with scripts not denied. Existing schema version `1` SHALL be retained.
 
 #### Scenario: Validate named sources and trust
 
 - **WHEN** a version-1 project configuration contains uniquely named sources, distinct trusted source names, and distinct source-plus-pack-ID entries
 - **THEN** the project configuration is valid
+
+#### Scenario: Validate a named OCI source
+
+- **WHEN** a version-1 project configuration contains a named OCI source
+- **THEN** the source name participates in normal uniqueness and trust validation
 
 #### Scenario: Validate project script denial alone
 
@@ -653,3 +658,110 @@ The existing `lunapack-lock.yml` schema version SHALL require every resolved roo
 
 - **WHEN** installation resolves a pack from a named Git source
 - **THEN** its lock record contains the source name, normalized URL, ref and repository path when present, plus the resolved commit
+
+### Requirement: Define nonsecret OCI project sources
+
+The project schema SHALL accept OCI sources with required `url`, optional
+`path`, and optional nonsecret `username`, using existing source-map names.
+Current-schema validation SHALL reject credentials, secrets, resolved digests,
+ignore state, OCI Git refs, and unknown properties.
+
+#### Scenario: Validate two source paths on one registry
+
+- **WHEN** `lunapack.yml` configures `company` and `customer` as OCI sources with
+  the same URL and different paths
+- **THEN** schema/runtime validation accepts the independent source identities
+
+#### Scenario: Reject credential-bearing configuration
+
+- **WHEN** an OCI declaration contains `password`, `token`, `accessToken`,
+  `refreshToken`, or credentials embedded in its URL
+- **THEN** Luna rejects it without echoing the secret in validation output
+
+### Requirement: Constrain OCI registry identity in published schemas
+
+Published project, lock, and user-settings schemas SHALL allow only HTTPS
+registry URLs without credentials, queries, or fragments. Project URLs MAY
+include a safe repository prefix, while source identities and lock registry
+fields SHALL contain only the origin. OCI paths and repository provenance
+SHALL use lowercase valid components no longer than 255 characters.
+
+#### Scenario: Reject insecure registry URLs
+
+- **WHEN** a project, lock, or user-settings document uses an HTTP registry URL
+  or includes URL credentials, a query, or a fragment
+- **THEN** published schema validation rejects the document
+
+### Requirement: Preserve compatible OCI schema reads
+
+Persisted YAML compatibility reads SHALL ignore unknown properties, including
+nested values handled by custom converters, as required by
+[ADR-0074](../../../docs/internal/architecture/adr/0074-evolve-yaml-schemas-compatibly.md).
+Recognized properties SHALL remain subject to runtime validation, and tolerant
+reads SHALL NOT relax current-schema validation. Existing local/Git
+configurations SHALL remain valid without migration.
+
+#### Scenario: Ignore unknown nested properties on compatibility reads
+
+- **WHEN** persisted YAML includes an unknown nested property handled by a
+  custom converter
+- **THEN** compatibility reads ignore it while recognized OCI properties
+  remain subject to runtime validation
+
+### Requirement: Extend immutable source identity with OCI
+
+Configured-source identity schemas SHALL include OCI endpoint/path identity
+for trust, lock matching, and user-local state. Immutable source identity SHALL
+exclude username, credentials, resolved version, and digest. Runtime validation,
+serialization, public schemas, and distributed schema references SHALL agree.
+
+#### Scenario: Keep release resolution separate from source identity
+
+- **WHEN** a source publishes a new version or changes its optional username
+- **THEN** its configured identity remains the same while lock resolution records
+  retain exact release evidence
+
+### Requirement: Define exact OCI lock provenance
+
+The lock schema SHALL support OCI pack provenance with source name/type,
+normalized endpoint/path, repository, exact manifest version, resolved OCI
+manifest digest, and content digest. Secrets and ignore state SHALL be invalid
+lock properties. Existing local/Git lock records SHALL remain readable unchanged.
+
+#### Scenario: Validate an OCI dependency lock
+
+- **WHEN** installation resolves an OCI root and transitive OCI pack
+- **THEN** each record has exact source and digest provenance without credential data
+
+#### Scenario: Preserve a legacy lock
+
+- **WHEN** a valid local/Git lock has no OCI fields
+- **THEN** Luna accepts it without synthesizing unrelated OCI provenance
+
+### Requirement: Separate OCI trust identity and source-ignore state
+
+The user-settings schema SHALL add OCI identity support to
+trust/acknowledgement entries. Source-ignore identities SHALL be stored in a
+per-project `~/.lunapack/source-ignores.yml` sidecar keyed by canonical project,
+not in `config.yml` or the published user-settings schema. An absent sidecar or
+project entry SHALL mean no sources are ignored. Existing `config.yml` files
+SHALL remain readable by older strict CLI readers. Shared project and lock
+schemas SHALL not admit this user preference.
+
+#### Scenario: Preserve user trust when ignoring
+
+- **WHEN** Luna saves an ignored source for one project
+- **THEN** it writes the ignore identity only to the sidecar, leaves
+  `config.yml` unchanged, and preserves existing project/global trust,
+  acknowledgements, and denial settings
+
+#### Scenario: Reject portable ignore state
+
+- **WHEN** `lunapack.yml` or `lunapack-lock.yml` contains ignored-source settings
+- **THEN** schema validation rejects them as user-local state
+
+#### Scenario: Preserve strict legacy settings readers
+
+- **WHEN** a newer CLI records an ignored source for a project
+- **THEN** the existing `config.yml` remains readable by an older strict CLI,
+  while the ignore identity is read from the separate sidecar

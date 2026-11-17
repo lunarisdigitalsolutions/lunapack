@@ -6,7 +6,10 @@ namespace Lunapack.Cli.Sources;
 
 internal static class SourceOutputFormatter
 {
-    public static Table CreateListTable(IReadOnlyList<ProjectConfiguration.Source> sources)
+    public static Table CreateListTable(
+        IReadOnlyList<ProjectConfiguration.Source> sources,
+        IReadOnlySet<string>? ignoredSourceNames = null
+    )
     {
         ArgumentNullException.ThrowIfNull(sources);
 
@@ -19,8 +22,8 @@ internal static class SourceOutputFormatter
         {
             table.AddRow(
                 Markup.Escape(source.Name),
-                source is ProjectConfiguration.LocalSource ? "local" : "git",
-                FormatDetails(source)
+                GetSourceType(source),
+                FormatDetails(source, ignoredSourceNames?.Contains(source.Name) ?? false)
             );
         }
 
@@ -33,15 +36,29 @@ internal static class SourceOutputFormatter
             ProjectConfiguration.LocalSource localSource =>
                 $"{localSource.Name} - local - path: {localSource.Path} - identity: {FormatIdentity(ConfiguredSourceIdentity.Create(localSource))}",
             ProjectConfiguration.GitSource gitSource => FormatGit(gitSource),
+            ProjectConfiguration.OciSource ociSource => FormatOci(ociSource),
             _ => throw new ArgumentOutOfRangeException(nameof(source)),
         };
 
-    private static string FormatDetails(ProjectConfiguration.Source source) =>
-        source switch
+    private static string FormatDetails(ProjectConfiguration.Source source, bool isIgnored)
+    {
+        var details = source switch
         {
             ProjectConfiguration.LocalSource localSource =>
                 $"[bold]Path:[/] {Markup.Escape(localSource.Path)}\n[bold]Identity:[/] {Markup.Escape(FormatIdentity(ConfiguredSourceIdentity.Create(localSource)))}",
             ProjectConfiguration.GitSource gitSource => FormatGitDetails(gitSource),
+            ProjectConfiguration.OciSource ociSource => FormatOciDetails(ociSource),
+            _ => throw new ArgumentOutOfRangeException(nameof(source)),
+        };
+        return isIgnored ? $"{details}\n[bold]Status:[/] ignored locally" : details;
+    }
+
+    private static string GetSourceType(ProjectConfiguration.Source source) =>
+        source switch
+        {
+            ProjectConfiguration.LocalSource => "local",
+            ProjectConfiguration.GitSource => "git",
+            ProjectConfiguration.OciSource => "oci",
             _ => throw new ArgumentOutOfRangeException(nameof(source)),
         };
 
@@ -95,12 +112,39 @@ internal static class SourceOutputFormatter
         return $"{source.Name} - git - {string.Join(" - ", properties)}";
     }
 
+    private static string FormatOciDetails(ProjectConfiguration.OciSource source)
+    {
+        var details = new List<string> { $"[bold]URL:[/] {Markup.Escape(source.Url)}" };
+        if (source.Path is not null)
+        {
+            details.Add($"[bold]Path:[/] {Markup.Escape(source.Path)}");
+        }
+
+        details.Add(
+            $"[bold]Identity:[/] {Markup.Escape(FormatIdentity(ConfiguredSourceIdentity.Create(source)))}"
+        );
+        return string.Join('\n', details);
+    }
+
+    private static string FormatOci(ProjectConfiguration.OciSource source)
+    {
+        var properties = new List<string> { $"url: {source.Url}" };
+        if (source.Path is not null)
+        {
+            properties.Add($"path: {source.Path}");
+        }
+
+        properties.Add($"identity: {FormatIdentity(ConfiguredSourceIdentity.Create(source))}");
+        return $"{source.Name} - oci - {string.Join(" - ", properties)}";
+    }
+
     internal static string FormatIdentity(ConfiguredSourceIdentity identity) =>
         identity.Type switch
         {
             "local" => $"local(path={identity.Path})",
             "git" =>
                 $"git(url={identity.Url}, ref={identity.Ref ?? "<default>"}, path={identity.Path ?? "<root>"})",
+            "oci" => $"oci(url={identity.Url}, path={identity.Path ?? "<root>"})",
             _ => throw new ArgumentOutOfRangeException(nameof(identity)),
         };
 }

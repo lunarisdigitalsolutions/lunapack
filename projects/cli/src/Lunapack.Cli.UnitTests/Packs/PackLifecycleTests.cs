@@ -2360,7 +2360,8 @@ public sealed class PackLifecycleTests
 
     private static async Task ConfigureSourceAsync(TestWorkspace workspace, string sourcePath)
     {
-        await workspace.Application.RunAsync(["init"], workspace.Path);
+        var initialized = await workspace.StateStore.InitializeAsync(workspace.Path);
+        await Assert.That(initialized.IsSuccess).IsTrue();
         await workspace.Application.RunAsync(
             ["sources", "add", "local", "local", sourcePath],
             workspace.Path

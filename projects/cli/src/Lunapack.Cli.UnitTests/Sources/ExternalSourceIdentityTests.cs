@@ -232,4 +232,128 @@ public sealed class ExternalSourceIdentityTests
             .That(issues.Any(issue => issue.Contains("ssh", StringComparison.Ordinal)))
             .IsTrue();
     }
+
+    [Test]
+    public async Task OciNormalizer_WhenUrlAndPathAreEquivalent_ProducesCanonicalFingerprint()
+    {
+        var fingerprint = SourceIdentityNormalizer.CreateOci(
+            "HTTPS://Example.TEST:443/team//platform/./packs/",
+            null
+        );
+
+        await Assert.That(fingerprint.IsSuccess).IsTrue();
+        await Assert.That(fingerprint.Value?.Identity).IsEqualTo("https://example.test");
+        await Assert.That(fingerprint.Value?.Path).IsEqualTo("team/platform/packs");
+        await Assert
+            .That(fingerprint.Value?.Value)
+            .IsEqualTo("oci:https://example.test#team/platform/packs");
+    }
+
+    [Test]
+    public async Task OciNormalizer_WhenPortIsNonDefault_PreservesPort()
+    {
+        var fingerprint = SourceIdentityNormalizer.CreateOci(
+            "https://Example.TEST:5443",
+            path: @"packs\private"
+        );
+
+        await Assert.That(fingerprint.IsSuccess).IsTrue();
+        await Assert.That(fingerprint.Value?.Identity).IsEqualTo("https://example.test:5443");
+        await Assert.That(fingerprint.Value?.Path).IsEqualTo("packs/private");
+    }
+
+    [Test]
+    public async Task OciNormalizer_WhenEmbeddedAndExplicitPathsMatch_AcceptsCanonicalPath()
+    {
+        var location = SourceIdentityNormalizer.NormalizeOciLocation(
+            "https://example.test/packs//private/",
+            "packs/./private"
+        );
+
+        await Assert.That(location.IsSuccess).IsTrue();
+        await Assert.That(location.Value.Url).IsEqualTo("https://example.test");
+        await Assert.That(location.Value.Path).IsEqualTo("packs/private");
+    }
+
+    [Test]
+    public async Task OciNormalizer_WhenEmbeddedAndExplicitPathsConflict_RejectsWithoutEchoingInput()
+    {
+        var location = SourceIdentityNormalizer.NormalizeOciLocation(
+            "https://example.test/private",
+            "public"
+        );
+
+        await Assert.That(location.IsSuccess).IsFalse();
+        await Assert.That(location.Error).DoesNotContain("private");
+        await Assert.That(location.Error).DoesNotContain("public");
+    }
+
+    [Test]
+    [Arguments("../escape")]
+    [Arguments("packs/../../escape")]
+    [Arguments("/rooted")]
+    [Arguments(@"C:\drive")]
+    [Arguments("Uppercase/path")]
+    [Arguments("invalid+component")]
+    public async Task OciNormalizer_WhenPathIsUnsafeOrInvalid_Rejects(string path)
+    {
+        var location = SourceIdentityNormalizer.NormalizeOciLocation("https://example.test", path);
+
+        await Assert.That(location.IsSuccess).IsFalse();
+    }
+
+    [Test]
+    [Arguments("http://example.test")]
+    [Arguments("https://user:sentinel-secret@example.test")]
+    [Arguments("https://example.test?token=sentinel-secret")]
+    [Arguments("https://example.test/#sentinel-secret")]
+    [Arguments("https://example.test/../private")]
+    public async Task OciNormalizer_WhenUrlIsUnsafe_RejectsWithoutEchoingInput(string url)
+    {
+        var location = SourceIdentityNormalizer.NormalizeOciLocation(url, path: null);
+
+        await Assert.That(location.IsSuccess).IsFalse();
+        await Assert.That(location.Error).DoesNotContain("sentinel-secret");
+    }
+
+    [Test]
+    public async Task OciIdentity_WhenHostAndPathCanonicalizeToSameLocation_SharesFingerprint()
+    {
+        var first = SourceIdentityNormalizer.CreateOci(
+            "https://EXAMPLE.test:443/packs",
+            path: null
+        );
+        var second = SourceIdentityNormalizer.CreateOci("https://example.test", path: "packs");
+
+        await Assert.That(first.Value?.Value).IsEqualTo(second.Value?.Value);
+    }
+
+    [Test]
+    public async Task Configuration_WhenOciSourcesShareFingerprint_IsRejected()
+    {
+        var configuration = new ProjectConfiguration
+        {
+            SchemaVersion = 1,
+            Sources =
+            [
+                new ProjectConfiguration.OciSource
+                {
+                    Name = "first",
+                    Url = "https://EXAMPLE.test:443/packs",
+                },
+                new ProjectConfiguration.OciSource
+                {
+                    Name = "second",
+                    Url = "https://example.test",
+                    Path = "packs",
+                },
+            ],
+        };
+
+        var issues = ManifestModelValidator.Validate(configuration);
+
+        await Assert
+            .That(issues.Any(issue => issue.Contains("duplicates", StringComparison.Ordinal)))
+            .IsTrue();
+    }
 }

@@ -372,7 +372,7 @@ public sealed class GitSourceTransportTests
             new NoOpOperationSnapshotSecurity()
         );
 
-        var result = await materializer.MaterializeAsync(graph, configuration);
+        var result = await materializer.MaterializeAsync(@"C:\project", graph, configuration);
         await using var materialization = result.RequireValue();
 
         await Assert.That(result.IsSuccess).IsTrue();

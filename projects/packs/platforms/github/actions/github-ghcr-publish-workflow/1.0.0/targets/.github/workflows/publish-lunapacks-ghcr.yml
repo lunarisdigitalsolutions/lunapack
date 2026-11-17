@@ -1,0 +1,65 @@
+name: Publish LunaPacks to GHCR
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - packs/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-ghcr-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on:
+      - self-hosted
+      - linux
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.18.0'
+
+      - name: Install Luna
+        shell: bash
+        env:
+          LUNA_VERSION: ${{ vars.LUNA_VERSION }}
+        run: |
+          set -euo pipefail
+          : "${LUNA_VERSION:?Set the repository variable LUNA_VERSION}"
+          npm install --global "@lunarisdigitalsolutions/lunapack@$LUNA_VERSION"
+          luna --help
+
+      - name: Find changed packs
+        id: changed_packs
+        uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
+        with:
+          files: |
+            packs/**
+          json: true
+          output_renamed_files_as_deleted_and_added: true
+          fail_on_initial_diff_error: true
+
+      - name: Publish changed packs
+        shell: pwsh
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          CHANGED_FILES_JSON: ${{ steps.changed_packs.outputs.all_changed_files }}
+        run: |
+          $publishAllPacks = $env:BEFORE_SHA -match '^0{40}$'
+          & ./.github/scripts/publish-changed-packs.ps1 `
+            -ChangedFilesJson $env:CHANGED_FILES_JSON `
+            -Target ghcr `
+            -IncludeAllPacks:$publishAllPacks

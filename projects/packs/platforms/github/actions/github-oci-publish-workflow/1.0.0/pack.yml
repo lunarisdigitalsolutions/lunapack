@@ -1,0 +1,15 @@
+id: github-oci-publish-workflow
+version: 1.0.0
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Publish changed LunaPack directories to generic OCI registries with GitHub Actions.
+tags:
+  - github-actions
+  - oci
+  - publishing
+packs:
+  - id: github-publish-changed-packs
+    version: 1.0.0
+managedFiles:
+  - source: targets/.github/workflows/publish-lunapacks-oci.yml
+    target: .github/workflows/publish-lunapacks-oci.yml

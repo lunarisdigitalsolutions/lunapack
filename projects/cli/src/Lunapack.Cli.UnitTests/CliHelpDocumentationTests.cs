@@ -17,6 +17,7 @@ public sealed class CliHelpDocumentationTests
         new("remap rm", "<directory|file> <target>"),
         new("sources add local", "<name> <path>"),
         new("sources add git", "<name> <repository-url>", ["--ref", "-r", "--path", "-p"]),
+        new("sources add oci", "<name> <registry-url>", ["--path", "-p", "--username"]),
         new(
             "sources add github",
             "<name> <organization/repository>",

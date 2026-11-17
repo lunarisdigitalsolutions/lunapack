@@ -52,6 +52,27 @@ internal static partial class SourceIdentityNormalizer
         );
     }
 
+    public static ManifestOperationResult<SourceFingerprint> CreateOci(string url, string? path)
+    {
+        var location = NormalizeOciLocation(url, path);
+        if (!location.IsSuccess)
+        {
+            return ManifestOperationResult<SourceFingerprint>.Failure(
+                location.Error ?? "OCI source location is invalid."
+            );
+        }
+
+        var normalized = location.Value;
+        return ManifestOperationResult<SourceFingerprint>.Success(
+            new SourceFingerprint
+            {
+                Type = SourceFingerprint.OciType,
+                Identity = normalized.Url,
+                Path = normalized.Path,
+            }
+        );
+    }
+
     public static SourceFingerprint CreateLocal(string canonicalPath) =>
         new()
         {
@@ -62,11 +83,21 @@ internal static partial class SourceIdentityNormalizer
     public static ManifestOperationResult<SourceFingerprint> Create(
         ConfiguredSourceIdentity identity
     ) =>
-        string.Equals(identity.Type, SourceFingerprint.LocalType, StringComparison.Ordinal)
-            ? ManifestOperationResult<SourceFingerprint>.Success(
+        identity.Type switch
+        {
+            SourceFingerprint.LocalType => ManifestOperationResult<SourceFingerprint>.Success(
                 CreateLocal(identity.Path ?? string.Empty)
-            )
-            : CreateGit(identity.Url ?? string.Empty, identity.Ref, identity.Path);
+            ),
+            SourceFingerprint.GitType => CreateGit(
+                identity.Url ?? string.Empty,
+                identity.Ref,
+                identity.Path
+            ),
+            SourceFingerprint.OciType => CreateOci(identity.Url ?? string.Empty, identity.Path),
+            _ => ManifestOperationResult<SourceFingerprint>.Failure(
+                "Unsupported configured source type."
+            ),
+        };
 
     public static ManifestOperationResult<SourceFingerprint> Create(
         ProjectConfiguration.Source source
@@ -80,10 +111,248 @@ internal static partial class SourceIdentityNormalizer
                 gitSource.Ref,
                 gitSource.Path
             ),
+            ProjectConfiguration.OciSource ociSource => CreateOci(ociSource.Url, ociSource.Path),
             _ => ManifestOperationResult<SourceFingerprint>.Failure(
                 "Unsupported configured source type."
             ),
         };
+
+    public static ManifestOperationResult<(string Url, string? Path)> NormalizeOciLocation(
+        string url,
+        string? path
+    )
+    {
+        var parsedUrl = ParseOciRegistryUrl(url);
+        if (!parsedUrl.IsSuccess)
+        {
+            return ManifestOperationResult<(string Url, string? Path)>.Failure(
+                parsedUrl.Error ?? "OCI registry URL is invalid."
+            );
+        }
+
+        if (parsedUrl.Value is not { } registryUrl)
+        {
+            return ManifestOperationResult<(string Url, string? Path)>.Failure(
+                "OCI registry URL is invalid."
+            );
+        }
+
+        var repositoryPath = NormalizeOciLocationPath(registryUrl.RawPath, path);
+        if (!repositoryPath.IsSuccess)
+        {
+            return ManifestOperationResult<(string Url, string? Path)>.Failure(
+                repositoryPath.Error ?? "OCI repository path is invalid."
+            );
+        }
+
+        return ManifestOperationResult<(string Url, string? Path)>.Success(
+            (NormalizeOciOrigin(registryUrl.Uri), repositoryPath.Value)
+        );
+    }
+
+    public static ManifestOperationResult<string> ValidateOciRepositoryComponent(
+        string component
+    ) =>
+        OciRepositoryComponentPattern().IsMatch(component)
+            ? ManifestOperationResult<string>.Success(component)
+            : ManifestOperationResult<string>.Failure(
+                "OCI repository components must be lowercase and use valid OCI characters."
+            );
+
+    private static ManifestOperationResult<OciRegistryUrl> ParseOciRegistryUrl(string url)
+    {
+        var trimmedUrl = url?.Trim() ?? string.Empty;
+        if (trimmedUrl.Length == 0)
+        {
+            return ManifestOperationResult<OciRegistryUrl>.Failure("OCI registry URL is required.");
+        }
+
+        if (
+            trimmedUrl.Contains('\\')
+            || !Uri.TryCreate(trimmedUrl, UriKind.Absolute, out var uri)
+            || string.IsNullOrEmpty(uri.Host)
+            || uri.HostNameType
+                is not (UriHostNameType.Dns or UriHostNameType.IPv4 or UriHostNameType.IPv6)
+        )
+        {
+            return ManifestOperationResult<OciRegistryUrl>.Failure(
+                "OCI registry URL must be an absolute HTTPS URL."
+            );
+        }
+
+        if (!string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+        {
+            return ManifestOperationResult<OciRegistryUrl>.Failure(
+                "OCI registry URLs must use HTTPS."
+            );
+        }
+
+        if (!string.IsNullOrEmpty(uri.UserInfo))
+        {
+            return ManifestOperationResult<OciRegistryUrl>.Failure(
+                "OCI registry URLs must not contain credentials."
+            );
+        }
+
+        if (
+            uri.Query.Length > 0
+            || uri.Fragment.Length > 0
+            || trimmedUrl.Contains('?')
+            || trimmedUrl.Contains('#')
+        )
+        {
+            return ManifestOperationResult<OciRegistryUrl>.Failure(
+                "OCI registry URLs must not contain a query or fragment."
+            );
+        }
+
+        if (uri.Port is < 1 or > 65535)
+        {
+            return ManifestOperationResult<OciRegistryUrl>.Failure(
+                "OCI registry URL has an invalid port."
+            );
+        }
+
+        return ManifestOperationResult<OciRegistryUrl>.Success(
+            new OciRegistryUrl(uri, GetRawUriPath(trimmedUrl))
+        );
+    }
+
+    private static ManifestOperationResult<string?> NormalizeOciLocationPath(
+        string rawEmbeddedPath,
+        string? path
+    )
+    {
+        var normalizedEmbeddedPath = NormalizeOciPath(
+            rawEmbeddedPath.Length == 0 ? null : rawEmbeddedPath[1..]
+        );
+        var normalizedExplicitPath = NormalizeOciPath(path);
+        if (!normalizedEmbeddedPath.IsSuccess || !normalizedExplicitPath.IsSuccess)
+        {
+            return ManifestOperationResult<string?>.Failure(
+                "OCI repository paths must be relative lowercase OCI paths without traversal."
+            );
+        }
+
+        var hasExplicitPath = !string.IsNullOrWhiteSpace(path);
+        if (
+            hasExplicitPath
+            && !string.Equals(
+                normalizedExplicitPath.Value,
+                normalizedEmbeddedPath.Value,
+                StringComparison.Ordinal
+            )
+            && normalizedEmbeddedPath.Value is not null
+        )
+        {
+            return ManifestOperationResult<string?>.Failure(
+                "OCI registry URL path conflicts with the configured repository path."
+            );
+        }
+
+        return ManifestOperationResult<string?>.Success(
+            hasExplicitPath ? normalizedExplicitPath.Value : normalizedEmbeddedPath.Value
+        );
+    }
+
+    private static string NormalizeOciOrigin(Uri uri)
+    {
+        var host = uri.IdnHost.ToLowerInvariant();
+        if (uri.HostNameType == UriHostNameType.IPv6 && (host.Length == 0 || host[0] != '['))
+        {
+            host = $"[{host}]";
+        }
+
+        return new UriBuilder(uri)
+        {
+            Scheme = Uri.UriSchemeHttps,
+            Host = host,
+            UserName = string.Empty,
+            Password = string.Empty,
+            Path = string.Empty,
+            Query = string.Empty,
+            Fragment = string.Empty,
+            Port = uri.Port == 443 ? -1 : uri.Port,
+        }
+            .Uri.GetLeftPart(UriPartial.Authority)
+            .TrimEnd('/');
+    }
+
+    private static ManifestOperationResult<string?> NormalizeOciPath(string? path)
+    {
+        var normalized = ProjectPath.NormalizeOptional(path)?.Trim();
+        if (string.IsNullOrEmpty(normalized))
+        {
+            return ManifestOperationResult<string?>.Success(null);
+        }
+
+        if (
+            normalized[0] == '/'
+            || (normalized.Length >= 2 && char.IsAsciiLetter(normalized[0]) && normalized[1] == ':')
+        )
+        {
+            return ManifestOperationResult<string?>.Failure(
+                "OCI repository paths must be relative."
+            );
+        }
+
+        var segments = new List<string>();
+        foreach (var segment in normalized.Split('/', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (string.Equals(segment, ".", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (
+                string.Equals(segment, "..", StringComparison.Ordinal)
+                || !OciRepositoryComponentPattern().IsMatch(segment)
+            )
+            {
+                return ManifestOperationResult<string?>.Failure(
+                    "OCI repository paths must contain valid lowercase components."
+                );
+            }
+
+            segments.Add(segment);
+        }
+
+        return NormalizeOciPathSegments(segments);
+    }
+
+    private static ManifestOperationResult<string?> NormalizeOciPathSegments(List<string> segments)
+    {
+        if (segments.Count == 0)
+        {
+            return ManifestOperationResult<string?>.Success(null);
+        }
+
+        var path = string.Join('/', segments);
+        return path.Length <= 255
+            ? ManifestOperationResult<string?>.Success(path)
+            : ManifestOperationResult<string?>.Failure(
+                "OCI repository paths must not exceed 255 characters."
+            );
+    }
+
+    private static string GetRawUriPath(string url)
+    {
+        var authorityStart = url.IndexOf("://", StringComparison.Ordinal);
+        if (authorityStart < 0)
+        {
+            return string.Empty;
+        }
+
+        authorityStart += 3;
+        var pathStart = url.IndexOfAny(['/', '?', '#'], authorityStart);
+        if (pathStart < 0 || url[pathStart] != '/')
+        {
+            return string.Empty;
+        }
+
+        var pathEnd = url.IndexOfAny(['?', '#'], pathStart);
+        return pathEnd < 0 ? url[pathStart..] : url[pathStart..pathEnd];
+    }
 
     public static string NormalizeRef(string? reference)
     {
@@ -238,6 +507,8 @@ internal static partial class SourceIdentityNormalizer
 
     private sealed record RepositoryLocation(string? UserInformation, string Host, string Path);
 
+    private sealed record OciRegistryUrl(Uri Uri, string RawPath);
+
     private static bool IsCaseInsensitiveForge(string host) =>
         string.Equals(host, "github.com", StringComparison.Ordinal)
         || host.EndsWith(".github.com", StringComparison.Ordinal);
@@ -258,4 +529,11 @@ internal static partial class SourceIdentityNormalizer
         matchTimeoutMilliseconds: 1000
     )]
     private static partial Regex GitCommitPattern();
+
+    [GeneratedRegex(
+        @"^[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*$",
+        RegexOptions.CultureInvariant,
+        matchTimeoutMilliseconds: 1000
+    )]
+    private static partial Regex OciRepositoryComponentPattern();
 }

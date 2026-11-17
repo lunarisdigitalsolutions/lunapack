@@ -3,6 +3,7 @@ using Lunapack.Cli.Links;
 using Lunapack.Cli.Packs.Manifest;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources.Git;
+using Lunapack.Cli.Sources.Oci;
 
 namespace Lunapack.Cli.Application.Serialization;
 
@@ -16,4 +17,6 @@ namespace Lunapack.Cli.Application.Serialization;
 [JsonSerializable(typeof(List<object>))]
 [JsonSerializable(typeof(GitSourceCacheEntry))]
 [JsonSerializable(typeof(GitLinkCacheMetadata))]
+[JsonSerializable(typeof(OciPackArtifact.OciPackConfig))]
+[JsonSerializable(typeof(OciPackArtifact.OciPackImageManifest))]
 internal partial class LunapackJsonContext : JsonSerializerContext { }
