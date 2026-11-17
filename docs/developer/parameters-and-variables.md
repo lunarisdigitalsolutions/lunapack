@@ -8,7 +8,7 @@ values to any pack with a matching parameter name.
 Use repeatable `--parameter` or `-p` options:
 
 ```powershell
-luna install license-mit@1.0.0 \
+luna install license-mit@1.0.0 `
   --parameter companyName="Lunaris Digital Solutions"
 ```
 

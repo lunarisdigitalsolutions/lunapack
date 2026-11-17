@@ -99,8 +99,9 @@ suggestions until an argument-taking command or option is selected.
 - `luna config set <key> <value>`, `luna config list`, and
   `luna config remove <key>`: Manage Boolean CLI preferences. Each operation
   accepts `--project` (`--local` alias), `--user-project`, or `--global`; scope
-  defaults to global. See [Configuration](configuration.md#cli-preferences) for
-  supported keys and precedence.
+  defaults to global. `remove` fails when the selected scope has no value for
+  that key. See [Configuration](configuration.md#cli-preferences) for supported
+  keys and precedence.
 - `luna variables list`: Lists configured project variables in a table.
 - `luna variables set <name> <value>`: Sets a string project variable. Names
   must start with a letter or underscore and may contain letters, digits, and

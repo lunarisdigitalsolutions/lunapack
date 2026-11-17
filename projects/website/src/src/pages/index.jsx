@@ -22,7 +22,7 @@ import { useState } from 'react'
 import styles from './index.module.css'
 
 const quickStartCommand = `luna init
-luna sources add github lunapack lunarisdigitalsolutions/lunapack
+luna sources add github lunapack lunarisdigitalsolutions/lunapack --ref main --path projects/packs
 luna discover
 luna install dotnet-project --dry-run
 
@@ -31,13 +31,12 @@ luna install dotnet-project
 luna outdated
 luna update dotnet-project --dry-run`
 
-const authorCommand = `
-luna sources add local my-packs .
-
-mkdir my-pack && cd my-pack
-luna pack init
-
-luna validate my-pack`
+const authorCommand = `mkdir my-packs
+mkdir my-packs/example-my-pack
+mkdir my-packs/example-my-pack/1.0.0
+cd my-packs/example-my-pack/1.0.0
+luna pack init --id example-my-pack --version 1.0.0 --author "Example Engineering" --license MIT
+luna pack validate`
 
 const solutionSteps = [
   {
@@ -217,7 +216,8 @@ export default function Home() {
                 </div>
                 <div className={styles.terminalLine}>
                   <span className={styles.prompt}>$</span> luna sources add
-                  github lunapack lunarisdigitalsolutions/lunapack
+                  github lunapack lunarisdigitalsolutions/lunapack --ref main
+                  --path projects/packs
                 </div>
                 <div className={styles.packageList}>
                   <span>
@@ -487,8 +487,8 @@ export default function Home() {
                     onClick={copyAuthorCommand}
                     aria-label={
                       authorCommandCopied
-                        ? 'Pack source command copied'
-                        : 'Copy pack source command'
+                        ? 'Pack commands copied'
+                        : 'Copy pack commands'
                     }
                     title={authorCommandCopied ? 'Copied' : 'Copy command'}
                   >

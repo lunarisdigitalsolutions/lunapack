@@ -76,6 +76,9 @@ Git link content is cached by configured-source identity and commit:
 - Linux: `$XDG_CACHE_HOME/lunapack/sources` or `~/.cache/lunapack/sources`
 - macOS: `~/Library/Caches/LunaPack/sources`
 
+If selected blob bytes are missing, Luna fetches them from the resolved commit
+before installation.
+
 Cache entries are untrusted generated content. Luna verifies source identity,
 commit metadata, blob IDs, and selected bytes before reuse. Project-local pack
 catalog metadata under `.lunapack` remains separate.

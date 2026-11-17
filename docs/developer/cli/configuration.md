@@ -89,7 +89,7 @@ are:
 luna config set discover.only-composites true --project
 luna config set next-steps.enabled false --user-project
 luna config list --global
-luna config remove discover.only-composites --global
+luna config remove discover.only-composites --project
 ```
 
 Preference values are optional in project and user settings. Project-local
@@ -114,7 +114,8 @@ project-local or user-project values.
 
 `luna config list` shows values explicitly stored in the selected scope; it
 does not print built-in defaults. `set` accepts only `true` or `false`, and
-unknown keys fail without changing settings.
+unknown keys fail without changing settings. `remove` fails when the selected
+scope has no value for that key.
 
 For each key, Luna selects the first configured value from project-local,
 user-project, and global settings, then uses the built-in default. An explicit

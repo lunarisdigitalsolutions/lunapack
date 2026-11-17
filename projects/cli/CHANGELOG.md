@@ -7,6 +7,11 @@ pack-package, documentation, CI, build, test, and release-process changes.
 
 Update this section before creating a release tag.
 
+### Fixed
+
+- Git links now fetch selected files missing from cached content using the
+  resolved commit.
+
 ## Version 1.6.0 - 2026-11-17
 
 ### Catalog Eligibility and Preferences

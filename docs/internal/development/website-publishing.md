@@ -20,8 +20,9 @@ npm run serve --prefix projects/website
 ```
 
 `npm run serve` publishes the generated `build` directory locally. The site
-uses the production `/lunapack/` base path, so verify the landing
-page, developer-doc navigation, and linked CLI and pack pages from that path.
+uses the root `/` base path configured for `https://lunapack.dev/`. Verify the
+landing page at `/`, developer-documentation routes under `/developer/`, and
+linked CLI and pack pages from those paths.
 
 ## Dependency Updates
 
