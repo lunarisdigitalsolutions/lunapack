@@ -3,6 +3,7 @@ using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Catalog;
 using Lunapack.Cli.Packs.Planning;
 using Lunapack.Cli.Project;
+using Lunapack.Cli.Sources;
 using Lunapack.Cli.Trust;
 
 namespace Lunapack.Cli.Packs;
@@ -12,11 +13,14 @@ internal sealed class PackUpdateService(
     PackCatalog packCatalog,
     PackLifecycleService packLifecycleService,
     ProjectStateStore projectStateStore,
-    ISourceSwitchConfirmer? configuredSourceSwitchConfirmer = null
+    ISourceSwitchConfirmer? configuredSourceSwitchConfirmer = null,
+    ConfiguredSourceIgnoreService? configuredSourceIgnoreService = null
 )
 {
     private readonly ISourceSwitchConfirmer _sourceSwitchConfirmer =
         configuredSourceSwitchConfirmer ?? new DenySourceSwitchConfirmer();
+    private readonly ConfiguredSourceIgnoreService? _sourceIgnoreService =
+        configuredSourceIgnoreService;
 
     public async Task<UpdateResult> UpdateAsync(
         string projectDirectory,
@@ -85,7 +89,12 @@ internal sealed class PackUpdateService(
             return UpdateResult.Failure("No sources are configured.");
         }
 
-        var catalog = await packCatalog.BrowseAsync(projectDirectory, state.Configuration);
+        var catalog = await BrowseUpdateCatalogAsync(
+            projectDirectory,
+            state,
+            packReference,
+            selectedUpdateIds
+        );
         if (catalog.Value is not { } catalogPacks)
         {
             return UpdateResult.Failure(catalog.Error ?? "Unable to browse pack sources.");
@@ -118,6 +127,78 @@ internal sealed class PackUpdateService(
                 cachedPromptParameters,
                 options
             );
+    }
+
+    private async Task<
+        ManifestOperationResult<IReadOnlyList<CatalogPack>>
+    > BrowseUpdateCatalogAsync(
+        string projectDirectory,
+        ProjectState state,
+        PackReference? packReference,
+        IReadOnlySet<string>? selectedUpdateIds
+    )
+    {
+        if (_sourceIgnoreService is not null && packReference?.Version is null)
+        {
+            var rootIds = state
+                .Configuration.Packs.Select(root => root.Id)
+                .Where(id =>
+                    (
+                        packReference is null
+                        || string.Equals(id, packReference.Id, StringComparison.Ordinal)
+                    ) && (selectedUpdateIds is null || selectedUpdateIds.Contains(id))
+                )
+                .ToHashSet(StringComparer.Ordinal);
+            var ignoredLockedPack = await _sourceIgnoreService.FindIgnoredLockedPackErrorAsync(
+                projectDirectory,
+                state.Configuration,
+                state.LockFile.Packs.Where(pack => rootIds.Contains(pack.Id))
+            );
+            if (!ignoredLockedPack.IsSuccess)
+            {
+                return ManifestOperationResult<IReadOnlyList<CatalogPack>>.Failure(
+                    ignoredLockedPack.Error ?? "Unable to check local source ignore settings."
+                );
+            }
+
+            if (ignoredLockedPack.Value is { } ignoredError)
+            {
+                return ManifestOperationResult<IReadOnlyList<CatalogPack>>.Failure(ignoredError);
+            }
+        }
+
+        var requestedPacks = CreateRequestedPacks(state, packReference, selectedUpdateIds);
+        return await packCatalog.BrowseForUpdatesAsync(
+            projectDirectory,
+            state.Configuration,
+            requestedPacks
+        );
+    }
+
+    private static Dictionary<string, string?> CreateRequestedPacks(
+        ProjectState state,
+        PackReference? packReference,
+        IReadOnlySet<string>? selectedUpdateIds
+    )
+    {
+        var requestedPacks = new Dictionary<string, string?>(StringComparer.Ordinal);
+        if (packReference is { } requestedPack)
+        {
+            requestedPacks[requestedPack.Id] = requestedPack.Version;
+        }
+        else
+        {
+            foreach (
+                var root in state.Configuration.Packs.Where(root =>
+                    selectedUpdateIds is null || selectedUpdateIds.Contains(root.Id)
+                )
+            )
+            {
+                requestedPacks[root.Id] = null;
+            }
+        }
+
+        return requestedPacks;
     }
 
     internal static PackParameterPromptCallback? CachePromptedParameters(
@@ -170,6 +251,22 @@ internal sealed class PackUpdateService(
             return UpdateResult.Failure(
                 selectedUpdate.Error ?? $"Pack '{packReference.Id}' is unavailable."
             );
+        }
+
+        if (
+            update.IsCurrent
+            && update.SelectedPack.SourceIdentity == update.CurrentPack.SourceIdentity
+        )
+        {
+            var integrityError = await GetLockedOciIntegrityErrorAsync(
+                projectDirectory,
+                state,
+                update.CurrentPack
+            );
+            if (integrityError is not null)
+            {
+                return UpdateResult.Failure(integrityError);
+            }
         }
 
         var terminalResult = GetTerminalNamedUpdateResult(update, dryRun);
@@ -408,6 +505,18 @@ internal sealed class PackUpdateService(
             pack => pack.Id,
             StringComparer.Ordinal
         );
+        var integrityError = await ValidateUnchangedRootOciIntegrityAsync(
+            projectDirectory,
+            state,
+            selectedUpdateIds,
+            versionUpdateIds,
+            currentPacks
+        );
+        if (integrityError is not null)
+        {
+            return UpdateResult.Failure(integrityError);
+        }
+
         var externalRefreshRoots = SelectExternalRefreshRoots(
             state,
             selectedUpdateIds,
@@ -459,6 +568,66 @@ internal sealed class PackUpdateService(
             promptParameters,
             options
         );
+    }
+
+    private async Task<string?> GetLockedOciIntegrityErrorAsync(
+        string projectDirectory,
+        ProjectState state,
+        ProjectLockFile.ResolvedPack lockedPack
+    )
+    {
+        if (lockedPack.OciSource is null)
+        {
+            return null;
+        }
+
+        var observed = await packCatalog.ResolveLockedOciTagAsync(
+            projectDirectory,
+            state.Configuration,
+            lockedPack
+        );
+        if (!observed.IsSuccess)
+        {
+            return observed.Error
+                ?? $"Unable to verify locked OCI release '{lockedPack.Id}@{lockedPack.Version}'.";
+        }
+
+        return PackUpdateSelectionService
+            .CompareLockedOciRelease(lockedPack, observed.Value)
+            ?.Message;
+    }
+
+    private async Task<string?> ValidateUnchangedRootOciIntegrityAsync(
+        string projectDirectory,
+        ProjectState state,
+        IReadOnlySet<string>? selectedUpdateIds,
+        HashSet<string> versionUpdateIds,
+        Dictionary<string, ProjectLockFile.ResolvedPack> currentPacks
+    )
+    {
+        foreach (var requestedRoot in state.Configuration.Packs)
+        {
+            if (
+                versionUpdateIds.Contains(requestedRoot.Id)
+                || (selectedUpdateIds is not null && !selectedUpdateIds.Contains(requestedRoot.Id))
+                || !currentPacks.TryGetValue(requestedRoot.Id, out var currentPack)
+            )
+            {
+                continue;
+            }
+
+            var integrityError = await GetLockedOciIntegrityErrorAsync(
+                projectDirectory,
+                state,
+                currentPack
+            );
+            if (integrityError is not null)
+            {
+                return integrityError;
+            }
+        }
+
+        return null;
     }
 
     private static ManifestOperationResult<List<AvailablePackUpdate>> SelectVersionUpdates(

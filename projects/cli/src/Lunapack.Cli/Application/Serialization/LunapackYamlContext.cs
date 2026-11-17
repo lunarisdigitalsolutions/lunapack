@@ -3,6 +3,7 @@ using Lunapack.Cli.Packs.Authoring;
 using Lunapack.Cli.Packs.Manifest;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources;
+using Lunapack.Cli.Sources.Oci;
 using Lunapack.Cli.Trust;
 using YamlDotNet.Serialization;
 
@@ -31,6 +32,7 @@ namespace Lunapack.Cli.Application.Serialization;
 [YamlSerializable(typeof(ProjectConfiguration.Source))]
 [YamlSerializable(typeof(ProjectConfiguration.GitSource))]
 [YamlSerializable(typeof(ProjectConfiguration.LocalSource))]
+[YamlSerializable(typeof(ProjectConfiguration.OciSource))]
 [YamlSerializable(typeof(ProjectConfiguration.ProjectTrust))]
 [YamlSerializable(typeof(ProjectConfiguration.Remapping))]
 [YamlSerializable(typeof(ProjectConfiguration.RequestedPack))]
@@ -45,8 +47,10 @@ namespace Lunapack.Cli.Application.Serialization;
 [YamlSerializable(typeof(ProjectLockFile.ResolvedLink))]
 [YamlSerializable(typeof(ProjectLockFile.ResolvedPack))]
 [YamlSerializable(typeof(GitSourceProvenance))]
+[YamlSerializable(typeof(OciSourceProvenance))]
 [YamlSerializable(typeof(ProjectLockFile.ExternalSourceLock))]
 [YamlSerializable(typeof(ConfiguredSourceIdentity))]
+[YamlSerializable(typeof(SourceIgnoreSettings))]
 [YamlSerializable(typeof(LocalProjectTrust))]
 [YamlSerializable(typeof(ScriptDenial))]
 [YamlSerializable(typeof(TrustAcknowledgements))]

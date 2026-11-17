@@ -274,11 +274,11 @@ internal sealed class CliPreferenceService(
         {
             PreferenceKey.DiscoverOnlyComposites => updated with
             {
-                Discover = UpdateCatalogPreferences(updated.Discover, value),
+                Discover = UpdateCatalogPreferences(value),
             },
             PreferenceKey.SearchOnlyComposites => updated with
             {
-                Search = UpdateCatalogPreferences(updated.Search, value),
+                Search = UpdateCatalogPreferences(value),
             },
             PreferenceKey.NextStepsEnabled => updated with
             {
@@ -293,10 +293,7 @@ internal sealed class CliPreferenceService(
             : updated;
     }
 
-    private static CatalogPreferences? UpdateCatalogPreferences(
-        CatalogPreferences? preferences,
-        bool? value
-    ) =>
+    private static CatalogPreferences? UpdateCatalogPreferences(bool? value) =>
         value is { } onlyComposites
             ? new CatalogPreferences { OnlyComposites = onlyComposites }
             : null;

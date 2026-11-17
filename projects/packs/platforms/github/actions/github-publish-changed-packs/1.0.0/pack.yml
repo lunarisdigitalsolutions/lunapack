@@ -1,0 +1,12 @@
+id: github-publish-changed-packs
+version: 1.0.0
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Shared PowerShell publisher for GitHub Actions registry workflow packs.
+tags:
+  - github-actions
+  - publishing
+  - powershell
+managedFiles:
+  - source: targets/.github/scripts/publish-changed-packs.ps1
+    target: .github/scripts/publish-changed-packs.ps1

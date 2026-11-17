@@ -34,6 +34,7 @@ internal sealed class GitProcessRunner(string executable = "git") : IGitProcessR
             RedirectStandardOutput = true,
             UseShellExecute = false,
         };
+        startInfo.Environment["GIT_TERMINAL_PROMPT"] = "0";
         foreach (var argument in arguments)
         {
             startInfo.ArgumentList.Add(argument);
@@ -88,18 +89,55 @@ internal sealed class GitProcessRunner(string executable = "git") : IGitProcessR
         }
     }
 
-    private static string CreateExitCodeError(int exitCode, GitProcessOutput output)
+    internal static string CreateExitCodeError(int exitCode, GitProcessOutput output)
     {
-        var diagnostic = output.StandardError.Trim();
-        if (diagnostic.Length == 0)
-        {
-            diagnostic = output.StandardOutput.Trim();
-        }
+        var diagnostic = $"{output.StandardError}\n{output.StandardOutput}";
+        var guidance =
+            ContainsAny(
+                diagnostic,
+                "authentication failed",
+                "could not read username",
+                "could not read password",
+                "terminal prompts disabled",
+                "no credentials available"
+            )
+                ? "Git authentication failed. Configure the operating-system Git credential helper or SSH credentials for this source."
+            : ContainsAny(
+                diagnostic,
+                "permission denied",
+                "access denied",
+                "not authorized",
+                "repository not found",
+                "does not appear to be a git repository"
+            )
+                ? "Git access was denied or the repository was not found. Verify the repository URL, permissions, and configured Git credentials or SSH identity."
+            : ContainsAny(
+                diagnostic,
+                "certificate verify failed",
+                "ssl certificate problem",
+                "tls certificate",
+                "schannel"
+            )
+                ? "Git TLS certificate verification failed. Fix the certificate trust configuration; do not disable certificate checks."
+            : ContainsAny(
+                diagnostic,
+                "could not resolve host",
+                "temporary failure in name resolution",
+                "failed to connect",
+                "connection refused",
+                "network is unreachable",
+                "no route to host",
+                "connection timed out",
+                "operation timed out"
+            )
+                ? "Git host is unavailable. Check network and DNS access, then retry."
+            : "Check the Git source URL, repository access, and host availability.";
 
-        return diagnostic.Length == 0
-            ? $"Git exited with code {exitCode}."
-            : $"Git exited with code {exitCode}: {diagnostic}";
+        return $"Git exited with code {exitCode}: {guidance}";
     }
+
+    private static bool ContainsAny(string value, params string[] fragments) =>
+        fragments.Any(fragment => value.Contains(fragment, StringComparison.OrdinalIgnoreCase));
 
     private static async Task<string> ReadBoundedAsync(StreamReader reader)
     {

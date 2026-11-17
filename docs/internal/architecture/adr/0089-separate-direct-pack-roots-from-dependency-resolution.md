@@ -4,7 +4,7 @@ decision-makers:
   - Lunaris Engineering
 ---
 
-# ADR-0084: Separate Direct Pack Roots From Dependency Resolution
+# ADR-0089: Separate Direct Pack Roots From Dependency Resolution
 
 ## Context and Problem Statement
 

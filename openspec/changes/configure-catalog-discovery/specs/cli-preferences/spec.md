@@ -38,13 +38,19 @@ Invalid keys or values SHALL return a non-success result without mutation.
 
 ### Requirement: Select CLI preference storage scope
 
-Every `luna config` operation SHALL accept mutually exclusive `--local`,
-`--user-project`, and `--global` scope options. `--local` SHALL use the current
-project's `lunapack.yml`; `--user-project` SHALL use that canonical project
-directory's entry in user settings; and `--global` SHALL use user-wide settings.
-When no scope is specified, the operation SHALL use the global scope.
+Every `luna config` operation SHALL accept `--project` (with `--local` as an
+alias), `--user-project`, and `--global` scope options. Distinct scopes SHALL be
+mutually exclusive. `--project` and `--local` SHALL use the current project's
+`lunapack.yml`; `--user-project` SHALL use that canonical project directory's
+entry in user settings; and `--global` SHALL use user-wide settings. When no
+scope is specified, the operation SHALL use the global scope.
 
-#### Scenario: Store a project-local preference
+#### Scenario: Store a project preference
+
+- **WHEN** a user sets a preference with `--project`
+- **THEN** LunaPack stores it in the current project's `lunapack.yml`
+
+#### Scenario: Retain the local scope alias
 
 - **WHEN** a user sets a preference with `--local`
 - **THEN** LunaPack stores it in the current project's `lunapack.yml`

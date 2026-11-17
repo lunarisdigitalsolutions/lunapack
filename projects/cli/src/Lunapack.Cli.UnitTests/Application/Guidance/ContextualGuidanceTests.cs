@@ -55,7 +55,11 @@ public sealed class ContextualGuidanceTests
         using var workspace = new TestWorkspace();
         await workspace.Application.RunAsync(["init"], workspace.Path);
         var ansiConsole = new SpectreTestConsole();
-        var application = new CliApplication(workspace.FileSystem, ansiConsole);
+        var application = new CliApplication(
+            workspace.FileSystem,
+            ansiConsole,
+            userSettingsStore: workspace.UserSettingsStore
+        );
 
         var exitCode = await application.RunAsync(
             ["--workspace", workspace.Path],
@@ -225,6 +229,35 @@ public sealed class ContextualGuidanceTests
         await Assert.That(gitOutput).Contains("1. Discover available packs");
         await Assert.That(githubOutput).Contains("Source 'github' added");
         await Assert.That(githubOutput).Contains("luna install <pack>");
+    }
+
+    [Test]
+    public async Task SourcesAddOci_WhenRegistryIsUnavailable_AddsSourceWithoutAccessingRegistry()
+    {
+        using var workspace = new TestWorkspace();
+        await workspace.Application.RunAsync(["init"], workspace.Path);
+
+        var output = await InvokeWithFreshConsoleAsync(
+            workspace,
+            [
+                "sources",
+                "add",
+                "oci",
+                "private",
+                "https://127.0.0.1:1",
+                "--path",
+                @"packs\private",
+                "--username",
+                "publisher",
+            ]
+        );
+        var state = (await workspace.StateStore.LoadAsync(workspace.Path)).RequireValue();
+
+        await Assert.That(output).Contains("Source 'private' added");
+        var source = (ProjectConfiguration.OciSource)state.Configuration.Sources.Single();
+        await Assert.That(source.Url).IsEqualTo("https://127.0.0.1:1");
+        await Assert.That(source.Path).IsEqualTo("packs/private");
+        await Assert.That(source.Username).IsEqualTo("publisher");
     }
 
     [Test]
@@ -454,6 +487,7 @@ public sealed class ContextualGuidanceTests
         var application = new CliApplication(
             workspace.FileSystem,
             ansiConsole,
+            userSettingsStore: workspace.UserSettingsStore,
             gitProcessRunner: new StubGitProcessRunner()
         );
         await application.RunAsync(arguments, workspace.Path);

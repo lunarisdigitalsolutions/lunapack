@@ -162,7 +162,7 @@ updates are available and leave the project unchanged.
 - **WHEN** a pack version is unchanged but a selected external file differs at
   the current resolved ref
 - **THEN** `luna outdated` reports that pack with reason `external source
-  changed`
+changed`
 
 #### Scenario: Ignore an irrelevant ref movement
 

@@ -10,6 +10,13 @@ namespace Lunapack.Cli.UnitTests.Application.Serialization;
 
 public sealed class ManifestSchemaTests
 {
+    private static readonly string[] _ociSchemaFileNames =
+    [
+        "lunapack.schema.json",
+        "lunapack-lock.schema.json",
+        "lunapack-user-settings.schema.json",
+    ];
+
     [Test]
     public async Task PackSchema_WhenManagedFileTargetDeclared_RequiresSafeRelativePath()
     {
@@ -57,6 +64,155 @@ public sealed class ManifestSchemaTests
                     .GetString()
             )
             .IsEqualTo("#/definitions/repositoryRelativePath");
+    }
+
+    [Test]
+    public async Task Scenario_OciLockSchema_RequiresSerializedProvenanceFields()
+    {
+        using var schema = JsonDocument.Parse(
+            File.ReadAllText(
+                Path.Combine(AppContext.BaseDirectory, "TestData", "lunapack-lock.schema.json")
+            )
+        );
+        var provenance = schema
+            .RootElement.GetProperty("definitions")
+            .GetProperty("ociSourceProvenance");
+        var definitions = schema.RootElement.GetProperty("definitions");
+        var requiredFields = provenance
+            .GetProperty("required")
+            .EnumerateArray()
+            .Select(property => property.GetString())
+            .ToHashSet(StringComparer.Ordinal);
+        var properties = provenance.GetProperty("properties");
+        var ociResolvedPack = definitions.GetProperty("ociResolvedPack");
+        var resolvedPackTypes = definitions
+            .GetProperty("resolvedPack")
+            .GetProperty("oneOf")
+            .EnumerateArray()
+            .Select(schemaType => schemaType.GetProperty("$ref").GetString());
+
+        foreach (
+            var field in new[]
+            {
+                "contentSize",
+                "contentDigest",
+                "manifestDigest",
+                "registryUrl",
+                "repository",
+                "tag",
+            }
+        )
+        {
+            await Assert.That(requiredFields.Contains(field)).IsTrue();
+            await Assert.That(properties.TryGetProperty(field, out _)).IsTrue();
+        }
+
+        await Assert.That(resolvedPackTypes).Contains("#/definitions/ociResolvedPack");
+        await Assert
+            .That(
+                definitions
+                    .GetProperty("gitResolvedPack")
+                    .GetProperty("properties")
+                    .TryGetProperty("ociResolvedPack", out _)
+            )
+            .IsFalse();
+        await Assert
+            .That(
+                ociResolvedPack
+                    .GetProperty("properties")
+                    .GetProperty("ociSource")
+                    .GetProperty("$ref")
+                    .GetString()
+            )
+            .IsEqualTo("#/definitions/ociSourceProvenance");
+        await Assert
+            .That(properties.GetProperty("contentSize").GetProperty("type").GetString())
+            .IsEqualTo("integer");
+    }
+
+    [Test]
+    public async Task Scenario_OciPublicSchemas_RequireHttpsRegistryUrls()
+    {
+        foreach (var schemaFileName in _ociSchemaFileNames)
+        {
+            var isProjectSchema = string.Equals(
+                schemaFileName,
+                "lunapack.schema.json",
+                StringComparison.Ordinal
+            );
+            var urlDefinition = isProjectSchema ? "ociRegistryUrl" : "ociRegistryOrigin";
+            var sourceDefinition = isProjectSchema ? "ociSource" : "ociSourceIdentity";
+            await Assert
+                .That(GetSchemaReference(schemaFileName, sourceDefinition, "url"))
+                .IsEqualTo($"#/definitions/{urlDefinition}");
+            await Assert.That(GetSchemaFormat(schemaFileName, urlDefinition)).IsEqualTo("uri");
+            await Assert
+                .That(GetSchemaFormat(schemaFileName, "ociRegistryOrigin"))
+                .IsEqualTo("uri");
+            await AssertValidOciRegistryUrlPatternsAsync(
+                schemaFileName,
+                urlDefinition,
+                isProjectSchema
+            );
+            await AssertInvalidOciRegistryUrlPatternsAsync(schemaFileName, urlDefinition);
+        }
+    }
+
+    [Test]
+    public async Task Scenario_OciPublicSchemas_RejectInvalidRepositoryPaths()
+    {
+        foreach (var schemaFileName in _ociSchemaFileNames)
+        {
+            var sourceDefinition = string.Equals(
+                schemaFileName,
+                "lunapack.schema.json",
+                StringComparison.Ordinal
+            )
+                ? "ociSource"
+                : "ociSourceIdentity";
+            await Assert
+                .That(GetSchemaReference(schemaFileName, sourceDefinition, "path"))
+                .IsEqualTo("#/definitions/ociRepositoryPath");
+            await Assert
+                .That(GetSchemaMaxLength(schemaFileName, "ociRepositoryPath"))
+                .IsEqualTo(255);
+
+            await Assert
+                .That(MatchesSchemaPattern(schemaFileName, "ociRepositoryPath", "packs/backend"))
+                .IsTrue();
+            await Assert
+                .That(
+                    MatchesSchemaPattern(schemaFileName, "ociRepositoryPath", "engineering__team")
+                )
+                .IsTrue();
+
+            foreach (
+                var invalidPath in new[]
+                {
+                    "Packs/backend",
+                    "packs/../backend",
+                    "/packs",
+                    "-invalid",
+                }
+            )
+            {
+                await Assert
+                    .That(MatchesSchemaPattern(schemaFileName, "ociRepositoryPath", invalidPath))
+                    .IsFalse();
+            }
+
+            if (
+                string.Equals(schemaFileName, "lunapack-lock.schema.json", StringComparison.Ordinal)
+            )
+            {
+                await Assert
+                    .That(GetSchemaReference(schemaFileName, "ociSourceProvenance", "registryUrl"))
+                    .IsEqualTo("#/definitions/ociRegistryOrigin");
+                await Assert
+                    .That(GetSchemaReference(schemaFileName, "ociSourceProvenance", "repository"))
+                    .IsEqualTo("#/definitions/ociRepositoryPath");
+            }
+        }
     }
 
     [Test]
@@ -203,6 +359,9 @@ public sealed class ManifestSchemaTests
         await Assert
             .That(localTrust.GetProperty("properties").TryGetProperty("deny", out _))
             .IsTrue();
+        await Assert
+            .That(localTrust.GetProperty("properties").TryGetProperty("ignoredSources", out _))
+            .IsFalse();
         await Assert
             .That(acknowledgements.GetProperty("properties").TryGetProperty("deny", out _))
             .IsFalse();
@@ -1723,6 +1882,174 @@ public sealed class ManifestSchemaTests
             SchemaVersion = 1,
             Sources = [new ProjectConfiguration.LocalSource { Name = "local", Path = "packs" }],
         };
+
+    private static string GetSchemaFormat(string schemaFileName, string definitionName)
+    {
+        using var schema = LoadOciSchema(schemaFileName);
+        return schema
+                .RootElement.GetProperty("definitions")
+                .GetProperty(definitionName)
+                .GetProperty("format")
+                .GetString()
+            ?? throw new InvalidOperationException(
+                $"Schema format for '{definitionName}' is missing."
+            );
+    }
+
+    private static int GetSchemaMaxLength(string schemaFileName, string definitionName)
+    {
+        using var schema = LoadOciSchema(schemaFileName);
+        return schema
+            .RootElement.GetProperty("definitions")
+            .GetProperty(definitionName)
+            .GetProperty("maxLength")
+            .GetInt32();
+    }
+
+    private static string GetSchemaReference(
+        string schemaFileName,
+        string definitionName,
+        string propertyName
+    )
+    {
+        using var schema = LoadOciSchema(schemaFileName);
+        return schema
+                .RootElement.GetProperty("definitions")
+                .GetProperty(definitionName)
+                .GetProperty("properties")
+                .GetProperty(propertyName)
+                .GetProperty("$ref")
+                .GetString()
+            ?? throw new InvalidOperationException(
+                $"Schema reference for '{definitionName}.{propertyName}' is missing."
+            );
+    }
+
+    private static async Task AssertValidOciRegistryUrlPatternsAsync(
+        string schemaFileName,
+        string urlDefinition,
+        bool isProjectSchema
+    )
+    {
+        foreach (
+            var validOrigin in new[]
+            {
+                "https://registry.example.test",
+                "https://registry.example.test:5443",
+                "https://registry.example.test:65535",
+                "HTTPS://registry.example.test",
+                "https://[2001:db8::1]:5443",
+            }
+        )
+        {
+            await Assert
+                .That(MatchesSchemaPattern(schemaFileName, urlDefinition, validOrigin))
+                .IsTrue();
+            await Assert
+                .That(MatchesSchemaPattern(schemaFileName, "ociRegistryOrigin", validOrigin))
+                .IsTrue();
+        }
+
+        if (!isProjectSchema)
+        {
+            return;
+        }
+
+        await Assert
+            .That(
+                MatchesSchemaPattern(
+                    schemaFileName,
+                    "ociRegistryUrl",
+                    "https://registry.example.test/engineering/packs"
+                )
+            )
+            .IsTrue();
+        await Assert
+            .That(
+                MatchesSchemaPattern(
+                    schemaFileName,
+                    "ociRegistryOrigin",
+                    "https://registry.example.test/engineering/packs"
+                )
+            )
+            .IsFalse();
+        await Assert
+            .That(
+                MatchesSchemaPattern(
+                    schemaFileName,
+                    "ociRegistryUrl",
+                    "https://registry.example.test/"
+                )
+            )
+            .IsTrue();
+        await Assert
+            .That(
+                MatchesSchemaPattern(
+                    schemaFileName,
+                    "ociRegistryUrl",
+                    $"https://registry.example.test/{new string('a', 256)}"
+                )
+            )
+            .IsFalse();
+    }
+
+    private static async Task AssertInvalidOciRegistryUrlPatternsAsync(
+        string schemaFileName,
+        string urlDefinition
+    )
+    {
+        foreach (
+            var invalidUrl in new[]
+            {
+                "http://registry.example.test",
+                "https://user:password@registry.example.test",
+                "https://registry.example.test?catalog=true",
+                "https://registry.example.test/#fragment",
+                "https://registry.example.test:0",
+                "https://registry.example.test:65536",
+                "https://registry.example.test/Packs/backend",
+                "https://registry.example.test/packs/../backend",
+            }
+        )
+        {
+            await Assert
+                .That(MatchesSchemaPattern(schemaFileName, urlDefinition, invalidUrl))
+                .IsFalse();
+            await Assert
+                .That(MatchesSchemaPattern(schemaFileName, "ociRegistryOrigin", invalidUrl))
+                .IsFalse();
+        }
+    }
+
+    private static JsonDocument LoadOciSchema(string schemaFileName) =>
+        JsonDocument.Parse(
+            File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", schemaFileName))
+        );
+
+    private static bool MatchesSchemaPattern(
+        string schemaFileName,
+        string definitionName,
+        string value
+    )
+    {
+        using var schema = LoadOciSchema(schemaFileName);
+        var pattern =
+            schema
+                .RootElement.GetProperty("definitions")
+                .GetProperty(definitionName)
+                .GetProperty("pattern")
+                .GetString()
+            ?? throw new InvalidOperationException(
+                $"Schema pattern for '{definitionName}' is missing."
+            );
+
+        return Regex.IsMatch(
+            value,
+            pattern,
+            RegexOptions.CultureInvariant,
+            TimeSpan.FromSeconds(1)
+        );
+    }
 
     private static string GetTestGitSourceUrl(string host) => $"https://{host}/packs.git";
 

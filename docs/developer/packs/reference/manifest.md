@@ -55,7 +55,7 @@ selectors install content.
 | `name`                 | Optional non-empty human-readable name.                                                                                                                                                 |
 | `author`               | Required non-empty author or maintainer attribution.                                                                                                                                    |
 | `draft`                | Optional visibility marker. Defaults to `false`; drafts require `--allow-draft` in discovery and search but remain available to direct commands.                                        |
-| `directInstallable`    | Optional Boolean. Defaults to `true`; `false` reserves a release for composite dependencies and excludes it from discover/search and install, update, and outdated root selection.     |
+| `directInstallable`    | Optional Boolean. Defaults to `true`; `false` reserves a release for composite dependencies and excludes it from discover/search and install, update, and outdated root selection.      |
 | `homepage`             | Optional absolute HTTP or HTTPS URI.                                                                                                                                                    |
 | `license`              | Required non-empty license identifier or expression.                                                                                                                                    |
 | `managedFiles`         | Each entry has one `source`, `directory`, or `glob` selector and a non-empty project-relative `target` that cannot contain `.` or `..` segments.                                        |

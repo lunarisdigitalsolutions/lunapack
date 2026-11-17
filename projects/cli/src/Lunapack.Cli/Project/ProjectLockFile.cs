@@ -1,4 +1,5 @@
 using Lunapack.Cli.Sources;
+using Lunapack.Cli.Sources.Oci;
 
 namespace Lunapack.Cli.Project;
 
@@ -91,6 +92,8 @@ internal sealed record ProjectLockFile
         public Dictionary<string, ExternalSourceLock> ExternalSources { get; set; } = [];
 
         public GitSourceProvenance? GitSource { get; set; }
+
+        public OciSourceProvenance? OciSource { get; set; }
 
         public List<PackReference> Packs { get; set; } = [];
 

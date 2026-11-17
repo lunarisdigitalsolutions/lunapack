@@ -508,15 +508,36 @@ internal sealed class UpdatePackCommandHandler(
     )
     {
         var availableUpdates = await updateSelectionService.GetAvailableAsync(projectDirectory);
-        if (availableUpdates.Value is not { } updates)
+        if (availableUpdates.Value is not { } availability)
         {
             return PackUpdateService.UpdateResult.Failure(
                 availableUpdates.Error ?? "Unable to select available updates."
             );
         }
 
-        var confirmedIds = updates
-            .Where(packUpdatePrompter.Confirm)
+        var blockingViolations = availability
+            .IntegrityViolations.Where(violation =>
+                !availability.Updates.Any(update =>
+                    string.Equals(
+                        update.RequestedRoot.Id,
+                        violation.LockedPack.Id,
+                        StringComparison.Ordinal
+                    )
+                )
+            )
+            .ToArray();
+        if (blockingViolations.Length > 0)
+        {
+            return PackUpdateService.UpdateResult.Failure(
+                string.Join(
+                    Environment.NewLine,
+                    blockingViolations.Select(violation => violation.Message)
+                )
+            );
+        }
+
+        var confirmedIds = availability
+            .Updates.Where(packUpdatePrompter.Confirm)
             .Select(update => update.RequestedRoot.Id)
             .ToHashSet(StringComparer.Ordinal);
         return await packUpdateService.UpdateSelectedAsync(

@@ -72,5 +72,58 @@ public sealed class ProjectInitializationCommandHandlerTests
         await Assert
             .That(lockFile.ReplaceLineEndings("\n"))
             .IsEqualTo("packs: []\nschemaVersion: 1\n");
+        var gitIgnore = workspace.FileSystem.File.ReadAllText(
+            workspace.FileSystem.Path.Combine(workspace.Path, ".gitignore")
+        );
+        await Assert.That(gitIgnore.ReplaceLineEndings("\n")).IsEqualTo("/.lunapack/\n");
+    }
+
+    [Test]
+    public async Task Initialize_WhenGitIgnoreExists_PreservesEntriesAndAddsProjectStateRule()
+    {
+        using var workspace = new TestWorkspace();
+        const string existing = "# user rules\n/build/";
+        var gitIgnorePath = workspace.FileSystem.Path.Combine(workspace.Path, ".gitignore");
+        workspace.FileSystem.File.WriteAllText(gitIgnorePath, existing);
+        var console = TestConsole.Create();
+        var handler = new ProjectInitializationCommandHandler(
+            workspace.FileSystem,
+            workspace.StateStore,
+            new WorkspaceDirectoryResolver(workspace.FileSystem),
+            new NextStepAdvisor(workspace.FileSystem, workspace.StateStore),
+            new NextStepRenderer(console),
+            console
+        );
+
+        var exitCode = await handler.InitializeAsync(workspace.Path);
+        var gitIgnore = workspace.FileSystem.File.ReadAllText(gitIgnorePath);
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert
+            .That(gitIgnore.ReplaceLineEndings("\n"))
+            .IsEqualTo($"{existing}\n/.lunapack/\n");
+    }
+
+    [Test]
+    public async Task Initialize_WhenGitIgnoreAlreadyExcludesProjectState_DoesNotDuplicateRule()
+    {
+        using var workspace = new TestWorkspace();
+        const string existing = "/.lunapack/\n/build/\n";
+        var gitIgnorePath = workspace.FileSystem.Path.Combine(workspace.Path, ".gitignore");
+        workspace.FileSystem.File.WriteAllText(gitIgnorePath, existing);
+        var console = TestConsole.Create();
+        var handler = new ProjectInitializationCommandHandler(
+            workspace.FileSystem,
+            workspace.StateStore,
+            new WorkspaceDirectoryResolver(workspace.FileSystem),
+            new NextStepAdvisor(workspace.FileSystem, workspace.StateStore),
+            new NextStepRenderer(console),
+            console
+        );
+
+        var exitCode = await handler.InitializeAsync(workspace.Path);
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(workspace.FileSystem.File.ReadAllText(gitIgnorePath)).IsEqualTo(existing);
     }
 }

@@ -132,7 +132,7 @@ internal sealed class ConfigCommandHandler(
 
     private static ScopeOptions AddScopeOptions(Command command)
     {
-        var localOption = new Option<bool>("--local")
+        var projectOption = new Option<bool>("--project", "--local")
         {
             Description = "Store preference in the current lunapack.yml.",
         };
@@ -144,10 +144,10 @@ internal sealed class ConfigCommandHandler(
         {
             Description = "Store preference in global user settings (default).",
         };
-        command.Options.Add(localOption);
+        command.Options.Add(projectOption);
         command.Options.Add(userProjectOption);
         command.Options.Add(globalOption);
-        return new ScopeOptions(localOption, userProjectOption, globalOption);
+        return new ScopeOptions(projectOption, userProjectOption, globalOption);
     }
 
     private static bool TryGetScope(
@@ -156,24 +156,24 @@ internal sealed class ConfigCommandHandler(
         out CliPreferenceService.Scope scope
     )
     {
-        var local = parseResult.GetValue(options.Local);
+        var project = parseResult.GetValue(options.Project);
         var userProject = parseResult.GetValue(options.UserProject);
         var global = parseResult.GetValue(options.Global);
-        if ((local ? 1 : 0) + (userProject ? 1 : 0) + (global ? 1 : 0) > 1)
+        if ((project ? 1 : 0) + (userProject ? 1 : 0) + (global ? 1 : 0) > 1)
         {
             scope = default;
             return false;
         }
 
         scope =
-            local ? CliPreferenceService.Scope.Local
+            project ? CliPreferenceService.Scope.Local
             : userProject ? CliPreferenceService.Scope.UserProject
             : CliPreferenceService.Scope.Global;
         return true;
     }
 
     private sealed record ScopeOptions(
-        Option<bool> Local,
+        Option<bool> Project,
         Option<bool> UserProject,
         Option<bool> Global
     );

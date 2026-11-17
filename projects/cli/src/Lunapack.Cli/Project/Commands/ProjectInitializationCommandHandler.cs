@@ -14,6 +14,9 @@ internal sealed class ProjectInitializationCommandHandler(
     CliConsole console
 )
 {
+    private const string ProjectStateIgnorePattern = "/.lunapack/";
+    private static readonly char[] _lineEndings = ['\r', '\n'];
+
     public Command CreateCommand(string projectDirectory, Option<string?> workspaceOption)
     {
         var command = new Command("init", "Create a LunaPack project manifest.");
@@ -44,6 +47,11 @@ internal sealed class ProjectInitializationCommandHandler(
             return console.Fail("Project state already exists.");
         }
 
+        if (!EnsureProjectStateIgnored(projectDirectory))
+        {
+            return 1;
+        }
+
         var result = await projectStateStore.InitializeAsync(projectDirectory);
 
         if (!result.IsSuccess)
@@ -54,5 +62,52 @@ internal sealed class ProjectInitializationCommandHandler(
         console.Success("Workspace initialized");
         nextStepRenderer.Render(nextStepAdvisor.Recommend(NextStepContext.WorkspaceInitialized));
         return 0;
+    }
+
+    private bool EnsureProjectStateIgnored(string projectDirectory)
+    {
+        var gitIgnorePath = fileSystem.Path.Combine(projectDirectory, ".gitignore");
+        try
+        {
+            if (!fileSystem.File.Exists(gitIgnorePath))
+            {
+                fileSystem.File.WriteAllText(
+                    gitIgnorePath,
+                    $"{ProjectStateIgnorePattern}{Environment.NewLine}"
+                );
+                return true;
+            }
+
+            var contents = fileSystem.File.ReadAllText(gitIgnorePath);
+            if (
+                contents
+                    .Split(_lineEndings, StringSplitOptions.RemoveEmptyEntries)
+                    .Any(line =>
+                        string.Equals(
+                            line.Trim(),
+                            ProjectStateIgnorePattern,
+                            StringComparison.Ordinal
+                        )
+                    )
+            )
+            {
+                return true;
+            }
+
+            var separator =
+                contents.Length == 0 || contents.EndsWith('\n') || contents.EndsWith('\r')
+                    ? string.Empty
+                    : Environment.NewLine;
+            fileSystem.File.AppendAllText(
+                gitIgnorePath,
+                $"{separator}{ProjectStateIgnorePattern}{Environment.NewLine}"
+            );
+            return true;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            console.Fail($"Unable to update project .gitignore: {exception.Message}");
+            return false;
+        }
     }
 }

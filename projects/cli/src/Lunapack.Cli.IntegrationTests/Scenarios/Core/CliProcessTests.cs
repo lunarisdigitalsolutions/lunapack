@@ -157,11 +157,17 @@ public sealed class CliProcessTests
         using var workspace = new TestWorkspace();
 
         await InitializeAndAddSampleSourceAsync(workspace.Path);
-        var install = await CliProcess.InvokeAsync(workspace.Path, "install", "dotnet-gitignore");
         var managedFilePath = Path.Combine(workspace.Path, ".gitignore");
+        await Assert
+            .That(File.ReadAllText(managedFilePath).ReplaceLineEndings("\n"))
+            .IsEqualTo("/.lunapack/\n");
+        var install = await CliProcess.InvokeAsync(workspace.Path, "install", "dotnet-gitignore");
 
         await Assert.That(install.ExitCode).IsEqualTo(0);
         await Assert.That(File.Exists(managedFilePath)).IsTrue();
+        await Assert
+            .That(File.ReadAllText(managedFilePath).ReplaceLineEndings("\n"))
+            .Contains("/.lunapack/\n");
 
         var uninstall = await CliProcess.InvokeAsync(
             workspace.Path,
@@ -170,7 +176,9 @@ public sealed class CliProcessTests
         );
 
         await Assert.That(uninstall.ExitCode).IsEqualTo(0);
-        await Assert.That(File.ReadAllText(managedFilePath)).IsEmpty();
+        await Assert
+            .That(File.ReadAllText(managedFilePath).ReplaceLineEndings("\n"))
+            .IsEqualTo("/.lunapack/\n");
     }
 
     [Test]
@@ -273,7 +281,7 @@ public sealed class CliProcessTests
         await Assert.That(installOutput).Contains("Lifecycle script denied by policy:");
         await Assert.That(installOutput).Contains(scopeName);
         await Assert.That(installOutput).Contains("scripts-denied-fallback");
-        await Assert.That(installOutput).DoesNotContain("10.0.");
+        await Assert.That(FindDotnetVersionOutputIndex(install.StandardOutput)).IsEqualTo(-1);
         await Assert.That(File.Exists(Path.Combine(workspace.Path, ".pack"))).IsTrue();
     }
 
@@ -304,25 +312,20 @@ public sealed class CliProcessTests
         );
 
         await Assert.That(install.ExitCode).IsEqualTo(0);
-        var first = install.StandardOutput.IndexOf("static-instruction", StringComparison.Ordinal);
-        var scriptOutput = install
-            .StandardOutput.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
-            .Select(line => line.Trim())
-            .FirstOrDefault(line =>
-            {
-                var version = line.Split('-', '+')[0];
-                return Version.TryParse(version, out _);
-            });
-        var script = scriptOutput is null
-            ? -1
-            : install.StandardOutput.IndexOf(scriptOutput, StringComparison.Ordinal);
-        var last = install.StandardOutput.IndexOf("Hello Example Corp", StringComparison.Ordinal);
-        var success = install.StandardOutput.IndexOf(
+        var installOutput = install.StandardOutput.ReplaceLineEndings("\n");
+        var first = installOutput.IndexOf("static-instruction", StringComparison.Ordinal);
+        var script = FindDotnetVersionOutputIndex(installOutput);
+        var last = installOutput.IndexOf("Hello Example Corp", StringComparison.Ordinal);
+        var successIndex = installOutput.IndexOf(
             "Installed 'example' (version '1.0.0') in ",
             StringComparison.Ordinal
         );
-        var outputIsOrdered = first >= 0 && first < script && script < last && last < success;
-        await Assert.That(outputIsOrdered).IsTrue();
+        await Assert
+            .That(first >= 0 && first < script && script < last && last < successIndex)
+            .IsTrue()
+            .Because(
+                $"stdout: {install.StandardOutput}{Environment.NewLine}stderr: {install.StandardError}"
+            );
         await Assert.That(install.StandardOutput).DoesNotContain("Press Enter to continue...");
         await Assert.That(install.StandardOutput).DoesNotContain("Applied managed-file changes");
     }
@@ -352,7 +355,7 @@ public sealed class CliProcessTests
 
         await Assert.That(install.ExitCode).IsEqualTo(0);
         await Assert.That(install.StandardOutput).Contains("script-was-ignored");
-        await Assert.That(install.StandardOutput).DoesNotContain("10.0.");
+        await Assert.That(FindDotnetVersionOutputIndex(install.StandardOutput)).IsEqualTo(-1);
     }
 
     [Test]
@@ -380,7 +383,7 @@ public sealed class CliProcessTests
 
         await Assert.That(install.ExitCode).IsEqualTo(0);
         await Assert.That(install.StandardOutput).Contains("scripts-were-skipped");
-        await Assert.That(install.StandardOutput).DoesNotContain("10.0.");
+        await Assert.That(FindDotnetVersionOutputIndex(install.StandardOutput)).IsEqualTo(-1);
     }
 
     [Test]
@@ -946,7 +949,10 @@ public sealed class CliProcessTests
         var discover = await CliProcess.InvokeAsync(workspace.Path, "discover");
 
         await Assert.That(discover.ExitCode).IsEqualTo(1);
-        await Assert.That(discover.StandardOutput).Contains("error: Git exited with code");
+        await Assert
+            .That(discover.StandardOutput)
+            .Contains("warning: Skipping unavailable pack source 'git'");
+        await Assert.That(discover.StandardOutput).Contains("Git exited with code 128");
         await Assert.That(File.ReadAllText(configurationPath)).IsEqualTo(initialConfiguration);
         await Assert.That(File.ReadAllText(lockFilePath)).IsEqualTo(initialLockFile);
         await Assert.That(File.Exists(Path.Combine(workspace.Path, ".pack"))).IsFalse();
@@ -1540,8 +1546,13 @@ public sealed class CliProcessTests
     public async Task Scenario_RepositorySourceConfigured_DiscoversAllBundledPacks()
     {
         var repositoryRoot = GetRepositoryRoot();
+        using var profileWorkspace = new TestWorkspace();
+        var environment = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["LUNAPACK_USER_PROFILE"] = Path.Combine(profileWorkspace.Path, "profile"),
+        };
 
-        var discover = await CliProcess.InvokeAsync(repositoryRoot, "discover");
+        var discover = await CliProcess.InvokeAsync(repositoryRoot, environment, "discover");
 
         await Assert.That(discover.ExitCode).IsEqualTo(0);
         foreach (var (packId, version) in GetBundledPacks())
@@ -2327,6 +2338,30 @@ public sealed class CliProcessTests
         }
 
         return "source";
+    }
+
+    private static int FindDotnetVersionOutputIndex(string output)
+    {
+        var normalizedOutput = output.ReplaceLineEndings("\n");
+        var lineStart = 0;
+        foreach (var line in normalizedOutput.Split('\n'))
+        {
+            var versionLine = line.Trim();
+            var metadataStart = versionLine.IndexOfAny(['-', '+']);
+            if (metadataStart >= 0)
+            {
+                versionLine = versionLine[..metadataStart];
+            }
+
+            if (Version.TryParse(versionLine, out _))
+            {
+                return lineStart;
+            }
+
+            lineStart += line.Length + 1;
+        }
+
+        return -1;
     }
 
     private static string CreateInstructionPackSource(

@@ -26,13 +26,14 @@ internal sealed class TestWorkspace : IDisposable
         Directory.CreateDirectory(Path);
         FileSystem = new FileSystem();
         var profileDirectory = System.IO.Path.Combine(Path, "profile");
+        UserSettingsStore = new UserSettingsStore(FileSystem, profileDirectory);
         Application = new CliApplication(
             FileSystem,
             ansiConsole ?? TestConsole.CreateAnsiConsole(),
             packUpdatePrompter,
             gitProcessRunner: gitProcessRunner ?? new StubGitProcessRunner(),
             trustConfirmer: trustConfirmer,
-            userSettingsStore: new UserSettingsStore(FileSystem, profileDirectory),
+            userSettingsStore: UserSettingsStore,
             completionScriptInstallerResolver: new CompletionScriptInstallerResolver([
                 new BashCompletionScriptInstaller(FileSystem, profileDirectory),
                 new FishCompletionScriptInstaller(FileSystem, profileDirectory),
@@ -66,6 +67,8 @@ internal sealed class TestWorkspace : IDisposable
     public ProjectStateStore StateStore { get; }
 
     public string Path { get; }
+
+    public UserSettingsStore UserSettingsStore { get; }
 
     public void Dispose()
     {

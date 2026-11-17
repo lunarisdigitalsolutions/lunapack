@@ -6,6 +6,7 @@ using Lunapack.Cli.Application.Guidance;
 using Lunapack.Cli.Application.Paths;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources.Git;
+using Lunapack.Cli.Trust;
 
 namespace Lunapack.Cli.Sources.Commands;
 
@@ -17,9 +18,15 @@ internal sealed class LocalSourceCommandHandler(
     NextStepRenderer nextStepRenderer,
     CliConsole console,
     GitRefResolver? gitRefResolver = null,
-    CliCompletionProvider? completionProvider = null
+    CliCompletionProvider? completionProvider = null,
+    UserSettingsStore? userSettingsStore = null
 )
 {
+    private readonly ConfiguredSourceIgnoreService _sourceIgnoreService = new(
+        fileSystem,
+        userSettingsStore
+    );
+
     public Command CreateCommand(string projectDirectory, Option<string?> workspaceOption)
     {
         return new Command("sources", "Manage pack sources.")
@@ -28,6 +35,8 @@ internal sealed class LocalSourceCommandHandler(
             CreateListCommand(projectDirectory, workspaceOption),
             CreateRemoveCommand(projectDirectory, workspaceOption),
             CreateRenameCommand(projectDirectory, workspaceOption),
+            CreateSourceStateCommand(projectDirectory, workspaceOption, ignored: true),
+            CreateSourceStateCommand(projectDirectory, workspaceOption, ignored: false),
         };
     }
 
@@ -63,6 +72,7 @@ internal sealed class LocalSourceCommandHandler(
                 gitRefOption,
                 gitPathOption
             ),
+            CreateAddOciCommand(projectDirectory, workspaceOption, sourceNameArgument),
         };
     }
 
@@ -194,6 +204,52 @@ internal sealed class LocalSourceCommandHandler(
         return addGitHubSourceCommand;
     }
 
+    private Command CreateAddOciCommand(
+        string projectDirectory,
+        Option<string?> workspaceOption,
+        Argument<string> sourceNameArgument
+    )
+    {
+        var registryUrlArgument = new Argument<string>("registry-url")
+        {
+            Description = "HTTPS registry origin or repository URL prefix.",
+        };
+        var pathOption = new Option<string?>("--path", "-p")
+        {
+            Description = "Repository path prefix under the registry.",
+        };
+        var usernameOption = new Option<string?>("--username")
+        {
+            Description = "Non-secret username for registry authentication.",
+        };
+        var addOciSourceCommand = new Command("oci", "Add an OCI registry pack source.")
+        {
+            sourceNameArgument,
+            registryUrlArgument,
+            pathOption,
+            usernameOption,
+        };
+        addOciSourceCommand.SetAction(async parseResult =>
+        {
+            var sourceName = parseResult.GetValue(sourceNameArgument);
+            var registryUrl = parseResult.GetValue(registryUrlArgument);
+            return sourceName is null || registryUrl is null
+                ? console.Fail("A source name and OCI registry URL are required.")
+                : await AddOciSourceAsync(
+                    workspaceDirectoryResolver.Resolve(
+                        projectDirectory,
+                        parseResult.GetValue(workspaceOption)
+                    ),
+                    sourceName,
+                    registryUrl,
+                    parseResult.GetValue(pathOption),
+                    parseResult.GetValue(usernameOption)
+                );
+        });
+
+        return addOciSourceCommand;
+    }
+
     private Command CreateListCommand(string projectDirectory, Option<string?> workspaceOption)
     {
         var listSourcesCommand = new Command("list", "List configured pack sources.");
@@ -207,6 +263,44 @@ internal sealed class LocalSourceCommandHandler(
         );
 
         return listSourcesCommand;
+    }
+
+    private Command CreateSourceStateCommand(
+        string projectDirectory,
+        Option<string?> workspaceOption,
+        bool ignored
+    )
+    {
+        var nameArgument = new Argument<string>("name")
+        {
+            Description = $"Name of the configured source to {(ignored ? "ignore" : "unignore")}.",
+        };
+        if (completionProvider is not null)
+        {
+            nameArgument.CompletionSources.Add(completionProvider.GetConfiguredSourceNames);
+        }
+
+        var verb = ignored ? "ignore" : "unignore";
+        var command = new Command(verb, $"{(ignored ? "Ignore" : "Unignore")} a source locally.")
+        {
+            nameArgument,
+        };
+        command.SetAction(async parseResult =>
+        {
+            var name = parseResult.GetValue(nameArgument);
+            if (name is null)
+            {
+                return console.Fail("A source name is required.");
+            }
+
+            var resolvedProjectDirectory = workspaceDirectoryResolver.Resolve(
+                projectDirectory,
+                parseResult.GetValue(workspaceOption)
+            );
+            return await SetIgnoredAsync(resolvedProjectDirectory, name, ignored);
+        });
+
+        return command;
     }
 
     private Command CreateRemoveCommand(string projectDirectory, Option<string?> workspaceOption)
@@ -295,9 +389,81 @@ internal sealed class LocalSourceCommandHandler(
 
         if (state.Configuration.Sources.Count > 0)
         {
-            console.Render(SourceOutputFormatter.CreateListTable(state.Configuration.Sources));
+            var ignoreContext = await _sourceIgnoreService.LoadAsync(projectDirectory);
+            if (ignoreContext.Value is not { } context)
+            {
+                return console.Fail(
+                    ignoreContext.Error ?? "Unable to load local source ignore settings."
+                );
+            }
+
+            var ignoredSourceNames = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var source in state.Configuration.Sources)
+            {
+                var ignored = _sourceIgnoreService.IsIgnored(context, source);
+                if (!ignored.IsSuccess)
+                {
+                    return console.Fail(
+                        ignored.Error ?? $"Unable to determine ignore state for '{source.Name}'."
+                    );
+                }
+
+                if (ignored.Value)
+                {
+                    ignoredSourceNames.Add(source.Name);
+                }
+            }
+
+            console.Render(
+                SourceOutputFormatter.CreateListTable(
+                    state.Configuration.Sources,
+                    ignoredSourceNames
+                )
+            );
         }
 
+        return 0;
+    }
+
+    public async Task<int> SetIgnoredAsync(string projectDirectory, string name, bool ignored)
+    {
+        var loadedState = await projectStateStore.LoadAsync(projectDirectory);
+        if (loadedState.Value is not { } state)
+        {
+            return console.Fail(loadedState.Error);
+        }
+
+        var source = state.Configuration.Sources.Find(configured =>
+            string.Equals(configured.Name, name, StringComparison.Ordinal)
+        );
+        if (source is null)
+        {
+            return console.Fail($"Source '{name}' is not configured.");
+        }
+
+        var updateResult = await _sourceIgnoreService.SetIgnoredAsync(
+            projectDirectory,
+            source,
+            ignored
+        );
+        if (!updateResult.IsSuccess)
+        {
+            return console.Fail(updateResult.Error);
+        }
+
+        if (!updateResult.Value)
+        {
+            console.Info(
+                ignored
+                    ? $"Source '{name}' is already ignored locally"
+                    : $"Source '{name}' is not ignored locally"
+            );
+            return 0;
+        }
+
+        console.Success(
+            ignored ? $"Source '{name}' ignored locally" : $"Source '{name}' restored locally"
+        );
         return 0;
     }
 
@@ -387,6 +553,70 @@ internal sealed class LocalSourceCommandHandler(
         }
 
         state.Configuration.Sources.Add(candidateGitSource);
+        var savedState = await projectStateStore.SaveAllowingUnavailableSourcesAsync(
+            projectDirectory,
+            state
+        );
+
+        return CompleteSourceAddition(savedState, name);
+    }
+
+    public async Task<int> AddOciSourceAsync(
+        string projectDirectory,
+        string name,
+        string registryUrl,
+        string? repositoryPath,
+        string? username
+    )
+    {
+        if (string.IsNullOrEmpty(name))
+        {
+            return console.Fail("A source name is required.");
+        }
+
+        if (
+            username is not null
+            && (string.IsNullOrWhiteSpace(username) || username.Any(char.IsControl))
+        )
+        {
+            return console.Fail(
+                "An OCI source username must not be empty or contain control characters."
+            );
+        }
+
+        var location = SourceIdentityNormalizer.NormalizeOciLocation(registryUrl, repositoryPath);
+        if (!location.IsSuccess)
+        {
+            return console.Fail(location.Error);
+        }
+
+        var normalizedLocation = location.Value;
+        var loadedState = await projectStateStore.LoadAsync(projectDirectory);
+        if (loadedState.Value is not { } state)
+        {
+            return console.Fail(loadedState.Error);
+        }
+
+        if (SourceNameExists(state.Configuration, name))
+        {
+            return console.Fail($"Source name '{name}' is already configured.");
+        }
+
+        var candidate = new ProjectConfiguration.OciSource
+        {
+            Name = name,
+            Url = normalizedLocation.Url,
+            Path = normalizedLocation.Path,
+            Username = username?.Trim(),
+        };
+        if (FindFingerprintConflict(state.Configuration, candidate) is { } conflict)
+        {
+            return console.Fail(
+                $"OCI source endpoint and path are already configured as '{conflict}'."
+            );
+        }
+
+        state.Configuration.Sources.Add(candidate);
         var savedState = await projectStateStore.SaveAllowingUnavailableSourcesAsync(
             projectDirectory,
             state

@@ -16,10 +16,17 @@ internal sealed class ExternalSourceRequirementPlanner(GitRefResolver gitRefReso
         ResolvedPackGraph graph,
         ProjectConfiguration configuration,
         ResolvedPackParameters parameters,
+        IReadOnlyCollection<ConfiguredSourceIdentity>? ignoredSources = null,
         CancellationToken cancellationToken = default
     )
     {
-        var collected = await CollectAsync(graph, parameters, cancellationToken);
+        var collected = await CollectAsync(
+            graph,
+            configuration,
+            parameters,
+            ignoredSources,
+            cancellationToken
+        );
         if (collected.Value is not { } groups)
         {
             return ManifestOperationResult<ExternalSourceRequirementPlan>.Failure(
@@ -109,14 +116,23 @@ internal sealed class ExternalSourceRequirementPlanner(GitRefResolver gitRefReso
         ManifestOperationResult<Dictionary<string, RequirementGroupBuilder>>
     > CollectAsync(
         ResolvedPackGraph graph,
+        ProjectConfiguration configuration,
         ResolvedPackParameters parameters,
+        IReadOnlyCollection<ConfiguredSourceIdentity>? ignoredSources,
         CancellationToken cancellationToken
     )
     {
         var groups = new Dictionary<string, RequirementGroupBuilder>(StringComparer.Ordinal);
         foreach (var pack in graph.Packs)
         {
-            var collected = await CollectPackAsync(pack, parameters, groups, cancellationToken);
+            var collected = await CollectPackAsync(
+                pack,
+                configuration,
+                parameters,
+                groups,
+                ignoredSources,
+                cancellationToken
+            );
             if (!collected.IsSuccess)
             {
                 return ManifestOperationResult<Dictionary<string, RequirementGroupBuilder>>.Failure(
@@ -130,8 +146,10 @@ internal sealed class ExternalSourceRequirementPlanner(GitRefResolver gitRefReso
 
     private async Task<ManifestOperationResult<bool>> CollectPackAsync(
         DiscoveredPack pack,
+        ProjectConfiguration configuration,
         ResolvedPackParameters parameters,
         IDictionary<string, RequirementGroupBuilder> groups,
+        IReadOnlyCollection<ConfiguredSourceIdentity>? ignoredSources,
         CancellationToken cancellationToken
     )
     {
@@ -148,10 +166,12 @@ internal sealed class ExternalSourceRequirementPlanner(GitRefResolver gitRefReso
 
             var collected = await CollectAliasAsync(
                 pack,
+                configuration,
                 alias,
                 groupedFiles,
                 parameters,
                 groups,
+                ignoredSources,
                 cancellationToken
             );
             if (!collected.IsSuccess)
@@ -165,10 +185,12 @@ internal sealed class ExternalSourceRequirementPlanner(GitRefResolver gitRefReso
 
     private async Task<ManifestOperationResult<bool>> CollectAliasAsync(
         DiscoveredPack pack,
+        ProjectConfiguration configuration,
         string alias,
         IEnumerable<PackManifest.PackManagedFile> managedFiles,
         ResolvedPackParameters parameters,
         IDictionary<string, RequirementGroupBuilder> groups,
+        IReadOnlyCollection<ConfiguredSourceIdentity>? ignoredSources,
         CancellationToken cancellationToken
     )
     {
@@ -190,6 +212,14 @@ internal sealed class ExternalSourceRequirementPlanner(GitRefResolver gitRefReso
         {
             return ManifestOperationResult<bool>.Failure(
                 $"Pack '{pack.Manifest.Id}' references undeclared source alias '{alias}'."
+            );
+        }
+
+        var ignoredSource = FindIgnoredConfiguredSource(declaration, configuration, ignoredSources);
+        if (ignoredSource is not null)
+        {
+            return ManifestOperationResult<bool>.Failure(
+                $"Pack '{pack.Manifest.Id}' external source '{alias}' requires locally ignored source '{ignoredSource.Name}'. Run 'luna sources unignore {ignoredSource.Name}' to continue."
             );
         }
 
@@ -220,6 +250,43 @@ internal sealed class ExternalSourceRequirementPlanner(GitRefResolver gitRefReso
 
         AddRequirement(pack, alias, declaration, fingerprint, selectedCount, groups);
         return ManifestOperationResult<bool>.Success(true);
+    }
+
+    private static ProjectConfiguration.GitSource? FindIgnoredConfiguredSource(
+        PackManifest.PackSource declaration,
+        ProjectConfiguration configuration,
+        IReadOnlyCollection<ConfiguredSourceIdentity>? ignoredSources
+    )
+    {
+        if (ignoredSources is not { Count: > 0 })
+        {
+            return null;
+        }
+
+        var declaredFingerprint = SourceIdentityNormalizer.CreateGit(
+            declaration.Url,
+            declaration.Ref,
+            declaration.Path
+        );
+        if (declaredFingerprint.Value is not { } fingerprint)
+        {
+            return null;
+        }
+
+        foreach (var source in configuration.Sources.OfType<ProjectConfiguration.GitSource>())
+        {
+            var configuredFingerprint = SourceIdentityNormalizer.Create(source);
+            if (
+                configuredFingerprint.Value is { } configured
+                && configured == fingerprint
+                && ignoredSources.Contains(ConfiguredSourceIdentity.Create(source))
+            )
+            {
+                return source;
+            }
+        }
+
+        return null;
     }
 
     private static ManifestOperationResult<int> CountSelected(

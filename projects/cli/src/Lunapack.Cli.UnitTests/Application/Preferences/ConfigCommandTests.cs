@@ -32,14 +32,14 @@ public sealed class ConfigCommandTests
     }
 
     [Test]
-    public async Task Set_WhenLocalScopeSelected_UpdatesOnlyProjectConfiguration()
+    public async Task Set_WhenProjectScopeSelected_UpdatesOnlyProjectConfiguration()
     {
         using var workspace = new TestWorkspace();
         await workspace.Application.RunAsync(["init"], workspace.Path);
         var store = CreateUserSettingsStore(workspace);
 
         var exitCode = await workspace.Application.RunAsync(
-            ["config", "set", "search.only-composites", "false", "--local"],
+            ["config", "set", "search.only-composites", "false", "--project"],
             workspace.Path
         );
         var state = await workspace.StateStore.LoadAsync(workspace.Path);

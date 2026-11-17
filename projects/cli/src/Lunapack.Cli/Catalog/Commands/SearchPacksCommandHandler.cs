@@ -123,7 +123,7 @@ internal sealed class SearchPacksCommandHandler(
             searchablePacks = searchablePacks.Where(pack => !pack.Manifest.Draft);
         }
 
-        var packs = PackCatalog.Search(searchablePacks.ToArray(), normalizedSearchTerm);
+        var packs = PackCatalog.Search([.. searchablePacks], normalizedSearchTerm);
         var linkSummaries = await linkInspectionService.ListAsync(projectDirectory);
         if (linkSummaries.Value is not { } links)
         {

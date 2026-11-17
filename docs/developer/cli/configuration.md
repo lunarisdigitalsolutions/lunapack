@@ -9,8 +9,8 @@ Initialization writes only required properties: project `schemaVersion`,
 add and canonically serialize properties required by their changes.
 
 - `lunapack.yml`: Owned by the project team. It contains project-relative local
-  and Git sources, requested root packs, project-owned links, and optional
-  string and Boolean variables.
+  sources, Git and OCI registry sources, requested root packs, project-owned
+  links, and optional string and Boolean variables.
 - `lunapack-lock.yml`: Owned by LunaPack. It records exact resolved packs and
   links, provenance, dependency edges, effective targets, and content SHA-256
   digests.
@@ -35,10 +35,18 @@ Git must be available on the process path. LunaPack caches discovered Git metada
 under the workspace `.lunapack` directory and never stores Git credentials there.
 The lock document records the resolved commit used for each Git pack.
 
-Links select regular files from an existing configured source without requiring
-an upstream `pack.yml`. Link intent remains in project configuration; selected
-source paths, mapped targets, source identity, optional Git commit, and content
-digests remain in lock state. See the [Luna Links reference](links.md).
+OCI sources use an ordered `sources` sequence entry with `type: oci`, a required
+HTTPS `url`, and an optional repository `path`. An optional `username` is
+non-secret metadata; credentials are acquired separately and are never written
+to project configuration. The URL identifies a registry origin, while the
+repository prefix and pack ID identify an OCI repository. See
+[Add a pack source](../sources.md#add-an-oci-registry-source) for normalization,
+authentication, and discovery behavior.
+
+Links select regular files from a configured local or Git source without
+requiring an upstream `pack.yml`. Link intent remains in project configuration;
+selected source paths, mapped targets, source identity, optional Git commit,
+and content digests remain in lock state. See the [Luna Links reference](links.md).
 
 ## Trust storage
 
@@ -52,6 +60,13 @@ identity. `luna trust ... --project` writes both records for the current user;
 committed project trust alone does not authorize scripts for other users or
 fresh automation profiles.
 
+Source-ignore state is stored in the user-local
+`<profile>/.lunapack/source-ignores.yml` sidecar and scoped to the canonical
+project and source identity. Keeping it separate leaves `config.yml` unchanged
+for older strict CLI readers. It is not shared through project configuration
+or the lock file. Ignoring a source leaves existing trust and installed
+ownership evidence intact.
+
 All three scopes support `deny.scripts`. Any active denial overrides grants and
 `--scripts run`. Project denial uses `trust.deny.scripts`; user settings use
 `deny.scripts` in the corresponding project or global record. Omission and
@@ -64,14 +79,14 @@ profile root for isolated automation; Luna stores settings beneath that root's
 Use `luna config` to set, list, or remove Boolean preferences. Supported keys
 are:
 
-| Key                         | Built-in default | Effect                                                   |
-| --------------------------- | ---------------- | -------------------------------------------------------- |
-| `discover.only-composites`  | `false`          | Show only composite packs in `luna discover`.            |
-| `search.only-composites`    | `false`          | Show only composite packs in `luna search`.              |
-| `next-steps.enabled`        | `true`           | Show contextual next-step and recovery guidance.          |
+| Key                        | Built-in default | Effect                                           |
+| -------------------------- | ---------------- | ------------------------------------------------ |
+| `discover.only-composites` | `false`          | Show only composite packs in `luna discover`.    |
+| `search.only-composites`   | `false`          | Show only composite packs in `luna search`.      |
+| `next-steps.enabled`       | `true`           | Show contextual next-step and recovery guidance. |
 
 ```powershell
-luna config set discover.only-composites true
+luna config set discover.only-composites true --project
 luna config set next-steps.enabled false --user-project
 luna config list --global
 luna config remove discover.only-composites --global
@@ -88,13 +103,14 @@ preferences:
     enabled: false
 ```
 
+`--project` stores values in the current `lunapack.yml`; `--local` is an alias.
 `--user-project` stores values in the user profile's `.lunapack/config.yml`
 under the canonical project directory. `--global` stores them in that file's
 global settings. With no scope option, `luna config` uses `--global`. Scope
-options are mutually exclusive. Writing or removing `--local` values requires
-an initialized workspace; `luna config list --local` reports an empty scope
-when no `lunapack.yml` exists. `--workspace` selects which project receives
-local or user-project values.
+options are mutually exclusive. Writing or removing project values requires an
+initialized workspace; `luna config list --project` reports an empty scope when
+no `lunapack.yml` exists. `--workspace` selects which project receives
+project-local or user-project values.
 
 `luna config list` shows values explicitly stored in the selected scope; it
 does not print built-in defaults. `set` accepts only `true` or `false`, and

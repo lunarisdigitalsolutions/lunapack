@@ -1,4 +1,4 @@
-﻿using System.CommandLine;
+using System.CommandLine;
 using System.IO.Abstractions;
 using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.Completions;
@@ -16,11 +16,14 @@ using Lunapack.Cli.Packs.ExternalSources;
 using Lunapack.Cli.Packs.Lifecycle;
 using Lunapack.Cli.Packs.Manifest;
 using Lunapack.Cli.Packs.Planning;
+using Lunapack.Cli.Packs.Publishing;
 using Lunapack.Cli.Packs.Validation;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Project.Commands;
+using Lunapack.Cli.Sources;
 using Lunapack.Cli.Sources.Commands;
 using Lunapack.Cli.Sources.Git;
+using Lunapack.Cli.Sources.Oci;
 using Lunapack.Cli.Trust;
 using Spectre.Console;
 
@@ -50,13 +53,12 @@ internal sealed class CliApplication(
         var console = new CliConsole(ansiConsole, minimumLevel);
         console.Debug($"Running CLI command in {projectDirectory}");
         var nextStepRenderer = new NextStepRenderer(console);
+        using var services = CreateCommandServices(console, nextStepRenderer);
         var suppressNextStepsOption = CreateSuppressNextStepsOption();
         var workspaceOption = CreateWorkspaceOption();
-        var services = CreateCommandServices(console, nextStepRenderer);
         var rootCommand = CreateRootCommand(
             projectDirectory,
             console,
-            nextStepRenderer,
             suppressNextStepsOption,
             workspaceOption,
             services
@@ -129,7 +131,6 @@ internal sealed class CliApplication(
     private RootCommand CreateRootCommand(
         string projectDirectory,
         CliConsole console,
-        NextStepRenderer nextStepRenderer,
         Option<bool> suppressNextStepsOption,
         Option<string?> workspaceOption,
         CommandServices services
@@ -154,6 +155,7 @@ internal sealed class CliApplication(
             rootCommand,
             fileSystem,
             services.ProjectStateStore,
+            services.UserSettingsStore,
             services.TrustService,
             completionProvider,
             services.WorkspaceDirectoryResolver,
@@ -298,10 +300,26 @@ internal sealed class CliApplication(
             projectStateStore,
             effectiveUserSettingsStore
         );
+        var sourceIgnoreService = new ConfiguredSourceIgnoreService(
+            fileSystem,
+            effectiveUserSettingsStore
+        );
         var workspaceDirectoryResolver = new WorkspaceDirectoryResolver(fileSystem);
         var effectiveGitProcessRunner = gitProcessRunner ?? new GitProcessRunner();
         var gitRefResolver = new GitRefResolver(effectiveGitProcessRunner);
-        var packCatalog = new PackCatalog(fileSystem, console, effectiveGitProcessRunner);
+        var ociPackSource = CreateOciPackSource(console);
+        var packCatalog = CreatePackCatalog(
+            console,
+            effectiveGitProcessRunner,
+            effectiveUserSettingsStore,
+            ociPackSource,
+            sourceIgnoreService
+        );
+        var packValidationService = CreatePackValidationService(
+            projectStateStore,
+            packCatalog,
+            console
+        );
         var nextStepAdvisor = new NextStepAdvisor(fileSystem, projectStateStore);
         var prerequisiteGuard = new WorkflowPrerequisiteGuard(
             nextStepAdvisor,
@@ -315,36 +333,149 @@ internal sealed class CliApplication(
             effectiveUserSettingsStore,
             console,
             effectiveGitProcessRunner,
-            gitRefResolver
+            gitRefResolver,
+            ociPackSource,
+            sourceIgnoreService
         );
-        var linkServices = CreateLinkServices(fileSystem, projectStateStore, console);
-        return new CommandServices(
+        var packPublishingServices = CreatePackPublishingServices(
             projectStateStore,
+            effectiveUserSettingsStore,
+            ociPackSource,
+            effectiveGitProcessRunner,
+            gitRefResolver,
+            sourceIgnoreService
+        );
+        var linkServices = CreateLinkServices(
+            fileSystem,
+            projectStateStore,
+            console,
+            sourceIgnoreService
+        );
+        return new CommandServices(
+            packCatalog,
+            ociPackSource,
+            projectStateStore,
+            effectiveUserSettingsStore,
             cliPreferenceService,
             workspaceDirectoryResolver,
             new CatalogService(packCatalog, projectStateStore),
-            new PackValidationService(
-                fileSystem,
-                projectStateStore,
-                new LocalPackDiscovery(fileSystem, console),
-                packCatalog
-            ),
+            packValidationService,
+            packPublishingServices.AuthoringValidationService,
+            packPublishingServices.PackPublishingService,
             lifecycleServices,
             linkServices,
             packUpdatePrompter ?? new ConsolePackUpdatePrompter(console),
             nextStepAdvisor,
             nextStepRenderer,
             prerequisiteGuard,
-            new TrustService(
-                fileSystem,
-                projectStateStore,
-                effectiveUserSettingsStore,
-                trustConfirmer ?? new ConsoleTrustConfirmer(console)
-            ),
+            CreateTrustService(projectStateStore, effectiveUserSettingsStore, console),
             gitRefResolver,
             effectiveGitProcessRunner
         );
     }
+
+    private PackCatalog CreatePackCatalog(
+        CliConsole console,
+        IGitProcessRunner gitProcessRunner,
+        UserSettingsStore settingsStore,
+        OciPackSource ociPackSource,
+        ConfiguredSourceIgnoreService sourceIgnoreService
+    ) =>
+        new(
+            fileSystem,
+            console,
+            gitProcessRunner,
+            settingsStore,
+            ociPackSource,
+            sourceIgnoreService
+        );
+
+    private PackValidationService CreatePackValidationService(
+        ProjectStateStore projectStateStore,
+        PackCatalog packCatalog,
+        CliConsole console
+    ) =>
+        new(
+            fileSystem,
+            projectStateStore,
+            new LocalPackDiscovery(fileSystem, console),
+            packCatalog
+        );
+
+    private PackAuthoringValidationService CreatePackAuthoringValidationService(
+        IGitProcessRunner gitProcessRunner,
+        GitRefResolver gitRefResolver
+    ) =>
+        new(
+            new ExternalSourceRequirementPlanner(gitRefResolver),
+            new ExternalSourceMaterializer(fileSystem, gitProcessRunner, gitRefResolver),
+            new PackInstallationPlanner(fileSystem, new PackTemplateRenderer(fileSystem))
+        );
+
+    private PackPublishingService CreatePackPublishingService(
+        ProjectStateStore projectStateStore,
+        UserSettingsStore userSettingsStore,
+        OciPackSource ociPackSource,
+        PackAuthoringValidationService authoringValidationService,
+        IGitProcessRunner gitProcessRunner,
+        ConfiguredSourceIgnoreService sourceIgnoreService
+    ) =>
+        new(
+            fileSystem,
+            projectStateStore,
+            userSettingsStore,
+            [
+                ociPackSource.CreatePublisher(
+                    fileSystem,
+                    new PackManifestStore(fileSystem),
+                    authoringValidationService,
+                    gitProcessRunner
+                ),
+            ],
+            sourceIgnoreService
+        );
+
+    private (
+        PackAuthoringValidationService AuthoringValidationService,
+        PackPublishingService PackPublishingService
+    ) CreatePackPublishingServices(
+        ProjectStateStore projectStateStore,
+        UserSettingsStore userSettingsStore,
+        OciPackSource ociPackSource,
+        IGitProcessRunner gitProcessRunner,
+        GitRefResolver gitRefResolver,
+        ConfiguredSourceIgnoreService sourceIgnoreService
+    )
+    {
+        var authoringValidationService = CreatePackAuthoringValidationService(
+            gitProcessRunner,
+            gitRefResolver
+        );
+        var packPublishingService = CreatePackPublishingService(
+            projectStateStore,
+            userSettingsStore,
+            ociPackSource,
+            authoringValidationService,
+            gitProcessRunner,
+            sourceIgnoreService
+        );
+        return (authoringValidationService, packPublishingService);
+    }
+
+    private TrustService CreateTrustService(
+        ProjectStateStore projectStateStore,
+        UserSettingsStore userSettingsStore,
+        CliConsole console
+    ) =>
+        new(
+            fileSystem,
+            projectStateStore,
+            userSettingsStore,
+            trustConfirmer ?? new ConsoleTrustConfirmer(console)
+        );
+
+    private OciPackSource CreateOciPackSource(CliConsole console) =>
+        new(fileSystem, console, accessTokenProvider: new AzureAcrAccessTokenProvider(console));
 
     private static void AddCatalogCommands(
         RootCommand rootCommand,
@@ -413,7 +544,7 @@ internal sealed class CliApplication(
         NextStepAdvisor nextStepAdvisor,
         NextStepRenderer nextStepRenderer,
         GitRefResolver gitRefResolver,
-        IGitProcessRunner gitProcessRunner,
+        PackAuthoringValidationService authoringValidationService,
         string projectDirectory,
         Option<string?> workspaceOption,
         CliConsole console
@@ -427,11 +558,7 @@ internal sealed class CliApplication(
                 nextStepRenderer,
                 console,
                 gitRefResolver,
-                new PackAuthoringValidationService(
-                    new ExternalSourceRequirementPlanner(gitRefResolver),
-                    new ExternalSourceMaterializer(fileSystem, gitProcessRunner, gitRefResolver),
-                    new PackInstallationPlanner(fileSystem, new PackTemplateRenderer(fileSystem))
-                )
+                authoringValidationService
             ).CreateCommand(projectDirectory, workspaceOption)
         );
 
@@ -451,10 +578,19 @@ internal sealed class CliApplication(
             services.NextStepAdvisor,
             services.NextStepRenderer,
             services.GitRefResolver,
-            services.GitProcessRunner,
+            services.PackAuthoringValidationService,
             projectDirectory,
             workspaceOption,
             console
+        );
+        rootCommand.Add(
+            new PublishPackCommandHandler(
+                fileSystem,
+                services.PackPublishingService,
+                completionProvider,
+                services.WorkspaceDirectoryResolver,
+                console
+            ).CreateCommand(projectDirectory, workspaceOption)
         );
         AddLifecycleCommands(
             rootCommand,
@@ -513,7 +649,9 @@ internal sealed class CliApplication(
         UserSettingsStore userSettingsStore,
         CliConsole console,
         IGitProcessRunner gitProcessRunner,
-        GitRefResolver gitRefResolver
+        GitRefResolver gitRefResolver,
+        OciPackSource ociPackSource,
+        ConfiguredSourceIgnoreService sourceIgnoreService
     )
     {
         var packLifecycleService = new PackLifecycleService(
@@ -524,7 +662,12 @@ internal sealed class CliApplication(
             new PackUpdateTransaction(fileSystem, console),
             projectStateStore,
             console,
-            new GitPackMaterializer(fileSystem, gitProcessRunner, console),
+            new GitPackMaterializer(
+                fileSystem,
+                gitProcessRunner,
+                console,
+                ociPackSource: ociPackSource
+            ),
             configuredHookAuthorizer: new LifecycleHookAuthorizer(
                 userSettingsStore,
                 new TrustPolicy(fileSystem),
@@ -546,12 +689,14 @@ internal sealed class CliApplication(
                 console.IsInteractive
                     ? new ConsoleExternalSourceIdentifierPrompter(console)
                     : new DenyExternalSourceIdentifierPrompter()
-            )
+            ),
+            configuredSourceIgnoreService: sourceIgnoreService
         );
         var updateSelectionService = new PackUpdateSelectionService(
             packCatalog,
             projectStateStore,
-            packLifecycleService
+            packLifecycleService,
+            sourceIgnoreService
         );
         return new LifecycleServices(
             packLifecycleService,
@@ -560,7 +705,8 @@ internal sealed class CliApplication(
                 packCatalog,
                 packLifecycleService,
                 projectStateStore,
-                new ConsoleSourceSwitchConfirmer(console)
+                new ConsoleSourceSwitchConfirmer(console),
+                sourceIgnoreService
             ),
             updateSelectionService
         );
@@ -570,6 +716,7 @@ internal sealed class CliApplication(
         RootCommand rootCommand,
         IFileSystem fileSystem,
         ProjectStateStore projectStateStore,
+        UserSettingsStore userSettingsStore,
         TrustService trustService,
         CliCompletionProvider completionProvider,
         WorkspaceDirectoryResolver workspaceDirectoryResolver,
@@ -600,7 +747,8 @@ internal sealed class CliApplication(
                 nextStepRenderer,
                 console,
                 gitRefResolver,
-                completionProvider
+                completionProvider,
+                userSettingsStore
             ).CreateCommand(projectDirectory, workspaceOption)
         );
         rootCommand.Add(
@@ -754,7 +902,8 @@ internal sealed class CliApplication(
     private static LinkServices CreateLinkServices(
         IFileSystem fileSystem,
         ProjectStateStore projectStateStore,
-        CliConsole console
+        CliConsole console,
+        ConfiguredSourceIgnoreService sourceIgnoreService
     )
     {
         var gitProcessRunner = new GitProcessRunner();
@@ -769,7 +918,8 @@ internal sealed class CliApplication(
                     new GitRefResolver(gitProcessRunner),
                     new GitLinkCache(fileSystem, LinkSourceCacheRoot.Resolve(fileSystem))
                 ),
-            ]
+            ],
+            sourceIgnoreService
         );
         return new LinkServices(
             new LinkDefinitionFactory(fileSystem),
@@ -813,11 +963,16 @@ internal sealed class CliApplication(
     );
 
     private sealed record CommandServices(
+        PackCatalog PackCatalog,
+        OciPackSource OciPackSource,
         ProjectStateStore ProjectStateStore,
+        UserSettingsStore UserSettingsStore,
         CliPreferenceService CliPreferenceService,
         WorkspaceDirectoryResolver WorkspaceDirectoryResolver,
         CatalogService CatalogService,
         PackValidationService PackValidationService,
+        PackAuthoringValidationService PackAuthoringValidationService,
+        PackPublishingService PackPublishingService,
         LifecycleServices LifecycleServices,
         LinkServices LinkServices,
         IPackUpdatePrompter PackUpdatePrompter,
@@ -827,7 +982,14 @@ internal sealed class CliApplication(
         TrustService TrustService,
         GitRefResolver GitRefResolver,
         IGitProcessRunner GitProcessRunner
-    );
+    ) : IDisposable
+    {
+        public void Dispose()
+        {
+            PackCatalog.Dispose();
+            OciPackSource.Dispose();
+        }
+    }
 
     private static async Task<int> RenderWorkspaceGuidanceAsync(
         NextStepAdvisor nextStepAdvisor,

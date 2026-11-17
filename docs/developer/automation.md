@@ -23,7 +23,7 @@ $env:LUNAPACK_USER_PROFILE = "$PWD/.ci-profile"
 ```
 
 Do not cache this directory across untrusted jobs. It can contain persisted
-source and pack trust decisions.
+source and pack trust decisions, plus source-ignore preferences.
 
 Committed project trust does not authorize hooks by itself. Project trust also
 requires an acknowledgement in the selected user profile for the canonical
@@ -98,6 +98,10 @@ output.
 The preview succeeds when Luna prints a complete plan and the process returns
 `0`. Remove `--dry-run` only when the job is intended to apply managed files and
 commit or publish the resulting workspace state.
+
+To publish changed pack directories from GitHub Actions, install the matching
+generic OCI, ACR, or GHCR workflow pack. See
+[Publish packs from GitHub Actions](advanced/publish-private-packs.md).
 
 See [Scripts and trust](cli/trust-and-scripts.md) for policy scopes and
 [Command reference](cli/commands.md) for all options and failure behavior.

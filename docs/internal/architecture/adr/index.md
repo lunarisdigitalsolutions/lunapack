@@ -87,7 +87,12 @@ Create a new architecture decision record from the [MADR-based template](templat
 | [ADR-0081][adr-0081]                                                            | Inherit composite remaps and evaluate runtime hook state during ordered dispatch.       |
 | [ADR-0082][adr-0082]                                                            | Require pack changelog entries only after the initial release.                          |
 | [ADR-0083][adr-0083]                                                            | Evaluate explicitly marked composite parameter expressions as typed values.             |
-| [ADR-0084][adr-0084]                                                            | Separate direct-pack root eligibility from dependency resolution.                       |
+| [ADR-0084][adr-0084]                                                            | Use AOT-safe OCI Distribution artifacts for pack releases.                              |
+| [ADR-0085][adr-0085]                                                            | Bind registry credentials to configured source identities.                              |
+| [ADR-0086][adr-0086]                                                            | Preserve partial catalog results with typed source failures.                            |
+| [ADR-0087][adr-0087]                                                            | Keep source-ignore state in a per-project sidecar for settings compatibility.           |
+| [ADR-0088][adr-0088]                                                            | Share changed-pack publishing behavior across registry workflow packs.                  |
+| [ADR-0089][adr-0089]                                                            | Separate direct-pack root eligibility from dependency resolution.                       |
 
 [adr-0070]: 0070-bind-privileged-workflows-to-trusted-provenance.md
 [adr-0071]: 0071-reject-filesystem-aliases-at-mutation-boundaries.md
@@ -103,4 +108,9 @@ Create a new architecture decision record from the [MADR-based template](templat
 [adr-0081]: 0081-inherit-composite-remaps-and-evaluate-runtime-hook-state.md
 [adr-0082]: 0082-require-pack-changelogs-after-initial-release.md
 [adr-0083]: 0083-evaluate-typed-composite-parameter-expressions.md
-[adr-0084]: 0084-separate-direct-pack-roots-from-dependency-resolution.md
+[adr-0084]: 0084-use-oci-distribution-artifacts-for-pack-releases.md
+[adr-0085]: 0085-bind-registry-credentials-to-source-identities.md
+[adr-0086]: 0086-preserve-partial-catalog-results.md
+[adr-0087]: 0087-store-source-ignores-in-compatible-sidecar.md
+[adr-0088]: 0088-share-changed-pack-publishing-across-workflow-packs.md
+[adr-0089]: 0089-separate-direct-pack-roots-from-dependency-resolution.md
