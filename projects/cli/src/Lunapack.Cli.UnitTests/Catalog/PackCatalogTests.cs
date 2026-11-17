@@ -221,31 +221,26 @@ public sealed class PackCatalogTests
     public async Task Scenario_Browse_WhenLocalSourceIsIgnored_DoesNotAccessSourceDirectory()
     {
         using var workspace = new TestWorkspace();
-        var sourcePath = Path.Combine(workspace.Path, "missing");
         var settingsStore = new UserSettingsStore(
             workspace.FileSystem,
             Path.Combine(workspace.Path, "profile")
         );
-        var projectKey = settingsStore.GetProjectKey(workspace.Path).RequireValue();
-        var sourceIgnoreStore = new SourceIgnoreStore(
+        var source = new ProjectConfiguration.LocalSource { Name = "ignored", Path = "missing" };
+        var sourceIgnoreService = new ConfiguredSourceIgnoreService(
             workspace.FileSystem,
-            settingsStore.SettingsDirectory
+            settingsStore
         );
-        var savedSettings = await sourceIgnoreStore.SaveAsync(
-            new SourceIgnoreSettings
-            {
-                Projects = { [projectKey] = [ConfiguredSourceIdentity.CreateLocal(sourcePath)] },
-            }
+        var savedSettings = await sourceIgnoreService.SetIgnoredAsync(
+            workspace.Path,
+            source,
+            ignored: true
         );
         var catalog = new PackCatalog(
             workspace.FileSystem,
             TestConsole.Create(),
             userSettingsStore: settingsStore
         );
-        var configuration = new ProjectConfiguration
-        {
-            Sources = [new ProjectConfiguration.LocalSource { Name = "ignored", Path = "missing" }],
-        };
+        var configuration = new ProjectConfiguration { Sources = [source] };
 
         var result = await catalog.BrowseAsync(workspace.Path, configuration);
 
