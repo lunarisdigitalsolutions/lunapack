@@ -1,3 +1,4 @@
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Trust;
 
 namespace Lunapack.Cli.Project;
@@ -7,6 +8,8 @@ internal sealed record ProjectConfiguration
     public Dictionary<string, Link> Links { get; set; } = [];
 
     public List<RequestedPack> Packs { get; set; } = [];
+
+    public CliPreferences? Preferences { get; set; }
 
     public Remapping? Remap { get; set; }
 

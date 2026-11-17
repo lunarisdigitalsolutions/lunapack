@@ -55,7 +55,11 @@ public sealed class ContextualGuidanceTests
         using var workspace = new TestWorkspace();
         await workspace.Application.RunAsync(["init"], workspace.Path);
         var ansiConsole = new SpectreTestConsole();
-        var application = new CliApplication(workspace.FileSystem, ansiConsole);
+        var application = new CliApplication(
+            workspace.FileSystem,
+            ansiConsole,
+            userSettingsStore: workspace.UserSettingsStore
+        );
 
         var exitCode = await application.RunAsync(
             ["--workspace", workspace.Path],
@@ -107,16 +111,45 @@ public sealed class ContextualGuidanceTests
     {
         var ansiConsole = new SpectreTestConsole();
         using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var preferenceExitCode = await workspace.Application.RunAsync(
+            ["config", "set", "next-steps.enabled", "true"],
+            workspace.Path
+        );
 
         var exitCode = await workspace.Application.RunAsync(
             ["discover", "--suppress-next-steps"],
             workspace.Path
         );
 
+        await Assert.That(preferenceExitCode).IsEqualTo(0);
         await Assert.That(exitCode).IsEqualTo(1);
         await Assert.That(ansiConsole.Output).Contains("No LunaPack workspace found.");
         await Assert.That(ansiConsole.Output).DoesNotContain("Next step:");
         await Assert.That(ansiConsole.Output).DoesNotContain("luna init");
+    }
+
+    [Test]
+    public async Task Discover_WhenNextStepsDisabled_PreservesCatalogResultsWithoutGuidance()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        await workspace.Application.RunAsync(["init"], workspace.Path);
+        CreatePack(workspace.Path);
+        await workspace.Application.RunAsync(
+            ["sources", "add", "local", "local", "source"],
+            workspace.Path
+        );
+        var preferenceExitCode = await workspace.Application.RunAsync(
+            ["config", "set", "next-steps.enabled", "false"],
+            workspace.Path
+        );
+
+        var exitCode = await workspace.Application.RunAsync(["discover"], workspace.Path);
+
+        await Assert.That(preferenceExitCode).IsEqualTo(0);
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(ansiConsole.Output).Contains("Found 1 packs");
+        await Assert.That(ansiConsole.Output).DoesNotContain("Next step:");
     }
 
     [Test]
@@ -454,6 +487,7 @@ public sealed class ContextualGuidanceTests
         var application = new CliApplication(
             workspace.FileSystem,
             ansiConsole,
+            userSettingsStore: workspace.UserSettingsStore,
             gitProcessRunner: new StubGitProcessRunner()
         );
         await application.RunAsync(arguments, workspace.Path);

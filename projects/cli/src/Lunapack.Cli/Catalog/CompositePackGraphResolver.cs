@@ -37,11 +37,10 @@ internal sealed class CompositePackGraphResolver(PackCatalog packCatalog)
             new Dictionary<PackRequest, ManifestOperationResult<DiscoveredPack>>();
         foreach (var rootRequest in requestedPacks)
         {
-            var root = await ResolvePackAsync(
+            var root = await ResolveRootPackAsync(
                 projectDirectory,
                 configuration,
-                rootRequest.Id,
-                rootRequest.Version,
+                rootRequest,
                 lockFile,
                 resolveLockedRootPacks,
                 resolutionCache
@@ -51,6 +50,14 @@ internal sealed class CompositePackGraphResolver(PackCatalog packCatalog)
                 return ManifestOperationResult<ResolvedPackGraph>.Failure(
                     root.Error ?? $"Pack '{rootRequest.Id}' is unavailable.",
                     root.ErrorKind
+                );
+            }
+
+            if (!rootPack.Manifest.DirectInstallable)
+            {
+                return ManifestOperationResult<ResolvedPackGraph>.Failure(
+                    $"Pack '{rootRequest.Id}' is not directly installable (directInstallable is false).",
+                    ManifestOperationErrorKind.PackNotFound
                 );
             }
 
@@ -108,13 +115,12 @@ internal sealed class CompositePackGraphResolver(PackCatalog packCatalog)
 
         foreach (var reference in pack.Manifest.Packs)
         {
-            var dependency = await ResolvePackAsync(
+            var dependency = await ResolveDependencyPackAsync(
                 projectDirectory,
                 configuration,
                 reference.Id,
                 reference.Version,
                 lockFile,
-                true,
                 resolutionCache
             );
             if (dependency.Value is not { } dependencyPack)
@@ -146,29 +152,58 @@ internal sealed class CompositePackGraphResolver(PackCatalog packCatalog)
         return null;
     }
 
-    private async Task<ManifestOperationResult<DiscoveredPack>> ResolvePackAsync(
+    private async Task<ManifestOperationResult<DiscoveredPack>> ResolveRootPackAsync(
         string projectDirectory,
         ProjectConfiguration configuration,
-        string packId,
-        string? requestedVersion,
+        ProjectConfiguration.RequestedPack rootRequest,
         ProjectLockFile? lockFile,
-        bool resolveLockedSource,
+        bool resolveLockedRootPacks,
         IDictionary<PackRequest, ManifestOperationResult<DiscoveredPack>> resolutionCache
     )
     {
-        var key = new PackRequest(packId, requestedVersion);
+        var key = new PackRequest(
+            rootRequest.Id,
+            rootRequest.Version,
+            PackResolutionRole.DirectRoot
+        );
         if (resolutionCache.TryGetValue(key, out var cachedResolution))
         {
             return cachedResolution;
         }
 
-        var lockedPack =
-            !resolveLockedSource || requestedVersion is null
-                ? null
-                : lockFile?.Packs.Find(pack =>
-                    string.Equals(pack.Id, packId, StringComparison.Ordinal)
-                    && string.Equals(pack.Version, requestedVersion, StringComparison.Ordinal)
+        var lockedPack = resolveLockedRootPacks
+            ? FindLockedPack(lockFile, rootRequest.Id, rootRequest.Version)
+            : null;
+        var resolution =
+            lockedPack is not null
+            && (lockedPack.SourceIdentity is not null || lockedPack.OciSource is not null)
+                ? await packCatalog.ResolveLockedAsync(projectDirectory, configuration, lockedPack)
+                : await packCatalog.ResolveDirectlyInstallableAsync(
+                    projectDirectory,
+                    configuration,
+                    rootRequest.Id,
+                    rootRequest.Version
                 );
+        resolutionCache.Add(key, resolution);
+        return resolution;
+    }
+
+    private async Task<ManifestOperationResult<DiscoveredPack>> ResolveDependencyPackAsync(
+        string projectDirectory,
+        ProjectConfiguration configuration,
+        string packId,
+        string? requestedVersion,
+        ProjectLockFile? lockFile,
+        IDictionary<PackRequest, ManifestOperationResult<DiscoveredPack>> resolutionCache
+    )
+    {
+        var key = new PackRequest(packId, requestedVersion, PackResolutionRole.Dependency);
+        if (resolutionCache.TryGetValue(key, out var cachedResolution))
+        {
+            return cachedResolution;
+        }
+
+        var lockedPack = FindLockedPack(lockFile, packId, requestedVersion);
         var resolution =
             lockedPack is not null
             && (lockedPack.SourceIdentity is not null || lockedPack.OciSource is not null)
@@ -183,7 +218,25 @@ internal sealed class CompositePackGraphResolver(PackCatalog packCatalog)
         return resolution;
     }
 
+    private static ProjectLockFile.ResolvedPack? FindLockedPack(
+        ProjectLockFile? lockFile,
+        string packId,
+        string? requestedVersion
+    ) =>
+        requestedVersion is null
+            ? null
+            : lockFile?.Packs.Find(pack =>
+                string.Equals(pack.Id, packId, StringComparison.Ordinal)
+                && string.Equals(pack.Version, requestedVersion, StringComparison.Ordinal)
+            );
+
+    private enum PackResolutionRole
+    {
+        DirectRoot,
+        Dependency,
+    }
+
     private sealed record PackIdentity(string Id, string Version);
 
-    private sealed record PackRequest(string Id, string? Version);
+    private sealed record PackRequest(string Id, string? Version, PackResolutionRole Role);
 }

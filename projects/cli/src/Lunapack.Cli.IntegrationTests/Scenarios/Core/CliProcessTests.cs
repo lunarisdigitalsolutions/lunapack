@@ -316,12 +316,12 @@ public sealed class CliProcessTests
         var first = installOutput.IndexOf("static-instruction", StringComparison.Ordinal);
         var script = FindDotnetVersionOutputIndex(installOutput);
         var last = installOutput.IndexOf("Hello Example Corp", StringComparison.Ordinal);
-        var success = installOutput.IndexOf(
+        var successIndex = installOutput.IndexOf(
             "Installed 'example' (version '1.0.0') in ",
             StringComparison.Ordinal
         );
         await Assert
-            .That(first >= 0 && first < script && script < last && last < success)
+            .That(first >= 0 && first < script && script < last && last < successIndex)
             .IsTrue()
             .Because(
                 $"stdout: {install.StandardOutput}{Environment.NewLine}stderr: {install.StandardError}"
@@ -1546,8 +1546,13 @@ public sealed class CliProcessTests
     public async Task Scenario_RepositorySourceConfigured_DiscoversAllBundledPacks()
     {
         var repositoryRoot = GetRepositoryRoot();
+        using var profileWorkspace = new TestWorkspace();
+        var environment = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["LUNAPACK_USER_PROFILE"] = Path.Combine(profileWorkspace.Path, "profile"),
+        };
 
-        var discover = await CliProcess.InvokeAsync(repositoryRoot, "discover");
+        var discover = await CliProcess.InvokeAsync(repositoryRoot, environment, "discover");
 
         await Assert.That(discover.ExitCode).IsEqualTo(0);
         foreach (var (packId, version) in GetBundledPacks())

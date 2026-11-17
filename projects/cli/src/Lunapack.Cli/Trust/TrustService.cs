@@ -682,6 +682,7 @@ internal sealed class TrustService(
                 entry => entry.Key,
                 entry => new LocalProjectTrust
                 {
+                    Preferences = entry.Value.Preferences,
                     Deny = entry.Value.Deny,
                     Sources = [.. entry.Value.Sources],
                     Packs = [.. entry.Value.Packs],
@@ -694,6 +695,7 @@ internal sealed class TrustService(
     private static UserTrust CloneTrust(UserTrust trust) =>
         new()
         {
+            Preferences = trust.Preferences,
             Deny = trust.Deny,
             Sources = [.. trust.Sources],
             Packs = [.. trust.Packs],

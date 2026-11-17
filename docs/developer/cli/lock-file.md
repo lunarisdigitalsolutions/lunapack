@@ -87,14 +87,14 @@ An OCI source identity contains `type: oci`, a normalized HTTPS registry `url`,
 and an optional repository-prefix `path`. OCI provenance records the artifact
 coordinates and verified content:
 
-| Field            | Type           | Meaning                                     |
-| ---------------- | -------------- | ------------------------------------------- |
-| `registryUrl`    | HTTPS origin   | Registry used for the release.              |
+| Field            | Type           | Meaning                                             |
+| ---------------- | -------------- | --------------------------------------------------- |
+| `registryUrl`    | HTTPS origin   | Registry used for the release.                      |
 | `repository`     | OCI repository | Lowercase valid components; at most 255 characters. |
-| `tag`            | String         | Exact version tag selected for the release. |
-| `manifestDigest` | SHA-256 digest | OCI manifest bytes used for resolution.     |
-| `contentDigest`  | SHA-256 digest | Pack ZIP layer bytes used for installation. |
-| `contentSize`    | Integer        | Verified ZIP layer size in bytes.           |
+| `tag`            | String         | Exact version tag selected for the release.         |
+| `manifestDigest` | SHA-256 digest | OCI manifest bytes used for resolution.             |
+| `contentDigest`  | SHA-256 digest | Pack ZIP layer bytes used for installation.         |
+| `contentSize`    | Integer        | Verified ZIP layer size in bytes.                   |
 
 The lock stores both digests. A later resolution of the locked release must
 match the recorded manifest and content; it does not silently substitute

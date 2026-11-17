@@ -85,6 +85,9 @@
         "deny": {
           "$ref": "#/definitions/scriptDenial"
         },
+        "preferences": {
+          "$ref": "#/definitions/cliPreferences"
+        },
         "packs": {
           "$ref": "#/definitions/trustedPacks"
         },
@@ -164,6 +167,9 @@
         "deny": {
           "$ref": "#/definitions/scriptDenial"
         },
+        "preferences": {
+          "$ref": "#/definitions/cliPreferences"
+        },
         "packs": {
           "$ref": "#/definitions/trustedPacks"
         },
@@ -176,6 +182,39 @@
       "type": "string",
       "minLength": 1,
       "pattern": "^(?!.*(?:^|[\\/])\\.\\.(?:[\\/]|$))(?:/|[A-Za-z]:[\\/]|\\\\).*$"
+    },
+    "cliPreferences": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "discover": {
+          "$ref": "#/definitions/catalogPreferences"
+        },
+        "search": {
+          "$ref": "#/definitions/catalogPreferences"
+        },
+        "nextSteps": {
+          "$ref": "#/definitions/nextStepPreferences"
+        }
+      }
+    },
+    "catalogPreferences": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "onlyComposites": {
+          "type": "boolean"
+        }
+      }
+    },
+    "nextStepPreferences": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
     },
     "repositoryRelativePath": {
       "type": "string",

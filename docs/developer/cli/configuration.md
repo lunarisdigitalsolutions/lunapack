@@ -73,3 +73,52 @@ All three scopes support `deny.scripts`. Any active denial overrides grants and
 explicit `false` mean no denial. `LUNAPACK_USER_PROFILE` can select an alternate
 profile root for isolated automation; Luna stores settings beneath that root's
 `.lunapack` directory.
+
+## CLI preferences
+
+Use `luna config` to set, list, or remove Boolean preferences. Supported keys
+are:
+
+| Key                        | Built-in default | Effect                                           |
+| -------------------------- | ---------------- | ------------------------------------------------ |
+| `discover.only-composites` | `false`          | Show only composite packs in `luna discover`.    |
+| `search.only-composites`   | `false`          | Show only composite packs in `luna search`.      |
+| `next-steps.enabled`       | `true`           | Show contextual next-step and recovery guidance. |
+
+```powershell
+luna config set discover.only-composites true --project
+luna config set next-steps.enabled false --user-project
+luna config list --global
+luna config remove discover.only-composites --global
+```
+
+Preference values are optional in project and user settings. Project-local
+values go in `lunapack.yml`:
+
+```yml
+preferences:
+  discover:
+    onlyComposites: true
+  nextSteps:
+    enabled: false
+```
+
+`--project` stores values in the current `lunapack.yml`; `--local` is an alias.
+`--user-project` stores values in the user profile's `.lunapack/config.yml`
+under the canonical project directory. `--global` stores them in that file's
+global settings. With no scope option, `luna config` uses `--global`. Scope
+options are mutually exclusive. Writing or removing project values requires an
+initialized workspace; `luna config list --project` reports an empty scope when
+no `lunapack.yml` exists. `--workspace` selects which project receives
+project-local or user-project values.
+
+`luna config list` shows values explicitly stored in the selected scope; it
+does not print built-in defaults. `set` accepts only `true` or `false`, and
+unknown keys fail without changing settings.
+
+For each key, Luna selects the first configured value from project-local,
+user-project, and global settings, then uses the built-in default. An explicit
+`false` overrides less-specific `true` values. `--only-composites` enables the
+composite filter for one discover or search invocation; it does not disable a
+filter already enabled by settings. `--suppress-next-steps` always suppresses
+guidance for the current invocation.

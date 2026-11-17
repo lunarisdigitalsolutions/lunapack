@@ -42,6 +42,116 @@ public sealed class CompositePackGraphResolverTests
     }
 
     [Test]
+    public async Task Resolve_WhenRequestedRootIsDependencyOnly_ReturnsFailure()
+    {
+        var fileSystem = CreateFileSystem(
+            (
+                ProjectPath("packs", "dependency-only", "pack.yml"),
+                CreateFilePack("dependency-only", directInstallable: false)
+            )
+        );
+        var resolver = new CompositePackGraphResolver(
+            new PackCatalog(fileSystem, TestConsole.Create())
+        );
+
+        var result = await resolver.ResolveAsync(
+            _projectDirectory,
+            CreateConfiguration("packs"),
+            "dependency-only",
+            null
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("not directly installable");
+    }
+
+    [Test]
+    public async Task Resolve_WhenExplicitVersionIsDependencyOnly_ReturnsFailure()
+    {
+        var fileSystem = CreateFileSystem(
+            (
+                ProjectPath("packs", "application-v1", "pack.yml"),
+                CreateFilePack("application", version: "1.0.0")
+            ),
+            (
+                ProjectPath("packs", "application-v2", "pack.yml"),
+                CreateFilePack("application", version: "2.0.0", directInstallable: false)
+            )
+        );
+        var resolver = new CompositePackGraphResolver(
+            new PackCatalog(fileSystem, TestConsole.Create())
+        );
+
+        var result = await resolver.ResolveAsync(
+            _projectDirectory,
+            CreateConfiguration("packs"),
+            "application",
+            "2.0.0"
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("not directly installable");
+    }
+
+    [Test]
+    public async Task Resolve_WhenDependencyIsNotDirectInstallable_StillResolvesComposite()
+    {
+        var fileSystem = CreateFileSystem(
+            (
+                ProjectPath("packs", "application", "pack.yml"),
+                CreateCompositePack("application", "dependency-only")
+            ),
+            (
+                ProjectPath("packs", "dependency-only", "pack.yml"),
+                CreateFilePack("dependency-only", directInstallable: false)
+            )
+        );
+        var resolver = new CompositePackGraphResolver(
+            new PackCatalog(fileSystem, TestConsole.Create())
+        );
+
+        var result = await resolver.ResolveAsync(
+            _projectDirectory,
+            CreateConfiguration("packs"),
+            "application",
+            null
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert
+            .That(result.RequireValue().Packs.Select(pack => pack.Manifest.Id))
+            .IsEquivalentTo(["application", "dependency-only"]);
+    }
+
+    [Test]
+    public async Task Resolve_WhenNewestRootReleaseIsDependencyOnly_UsesOlderEligibleRelease()
+    {
+        var fileSystem = CreateFileSystem(
+            (
+                ProjectPath("packs", "application-v1", "pack.yml"),
+                CreateFilePack("application", version: "1.0.0")
+            ),
+            (
+                ProjectPath("packs", "application-v2", "pack.yml"),
+                CreateFilePack("application", version: "2.0.0", directInstallable: false)
+            )
+        );
+        var resolver = new CompositePackGraphResolver(
+            new PackCatalog(fileSystem, TestConsole.Create())
+        );
+
+        var result = await resolver.ResolveAsync(
+            _projectDirectory,
+            CreateConfiguration("packs"),
+            "application",
+            null
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert.That(result.RequireValue().Packs.Single().Manifest.Version).IsEqualTo("1.0.0");
+    }
+
+    [Test]
     public async Task Resolve_WhenReferenceDisablesHooks_PreservesIncomingPolicy()
     {
         var fileSystem = CreateFileSystem(
@@ -247,11 +357,13 @@ public sealed class CompositePackGraphResolverTests
     private static string CreateFilePack(
         string id,
         string? description = null,
-        string version = "1.0.0"
+        string version = "1.0.0",
+        bool directInstallable = true
     )
     {
         var descriptionLine = description is null ? string.Empty : $"description: {description}\n";
+        var installableLine = directInstallable ? string.Empty : "directInstallable: false\n";
 
-        return $"id: {id}\nversion: {version}\nlicense: MIT\nauthor: Lunaris Digital Solutions <info@lunaris.digital>\n{descriptionLine}managedFiles:\n  - source: source.txt\n    target: target.txt\n";
+        return $"id: {id}\nversion: {version}\nlicense: MIT\nauthor: Lunaris Digital Solutions <info@lunaris.digital>\n{installableLine}{descriptionLine}managedFiles:\n  - source: source.txt\n    target: target.txt\n";
     }
 }

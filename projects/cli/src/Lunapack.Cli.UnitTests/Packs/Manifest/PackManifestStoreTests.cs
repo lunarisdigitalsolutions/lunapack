@@ -23,6 +23,55 @@ public sealed class PackManifestStoreTests
     }
 
     [Test]
+    public async Task Load_WhenDirectInstallableIsNotBoolean_ReturnsFailure()
+    {
+        using var workspace = new TestWorkspace();
+        File.WriteAllText(
+            Path.Combine(workspace.Path, PackManifestStore.FileName),
+            "id: example\nversion: 1.0.0\nauthor: Example\nlicense: MIT\ndirectInstallable: not-a-boolean\n"
+        );
+        var store = new PackManifestStore(workspace.FileSystem);
+
+        var result = await store.LoadAsync(workspace.Path);
+
+        await Assert.That(result.IsSuccess).IsFalse();
+    }
+
+    [Test]
+    public async Task Load_WhenDirectInstallableOmitted_DefaultsToTrue()
+    {
+        using var workspace = new TestWorkspace();
+        File.WriteAllText(
+            Path.Combine(workspace.Path, PackManifestStore.FileName),
+            "id: example\nversion: 1.0.0\nauthor: Example\nlicense: MIT\n"
+        );
+        var store = new PackManifestStore(workspace.FileSystem);
+
+        var result = await store.LoadAsync(workspace.Path);
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert.That(result.RequireValue().DirectInstallable).IsTrue();
+    }
+
+    [Test]
+    [Arguments(true)]
+    [Arguments(false)]
+    public async Task Load_WhenDirectInstallableDeclared_PreservesValue(bool directInstallable)
+    {
+        using var workspace = new TestWorkspace();
+        File.WriteAllText(
+            Path.Combine(workspace.Path, PackManifestStore.FileName),
+            $"id: example\nversion: 1.0.0\nauthor: Example\nlicense: MIT\ndirectInstallable: {directInstallable.ToString().ToLowerInvariant()}\n"
+        );
+        var store = new PackManifestStore(workspace.FileSystem);
+
+        var result = await store.LoadAsync(workspace.Path);
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert.That(result.RequireValue().DirectInstallable).IsEqualTo(directInstallable);
+    }
+
+    [Test]
     public async Task Update_WhenParameterHasRequiredWhen_PreservesExpressionAndOrder()
     {
         using var workspace = new TestWorkspace();

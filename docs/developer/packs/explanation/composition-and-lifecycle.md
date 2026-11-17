@@ -8,6 +8,13 @@ complete graph before files change. Two roots can share a dependency only when
 they resolve it to the same exact version. A version conflict stops resolution
 before files or project state change.
 
+A pack is composite when its manifest has one or more `packs` references; a
+pack with none is raw. `directInstallable` controls whether a release can be
+selected as a requested install or update root and whether it appears in
+discover or search. It does not limit dependency resolution: an installable
+composite can reference a pack marked `directInstallable: false`. The full
+catalog also remains available to `luna validate` and `luna inspect`.
+
 A shared dependency is one graph node. Luna resolves, locks, writes, and
 processes its lifecycle hooks once per graph, not once per incoming reference.
 Resolution visits requested roots in command or configuration order and walks

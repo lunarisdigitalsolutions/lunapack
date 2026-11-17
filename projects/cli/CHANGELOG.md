@@ -7,6 +7,18 @@ pack-package, documentation, CI, build, test, and release-process changes.
 
 Update this section before creating a release tag.
 
+### Catalog Eligibility and Preferences
+
+- Pack manifests can set `directInstallable: false` for dependency-only
+  releases. Discover and search show directly installable raw and composite
+  packs by default, with `--only-composites` available for composite-only
+  results; install, update, and outdated selection exclude dependency-only
+  roots while preserving composite dependency resolution, validation, and
+  inspection. `luna config set|list|remove` manages scoped preferences for
+  catalog filtering and next-step guidance. Use `--project` to store values in
+  `lunapack.yml` (`--local` remains an alias), `--user-project` for
+  project-specific user settings, or `--global` for user-wide settings.
+
 ### OCI Registry Sources And Publishing
 
 - `luna sources add oci` registers normalized HTTPS OCI registry sources without

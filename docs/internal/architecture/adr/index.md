@@ -92,6 +92,7 @@ Create a new architecture decision record from the [MADR-based template](templat
 | [ADR-0086][adr-0086]                                                            | Preserve partial catalog results with typed source failures.                            |
 | [ADR-0087][adr-0087]                                                            | Keep source-ignore state in a per-project sidecar for settings compatibility.           |
 | [ADR-0088][adr-0088]                                                            | Share changed-pack publishing behavior across registry workflow packs.                  |
+| [ADR-0089][adr-0089]                                                            | Separate direct-pack root eligibility from dependency resolution.                       |
 
 [adr-0070]: 0070-bind-privileged-workflows-to-trusted-provenance.md
 [adr-0071]: 0071-reject-filesystem-aliases-at-mutation-boundaries.md
@@ -112,3 +113,4 @@ Create a new architecture decision record from the [MADR-based template](templat
 [adr-0086]: 0086-preserve-partial-catalog-results.md
 [adr-0087]: 0087-store-source-ignores-in-compatible-sidecar.md
 [adr-0088]: 0088-share-changed-pack-publishing-across-workflow-packs.md
+[adr-0089]: 0089-separate-direct-pack-roots-from-dependency-resolution.md

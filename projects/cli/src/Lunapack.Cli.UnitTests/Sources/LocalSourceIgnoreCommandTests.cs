@@ -100,7 +100,11 @@ public sealed class LocalSourceIgnoreCommandTests
     {
         using var workspace = new TestWorkspace();
         var console = new SpectreTestConsole();
-        var application = new CliApplication(workspace.FileSystem, console);
+        var application = new CliApplication(
+            workspace.FileSystem,
+            console,
+            userSettingsStore: workspace.UserSettingsStore
+        );
         await application.RunAsync(["init"], workspace.Path);
 
         var exitCode = await application.RunAsync(

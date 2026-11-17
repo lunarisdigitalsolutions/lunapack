@@ -283,6 +283,58 @@ public sealed class ManifestSchemaTests
     }
 
     [Test]
+    public async Task ProjectSchema_WhenPreferencesDeclared_AllowsOnlyOptionalBooleanValues()
+    {
+        using var schema = JsonDocument.Parse(
+            File.ReadAllText(
+                Path.Combine(AppContext.BaseDirectory, "TestData", "lunapack.schema.json")
+            )
+        );
+        var root = schema.RootElement;
+        var preferences = root.GetProperty("properties").GetProperty("preferences");
+        var preferenceSchema = root.GetProperty("definitions").GetProperty("cliPreferences");
+        var catalogPreferences = root.GetProperty("definitions").GetProperty("catalogPreferences");
+        var nextStepPreferences = root.GetProperty("definitions")
+            .GetProperty("nextStepPreferences");
+        var requiredProperties = root.GetProperty("required")
+            .EnumerateArray()
+            .Select(property => property.GetString())
+            .ToArray();
+
+        await Assert
+            .That(preferences.GetProperty("$ref").GetString())
+            .IsEqualTo("#/definitions/cliPreferences");
+        await Assert.That(requiredProperties).DoesNotContain("preferences");
+        await Assert
+            .That(preferenceSchema.GetProperty("additionalProperties").GetBoolean())
+            .IsFalse();
+        await Assert
+            .That(catalogPreferences.GetProperty("additionalProperties").GetBoolean())
+            .IsFalse();
+        await Assert
+            .That(
+                catalogPreferences
+                    .GetProperty("properties")
+                    .GetProperty("onlyComposites")
+                    .GetProperty("type")
+                    .GetString()
+            )
+            .IsEqualTo("boolean");
+        await Assert
+            .That(nextStepPreferences.GetProperty("additionalProperties").GetBoolean())
+            .IsFalse();
+        await Assert
+            .That(
+                nextStepPreferences
+                    .GetProperty("properties")
+                    .GetProperty("enabled")
+                    .GetProperty("type")
+                    .GetString()
+            )
+            .IsEqualTo("boolean");
+    }
+
+    [Test]
     public async Task UserSettingsSchema_WhenTrustDeclared_SeparatesDenialFromAcknowledgements()
     {
         using var schema = JsonDocument.Parse(
@@ -312,6 +364,51 @@ public sealed class ManifestSchemaTests
             .IsFalse();
         await Assert
             .That(acknowledgements.GetProperty("properties").TryGetProperty("deny", out _))
+            .IsFalse();
+    }
+
+    [Test]
+    public async Task UserSettingsSchema_WhenPreferencesDeclared_SharesTypedPreferenceContract()
+    {
+        using var schema = JsonDocument.Parse(
+            File.ReadAllText(
+                Path.Combine(
+                    AppContext.BaseDirectory,
+                    "TestData",
+                    "lunapack-user-settings.schema.json"
+                )
+            )
+        );
+        var definitions = schema.RootElement.GetProperty("definitions");
+        var expectedReference = "#/definitions/cliPreferences";
+
+        await Assert
+            .That(
+                definitions
+                    .GetProperty("userTrust")
+                    .GetProperty("properties")
+                    .GetProperty("preferences")
+                    .GetProperty("$ref")
+                    .GetString()
+            )
+            .IsEqualTo(expectedReference);
+        await Assert
+            .That(
+                definitions
+                    .GetProperty("localProjectTrust")
+                    .GetProperty("properties")
+                    .GetProperty("preferences")
+                    .GetProperty("$ref")
+                    .GetString()
+            )
+            .IsEqualTo(expectedReference);
+        await Assert
+            .That(
+                definitions
+                    .GetProperty("cliPreferences")
+                    .GetProperty("additionalProperties")
+                    .GetBoolean()
+            )
             .IsFalse();
     }
 
@@ -804,6 +901,26 @@ public sealed class ManifestSchemaTests
         await Assert.That(draft.GetProperty("type").GetString()).IsEqualTo("boolean");
         await Assert.That(draft.GetProperty("default").GetBoolean()).IsFalse();
         await Assert.That(requiredProperties).DoesNotContain("draft");
+    }
+
+    [Test]
+    public async Task PackSchema_WhenDirectInstallableDeclared_DefinesOptionalTrueDefault()
+    {
+        using var schema = JsonDocument.Parse(
+            File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "pack.schema.json"))
+        );
+        var directInstallable = schema
+            .RootElement.GetProperty("properties")
+            .GetProperty("directInstallable");
+        var requiredProperties = schema
+            .RootElement.GetProperty("required")
+            .EnumerateArray()
+            .Select(property => property.GetString())
+            .ToArray();
+
+        await Assert.That(directInstallable.GetProperty("type").GetString()).IsEqualTo("boolean");
+        await Assert.That(directInstallable.GetProperty("default").GetBoolean()).IsTrue();
+        await Assert.That(requiredProperties).DoesNotContain("directInstallable");
     }
 
     [Test]

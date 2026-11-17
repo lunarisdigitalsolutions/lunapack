@@ -56,6 +56,31 @@ public sealed class PackManifestInspectionFormatterTests
     }
 
     [Test]
+    [Arguments(true, "yes")]
+    [Arguments(false, "no")]
+    public async Task Format_WhenInstallabilityIsConfigured_DisplaysDirectInstallableStatus(
+        bool directInstallable,
+        string expectedStatus
+    )
+    {
+        var manifest = new PackManifest
+        {
+            Id = "example",
+            Version = "1.0.0",
+            DirectInstallable = directInstallable,
+        };
+        var console = new SpectreTestConsole();
+
+        foreach (var renderable in PackManifestInspectionFormatter.Format(manifest))
+        {
+            console.Write(renderable);
+        }
+
+        await Assert.That(console.Output).Contains("Direct installable");
+        await Assert.That(console.Output).Contains(expectedStatus);
+    }
+
+    [Test]
     public async Task Format_WhenTagsExceedPreviewLimit_DisplaysFirstFiveTags()
     {
         var manifest = new PackManifest

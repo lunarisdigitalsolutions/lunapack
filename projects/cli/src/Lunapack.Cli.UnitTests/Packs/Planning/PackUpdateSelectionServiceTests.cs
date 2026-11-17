@@ -27,6 +27,23 @@ public sealed class PackUpdateSelectionServiceTests
     }
 
     [Test]
+    public async Task SelectAvailable_WhenNewestReleaseIsDependencyOnly_UsesLatestDirectRelease()
+    {
+        var state = CreateState(new ProjectConfiguration.RequestedPack { Id = "example" }, "1.0.0");
+        var catalog = new[]
+        {
+            CreateCatalogPack("example", "1.1.0", sourceOrder: 1),
+            CreateCatalogPack("example", "2.0.0", sourceOrder: 0, directInstallable: false),
+        };
+
+        var result = PackUpdateSelectionService.SelectAvailable(state, catalog);
+
+        await Assert
+            .That(result.RequireValue().Single().Latest.Manifest.Version)
+            .IsEqualTo("1.1.0");
+    }
+
+    [Test]
     public async Task SelectAvailable_WhenEqualVersionFromMultipleSources_DoesNotReportUpdate()
     {
         var state = CreateState(new ProjectConfiguration.RequestedPack { Id = "example" }, "1.0.0");
@@ -92,6 +109,25 @@ public sealed class PackUpdateSelectionServiceTests
             .IsEqualTo("second");
     }
 
+    [Test]
+    public async Task SelectExplicit_WhenRequestedReleaseIsDependencyOnly_ReturnsFailure()
+    {
+        var currentPack = CreateState(
+            new ProjectConfiguration.RequestedPack { Id = "example" },
+            "1.0.0"
+        )
+            .LockFile.Packs.Single();
+        var catalog = new[]
+        {
+            CreateCatalogPack("example", "2.0.0", sourceOrder: 0, directInstallable: false),
+        };
+
+        var result = LockedSourceUpdateSelector.SelectExplicit(currentPack, catalog, "2.0.0");
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("not directly installable");
+    }
+
     private static ProjectState CreateState(
         ProjectConfiguration.RequestedPack requestedRoot,
         string resolvedVersion
@@ -119,7 +155,8 @@ public sealed class PackUpdateSelectionServiceTests
         string id,
         string version,
         int sourceOrder,
-        string? sourcePath = null
+        string? sourcePath = null,
+        bool directInstallable = true
     ) =>
         new(
             sourcePath ?? $"source-{sourceOrder}",
@@ -129,6 +166,7 @@ public sealed class PackUpdateSelectionServiceTests
             {
                 Id = id,
                 Version = version,
+                DirectInstallable = directInstallable,
                 ManagedFiles =
                 [
                     new PackManifest.PackManagedFile

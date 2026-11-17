@@ -32,6 +32,20 @@ Pass `--prompt-parameters` on a real install to answer every configurable
 parameter instead of only unresolved required parameters. Optional prompts
 offer their declared defaults.
 
+## Direct roots and composite dependencies
+
+By default, discovery and search include raw packs and composite packs. A
+composite has one or more `packs` references; a raw pack has none. Use
+`--only-composites` when browsing for composite packs only.
+
+`directInstallable: false` marks a catalog release as dependency-only. Luna
+does not install that release as a requested root, even when you name its exact
+version. An unversioned install can still select an older directly installable
+release. A directly installable composite can depend on a dependency-only
+release because dependency resolution uses the complete catalog. See the
+[manifest reference](packs/reference/manifest.md#direct-installability) for the
+metadata's default and compatibility limits.
+
 ## Read the Result
 
 Dry runs group source changes, managed-file actions, and lifecycle actions

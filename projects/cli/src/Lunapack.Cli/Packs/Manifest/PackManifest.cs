@@ -8,6 +8,8 @@ internal sealed record PackManifest
 
     public string? Description { get; set; }
 
+    public bool DirectInstallable { get; set; } = true;
+
     public bool Draft { get; set; }
 
     public string? Homepage { get; set; }

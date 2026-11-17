@@ -16,6 +16,12 @@ internal sealed class PackCatalog : IDisposable
 {
     internal const int MaximumVersionCount = 10;
 
+    private enum ResolutionEligibility
+    {
+        AllCatalogReleases,
+        DirectlyInstallable,
+    }
+
     private readonly IFileSystem _fileSystem;
     private readonly CliConsole _console;
     private readonly ConfiguredSourceIgnoreService _sourceIgnoreService;
@@ -418,11 +424,40 @@ internal sealed class PackCatalog : IDisposable
         return await ResolveAsync(projectDirectory, configuration, packId, requestedVersion);
     }
 
-    public async Task<ManifestOperationResult<DiscoveredPack>> ResolveAsync(
+    public Task<ManifestOperationResult<DiscoveredPack>> ResolveAsync(
         string projectDirectory,
         ProjectConfiguration configuration,
         string packId,
         string? requestedVersion
+    ) =>
+        ResolveFromConfiguredSourcesAsync(
+            projectDirectory,
+            configuration,
+            packId,
+            requestedVersion,
+            ResolutionEligibility.AllCatalogReleases
+        );
+
+    public Task<ManifestOperationResult<DiscoveredPack>> ResolveDirectlyInstallableAsync(
+        string projectDirectory,
+        ProjectConfiguration configuration,
+        string packId,
+        string? requestedVersion
+    ) =>
+        ResolveFromConfiguredSourcesAsync(
+            projectDirectory,
+            configuration,
+            packId,
+            requestedVersion,
+            ResolutionEligibility.DirectlyInstallable
+        );
+
+    private async Task<ManifestOperationResult<DiscoveredPack>> ResolveFromConfiguredSourcesAsync(
+        string projectDirectory,
+        ProjectConfiguration configuration,
+        string packId,
+        string? requestedVersion,
+        ResolutionEligibility eligibility
     )
     {
         var discovered = await DiscoverResolutionCandidatesAsync(
@@ -438,14 +473,38 @@ internal sealed class PackCatalog : IDisposable
             );
         }
 
-        var selected = SelectFromCatalog(candidates.Packs, packId, requestedVersion);
+        var selectionCandidates = eligibility switch
+        {
+            ResolutionEligibility.AllCatalogReleases => candidates.Packs,
+            ResolutionEligibility.DirectlyInstallable => CatalogPackFilter.DirectInstallable(
+                candidates.Packs
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(eligibility)),
+        };
+        var selected = SelectFromCatalog(selectionCandidates, packId, requestedVersion);
         if (selected.Value is not { } selectedPack)
         {
-            return candidates.Failures.Count == 0
-                ? ResolveFromCatalog(candidates.Packs, packId, requestedVersion)
-                : ManifestOperationResult<DiscoveredPack>.Failure(
+            if (candidates.Failures.Count > 0)
+            {
+                return ManifestOperationResult<DiscoveredPack>.Failure(
                     $"Resolution for pack '{packId}' is incomplete because one or more sources were unavailable: {string.Join("; ", candidates.Failures)}"
                 );
+            }
+
+            if (
+                eligibility == ResolutionEligibility.DirectlyInstallable
+                && SelectFromCatalog(candidates.Packs, packId, requestedVersion).Value
+                    is { } existingPack
+                && !existingPack.Manifest.DirectInstallable
+            )
+            {
+                return ManifestOperationResult<DiscoveredPack>.Failure(
+                    $"Pack '{packId}' is not directly installable (directInstallable is false).",
+                    ManifestOperationErrorKind.PackNotFound
+                );
+            }
+
+            return ResolveFromCatalog(selectionCandidates, packId, requestedVersion);
         }
 
         if (candidates.Failures.Count > 0)
@@ -467,7 +526,7 @@ internal sealed class PackCatalog : IDisposable
                 selectedPack.OciSource
             )
             {
-                SourceSelection = GetSourceSelection(candidates.Packs, selectedPack),
+                SourceSelection = GetSourceSelection(selectionCandidates, selectedPack),
             }
         );
     }
