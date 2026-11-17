@@ -77,7 +77,7 @@ when consuming packs and running Luna.
 | Fix           | Protect workflow and pack changes with review; scope registry roles and self-hosted runner credentials to the required repository.                                                                                                     |
 | Priority      | Maintainer and registry policy                                                                                                                                                                                                         |
 | Status        | Mitigated by maintained workflow packs; external identity and runner controls remain operator-owned                                                                                                                                    |
-| Verification  | Changed-pack helper tests, pack-validation integration tests, OCI unit tests, and security tests; live provider identities require configured infrastructure.                                                                          |
+| Verification  | PowerShell fixtures cover duplicates, deleted/non-pack paths, whitespace, first pushes, malformed JSON/paths, and publish errors; pack integration, OCI unit, and security tests pass. Live identity tests need infrastructure.        |
 | Residual risk | A compromised trusted branch can publish a structurally valid but harmful pack with its granted write identity.                                                                                                                        |
 
 ## Elevation of Privilege

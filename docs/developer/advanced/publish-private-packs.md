@@ -10,7 +10,9 @@ luna install github-oci-publish-workflow@1.0.0
 
 Choose `github-acr-publish-workflow@1.0.0` for Azure Container Registry or
 `github-ghcr-publish-workflow@1.0.0` for GitHub Container Registry. Each pack
-adds its publishing workflow and changed-pack helper under `.github/`.
+composes `github-publish-changed-packs@1.0.0`, which installs the shared
+PowerShell publisher under `.github/scripts/`. You do not need to install the
+helper separately.
 
 ## Configure the publishing source
 
@@ -31,9 +33,11 @@ can use registry write permissions.
 
 | Workflow pack | Authentication                                                                                              | Runner requirements                                                                                                             |
 | ------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| Generic OCI   | Source-bound native credential store                                                                        | Persistent Linux self-hosted runner; preconfigure its user's native credential store.                                           |
-| GHCR          | Source-bound native credential store                                                                        | Persistent Linux self-hosted runner; preconfigure its user's native credential store. The workflow does not use `GITHUB_TOKEN`. |
-| ACR           | GitHub OIDC through `azure/login`; grant the federated identity the narrowest role that permits publication | GitHub-hosted or self-hosted runner.                                                                                            |
+| Generic OCI   | Source-bound native credential store                                                                        | Persistent Linux self-hosted runner with PowerShell 7 (`pwsh`); preconfigure its user's native credential store.                |
+| GHCR          | Source-bound native credential store                                                                        | Persistent Linux self-hosted runner with PowerShell 7 (`pwsh`); preconfigure its user's native credential store.                |
+| ACR           | GitHub OIDC through `azure/login`; grant the federated identity the narrowest role that permits publication | GitHub-hosted or self-hosted runner with PowerShell 7 (`pwsh`).                                                                 |
+
+The GHCR workflow does not use `GITHUB_TOKEN`.
 
 Seed generic OCI or GHCR credentials with an interactive Luna operation on the
 runner before enabling the workflow. The credential is bound to the project,
@@ -49,11 +53,13 @@ uses the Azure CLI identity established by `azure/login` through
 ## Publish changed pack directories
 
 The workflows run on pushes to `main` that change `packs/**`. They check out
-full Git history, compare the event's before and after commits, and pass
-NUL-delimited paths to `luna publish`. This preserves names containing spaces
-and avoids treating deleted directories as publishable packs. Failed Git
-comparisons stop the workflow instead of silently publishing nothing. The
-changed-pack helper expects pack directories directly below `packs/`.
+full Git history and use a SHA-pinned `tj-actions/changed-files` action to
+produce JSON paths. A shared PowerShell publisher maps each changed path to its
+direct-child directory under `packs/`, publishes each existing directory with
+a `pack.yml` once, and skips deleted packs. JSON preserves names containing
+spaces. On a first push, the publisher scans all existing direct-child pack
+directories because no earlier commit exists. Change-detection or publishing
+failures stop the workflow.
 
 Each pack directory is published with the target configured by its workflow:
 

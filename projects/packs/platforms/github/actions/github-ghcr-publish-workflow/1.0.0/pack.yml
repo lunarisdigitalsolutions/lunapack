@@ -8,8 +8,9 @@ tags:
   - github
   - ghcr
   - publishing
+packs:
+  - id: github-publish-changed-packs
+    version: 1.0.0
 managedFiles:
   - source: targets/.github/workflows/publish-lunapacks-ghcr.yml
     target: .github/workflows/publish-lunapacks-ghcr.yml
-  - source: targets/.github/scripts/find_changed_packs_ghcr.py
-    target: .github/scripts/find_changed_packs_ghcr.py

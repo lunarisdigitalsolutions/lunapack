@@ -25,12 +25,25 @@ The workflows SHALL be delivered as packs, not from an `examples/` directory.
 - **THEN** the workflow delegates publication to `luna publish` and needs no
   Harbor-specific Luna integration
 
+### Requirement: Share changed-pack publishing behavior
+
+Each workflow pack SHALL compose the shared PowerShell publisher pack. Its
+workflow SHALL pass JSON paths from a SHA-pinned `tj-actions/changed-files`
+action to that publisher.
+
+#### Scenario: Install the shared publisher
+
+- **WHEN** a project installs a generic OCI, ACR, or GHCR workflow pack
+- **THEN** the shared publisher script is installed under `.github/scripts/`
+  and the workflow passes changed paths as JSON
+
 ### Requirement: Publish only changed pack folders on main
 
-The sample workflow SHALL run on `main` pushes affecting `packs/**`, compare
-`github.event.before` with `github.sha`, and publish each changed direct child
-folder once. It SHALL support multi-file, multi-pack, squash, merge, rename,
-and deleted-pack changes without assuming `HEAD^`.
+The sample workflow SHALL run on `main` pushes affecting `packs/**` and publish
+each changed direct-child folder once. The shared publisher SHALL publish only
+existing folders that contain `pack.yml`. It SHALL support multi-file,
+multi-pack, squash, merge, rename, and deleted-pack changes without assuming
+`HEAD^`.
 
 #### Scenario: Publish two changed packs once each
 
@@ -44,9 +57,9 @@ and deleted-pack changes without assuming `HEAD^`.
 
 #### Scenario: Handle the first push
 
-- **WHEN** the before SHA is absent or the all-zero initial-push sentinel
-- **THEN** the workflow compares the pushed tree with an empty tree rather than
-  failing or assuming a parent commit
+- **WHEN** the before SHA is the all-zero initial-push sentinel
+- **THEN** the publisher scans all existing direct-child folders under `packs/`
+  and publishes each folder that contains `pack.yml` once
 
 ### Requirement: Install Luna using a documented distribution
 
@@ -92,14 +105,25 @@ credentials through LunaPack-specific environment variables or committed files.
 
 The workflow SHALL fail on change-detection, authentication, or publication
 errors. Existing manifest versions SHALL fail clearly rather than being skipped
-or overwritten. Folder paths SHALL be handled safely, including whitespace.
+or overwritten.
 
 #### Scenario: Publish without incrementing the version
 
 - **WHEN** a changed pack's manifest version is already published
 - **THEN** Luna rejects it and the job fails with guidance to increment the version
 
-#### Scenario: Fail the revision comparison
+#### Scenario: Fail change detection
 
-- **WHEN** the previous revision cannot be fetched or compared
+- **WHEN** change detection fails
 - **THEN** the workflow fails visibly rather than claiming there are no changed packs
+
+### Requirement: Reject changed paths outside pack boundaries
+
+The shared publisher SHALL handle whitespace safely and reject malformed JSON,
+absolute paths, and traversal segments before publication.
+
+#### Scenario: Reject invalid changed paths
+
+- **WHEN** the changed-files output contains malformed JSON, an absolute path,
+  or a traversal segment
+- **THEN** the publisher fails without publishing a path outside `packs/`

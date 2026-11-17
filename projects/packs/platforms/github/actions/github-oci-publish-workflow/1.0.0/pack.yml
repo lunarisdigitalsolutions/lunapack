@@ -7,8 +7,9 @@ tags:
   - github-actions
   - oci
   - publishing
+packs:
+  - id: github-publish-changed-packs
+    version: 1.0.0
 managedFiles:
   - source: targets/.github/workflows/publish-lunapacks-oci.yml
     target: .github/workflows/publish-lunapacks-oci.yml
-  - source: targets/.github/scripts/find_changed_packs_oci.py
-    target: .github/scripts/find_changed_packs_oci.py

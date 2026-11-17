@@ -49,15 +49,24 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Find changed packs
+        id: changed_packs
+        uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
+        with:
+          files: |
+            packs/**
+          json: true
+          output_renamed_files_as_deleted_and_added: true
+          fail_on_initial_diff_error: true
+
       - name: Publish changed packs
-        shell: bash
+        shell: pwsh
         env:
-          BEFORE: ${{ github.event.before }}
-          AFTER: ${{ github.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+          CHANGED_FILES_JSON: ${{ steps.changed_packs.outputs.all_changed_files }}
         run: |
-          set -euo pipefail
-          python3 .github/scripts/find_changed_packs_acr.py "$BEFORE" "$AFTER" \
-            > "$RUNNER_TEMP/changed-packs.bin"
-          while IFS= read -r -d '' pack; do
-            luna publish "$pack" --target acr
-          done < "$RUNNER_TEMP/changed-packs.bin"
+          $publishAllPacks = $env:BEFORE_SHA -match '^0{40}$'
+          & ./.github/scripts/publish-changed-packs.ps1 `
+            -ChangedFilesJson $env:CHANGED_FILES_JSON `
+            -Target acr `
+            -IncludeAllPacks:$publishAllPacks
