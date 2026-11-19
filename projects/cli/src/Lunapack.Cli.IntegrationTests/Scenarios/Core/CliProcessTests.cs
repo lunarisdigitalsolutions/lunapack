@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 
 namespace Lunapack.Cli.IntegrationTests.Scenarios.Core;
 
@@ -72,6 +73,30 @@ public sealed class CliProcessTests
             .That(warningLogging.StandardOutput)
             .DoesNotContain("debug: Running CLI command");
         await Assert.That(warningLogging.StandardError).IsEmpty();
+    }
+
+    [Test]
+    public async Task Scenario_AuditJson_RoutesDebugDiagnosticsToStandardError()
+    {
+        using var workspace = new TestWorkspace();
+        await CliProcess.InvokeAsync(workspace.Path, "init");
+
+        var result = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "audit",
+            "--format",
+            "json",
+            "--log-level",
+            "debug"
+        );
+
+        await Assert.That(result.ExitCode).IsZero();
+        using var document = JsonDocument.Parse(result.StandardOutput);
+        await Assert
+            .That(document.RootElement.GetProperty("command").GetString())
+            .IsEqualTo("audit");
+        await Assert.That(result.StandardError).Contains("debug: Running CLI command");
+        await Assert.That(result.StandardError).DoesNotContain("\u001b");
     }
 
     [Test]
@@ -1619,6 +1644,63 @@ public sealed class CliProcessTests
     }
 
     [Test]
+    public async Task Scenario_LunaCliSkillPack_RejectsUnmanagedTargetThenUpdatesOwnedSkill()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CopySamplePackSourceToWorkspace(workspace.Path);
+        await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
+        var skillDirectory = Path.Combine(workspace.Path, ".agents", "skills", "luna-cli");
+        var skillPath = Path.Combine(skillDirectory, "SKILL.md");
+        var licensePath = Path.Combine(skillDirectory, "LICENSE.md");
+        Directory.CreateDirectory(skillDirectory);
+        File.WriteAllText(skillPath, "unmanaged");
+
+        var conflict = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "install",
+            "luna-cli",
+            "--scripts",
+            "skip",
+            "--skip-instructions"
+        );
+
+        await Assert.That(conflict.ExitCode).IsEqualTo(1);
+        await Assert.That(File.ReadAllText(skillPath)).IsEqualTo("unmanaged");
+        File.Delete(skillPath);
+
+        var install = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "install",
+            "luna-cli",
+            "--scripts",
+            "skip",
+            "--skip-instructions"
+        );
+
+        await Assert.That(install.ExitCode).IsEqualTo(0);
+        await Assert
+            .That(File.ReadAllText(licensePath))
+            .IsEqualTo(File.ReadAllText(Path.Combine(GetRepositoryRoot(), "LICENSE.md")));
+        CreateUpdatedLunaCliRelease(workspace.Path, sourcePath);
+
+        var update = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "update",
+            "luna-cli",
+            "--scripts",
+            "skip",
+            "--skip-instructions"
+        );
+
+        await Assert.That(update.ExitCode).IsEqualTo(0);
+        await Assert.That(File.Exists(licensePath)).IsTrue();
+        await Assert.That(File.ReadAllText(skillPath)).Contains("<!-- Updated release -->");
+        await Assert
+            .That(File.ReadAllText(Path.Combine(workspace.Path, "lunapack-lock.yml")))
+            .Contains("version: 1.1.0");
+    }
+
+    [Test]
     public async Task Scenario_BundledIgnorePacks_MergeMarkedSections()
     {
         using var workspace = new TestWorkspace();
@@ -2242,6 +2324,44 @@ public sealed class CliProcessTests
             CopySamplePackSourceToWorkspace(projectDirectory)
         );
 
+    private static void CreateUpdatedLunaCliRelease(string projectDirectory, string sourcePath)
+    {
+        var versionRoot = Path.Combine(
+            projectDirectory,
+            sourcePath,
+            "lunapack",
+            "guidance",
+            "luna-cli"
+        );
+        var releaseOne = Path.Combine(versionRoot, "1.0.0");
+        var releaseTwo = Path.Combine(versionRoot, "1.1.0");
+        foreach (
+            var sourceFile in Directory.EnumerateFiles(releaseOne, "*", SearchOption.AllDirectories)
+        )
+        {
+            var destinationFile = Path.Combine(
+                releaseTwo,
+                Path.GetRelativePath(releaseOne, sourceFile)
+            );
+            Directory.CreateDirectory(
+                Path.GetDirectoryName(destinationFile)
+                    ?? throw new InvalidOperationException("Destination directory is missing.")
+            );
+            File.Copy(sourceFile, destinationFile);
+        }
+
+        var manifestPath = Path.Combine(releaseTwo, "pack.yml");
+        File.WriteAllText(
+            manifestPath,
+            File.ReadAllText(manifestPath)
+                .Replace("version: 1.0.0", "version: 1.1.0", StringComparison.Ordinal)
+        );
+        File.AppendAllText(
+            Path.Combine(releaseTwo, "targets", ".agents", "skills", "luna-cli", "SKILL.md"),
+            "\n<!-- Updated release -->\n"
+        );
+    }
+
     private static async Task InitializeAndAddNoSourcesAsync(string projectDirectory)
     {
         var init = await CliProcess.InvokeAsync(projectDirectory, "init");
@@ -2731,6 +2851,7 @@ public sealed class CliProcessTests
             ("lint-staged-quality", "1.0.0"),
             ("lint-staged-scss", "1.0.0"),
             ("lint-staged-yaml", "1.0.0"),
+            ("luna-cli", "1.0.0"),
             ("madr-template", "1.0.0"),
             ("markdownlint-config", "1.0.0"),
             ("lunapack-pack-authoring", "1.0.0"),

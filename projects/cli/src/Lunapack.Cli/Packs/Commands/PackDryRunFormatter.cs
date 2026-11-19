@@ -149,8 +149,12 @@ internal static class PackDryRunFormatter
                 $"[yellow]~[/] Merge   {Markup.Escape(action.TargetPathRelativeToProject)} [grey](JSON)[/]",
             SkipManagedFileUpdateAction =>
                 $"[grey]=[/] Skip    {Markup.Escape(action.TargetPathRelativeToProject)}",
+            DeleteManagedFileUpdateAction deleteAction when deleteAction.WasModifiedAtPlanning =>
+                $"[red]-[/] Delete  {Markup.Escape(action.TargetPathRelativeToProject)} [yellow](locally modified; --remove-modified)[/]",
             DeleteManagedFileUpdateAction =>
                 $"[red]-[/] Delete  {Markup.Escape(action.TargetPathRelativeToProject)}",
+            PreserveManagedFileUpdateAction =>
+                $"[yellow]=[/] Preserve {Markup.Escape(action.TargetPathRelativeToProject)} [grey](locally modified)[/]",
             _ => throw new ArgumentOutOfRangeException(
                 nameof(action),
                 action.GetType().Name,

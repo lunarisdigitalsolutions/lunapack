@@ -178,7 +178,8 @@ public sealed class PackDryRunFormatterTests
                         previousPack.ManagedFiles.Single().TargetPath,
                         previousPack.ManagedFiles.Single().Sha256
                     ),
-                    "C:\\project\\obsolete.txt"
+                    "C:\\project\\obsolete.txt",
+                    "planned-sha256"
                 ),
             ])
         );
@@ -230,7 +231,25 @@ public sealed class PackDryRunFormatterTests
                     new DeleteManagedFileUpdateAction(
                         previousOwner,
                         new ManagedRootFile("example", "delete.txt", "delete.txt", "sha256"),
-                        "C:\\project\\delete.txt"
+                        "C:\\project\\delete.txt",
+                        "planned-sha256"
+                    ),
+                    new DeleteManagedFileUpdateAction(
+                        previousOwner,
+                        new ManagedRootFile(
+                            "example",
+                            "modified-delete.txt",
+                            "modified-delete.txt",
+                            "sha256"
+                        ),
+                        "C:\\project\\modified-delete.txt",
+                        "planned-sha256",
+                        true
+                    ),
+                    new PreserveManagedFileUpdateAction(
+                        previousOwner,
+                        new ManagedRootFile("example", "preserve.txt", "preserve.txt", "sha256"),
+                        "C:\\project\\preserve.txt"
                     ),
                 ])
             )
@@ -245,6 +264,8 @@ public sealed class PackDryRunFormatterTests
                 "[yellow]~[/] Merge   merge.txt [grey](lines)[/]",
                 "[grey]=[/] Skip    skip.txt",
                 "[red]-[/] Delete  delete.txt",
+                "[red]-[/] Delete  modified-delete.txt [yellow](locally modified; --remove-modified)[/]",
+                "[yellow]=[/] Preserve preserve.txt [grey](locally modified)[/]",
             ]);
     }
 

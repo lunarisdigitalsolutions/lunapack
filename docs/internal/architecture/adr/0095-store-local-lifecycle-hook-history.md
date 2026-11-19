@@ -5,7 +5,7 @@ decision-makers:
   - Lunaris Engineering
 ---
 
-# ADR-0090: Store local lifecycle hook history in a user-local sidecar
+# ADR-0095: Store local lifecycle hook history in a user-local sidecar
 
 ## Context and Problem Statement
 

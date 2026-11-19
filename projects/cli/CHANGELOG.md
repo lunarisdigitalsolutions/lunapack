@@ -7,17 +7,40 @@ pack-package, documentation, CI, build, test, and release-process changes.
 
 Update this section before creating a release tag.
 
-### Lifecycle Hooks
+### Added
 
-- Luna now records bounded per-user lifecycle script attempt history and adds
+- `luna doctor` reports project-relevant Git, credential-store, state, and
+  profile/cache problems with remediation. Its default checks are offline;
+  `--network` enables bounded, noninteractive checks for configured Git and OCI
+  sources.
+- Install, update, local pack validation, and OCI publication now screen
+  pack-managed UTF-8 text for hidden Unicode. Bidi controls and U+200B block
+  before side effects unless `--allow-hidden-characters` is supplied; other
+  Unicode format characters remain warnings. `luna audit` reports installed
+  findings without changing state or success behavior. BOM-tagged UTF-16 and
+  UTF-32 content is decoded, and recoverable controls in NUL-containing or
+  invalid UTF-8 payloads remain enforceable without rejecting opaque bytes
+  alone. Managed paths reject terminal-control and hidden-format characters.
+  Diagnostic retention is bounded to 1,000 findings per payload with an
+  omission summary.
+- `luna audit`, `luna outdated`, and `luna validate <pack-reference>` accept
+  `--format json` for versioned machine-readable results. JSON stays on
+  standard output while human-readable diagnostics use standard error; audit
+  results include stable finding codes and severity counts.
+- Luna records bounded per-user lifecycle script attempt history and adds
   `luna hooks history` for read-only inspection of recent commands, authorization
   sources, durations, and outcomes. History persistence failures warn without
   changing script results or rollback behavior.
 
 ### Fixed
 
+- Pack and link updates now preserve locally modified managed targets removed
+  from their next selection and warn that the files are no longer managed.
+  Pack updates support explicit deletion with `--remove-modified`.
 - Git links now fetch selected files missing from cached content using the
   resolved commit.
+- Luna resolves Git from trusted absolute `PATH` entries instead of a
+  same-directory executable, and rejects credential-bearing HTTP Git URLs.
 
 ## Version 1.6.0 - 2026-11-17
 

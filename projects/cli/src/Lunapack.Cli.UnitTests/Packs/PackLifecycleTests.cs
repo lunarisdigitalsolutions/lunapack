@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using Lunapack.Cli.Application;
 using Lunapack.Cli.Catalog;
 using Lunapack.Cli.Packs;
 using Lunapack.Cli.Packs.Lifecycle;
@@ -439,6 +440,197 @@ public sealed class PackLifecycleTests
         await Assert.That(exitCode).IsEqualTo(0);
         await Assert.That(File.Exists(targetPath)).IsFalse();
         await Assert.That(await ReadStateAsync(workspace.Path)).IsEqualTo(initialState);
+    }
+
+    [Test]
+    public async Task Install_WhenHighConfidenceHiddenCharacterExists_BlocksBeforeSideEffects()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        ansiConsole.Profile.Width = 500;
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var sourcePath = CreatePackSource(
+            workspace.Path,
+            $"id: dotnet-gitignore\nversion: 1.0.0\nparameters:\n  renderedText:\n    type: string\n    required: true\nhooks:\n  preInstall:\n    - type: script\n      command: {ShellExecutable}\n      arguments:\n        - {ShellArgument}\n        - 'echo hook > lifecycle.txt'\nmanagedFiles:\n  - source: templates/dotnet.gitignore\n    target: .gitignore\n    template: true\n",
+            "{{ renderedText }}"
+        );
+        await ConfigureSourceAsync(workspace, sourcePath);
+        var initialState = await ReadStateAsync(workspace.Path);
+
+        var exitCode = await workspace.Application.RunAsync(
+            [
+                "install",
+                "dotnet-gitignore",
+                "--scripts",
+                "run",
+                "--destination",
+                "preview",
+                "--parameter",
+                "renderedText=safe\u202Ehidden",
+            ],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(await ReadStateAsync(workspace.Path)).IsEqualTo(initialState);
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, "lifecycle.txt"))).IsFalse();
+        await Assert
+            .That(File.Exists(Path.Combine(workspace.Path, "preview", ".gitignore")))
+            .IsFalse();
+        await Assert
+            .That(ansiConsole.Output)
+            .Contains("Hidden Unicode in 'preview/.gitignore' at line 1, column 5");
+        await Assert.That(ansiConsole.Output).Contains("U+202E (high-confidence)");
+        await Assert.That(ansiConsole.Output).Contains("--allow-hidden-characters");
+    }
+
+    [Test]
+    public async Task InstallDryRun_WhenHighConfidenceHiddenCharacterExists_FailsWithoutMutation()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        ansiConsole.Profile.Width = 500;
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var sourcePath = CreatePackSource(workspace.Path, templateContents: "safe\u200Bhidden");
+        await ConfigureSourceAsync(workspace, sourcePath);
+        var initialState = await ReadStateAsync(workspace.Path);
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["install", "dotnet-gitignore", "--dry-run"],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(await ReadStateAsync(workspace.Path)).IsEqualTo(initialState);
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, ".gitignore"))).IsFalse();
+        await Assert.That(ansiConsole.Output).Contains("U+200B (high-confidence)");
+    }
+
+    [Test]
+    [Arguments("nul-utf8")]
+    [Arguments("invalid-utf8")]
+    [Arguments("utf16")]
+    public async Task Install_WhenOpaquePayloadHidesControl_BlocksBeforeMutation(string encoding)
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreatePackSource(workspace.Path);
+        var sourceFile = Path.Combine(
+            workspace.Path,
+            sourcePath,
+            "dotnet-gitignore",
+            "templates",
+            "dotnet.gitignore"
+        );
+        File.WriteAllBytes(
+            sourceFile,
+            encoding switch
+            {
+                "nul-utf8" => [0x41, 0x00, 0xE2, 0x80, 0xAE],
+                "invalid-utf8" => [0xC3, 0x28, 0xE2, 0x80, 0xAE],
+                _ => [0xFF, 0xFE, 0x2E, 0x20],
+            }
+        );
+        await ConfigureSourceAsync(workspace, sourcePath);
+        var initialState = await ReadStateAsync(workspace.Path);
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["install", "dotnet-gitignore"],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(await ReadStateAsync(workspace.Path)).IsEqualTo(initialState);
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, ".gitignore"))).IsFalse();
+    }
+
+    [Test]
+    public async Task Install_WhenWarningCharacterExists_ReportsAndContinues()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var sourcePath = CreatePackSource(workspace.Path, templateContents: "safe\u00ADtext");
+        await ConfigureSourceAsync(workspace, sourcePath);
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["install", "dotnet-gitignore"],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, ".gitignore"))).IsTrue();
+        await Assert.That(ansiConsole.Output).Contains("U+00AD (warning)");
+    }
+
+    [Test]
+    public async Task Update_WhenMergedContentContainsHighConfidenceFinding_BlocksUntilOverride()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        ansiConsole.Profile.Width = 500;
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var sourcePath = Path.Combine(workspace.Path, "source");
+        const string manifest =
+            "id: dotnet-gitignore\nversion: {version}\nmanagedFiles:\n  - source: templates/content.txt\n    target: .gitignore\n    strategy:\n      type: merge\n      method: lines\n";
+        CreatePack(
+            sourcePath,
+            "dotnet-v1",
+            manifest.Replace("{version}", "1.0.0", StringComparison.Ordinal),
+            "base\n"
+        );
+        CreatePack(
+            sourcePath,
+            "dotnet-v2",
+            manifest.Replace("{version}", "2.0.0", StringComparison.Ordinal),
+            "added\u202Econtent\n"
+        );
+        await ConfigureSourceAsync(workspace, "source");
+        await workspace.Application.RunAsync(["install", "dotnet-gitignore@1.0.0"], workspace.Path);
+        var initialState = await ReadStateAsync(workspace.Path);
+
+        var blockedExit = await workspace.Application.RunAsync(
+            ["update", "dotnet-gitignore@2.0.0"],
+            workspace.Path
+        );
+
+        await Assert.That(blockedExit).IsEqualTo(1);
+        await Assert.That(await ReadStateAsync(workspace.Path)).IsEqualTo(initialState);
+        await Assert
+            .That(File.ReadAllText(Path.Combine(workspace.Path, ".gitignore")))
+            .IsEqualTo("base\n");
+        await Assert.That(ansiConsole.Output).Contains("U+202E (high-confidence)");
+
+        var allowedExit = await workspace.Application.RunAsync(
+            ["update", "dotnet-gitignore@2.0.0", "--allow-hidden-characters"],
+            workspace.Path
+        );
+
+        await Assert.That(allowedExit).IsEqualTo(0);
+        await Assert
+            .That(File.ReadAllText(Path.Combine(workspace.Path, ".gitignore")))
+            .IsEqualTo("base\nadded\u202Econtent\n");
+    }
+
+    [Test]
+    public async Task Audit_WhenInstalledManagedFileHasHiddenCharacter_ReportsWithoutMutation()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        ansiConsole.Profile.Width = 500;
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var sourcePath = CreatePackSource(workspace.Path, templateContents: "safe\u202Ehidden");
+        await ConfigureSourceAsync(workspace, sourcePath);
+        await workspace.Application.RunAsync(
+            ["install", "dotnet-gitignore", "--allow-hidden-characters"],
+            workspace.Path
+        );
+        var initialState = await ReadStateAsync(workspace.Path);
+        var targetPath = Path.Combine(workspace.Path, ".gitignore");
+        var initialTarget = File.ReadAllBytes(targetPath);
+        var outputStart = ansiConsole.Output.Length;
+
+        var exitCode = await workspace.Application.RunAsync(["audit"], workspace.Path);
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(await ReadStateAsync(workspace.Path)).IsEqualTo(initialState);
+        await Assert.That(File.ReadAllBytes(targetPath)).IsEquivalentTo(initialTarget);
+        await Assert.That(ansiConsole.Output[outputStart..]).Contains("U+202E (high-confidence)");
+        await Assert.That(ansiConsole.Output[outputStart..]).Contains("'.gitignore'");
     }
 
     [Test]
@@ -2200,6 +2392,90 @@ public sealed class PackLifecycleTests
     }
 
     [Test]
+    public async Task Update_WhenObsoleteManagedTargetModified_PreservesFileAndDropsOwnership()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreateVersionedPackSource(workspace.Path, "version one", "version two");
+        File.WriteAllText(
+            Path.Combine(workspace.Path, sourcePath, "dotnet-gitignore-v2", "pack.yml"),
+            AddRequiredMetadata("id: dotnet-gitignore\nversion: 2.0.0\nmanagedFiles: []\n")
+        );
+        await ConfigureSourceAsync(workspace, sourcePath);
+        await workspace.Application.RunAsync(["install", "dotnet-gitignore@1.0.0"], workspace.Path);
+        var targetPath = Path.Combine(workspace.Path, ".gitignore");
+        File.WriteAllText(targetPath, "local change");
+
+        var exitCode = await CreatePackLifecycleService(workspace)
+            .UpdateAsync(
+                workspace.Path,
+                [
+                    new ProjectConfiguration.RequestedPack
+                    {
+                        Id = "dotnet-gitignore",
+                        Version = "2.0.0",
+                    },
+                ],
+                new PackInstallationRequest(
+                    new PackReference("dotnet-gitignore", "2.0.0"),
+                    null,
+                    false
+                )
+            );
+        var updatedState = (await workspace.StateStore.LoadAsync(workspace.Path)).RequireValue();
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(File.ReadAllText(targetPath)).IsEqualTo("local change");
+        await Assert.That(updatedState.LockFile.Packs.Single().ManagedFiles).IsEmpty();
+    }
+
+    [Test]
+    public async Task Update_WhenStateSaveFails_DoesNotWarnThatModifiedTargetIsUnmanaged()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        ansiConsole.Profile.Width = 500;
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var sourcePath = CreateVersionedPackSource(workspace.Path, "version one", "version two");
+        File.WriteAllText(
+            Path.Combine(workspace.Path, sourcePath, "dotnet-gitignore-v2", "pack.yml"),
+            AddRequiredMetadata("id: dotnet-gitignore\nversion: 2.0.0\nmanagedFiles: []\n")
+        );
+        await ConfigureSourceAsync(workspace, sourcePath);
+        await workspace.Application.RunAsync(["install", "dotnet-gitignore@1.0.0"], workspace.Path);
+        var initialState = await ReadStateAsync(workspace.Path);
+        var targetPath = Path.Combine(workspace.Path, ".gitignore");
+        File.WriteAllText(targetPath, "local change");
+        var outputStart = ansiConsole.Output.Length;
+        var console = new CliConsole(ansiConsole, CliLogLevel.Info);
+
+        var exitCode = await CreatePackLifecycleService(
+                workspace,
+                new FailingProjectStateStore(workspace.StateStore),
+                console
+            )
+            .UpdateAsync(
+                workspace.Path,
+                [
+                    new ProjectConfiguration.RequestedPack
+                    {
+                        Id = "dotnet-gitignore",
+                        Version = "2.0.0",
+                    },
+                ],
+                new PackInstallationRequest(
+                    new PackReference("dotnet-gitignore", "2.0.0"),
+                    null,
+                    false
+                )
+            );
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(File.ReadAllText(targetPath)).IsEqualTo("local change");
+        await Assert.That(await ReadStateAsync(workspace.Path)).IsEqualTo(initialState);
+        await Assert
+            .That(ansiConsole.Output[outputStart..])
+            .DoesNotContain("Preserved locally modified target");
+    }
+
+    [Test]
     public async Task Update_WhenIgnoredManagedTargetBecomesActive_InstallsAndLocksLatestFile()
     {
         using var workspace = new TestWorkspace();
@@ -2543,10 +2819,12 @@ public sealed class PackLifecycleTests
 
     private static PackLifecycleService CreatePackLifecycleService(
         TestWorkspace workspace,
-        IProjectStateStore? projectStateStore = null
+        IProjectStateStore? projectStateStore = null,
+        CliConsole? console = null
     )
     {
         var packCatalog = new PackCatalog(workspace.FileSystem, TestConsole.Create());
+        console ??= TestConsole.Create();
         return new PackLifecycleService(
             workspace.FileSystem,
             new CompositePackGraphResolver(packCatalog),
@@ -2555,9 +2833,9 @@ public sealed class PackLifecycleTests
                 new PackTemplateRenderer(workspace.FileSystem)
             ),
             new PackUpdatePlanner(workspace.FileSystem),
-            new PackUpdateTransaction(workspace.FileSystem, TestConsole.Create()),
+            new PackUpdateTransaction(workspace.FileSystem, console),
             projectStateStore ?? workspace.StateStore,
-            TestConsole.Create()
+            console
         );
     }
 

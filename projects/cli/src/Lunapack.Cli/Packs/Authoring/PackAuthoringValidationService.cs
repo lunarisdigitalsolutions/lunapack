@@ -1,6 +1,11 @@
-﻿using Lunapack.Cli.Application.CommandExecution;
+﻿using System.IO.Abstractions;
+using Lunapack.Cli.Application;
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Paths;
 using Lunapack.Cli.Catalog;
+using Lunapack.Cli.Packs.ContentScreening;
 using Lunapack.Cli.Packs.ExternalSources;
+using Lunapack.Cli.Packs.ManagedFiles;
 using Lunapack.Cli.Packs.Manifest;
 using Lunapack.Cli.Packs.Planning;
 using Lunapack.Cli.Project;
@@ -8,14 +13,17 @@ using Lunapack.Cli.Project;
 namespace Lunapack.Cli.Packs.Authoring;
 
 internal sealed class PackAuthoringValidationService(
+    IFileSystem fileSystem,
     ExternalSourceRequirementPlanner requirementPlanner,
     ExternalSourceMaterializer materializer,
-    PackInstallationPlanner installationPlanner
+    PackInstallationPlanner installationPlanner,
+    CliConsole console
 )
 {
     public async Task<ManifestOperationResult<bool>> ValidateExternalSourcesAsync(
         string packDirectory,
-        PackManifest manifest
+        PackManifest manifest,
+        bool allowHiddenCharacters = false
     )
     {
         var graph = CreateValidationGraph(packDirectory, manifest);
@@ -72,11 +80,100 @@ internal sealed class PackAuthoringValidationService(
                 resolvedParameters,
                 externalSources.Roots
             );
-            return planned.Value is not null
-                ? ManifestOperationResult<bool>.Success(true)
-                : ManifestOperationResult<bool>.Failure(
+            if (planned.Value is not { } installationPlan)
+            {
+                return ManifestOperationResult<bool>.Failure(
                     planned.Error ?? "Unable to validate managed-file selectors."
                 );
+            }
+
+            var screening = ScreenManagedSources(
+                packDirectory,
+                installationPlan,
+                allowHiddenCharacters
+            );
+            return screening.IsSuccess
+                ? ManifestOperationResult<bool>.Success(true)
+                : ManifestOperationResult<bool>.Failure(
+                    screening.Error ?? PackContentScreeningPolicy.BlockingMessage
+                );
+        }
+    }
+
+    private ManifestOperationResult<bool> ScreenManagedSources(
+        string packDirectory,
+        PackInstallationPlan installationPlan,
+        bool allowHiddenCharacters
+    )
+    {
+        var findings = new List<PackContentFinding>();
+        var omittedFindingCount = 0L;
+        var hasHighConfidenceFinding = false;
+        foreach (
+            var managedFile in installationPlan
+                .ManagedFiles.GroupBy(managedFile => managedFile.SourcePath, StringComparer.Ordinal)
+                .Select(group => group.First())
+        )
+        {
+            var source = ScreenManagedSource(packDirectory, managedFile);
+            if (source.Value is not { } result)
+            {
+                return ManifestOperationResult<bool>.Failure(
+                    source.Error
+                        ?? $"Unable to screen managed source '{PackContentDiagnosticFormatter.EscapePath(managedFile.SourcePath)}'."
+                );
+            }
+
+            findings.AddRange(result.Findings);
+            omittedFindingCount += result.OmittedFindingCount;
+            hasHighConfidenceFinding |= result.HasHighConfidenceFinding;
+        }
+
+        foreach (var finding in findings)
+        {
+            console.Warning(PackContentDiagnosticFormatter.Format(finding));
+        }
+
+        if (omittedFindingCount > 0)
+        {
+            console.Warning(PackContentDiagnosticFormatter.FormatOmitted(omittedFindingCount));
+        }
+
+        return PackContentScreeningPolicy.Blocks(hasHighConfidenceFinding, allowHiddenCharacters)
+            ? ManifestOperationResult<bool>.Failure(PackContentScreeningPolicy.BlockingMessage)
+            : ManifestOperationResult<bool>.Success(true);
+    }
+
+    private ManifestOperationResult<PackContentScanResult> ScreenManagedSource(
+        string packDirectory,
+        PlannedManagedFile managedFile
+    )
+    {
+        try
+        {
+            var displayPath =
+                managedFile.ExternalSource?.SourcePath
+                ?? ProjectPath.Normalize(
+                    fileSystem.Path.GetRelativePath(
+                        managedFile.Pack.PackDirectory,
+                        managedFile.SourcePath
+                    )
+                );
+            return ManifestOperationResult<PackContentScanResult>.Success(
+                PackContentScanner.Scan(
+                    displayPath,
+                    fileSystem.File.ReadAllBytes(managedFile.SourcePath)
+                )
+            );
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            var relativePath = ProjectPath.Normalize(
+                fileSystem.Path.GetRelativePath(packDirectory, managedFile.SourcePath)
+            );
+            return ManifestOperationResult<PackContentScanResult>.Failure(
+                $"Unable to read managed source '{PackContentDiagnosticFormatter.EscapePath(relativePath)}': {PackContentDiagnosticFormatter.EscapePath(exception.Message)}"
+            );
         }
     }
 

@@ -408,6 +408,13 @@ internal static partial class SourceIdentityNormalizer
             return ManifestOperationResult<string>.Failure("Repository URL is required.");
         }
 
+        if (trimmed.StartsWith('-'))
+        {
+            return ManifestOperationResult<string>.Failure(
+                "Repository URL must not start with an option prefix."
+            );
+        }
+
         if (trimmed[0] == '/')
         {
             return ManifestOperationResult<string>.Success(
@@ -423,11 +430,16 @@ internal static partial class SourceIdentityNormalizer
             );
         }
 
+        var parsedUri = Uri.TryCreate(trimmed, UriKind.Absolute, out var uri) ? uri : null;
+        var isScpLike = ScpLikePattern().IsMatch(trimmed);
         var embedsCredentials =
-            location.UserInformation is { } credentials
+            location.UserInformation is not null
+            && !isScpLike
             && (
-                credentials.Contains(':', StringComparison.Ordinal)
-                || trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+                parsedUri is null
+                || !string.Equals(parsedUri.Scheme, "ssh", StringComparison.OrdinalIgnoreCase)
+                || Uri.UnescapeDataString(parsedUri.UserInfo)
+                    .Contains(':', StringComparison.Ordinal)
             );
         if (embedsCredentials)
         {
@@ -517,7 +529,7 @@ internal static partial class SourceIdentityNormalizer
         segment.EndsWith(".git", StringComparison.OrdinalIgnoreCase) ? segment[..^4] : segment;
 
     [GeneratedRegex(
-        @"^(?:(?<user>[^@/\\:]+)@)?(?<host>[A-Za-z0-9._-]+):(?!//)(?<path>.+)$",
+        @"^(?:(?<user>[A-Za-z0-9._-]+)@)?(?<host>[A-Za-z0-9._-]+):(?!//)(?<path>.+)$",
         RegexOptions.CultureInvariant,
         matchTimeoutMilliseconds: 1000
     )]

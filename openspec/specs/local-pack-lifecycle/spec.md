@@ -606,11 +606,30 @@ combinations SHALL make a manifest invalid before project mutation.
 During an update, LunaPack SHALL compare the prior resolved target set with the
 new resolved target set. It SHALL add new targets, apply the selected strategy
 to retained targets whose source content changes, and remove targets no longer
-owned by the resolved graph. Strategy selection SHALL apply even when the
-current target hash differs from the hash recorded in the prior lock file.
+owned by the resolved graph only when their current digest matches the previous
+lock-file digest. Strategy selection SHALL apply to retained targets even when
+their current hash differs from the hash recorded in the prior lock file.
 LunaPack SHALL persist hashes of the resulting target content after a successful
 update and SHALL restore all changed targets and state if the update cannot
 complete.
+
+When an obsolete target differs from its previous lock-file digest, LunaPack
+SHALL preserve the target by default, warn that it was retained, and omit its
+stale ownership from the next lock file. `luna update --remove-modified` SHALL
+explicitly allow deletion of modified obsolete targets and SHALL affect no
+target still owned by the new resolved graph. The dry-run SHALL identify both
+preserved modified targets and modified targets selected for deletion by the
+override.
+
+Before deleting an obsolete target, LunaPack SHALL verify that its current
+content still matches the content observed during planning. If the target
+changes after planning, LunaPack SHALL fail the update and roll back the
+operation without deleting that changed content.
+
+When multiple prior merge owners share an effective target, LunaPack SHALL
+treat that path as one removal unit. A target still planned by any owner SHALL
+not be removed. Otherwise, LunaPack SHALL remove it at most once and only when
+its content matches the lock-file digest recorded by every prior owner.
 
 For `copy`, `overwrite` SHALL replace a target; `fail-if-exists` SHALL fail if
 the target exists; `skip-if-exists` SHALL retain an existing target; and
@@ -659,8 +678,60 @@ are not structurally equal to an existing destination element.
 #### Scenario: Remove a target absent from the new release
 
 - **WHEN** an updated resolved graph no longer owns a target recorded by the
-  prior resolved graph
-- **THEN** LunaPack removes that target and removes its lock-file record
+  prior resolved graph and the target matches its locked digest
+- **THEN** LunaPack removes that target and its lock-file record
+
+#### Scenario: Preserve a locally modified obsolete target
+
+- **WHEN** an updated resolved graph no longer owns a target and its current
+  digest differs from the prior lock-file digest
+- **THEN** LunaPack retains the file, warns, and removes its stale lock
+  ownership while completing the update
+
+#### Scenario: Delete a modified obsolete target with the override
+
+- **WHEN** a user runs `luna update --remove-modified` and an obsolete target
+  differs from its prior lock-file digest
+- **THEN** LunaPack deletes the target and removes its lock-file record
+
+#### Scenario: Remove stale ownership when an obsolete target is already missing
+
+- **WHEN** an updated resolved graph no longer owns a target and the target is
+  already absent
+- **THEN** LunaPack completes the update and removes the stale lock-file record
+
+#### Scenario: Preview obsolete-target preservation
+
+- **WHEN** a user dry-runs an update that encounters a modified obsolete target
+- **THEN** LunaPack reports that the target will be preserved without modifying
+  project files or state
+
+#### Scenario: Preview modified-target deletion with the override
+
+- **WHEN** a user dry-runs `luna update --remove-modified` and an obsolete
+  target differs from its prior lock-file digest
+- **THEN** LunaPack reports that the target will be deleted without modifying
+  project files or state
+
+#### Scenario: Keep a target shared with a remaining owner
+
+- **WHEN** an update removes one prior merge owner but another planned owner
+  still uses the same effective target
+- **THEN** LunaPack retains the target and records the remaining ownership
+
+#### Scenario: Preserve a modified target shared by merge owners
+
+- **WHEN** an update removes every prior merge owner of a shared target and its
+  current digest does not match every prior owner's locked digest
+- **THEN** LunaPack preserves the target once, warns once, and removes stale
+  ownership
+
+#### Scenario: Revalidate an obsolete target before deletion
+
+- **WHEN** an obsolete target changes after planning but before transaction
+  deletion
+- **THEN** LunaPack fails the update, preserves the changed target, and rolls
+  back other managed-file and state changes
 
 ### Requirement: Select a cataloged version for installation
 
@@ -1606,3 +1677,41 @@ SHALL not change the original argument vector delivered to a process.
 
 - **WHEN** safe rendering escapes a lifecycle argument
 - **THEN** the script process still receives the original literal argument
+
+### Requirement: Screen managed text before lifecycle changes
+
+`luna install` and `luna update` SHALL screen eligible final managed-file content planned for creation or replacement after template rendering and merge planning, before hooks execute or project files or state change. Findings SHALL identify the effective project-relative target.
+
+#### Scenario: Report a rendered install finding
+
+- **WHEN** an install renders a managed template containing a hidden character for effective target `docs/readme.md`
+- **THEN** LunaPack reports the finding against `docs/readme.md` before applying the plan
+
+#### Scenario: Screen merged update content
+
+- **WHEN** an update plans a merge whose resulting text contains a hidden character
+- **THEN** LunaPack reports the finding in the final planned target content
+
+#### Scenario: Screen a dry-run plan
+
+- **WHEN** an install or update dry run plans eligible text containing a hidden character
+- **THEN** LunaPack reports the same finding without changing project files or state
+
+#### Scenario: Block before lifecycle side effects
+
+- **WHEN** enforcement is enabled and a lifecycle plan contains a high-confidence finding without an override
+- **THEN** LunaPack stops before executing hooks or changing project files, configuration, or lock state
+
+### Requirement: Screen installed managed text during audit
+
+`luna audit` SHALL screen existing eligible managed-file targets and report findings with their installed project-relative paths. Findings SHALL not change audit exit status or mutate project files, configuration, or lock state.
+
+#### Scenario: Report a finding in an installed file
+
+- **WHEN** an existing installed managed-file target contains a hidden character
+- **THEN** `luna audit` reports the finding against that target
+
+#### Scenario: Preserve audit state
+
+- **WHEN** `luna audit` reports hidden-character findings
+- **THEN** it leaves all files and project state unchanged and does not fail solely because findings exist
