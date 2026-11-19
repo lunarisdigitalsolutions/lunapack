@@ -1597,45 +1597,7 @@ public sealed class CliProcessTests
         );
 
         await Assert.That(install.ExitCode).IsEqualTo(0);
-        var versionRoot = Path.Combine(
-            workspace.Path,
-            sourcePath,
-            "lunapack",
-            "guidance",
-            "luna-cli"
-        );
-        var releaseOne = Path.Combine(versionRoot, "1.0.0");
-        var releaseTwo = Path.Combine(versionRoot, "1.1.0");
-        foreach (
-            var sourceFile in Directory.EnumerateFiles(releaseOne, "*", SearchOption.AllDirectories)
-        )
-        {
-            var destinationFile = Path.Combine(
-                releaseTwo,
-                Path.GetRelativePath(releaseOne, sourceFile)
-            );
-            Directory.CreateDirectory(
-                Path.GetDirectoryName(destinationFile)
-                    ?? throw new InvalidOperationException("Destination directory is missing.")
-            );
-            File.Copy(sourceFile, destinationFile);
-        }
-
-        var manifestPath = Path.Combine(releaseTwo, "pack.yml");
-        File.WriteAllText(
-            manifestPath,
-            File.ReadAllText(manifestPath)
-                .Replace("version: 1.0.0", "version: 1.1.0", StringComparison.Ordinal)
-        );
-        var updatedSkillPath = Path.Combine(
-            releaseTwo,
-            "targets",
-            ".agents",
-            "skills",
-            "luna-cli",
-            "SKILL.md"
-        );
-        File.AppendAllText(updatedSkillPath, "\n<!-- Updated release -->\n");
+        CreateUpdatedLunaCliRelease(workspace.Path, sourcePath);
 
         var update = await CliProcess.InvokeAsync(
             workspace.Path,
@@ -2276,6 +2238,44 @@ public sealed class CliProcessTests
             projectDirectory,
             CopySamplePackSourceToWorkspace(projectDirectory)
         );
+
+    private static void CreateUpdatedLunaCliRelease(string projectDirectory, string sourcePath)
+    {
+        var versionRoot = Path.Combine(
+            projectDirectory,
+            sourcePath,
+            "lunapack",
+            "guidance",
+            "luna-cli"
+        );
+        var releaseOne = Path.Combine(versionRoot, "1.0.0");
+        var releaseTwo = Path.Combine(versionRoot, "1.1.0");
+        foreach (
+            var sourceFile in Directory.EnumerateFiles(releaseOne, "*", SearchOption.AllDirectories)
+        )
+        {
+            var destinationFile = Path.Combine(
+                releaseTwo,
+                Path.GetRelativePath(releaseOne, sourceFile)
+            );
+            Directory.CreateDirectory(
+                Path.GetDirectoryName(destinationFile)
+                    ?? throw new InvalidOperationException("Destination directory is missing.")
+            );
+            File.Copy(sourceFile, destinationFile);
+        }
+
+        var manifestPath = Path.Combine(releaseTwo, "pack.yml");
+        File.WriteAllText(
+            manifestPath,
+            File.ReadAllText(manifestPath)
+                .Replace("version: 1.0.0", "version: 1.1.0", StringComparison.Ordinal)
+        );
+        File.AppendAllText(
+            Path.Combine(releaseTwo, "targets", ".agents", "skills", "luna-cli", "SKILL.md"),
+            "\n<!-- Updated release -->\n"
+        );
+    }
 
     private static async Task InitializeAndAddNoSourcesAsync(string projectDirectory)
     {

@@ -39,7 +39,7 @@ later releases. The direct Skills CLI command points to the same repository
 subdirectory:
 
 ```text
-npx --yes skills@1.9.0 add https://github.com/lunarisdigitalsolutions/lunapack/tree/9cf119d4818c337495f13cd1309fc827cbdfd8b9/projects/packs/lunapack/guidance/luna-cli/1.0.0/targets/.agents/skills/luna-cli --skill luna-cli --copy
+npx --yes skills@1.9.0 add https://github.com/lunarisdigitalsolutions/lunapack/tree/690521e024a7e62e14a9a3aa8dda3663ba241591/projects/packs/lunapack/guidance/luna-cli/1.0.0/targets/.agents/skills/luna-cli --skill luna-cli --copy
 ```
 
 The documented command pins exact Skills CLI package `1.9.0` and a full commit
