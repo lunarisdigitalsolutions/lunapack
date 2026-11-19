@@ -360,6 +360,12 @@ Unicode format characters and orphan variation selectors are warnings. Valid
 emoji zero-width joiners and variation-selector sequences do not generate
 findings.
 
+These characters can make text display in a different order, hide separators or
+filenames, split identifiers, or make a terminal warning appear trustworthy
+when the underlying bytes differ. A clean-looking diff therefore does not prove
+that pack content is safe to apply. Review the reported `U+` code point and the
+original bytes, then use an override only for a known and reviewed case.
+
 Managed paths reject terminal controls, hidden Unicode format characters, line
 separators, and paragraph separators. Diagnostic output visibly escapes unsafe
 legacy path characters. Luna retains at most 1,000 findings per payload and

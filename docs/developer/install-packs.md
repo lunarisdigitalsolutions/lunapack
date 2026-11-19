@@ -35,6 +35,9 @@ effective project-relative target and a scalar-based location. Review the
 bytes before using `--allow-hidden-characters`; the option permits the
 operation but does not hide retained findings or an omission summary. NUL or
 invalid UTF-8 bytes do not block alone, but recoverable hidden controls do.
+This matters because bidi controls can reverse visible text order while
+zero-width characters can conceal or split identifiers without changing the
+apparent line shown by an editor or diff tool.
 
 Pass `--prompt-parameters` on a real install to answer every configurable
 parameter instead of only unresolved required parameters. Optional prompts
