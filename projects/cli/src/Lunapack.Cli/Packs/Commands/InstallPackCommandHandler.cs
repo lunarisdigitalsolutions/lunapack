@@ -42,6 +42,7 @@ internal sealed class InstallPackCommandHandler(
         var skipVariableOption = CreateSkipVariableOption(completionProvider);
         var scriptsOption = CreateScriptsOption();
         var skipInstructionsOption = CreateSkipInstructionsOption();
+        var allowHiddenCharactersOption = CreateAllowHiddenCharactersOption();
         var command = new Command("install", "Install a pack.")
         {
             packReferenceArgument,
@@ -60,6 +61,7 @@ internal sealed class InstallPackCommandHandler(
             skipVariableOption,
             scriptsOption,
             skipInstructionsOption,
+            allowHiddenCharactersOption,
         };
         command.SetAction(parseResult =>
             ExecuteCommandAsync(
@@ -81,7 +83,8 @@ internal sealed class InstallPackCommandHandler(
                 noVariablesOption,
                 skipVariableOption,
                 scriptsOption,
-                skipInstructionsOption
+                skipInstructionsOption,
+                allowHiddenCharactersOption
             )
         );
 
@@ -107,7 +110,8 @@ internal sealed class InstallPackCommandHandler(
         Option<bool> noVariablesOption,
         Option<string[]> skipVariableOption,
         Option<string?> scriptsOption,
-        Option<bool> skipInstructionsOption
+        Option<bool> skipInstructionsOption,
+        Option<bool> allowHiddenCharactersOption
     )
     {
         var packReferences = parseResult.GetValue(packReferenceArgument) ?? [];
@@ -158,6 +162,7 @@ internal sealed class InstallPackCommandHandler(
                 dryRun,
                 parseResult.GetValue(noFileChangeOutputOption),
                 parseResult.GetValue(acceptSourcesOption),
+                parseResult.GetValue(allowHiddenCharactersOption),
                 skipInstalledRoots: packReferences.Length > 1
             );
             if (exitCode != 0)
@@ -271,6 +276,12 @@ internal sealed class InstallPackCommandHandler(
     private static Option<bool> CreateSkipInstructionsOption() =>
         new("--skip-instructions") { Description = "Skip lifecycle instructions." };
 
+    private static Option<bool> CreateAllowHiddenCharactersOption() =>
+        new("--allow-hidden-characters")
+        {
+            Description = "Continue after reviewing high-confidence hidden Unicode findings.",
+        };
+
     private async Task<int> InstallAsync(
         string workspaceDirectory,
         string packReference,
@@ -288,6 +299,7 @@ internal sealed class InstallPackCommandHandler(
         bool dryRun,
         bool noFileChangeOutput,
         bool acceptSources,
+        bool allowHiddenCharacters,
         bool skipInstalledRoots
     )
     {
@@ -337,6 +349,7 @@ internal sealed class InstallPackCommandHandler(
             dryRun,
             noFileChangeOutput,
             acceptSources,
+            allowHiddenCharacters,
             skipInstalledRoots
         );
     }
@@ -386,6 +399,7 @@ internal sealed class InstallPackCommandHandler(
         bool dryRun,
         bool noFileChangeOutput,
         bool acceptSources,
+        bool allowHiddenCharacters,
         bool skipInstalledRoots
     )
     {
@@ -408,7 +422,11 @@ internal sealed class InstallPackCommandHandler(
             return console.Fail(installationRequest.Error);
         }
 
-        request = request with { AcceptSources = acceptSources };
+        request = request with
+        {
+            AcceptSources = acceptSources,
+            AllowHiddenCharacters = allowHiddenCharacters,
+        };
         return await RunPreparedInstallAsync(
             workspaceDirectory,
             request,

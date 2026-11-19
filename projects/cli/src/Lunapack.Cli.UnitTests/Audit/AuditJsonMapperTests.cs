@@ -1,6 +1,7 @@
 using Lunapack.Cli.Application.Diagnostics;
 using Lunapack.Cli.Audit;
 using Lunapack.Cli.Links;
+using Lunapack.Cli.Packs.ContentScreening;
 using Lunapack.Cli.Project;
 
 namespace Lunapack.Cli.UnitTests.Audit;
@@ -31,7 +32,9 @@ public sealed class AuditJsonMapperTests
                 },
             ],
             [CreateExternalSource("alias", "first", "configuration drift")],
-            [CreateExternalFile("external", "first", "locally modified")]
+            [CreateExternalFile("external", "first", "locally modified")],
+            [],
+            0
         );
         var links = new LinkAuditReport[]
         {
@@ -74,7 +77,9 @@ public sealed class AuditJsonMapperTests
             [
                 CreateExternalFile("missing-file", "first", "missing target"),
                 CreateExternalFile("modified-file", "first", "locally modified"),
-            ]
+            ],
+            [],
+            0
         );
         var links = new LinkAuditReport[]
         {
@@ -133,6 +138,70 @@ public sealed class AuditJsonMapperTests
         await Assert.That(linkFile.Subject.Id).IsEqualTo("link");
         await Assert.That(linkFile.Subject.PackId).IsNull();
         await Assert.That(linkFile.Subject.Path).IsEqualTo("conflict.txt");
+    }
+
+    [Test]
+    public async Task Scenario_HiddenUnicodeAndOmission_ProduceStableFindings()
+    {
+        var report = new AuditReport(
+            [],
+            [],
+            [],
+            [
+                new PackContentFinding(
+                    "docs/readme.md",
+                    2,
+                    3,
+                    0x202E,
+                    PackContentFindingSeverity.HighConfidence
+                ),
+                new PackContentFinding(
+                    "docs/notice.md",
+                    1,
+                    1,
+                    0x00AD,
+                    PackContentFindingSeverity.Warning
+                ),
+            ],
+            4
+        );
+
+        var findings = AuditJsonMapper.MapFindings(report, []);
+        var summary = CliJsonSummary.FromFindings(findings);
+
+        await Assert
+            .That(findings.Select(finding => finding.Code))
+            .IsEquivalentTo([
+                "audit.hidden-unicode.high-confidence",
+                "audit.hidden-unicode.warning",
+                "audit.hidden-unicode.omitted",
+            ]);
+        await Assert.That(summary.TotalFindings).IsEqualTo(3);
+        await Assert.That(summary.BySeverity.Warning).IsEqualTo(2);
+        await Assert.That(summary.BySeverity.Error).IsEqualTo(1);
+        await Assert
+            .That(
+                findings
+                    .Single(finding =>
+                        string.Equals(
+                            finding.Code,
+                            "audit.hidden-unicode.high-confidence",
+                            StringComparison.Ordinal
+                        )
+                    )
+                    .Subject.Path
+            )
+            .IsEqualTo("docs/readme.md");
+        var highConfidence = findings.Single(finding =>
+            string.Equals(
+                finding.Code,
+                "audit.hidden-unicode.high-confidence",
+                StringComparison.Ordinal
+            )
+        );
+        await Assert.That(highConfidence.Line).IsEqualTo(2);
+        await Assert.That(highConfidence.Column).IsEqualTo(3);
+        await Assert.That(highConfidence.CodePoint).IsEqualTo("U+202E");
     }
 
     private static AuditReport.ExternalSource CreateExternalSource(

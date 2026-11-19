@@ -26,11 +26,16 @@ internal sealed class PublishPackCommandHandler(
             Required = true,
         };
         targetOption.CompletionSources.Add(completionProvider.GetConfiguredSourceNames);
+        var allowHiddenCharactersOption = new Option<bool>("--allow-hidden-characters")
+        {
+            Description = "Continue after reviewing high-confidence hidden Unicode findings.",
+        };
 
         var command = new Command("publish", "Publish a validated pack to a configured source.")
         {
             folderArgument,
             targetOption,
+            allowHiddenCharactersOption,
         };
         command.SetAction(async parseResult =>
         {
@@ -56,7 +61,12 @@ internal sealed class PublishPackCommandHandler(
             }
 
             var packDirectory = fileSystem.Path.Combine(workspace, normalizedPath);
-            var result = await packPublishingService.PublishAsync(workspace, packDirectory, target);
+            var result = await packPublishingService.PublishAsync(
+                workspace,
+                packDirectory,
+                target,
+                allowHiddenCharacters: parseResult.GetValue(allowHiddenCharactersOption)
+            );
             if (result.Value is not { } publication)
             {
                 return console.Fail(result.Error);

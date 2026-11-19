@@ -1,5 +1,6 @@
 using Lunapack.Cli.Application.Diagnostics;
 using Lunapack.Cli.Links;
+using Lunapack.Cli.Packs.ContentScreening;
 using Lunapack.Cli.Project;
 
 namespace Lunapack.Cli.Audit;
@@ -78,6 +79,8 @@ internal static class AuditJsonMapper
                 );
             }
         }
+
+        AddHiddenUnicodeFindings(findings, report);
 
         return
         [
@@ -170,6 +173,45 @@ internal static class AuditJsonMapper
         findings.Add(
             new CliJsonFinding(code, severity, subject, $"{messagePrefix} is {status.Description}.")
         );
+    }
+
+    private static void AddHiddenUnicodeFindings(List<CliJsonFinding> findings, AuditReport report)
+    {
+        foreach (var finding in report.HiddenCharacterFindings)
+        {
+            var isHighConfidence = finding.Severity == PackContentFindingSeverity.HighConfidence;
+            findings.Add(
+                new CliJsonFinding(
+                    isHighConfidence
+                        ? "audit.hidden-unicode.high-confidence"
+                        : "audit.hidden-unicode.warning",
+                    isHighConfidence ? "error" : "warning",
+                    new CliJsonFinding.SubjectInfo(
+                        "managed-file",
+                        finding.Path,
+                        Path: finding.Path
+                    ),
+                    PackContentDiagnosticFormatter.Format(finding),
+                    finding.Line,
+                    finding.Column,
+                    finding.CodePoint
+                )
+            );
+        }
+
+        if (report.OmittedHiddenCharacterFindingCount > 0)
+        {
+            findings.Add(
+                new CliJsonFinding(
+                    "audit.hidden-unicode.omitted",
+                    "warning",
+                    new CliJsonFinding.SubjectInfo("managed-file", "hidden-unicode-omitted"),
+                    PackContentDiagnosticFormatter.FormatOmitted(
+                        report.OmittedHiddenCharacterFindingCount
+                    )
+                )
+            );
+        }
     }
 
     private static MappedStatus MapExternalSourceStatus(string status) =>

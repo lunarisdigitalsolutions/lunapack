@@ -5,6 +5,62 @@ namespace Lunapack.Cli.UnitTests.Packs.Manifest;
 public sealed class PackManifestStoreTests
 {
     [Test]
+    [Arguments("\u001B")]
+    [Arguments("\n")]
+    [Arguments("\u202E")]
+    public async Task Validate_WhenManagedPathContainsUnsafeUnicode_ReportsIssue(string suffix)
+    {
+        var manifest = new PackManifest
+        {
+            Id = "example",
+            Version = "1.0.0",
+            Author = "Example",
+            License = "MIT",
+            ManagedFiles =
+            [
+                new PackManifest.PackManagedFile
+                {
+                    Path = "README.md",
+                    Target = $"docs/file{suffix}.md",
+                },
+            ],
+        };
+
+        var issues = ManifestModelValidator.Validate(manifest);
+
+        await Assert.That(issues).Contains("Managed file target must stay inside the project.");
+        await Assert
+            .That(issues.Any(issue => issue.Contains(suffix, StringComparison.Ordinal)))
+            .IsFalse();
+    }
+
+    [Test]
+    public async Task Validate_WhenManagedSelectorContainsTerminalControl_DoesNotEchoPath()
+    {
+        var manifest = new PackManifest
+        {
+            Id = "example",
+            Version = "1.0.0",
+            Author = "Example",
+            License = "MIT",
+            ManagedFiles =
+            [
+                new PackManifest.PackManagedFile
+                {
+                    Path = "templates/\u001Bfile.txt",
+                    Target = "docs/file.txt",
+                },
+            ],
+        };
+
+        var issues = ManifestModelValidator.Validate(manifest);
+        var output = string.Join(Environment.NewLine, issues);
+
+        await Assert.That(output).Contains("Managed file selector must stay inside its source.");
+        await Assert.That(output).DoesNotContain("\u001B");
+    }
+
+    [Test]
     public async Task Load_WhenUnknownOptionalPropertiesDeclared_IgnoresValuesAndUsesDefaults()
     {
         using var workspace = new TestWorkspace();

@@ -17,6 +17,14 @@ dependencies, and managed targets. External pack content adds source and file
 records with fingerprints, refs, commits, digests, and status. Installed Luna
 Links include each target's status.
 
+Audit also screens existing valid UTF-8 managed targets. A finding includes the
+installed project-relative path, line, Unicode-scalar column, code point, and
+severity. Bidi controls and U+200B are high-confidence findings; other Unicode
+format characters and orphan variation selectors are warnings. Opaque
+NUL-containing or invalid UTF-8 content can still expose recoverable controls.
+Audit remains read-only, so these findings do not change its exit status and
+never modify files, configuration, or lock state.
+
 ## Automate the audit
 
 Use JSON when a script or CI job must inspect the result:
@@ -35,30 +43,35 @@ the complete envelope and compatibility policy.
 
 JSON status values are stable tokens:
 
-| Result | JSON status values |
-| --- | --- |
+| Result          | JSON status values                                                                       |
+| --------------- | ---------------------------------------------------------------------------------------- |
 | External source | `current`, `missing-workspace-source`, `invalid-workspace-source`, `configuration-drift` |
-| External file | `current`, `missing-target`, `modified-target` |
-| Link file | `current`, `missing-target`, `modified-target`, `conflicting-owner` |
+| External file   | `current`, `missing-target`, `modified-target`                                           |
+| Link file       | `current`, `missing-target`, `modified-target`, `conflicting-owner`                      |
 
 Each finding includes `code`, `severity`, `subject`, and a human-readable
 `message`. External-source and external-file subjects use the source alias as
 `id` and include the owning `packId`. External-file and link-file subjects
 include the project-relative `path`; link-file subjects use the link name as
-`id`. Message wording is not a stable contract.
+`id`. Hidden-Unicode findings use the managed-file path as `id` and also
+include stable `line`, `column`, and `codePoint` fields. Message wording is not
+a stable contract.
 
 Audit findings use these schema-version-1 identifiers:
 
-| Code | Severity |
-| --- | --- |
-| `audit.external-source.missing-workspace` | `warning` |
-| `audit.external-source.invalid-workspace` | `error` |
+| Code                                        | Severity  |
+| ------------------------------------------- | --------- |
+| `audit.external-source.missing-workspace`   | `warning` |
+| `audit.external-source.invalid-workspace`   | `error`   |
 | `audit.external-source.configuration-drift` | `warning` |
-| `audit.external-file.missing-target` | `warning` |
-| `audit.external-file.modified-target` | `warning` |
-| `audit.link-file.missing-target` | `warning` |
-| `audit.link-file.modified-target` | `warning` |
-| `audit.link-file.conflicting-owner` | `error` |
+| `audit.external-file.missing-target`        | `warning` |
+| `audit.external-file.modified-target`       | `warning` |
+| `audit.hidden-unicode.high-confidence`      | `error`   |
+| `audit.hidden-unicode.warning`              | `warning` |
+| `audit.hidden-unicode.omitted`              | `warning` |
+| `audit.link-file.missing-target`            | `warning` |
+| `audit.link-file.modified-target`           | `warning` |
+| `audit.link-file.conflicting-owner`         | `error`   |
 
 ## Interpret statuses
 

@@ -40,6 +40,8 @@ public sealed class CliHelpDocumentationTests
         new("discover", null, ["--versions", "-v", "--allow-draft", "--only-composites"]),
         new("search", "<term>", ["--versions", "-v", "--allow-draft", "--only-composites"]),
         new("validate", "<pack-reference>", ["--format"]),
+        new("pack validate", null, ["--allow-hidden-characters"]),
+        new("publish", "<folder> --target <source>", ["--target", "--allow-hidden-characters"]),
         new("inspect", "<pack-reference>"),
         new(
             "pack add hook script command",
@@ -84,6 +86,7 @@ public sealed class CliHelpDocumentationTests
                 "-sv",
                 "--scripts",
                 "--skip-instructions",
+                "--allow-hidden-characters",
             ]
         ),
         new("uninstall", "<pack-reference> [<pack-reference>...]"),
@@ -109,6 +112,7 @@ public sealed class CliHelpDocumentationTests
                 "--save-remap",
                 "--scripts",
                 "--skip-instructions",
+                "--allow-hidden-characters",
             ]
         ),
         new("mv", "<source> <target>", ["--save-remap"]),

@@ -94,6 +94,7 @@ Create a new architecture decision record from the [MADR-based template](templat
 | [ADR-0088][adr-0088]                                                            | Share changed-pack publishing behavior across registry workflow packs.                  |
 | [ADR-0089][adr-0089]                                                            | Separate direct-pack root eligibility from dependency resolution.                       |
 | [ADR-0090][adr-0090]                                                            | Version CLI JSON diagnostics behind explicit public DTOs.                               |
+| [ADR-0091](0091-screen-pack-managed-content-for-hidden-unicode.md)              | Screen pack-managed text for hidden Unicode with fail-safe, bounded diagnostics.        |
 
 [adr-0070]: 0070-bind-privileged-workflows-to-trusted-provenance.md
 [adr-0071]: 0071-reject-filesystem-aliases-at-mutation-boundaries.md

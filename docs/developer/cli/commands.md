@@ -252,9 +252,9 @@ project. Pack trust and pack-trust revocation require `--source` or `-s`. See
 <value>`: Remove named declarations. ID and version cannot be removed.
 - `luna pack list`, `luna pack hooks`, and `luna pack show`: Display local
   manifest contents. Hook output preserves event and declaration order.
-- `luna pack validate`: Validates local and external selector reachability,
-  warns about unused source aliases, and never executes hooks or changes
-  trust.
+- `luna pack validate [--allow-hidden-characters]`: Validates local and
+  external selector reachability, screens managed source text, warns about
+  unused source aliases, and never executes hooks or changes trust.
 
 Every mutation validates the complete candidate and atomically replaces
 `pack.yml`. Failure preserves the previous file. File, directory, target, and
@@ -267,10 +267,10 @@ adding content, viewing the manifest, or validating it.
 
 ## Pack Publishing
 
-- `luna publish <folder> --target <source>`: Publishes a validated pack folder
-  to a configured OCI source. `<folder>` is a project-relative directory with
-  its root `pack.yml`; `--target` is required and must name a non-ignored OCI
-  source.
+- `luna publish <folder> --target <source> [--allow-hidden-characters]`:
+  Publishes a validated pack folder to a configured OCI source. `<folder>` is a
+  project-relative directory with its root `pack.yml`; `--target` is required
+  and must name a non-ignored OCI source.
 
 Luna reads the pack ID and version only from the root `pack.yml`, validates the
 complete authoring tree, and publishes one ZIP/config/manifest artifact. It
@@ -298,7 +298,9 @@ includes the registry reference and verified manifest digest. There are no
   `--save-remap` also records the move as a reusable project mapping.
 - `luna audit [--format text|json]`: Reports resolved packs, dependencies,
   external alias mappings, fingerprints, refs, commits, source and target
-  paths, ownership, digests, and drift or local-modification status.
+  paths, ownership, digests, and drift or local-modification status. It also
+  reports hidden Unicode in existing managed targets without changing files or
+  state.
 
 ## Machine-readable command output
 
@@ -314,7 +316,7 @@ luna validate dotnet-gitignore --format json
 ```
 
 ```json
-{"schemaVersion":1,"command":"validate","result":{"valid":true}}
+{ "schemaVersion": 1, "command": "validate", "result": { "valid": true } }
 ```
 
 Standard output contains only the JSON object. Human-readable diagnostics,
@@ -330,11 +332,11 @@ and keeps the process unsuccessful.
 Every JSON object contains an integer `schemaVersion` of `1`, a `command` value
 of `audit`, `outdated`, or `validate`, and `result`. The result shapes are:
 
-| Command | Result fields |
-| --- | --- |
-| `audit` | `packs`, `links`, `externalSources`, and `externalFiles` arrays |
+| Command    | Result fields                                                                                                  |
+| ---------- | -------------------------------------------------------------------------------------------------------------- |
+| `audit`    | `packs`, `links`, `externalSources`, and `externalFiles` arrays                                                |
 | `outdated` | `updates`, `outdatedLinks`, `integrityViolations`, and `uncheckedOciPacks` arrays; Boolean `remoteRefsChecked` |
-| `validate` | Boolean `valid` |
+| `validate` | Boolean `valid`                                                                                                |
 
 Audit pack entries contain `id`, `version`, `sourcePath`, `packPath`,
 `dependencies` with `id` and `version`, and `managedFiles` with `targetPath` and
@@ -381,6 +383,8 @@ When the selected pack ID and version are available from multiple configured
 sources, install and update output identifies the selected source name and type.
 Pass `--no-file-change-output` to either command to suppress that success output;
 it does not hide the plan during `--dry-run`.
+Install and update accept `--allow-hidden-characters` after review of
+high-confidence findings.
 Install also accepts repeatable `--remap-directory <source>=<target>` and
 `--remap-file <source>=<target>` options. Add `--save-remap` to persist those
 mappings after a successful installation. Pack installation stores them on the
@@ -412,6 +416,38 @@ active `requiredWhen` parameter fails preflight. For real operations,
 `--prompt-parameters` extends
 prompting from unresolved required parameters to all configurable parameters
 and offers declared defaults.
+
+Luna screens payloads selected as pack-managed files. It streams strict UTF-8
+and supports UTF-8, UTF-16, and UTF-32 leading BOMs. NUL-containing or invalid
+UTF-8 bytes do not fail by themselves, but later recoverable hidden controls
+are still detected. Diagnostics identify the relative path, 1-based line,
+1-based Unicode-scalar column, code point, and severity. During invalid UTF-8
+recovery, each invalid byte occupies one scan position. Unicode `Bidi_Control`
+characters and U+200B ZERO WIDTH SPACE are high-confidence findings; other
+Unicode format characters and orphan variation selectors are warnings. Valid
+emoji zero-width joiners and variation-selector sequences do not generate
+findings.
+
+These characters can make text display in a different order, hide separators or
+filenames, split identifiers, or make a terminal warning appear trustworthy
+when the underlying bytes differ. A clean-looking diff therefore does not prove
+that pack content is safe to apply. Review the reported `U+` code point and the
+original bytes, then use an override only for a known and reviewed case.
+
+Managed paths reject terminal controls, hidden Unicode format characters, line
+separators, and paragraph separators. Diagnostic output visibly escapes unsafe
+legacy path characters. Luna retains at most 1,000 findings per payload and
+reports how many more were omitted without losing blocking evidence.
+
+For install and update, screening runs on final planned content after template
+rendering and merge planning, before hooks or mutation. For `luna pack validate`
+and `luna publish`, it runs on selected source content before success or
+upload. High-confidence findings make those four operations fail without
+changing project files, configuration, lock state, or registry content.
+`--allow-hidden-characters` continues after review; it never hides diagnostics.
+Warning findings remain non-blocking. `luna audit` reports all severities
+without changing its exit status or mutating state.
+
 Update parameter and variable options use install precedence and validation.
 Update remapping options require exactly one pack reference. Command remappings
 relocate matching managed targets during that update. `--save-remap` persists
