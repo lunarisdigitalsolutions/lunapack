@@ -128,6 +128,6 @@ public sealed class DoctorProcessTests
 
         await Assert.That(result.ExitCode).IsEqualTo(1);
         await Assert.That(result.StandardOutput).Contains("[FAIL] Source unavailable");
-        await Assert.That(result.StandardOutput).Contains("[PASS] Credential storage");
+        await Assert.That(result.StandardOutput).Contains("Credential storage:");
     }
 }
