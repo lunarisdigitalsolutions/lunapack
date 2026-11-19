@@ -111,7 +111,7 @@ serialization and the accepted public contract.
 This decision implements
 [issue #75](https://github.com/lunarisdigitalsolutions/lunapack/issues/75) and
 the
-[`stable-machine-readable-cli-diagnostics` OpenSpec change](../../../../openspec/changes/stable-machine-readable-cli-diagnostics/proposal.md).
+[`stable-machine-readable-cli-diagnostics` archived OpenSpec change](../../../../openspec/changes/archive/2026-11-19-stable-machine-readable-cli-diagnostics/proposal.md).
 It follows [ADR-0030](0030-use-spectre-console-for-cli-output.md) for text
 presentation and [ADR-0074](0074-evolve-yaml-schemas-compatibly.md) for the
 repository's additive compatibility model.
