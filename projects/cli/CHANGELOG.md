@@ -7,6 +7,13 @@ pack-package, documentation, CI, build, test, and release-process changes.
 
 Update this section before creating a release tag.
 
+### Added
+
+- `luna audit --strict` now verifies every pack- and link-managed target against
+  its locked SHA-256 digest. It returns `2` for missing or modified targets,
+  while invalid usage or unreadable state returns `1`; `--fail-fast` stops after
+  the first integrity violation.
+
 ### Fixed
 
 - Git links now fetch selected files missing from cached content using the

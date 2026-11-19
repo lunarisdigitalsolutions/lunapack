@@ -294,9 +294,14 @@ includes the registry reference and verified manifest digest. There are no
   managed files below a directory and updates lock ownership. If files were
   moved manually, it can rebind ownership when only the targets exist.
   `--save-remap` also records the move as a reusable project mapping.
-- `luna audit`: Reports resolved packs, dependencies, external alias mappings,
-  fingerprints, refs, commits, source and target paths, ownership, digests, and
-  drift or local-modification status.
+- `luna audit [--strict] [--fail-fast]`: Reports resolved packs, dependencies,
+  external alias mappings, fingerprints, refs, commits, source and target
+  paths, ownership, digests, and drift or local-modification status. `--strict`
+  instead reports the locked integrity status for every pack- and link-managed
+  target. It returns `0` when every target matches, `2` for one or more missing
+  or modified targets, and `1` for invalid usage or unreadable project or target
+  state. `--fail-fast` requires `--strict` and stops after the first integrity
+  violation. Without `--strict`, findings remain report-only.
 
 `<pack-reference>` is a pack ID or `<id>@<version>`. When version is omitted,
 commands select the latest available release. `install` accepts `--dry-run`

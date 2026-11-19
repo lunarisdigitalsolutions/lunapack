@@ -10,7 +10,7 @@
 - [x] 1.2 Add CLI integration tests for strict exit codes, rejecting
   `--fail-fast` without `--strict`, and preserving default report-only behavior;
   verify `./test.ps1 int` passes.
-- [ ] 1.3 Update `docs/developer/advanced/audit-and-recover.md`,
+- [x] 1.3 Update `docs/developer/advanced/audit-and-recover.md`,
   `docs/developer/cli/commands.md`, and `projects/cli/CHANGELOG.md`; create an
   ADR for the exit-code contract and add it to the ADR index. Verify Markdown
   lint, Prettier, and the developer website production build pass.

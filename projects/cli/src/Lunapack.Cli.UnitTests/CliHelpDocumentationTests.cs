@@ -112,7 +112,7 @@ public sealed class CliHelpDocumentationTests
             ]
         ),
         new("mv", "<source> <target>", ["--save-remap"]),
-        new("audit"),
+        new("audit", null, ["--strict", "--fail-fast"]),
     ];
 
     [Test]
