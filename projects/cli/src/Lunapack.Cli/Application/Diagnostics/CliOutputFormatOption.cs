@@ -36,17 +36,17 @@ internal static class CliOutputFormatOption
         $"Unsupported output format '{value}'. Expected 'text' or 'json'.";
 
     public static bool RoutesDiagnosticsToError(IReadOnlyList<string> args) =>
-        TryReadFormat(args, out var value) && !IsText(value);
+        TryGetFormat(args, out var value) && !IsText(value);
 
     public static bool TryGetJsonCommand(IReadOnlyList<string> args, out string command)
     {
         command = string.Empty;
-        if (!TryReadFormat(args, out var value) || !IsJson(value))
+        if (!TryGetFormat(args, out var value) || !IsJson(value))
         {
             return false;
         }
 
-        return TryReadCommand(args, out command);
+        return TryGetSupportedCommand(args, out command);
     }
 
     private static bool IsJson(string? value) =>
@@ -55,7 +55,7 @@ internal static class CliOutputFormatOption
     private static bool IsText(string? value) =>
         value is not null && string.Equals(value, "text", StringComparison.OrdinalIgnoreCase);
 
-    private static bool TryReadCommand(IReadOnlyList<string> args, out string command)
+    public static bool TryGetSupportedCommand(IReadOnlyList<string> args, out string command)
     {
         for (var index = 0; index < args.Count; index++)
         {
@@ -96,7 +96,7 @@ internal static class CliOutputFormatOption
         return false;
     }
 
-    private static bool TryReadFormat(IReadOnlyList<string> args, out string? value)
+    public static bool TryGetFormat(IReadOnlyList<string> args, out string? value)
     {
         value = null;
         var found = false;

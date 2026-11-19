@@ -93,6 +93,15 @@ remain present when empty.
   - `remoteRefsChecked` is false when `--offline` is supplied.
   - Unavailable `sourceName` or `observedManifestDigest` values are `null`.
 
+#### Scenario: Refuse incomplete remote evidence
+
+- **WHEN** an outdated check cannot completely inspect every configured remote
+  source or the selected source returns partial release discovery
+- **THEN** Luna treats the command as unable to produce a result, writes
+  `result: null` to standard output, writes the incomplete-source diagnostic
+  to standard error, and returns a non-success status
+  - Luna SHALL NOT emit `remoteRefsChecked: true` from partial evidence.
+
 #### Scenario: Serialize pack validation status
 
 - **WHEN** `luna validate <pack-reference> --format json` completes validation
@@ -194,6 +203,19 @@ findings SHALL remain in the JSON object.
 
 - **WHEN** JSON output contains findings
 - **THEN** the command retains its existing exit-code semantics
+
+#### Scenario: Route JSON-mode help away from machine output
+
+- **WHEN** a supported command is invoked with `--format json --help`
+- **THEN** generated help is written to standard error, standard output is
+  empty, and help retains the normal successful exit status
+
+#### Scenario: Reject an invalid format before help
+
+- **WHEN** a supported command is invoked with an unsupported `--format` and
+  `--help`
+- **THEN** Luna writes only the format error to standard error, leaves standard
+  output empty, and returns a non-success status
 
 ### Requirement: Preserve compatibility of the text and JSON contracts
 

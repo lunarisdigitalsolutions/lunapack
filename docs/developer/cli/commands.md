@@ -321,8 +321,11 @@ Standard output contains only the JSON object. Human-readable diagnostics,
 logs, parser help, validation issues, and ANSI-independent progress output go
 to standard error. A supported command that cannot produce its result writes
 `result: null`; an invalid audit or outdated prerequisite does not add partial
-result arrays. An unsupported format is an error, writes no command data to
-standard output, and keeps the process unsuccessful.
+result arrays. If `outdated` cannot completely inspect configured remote
+sources or receives partial OCI release discovery, it fails with
+`result: null` instead of reporting an incomplete catalog as fully checked.
+An unsupported format is an error, writes no command data to standard output,
+and keeps the process unsuccessful.
 
 Every JSON object contains an integer `schemaVersion` of `1`, a `command` value
 of `audit`, `outdated`, or `validate`, and `result`. The result shapes are:
@@ -351,6 +354,10 @@ violations contain `id`, `version`, `sourceName`, `lockedManifestDigest`, and
 `observedManifestDigest`; unchecked OCI entries contain `id`, `version`, and
 `sourceName`. Array properties remain present when empty. Optional values use
 JSON `null`.
+
+Online outdated results set `remoteRefsChecked` to true only after every
+configured update source and locked OCI release check completes. `--offline`
+sets it to false.
 
 Within schema version 1, added fields and finding codes are compatible.
 Renaming or removing a field or code, or changing its type or meaning, requires

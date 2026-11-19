@@ -47,6 +47,14 @@ lock-file, catalog, or service result types. Every supported command emits a
 complete object after collecting its result, including `result: null` when the
 operation cannot produce one.
 
+The structured mode preserves the original console's input and interactive
+capability while redirecting diagnostics. Control characters and terminal
+escape input are neutralized at the diagnostic writer. JSON help and parse
+errors remain on standard error, while unsupported formats fail before help or
+command action dispatch. Online outdated checks fail closed if any configured
+source or OCI discovery is incomplete; `remoteRefsChecked: true` therefore
+means every required remote check completed.
+
 Within schema version 1, adding fields and finding codes is compatible.
 Removing or renaming a field or code, or changing its type or meaning, requires
 a new schema version. Finding `code` and subject identity are stable; message
@@ -59,6 +67,9 @@ wording is not. Finding severity remains separate from process exit semantics.
 - Explicit DTOs require a review and mapping update when public output changes.
 - Source-generated serialization keeps the contract compatible with Luna's
   Native AOT builds.
+- JSON mode keeps prompt semantics while neutralizing terminal controls and
+  separating machine data from diagnostics.
+- A source outage cannot produce a success-shaped empty outdated result.
 - Audit-first finding codes establish the diagnostic vocabulary without
   requiring codes for every command in the same release.
 - A future incompatible change must introduce and document a new schema version

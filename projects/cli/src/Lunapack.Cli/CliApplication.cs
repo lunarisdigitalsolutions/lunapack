@@ -47,28 +47,33 @@ internal sealed class CliApplication(
         TextWriter? commandError = null
     )
     {
-        var output = commandOutput ?? Console.Out;
-        var error = commandError ?? Console.Error;
-        var routesDiagnosticsToError = CliOutputFormatOption.RoutesDiagnosticsToError(args);
-        var diagnosticConsole = routesDiagnosticsToError
-            ? CreateDiagnosticConsole(error)
-            : ansiConsole;
-        var hasJsonCommand = CliOutputFormatOption.TryGetJsonCommand(args, out var jsonCommand);
+        var streams = CliInvocationStreams.Create(args, ansiConsole, commandOutput, commandError);
+        var formatError = ValidateOutputFormat(args, streams);
+        if (formatError is { } formatExitCode)
+        {
+            return formatExitCode;
+        }
 
         if (!CliLogLevelParser.TryParse(args, out var minimumLevel, out var logLevelError))
         {
-            var logLevelExitCode = new CliConsole(diagnosticConsole, CliLogLevel.Info).Fail(
-                logLevelError
-            );
-            if (hasJsonCommand)
+            var logLevelExitCode = new CliConsole(
+                streams.DiagnosticConsole,
+                CliLogLevel.Info,
+                sanitizeOutput: streams.RoutesDiagnosticsToError
+            ).Fail(logLevelError);
+            if (streams.JsonCommand is { } jsonCommand)
             {
-                CliJsonWriter.WriteFailure(output, jsonCommand);
+                CliJsonWriter.WriteFailure(streams.CommandOutput, jsonCommand);
             }
 
             return logLevelExitCode;
         }
 
-        var console = new CliConsole(diagnosticConsole, minimumLevel);
+        var console = new CliConsole(
+            streams.DiagnosticConsole,
+            minimumLevel,
+            sanitizeOutput: streams.RoutesDiagnosticsToError
+        );
         console.Debug($"Running CLI command in {projectDirectory}");
         var nextStepRenderer = new NextStepRenderer(console);
         using var services = CreateCommandServices(console, nextStepRenderer);
@@ -82,17 +87,14 @@ internal sealed class CliApplication(
             services
         );
         var parseResult = rootCommand.Parse(args);
-        var invocationConfiguration = CreateInvocationConfiguration(output, error);
-        if (routesDiagnosticsToError && parseResult.Errors.Count > 0)
+        var invocationConfiguration = CreateInvocationConfiguration(
+            streams.CommandOutput,
+            streams.DiagnosticOutput
+        );
+        var earlyExitCode = await InvokeParseErrorOrHelpAsync(args, parseResult, streams);
+        if (earlyExitCode is { } parseOrHelpExitCode)
         {
-            var parseConfiguration = new InvocationConfiguration { Output = error, Error = error };
-            var parseExitCode = await parseResult.InvokeAsync(parseConfiguration);
-            if (hasJsonCommand)
-            {
-                CliJsonWriter.WriteFailure(output, jsonCommand);
-            }
-
-            return parseExitCode;
+            return parseOrHelpExitCode;
         }
 
         var preferenceError = await ApplyPreferencesAsync(
@@ -106,9 +108,9 @@ internal sealed class CliApplication(
         if (preferenceError is not null)
         {
             var preferenceExitCode = console.Fail(preferenceError);
-            if (hasJsonCommand)
+            if (streams.JsonCommand is { } jsonCommand)
             {
-                CliJsonWriter.WriteFailure(output, jsonCommand);
+                CliJsonWriter.WriteFailure(streams.CommandOutput, jsonCommand);
             }
 
             return preferenceExitCode;
@@ -119,24 +121,63 @@ internal sealed class CliApplication(
             await rootCommand.Parse(["--help"]).InvokeAsync(invocationConfiguration);
         }
 
-        var exitCode = await parseResult.InvokeAsync(invocationConfiguration);
+        var commandExitCode = await parseResult.InvokeAsync(invocationConfiguration);
 
-        console.Debug($"CLI command completed with exit code {exitCode}");
-        return exitCode;
+        console.Debug($"CLI command completed with exit code {commandExitCode}");
+        return commandExitCode;
     }
 
-    private static IAnsiConsole CreateDiagnosticConsole(TextWriter output)
+    private static int? ValidateOutputFormat(
+        IReadOnlyList<string> args,
+        CliInvocationStreams streams
+    )
     {
-        var console = AnsiConsole.Create(
-            new AnsiConsoleSettings
-            {
-                Ansi = AnsiSupport.No,
-                ColorSystem = ColorSystemSupport.NoColors,
-                Out = new AnsiConsoleOutput(output),
-            }
+        if (
+            !CliOutputFormatOption.TryGetSupportedCommand(args, out _)
+            || !CliOutputFormatOption.TryGetFormat(args, out var requestedFormat)
+            || (
+                requestedFormat is not null
+                && CliOutputFormatOption.TryParse(requestedFormat, out _)
+            )
+        )
+        {
+            return null;
+        }
+
+        return new CliConsole(
+            streams.DiagnosticConsole,
+            CliLogLevel.Info,
+            sanitizeOutput: true
+        ).Fail(CliOutputFormatOption.FormatUnsupportedMessage(requestedFormat));
+    }
+
+    private static async Task<int?> InvokeParseErrorOrHelpAsync(
+        IReadOnlyList<string> args,
+        ParseResult parseResult,
+        CliInvocationStreams streams
+    )
+    {
+        var isHelpRequest = args.Any(argument =>
+            string.Equals(argument, "--help", StringComparison.Ordinal)
+            || string.Equals(argument, "-h", StringComparison.Ordinal)
         );
-        console.Profile.Capabilities.Interactive = false;
-        return console;
+        if (!streams.RoutesDiagnosticsToError || (parseResult.Errors.Count == 0 && !isHelpRequest))
+        {
+            return null;
+        }
+
+        var invocationConfiguration = new InvocationConfiguration
+        {
+            Output = streams.RawError,
+            Error = streams.DiagnosticOutput,
+        };
+        var exitCode = await parseResult.InvokeAsync(invocationConfiguration);
+        if (parseResult.Errors.Count > 0 && streams.JsonCommand is { } jsonCommand)
+        {
+            CliJsonWriter.WriteFailure(streams.CommandOutput, jsonCommand);
+        }
+
+        return exitCode;
     }
 
     private static InvocationConfiguration CreateInvocationConfiguration(

@@ -76,8 +76,124 @@ public sealed class CliApplicationJsonOutputTests
 
         await Assert.That(exitCode).IsNotZero();
         await Assert.That(output.ToString()).IsEmpty();
-        await Assert.That(error.ToString()).Contains("--format");
+        await Assert.That(error.ToString()).Contains("Unsupported output format");
         await Assert.That(ansiConsole.Output).IsEmpty();
+    }
+
+    [Test]
+    public async Task Scenario_AuditJsonHelp_WritesHelpToStandardError()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["audit", "--format", "json", "--help"],
+            workspace.Path,
+            output,
+            error
+        );
+
+        await Assert.That(exitCode).IsZero();
+        await Assert.That(output.ToString()).IsEmpty();
+        await Assert.That(error.ToString()).Contains("Usage:");
+        await Assert.That(ansiConsole.Output).IsEmpty();
+    }
+
+    [Test]
+    public async Task Scenario_AuditInvalidFormatHelp_WritesOnlyFormatError()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["audit", "--format", "yaml", "--help"],
+            workspace.Path,
+            output,
+            error
+        );
+
+        await Assert.That(exitCode).IsNotZero();
+        await Assert.That(output.ToString()).IsEmpty();
+        await Assert.That(error.ToString()).Contains("Unsupported output format");
+        await Assert.That(error.ToString()).DoesNotContain("Usage:");
+        await Assert.That(ansiConsole.Output).IsEmpty();
+    }
+
+    [Test]
+    public async Task Scenario_AuditTextHelp_RemainsOnStandardOutput()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["audit", "--format", "text", "--help"],
+            workspace.Path,
+            output,
+            error
+        );
+
+        await Assert.That(exitCode).IsZero();
+        await Assert.That(output.ToString()).Contains("Usage:");
+        await Assert.That(error.ToString()).IsEmpty();
+        await Assert.That(ansiConsole.Output).IsEmpty();
+    }
+
+    [Test]
+    public async Task Scenario_MaliciousFormatValue_CannotInjectTerminalControls()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+        const string malicious = "yaml\u001b]0;forged\u0007\nforged";
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["audit", "--format", malicious],
+            workspace.Path,
+            output,
+            error
+        );
+
+        await Assert.That(exitCode).IsNotZero();
+        await Assert.That(output.ToString()).IsEmpty();
+        await Assert.That(error.ToString()).DoesNotContain("\u001b");
+        await Assert.That(error.ToString()).DoesNotContain("\u0007");
+        await Assert.That(error.ToString()).DoesNotContain("\nforged");
+        await Assert.That(error.ToString()).Contains("\\u001b");
+        await Assert.That(error.ToString()).Contains("\\u000a");
+    }
+
+    [Test]
+    public async Task Scenario_MaliciousParserToken_CannotInjectTerminalControls()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+        const string maliciousOption = "--unknown\u001b[2J\nforged";
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["audit", "--format", "json", maliciousOption],
+            workspace.Path,
+            output,
+            error
+        );
+
+        await Assert.That(exitCode).IsNotZero();
+        await Assert.That(error.ToString()).DoesNotContain("\u001b");
+        await Assert.That(error.ToString()).DoesNotContain("\nforged");
+        await Assert.That(error.ToString()).Contains("\\u001b");
+        await Assert.That(error.ToString()).Contains("\\u000a");
+        using var document = JsonDocument.Parse(output.ToString());
+        await Assert
+            .That(document.RootElement.GetProperty("result").ValueKind)
+            .IsEqualTo(JsonValueKind.Null);
     }
 
     [Test]

@@ -93,6 +93,29 @@ some of its data. It also keeps existing exit codes authoritative: audit
 findings do not change success status, outdated retains its OCI-integrity
 failure status, and invalid validation remains non-success.
 
+Outdated remote evidence is complete or failed. Update-specific catalog
+browsing rejects a failed configured source and rejects partial OCI repository
+or release discovery instead of treating the remaining catalog as complete.
+Only a completed online operation emits `remoteRefsChecked: true`; `--offline`
+continues to emit false with its cached-evidence result. This prevents a
+success-shaped empty update list from hiding an unchecked security or update
+boundary.
+
+### Preserve command semantics while redirecting output
+
+The JSON diagnostic console preserves the original console input and
+interactive capability while replacing only its output target. Selecting JSON
+must not implicitly suppress consent or credential prompts. The diagnostic
+boundary removes control, bidirectional, line-separator, and ANSI escape
+characters from untrusted message text before writing it to standard error.
+Generated JSON is written directly to standard output through the typed
+serializer and is not passed through the diagnostic sanitizer.
+
+Format validation runs before command help or action dispatch. `--help` in JSON
+mode writes generated help to standard error and exits without a JSON result;
+invalid formats fail before help and write no standard output. Text help
+retains its existing standard-output behavior.
+
 ### Map audit findings at the CLI boundary
 
 Translate only non-current external-source, external-file, and link-file
