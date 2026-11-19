@@ -87,6 +87,15 @@ internal sealed class AuditCommandHandler(
             console.Warning(PackContentDiagnosticFormatter.Format(finding));
         }
 
+        if (report.OmittedHiddenCharacterFindingCount > 0)
+        {
+            console.Warning(
+                PackContentDiagnosticFormatter.FormatOmitted(
+                    report.OmittedHiddenCharacterFindingCount
+                )
+            );
+        }
+
         var state = await projectStateStore.LoadAsync(projectDirectory);
         if (state.Value is not { } projectState)
         {

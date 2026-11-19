@@ -4,7 +4,7 @@
 
 ### Requirement: Screen authored managed content during validation
 
-`luna pack validate` SHALL screen valid UTF-8 source payloads selected by the pack's managed-file declarations, including resolved external-source selections, and report findings using source-relative paths.
+`luna pack validate` SHALL screen eligible source payloads selected by the pack's managed-file declarations, including resolved external-source selections, and report findings using source-relative paths.
 
 #### Scenario: Report a source finding during warning-only validation
 

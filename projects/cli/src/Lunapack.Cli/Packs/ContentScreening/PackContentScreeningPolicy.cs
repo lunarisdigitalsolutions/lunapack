@@ -9,10 +9,6 @@ internal static class PackContentScreeningPolicy
         + AllowOption
         + " to continue.";
 
-    public static bool Blocks(
-        IReadOnlyList<PackContentFinding> findings,
-        bool allowHiddenCharacters
-    ) =>
-        !allowHiddenCharacters
-        && findings.Any(finding => finding.Severity == PackContentFindingSeverity.HighConfidence);
+    public static bool Blocks(bool hasHighConfidenceFinding, bool allowHiddenCharacters) =>
+        hasHighConfidenceFinding && !allowHiddenCharacters;
 }

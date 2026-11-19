@@ -1286,7 +1286,10 @@ public sealed class PackAuthoringCommandTests
         var console = new SpectreTestConsole();
         console.Profile.Width = 500;
         using var workspace = await CreateInitializedWorkspaceAsync(console);
-        File.WriteAllText(Path.Combine(workspace.Path, "README.md"), "safe\u202Ehidden");
+        File.WriteAllBytes(
+            Path.Combine(workspace.Path, "README.md"),
+            [0x73, 0x61, 0x66, 0x65, 0x00, 0xE2, 0x80, 0xAE]
+        );
         await workspace.Application.RunAsync(
             ["pack", "add", "file", "README.md", "--target", "docs/README.md"],
             workspace.Path

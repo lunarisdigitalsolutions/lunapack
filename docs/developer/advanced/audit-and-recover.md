@@ -20,9 +20,10 @@ Links include each target's status.
 Audit also screens existing valid UTF-8 managed targets. A finding includes the
 installed project-relative path, line, Unicode-scalar column, code point, and
 severity. Bidi controls and U+200B are high-confidence findings; other Unicode
-format characters are warnings. Audit remains read-only, so these findings do
-not change its exit status and never modify files, configuration, or lock
-state.
+format characters and orphan variation selectors are warnings. Opaque
+NUL-containing or invalid UTF-8 content can still expose recoverable controls.
+Audit remains read-only, so these findings do not change its exit status and
+never modify files, configuration, or lock state.
 
 ## Interpret statuses
 

@@ -1,4 +1,4 @@
-using System.Globalization;
+using System.Buffers;
 using System.Text;
 using Lunapack.Cli.Application.Paths;
 
@@ -6,102 +6,226 @@ namespace Lunapack.Cli.Packs.ContentScreening;
 
 internal static class PackContentScanner
 {
-    private static readonly UTF8Encoding _strictUtf8 = new(false, true);
+    private static readonly byte[] _utf8Bom = [0xEF, 0xBB, 0xBF];
+    private static readonly byte[] _utf16LittleEndianBom = [0xFF, 0xFE];
+    private static readonly byte[] _utf16BigEndianBom = [0xFE, 0xFF];
+    private static readonly byte[] _utf32LittleEndianBom = [0xFF, 0xFE, 0x00, 0x00];
+    private static readonly byte[] _utf32BigEndianBom = [0x00, 0x00, 0xFE, 0xFF];
 
-    public static IReadOnlyList<PackContentFinding> Scan(string path, byte[] contents)
+    public static PackContentScanResult Scan(string path, byte[] contents)
     {
-        if (contents.AsSpan().IndexOf((byte)0) >= 0)
-        {
-            return [];
-        }
-
-        string text;
-        try
-        {
-            text = _strictUtf8.GetString(contents);
-        }
-        catch (DecoderFallbackException)
-        {
-            return [];
-        }
-
-        var runes = text.EnumerateRunes().ToArray();
-        var findings = new List<PackContentFinding>();
         var normalizedPath = ProjectPath.Normalize(path);
-        var line = 1;
-        var column = 1;
-        var previousWasCarriageReturn = false;
-        for (var index = 0; index < runes.Length; index++)
+        var findings = new List<PackContentFinding>();
+        var uniqueFindings = new HashSet<PackContentFinding>();
+        var omittedFindingCount = 0L;
+        var hasHighConfidenceFinding = false;
+        var hasRetainedHighConfidenceFinding = false;
+        foreach (var candidate in DecodeCandidates(contents))
         {
-            var rune = runes[index];
-            if (rune.Value == '\r')
+            var state = new PackContentScanState(normalizedPath);
+            foreach (var rune in candidate)
             {
-                line++;
-                column = 1;
-                previousWasCarriageReturn = true;
-                continue;
+                state.Add(rune);
             }
 
-            if (rune.Value == '\n')
+            var result = state.Complete();
+            omittedFindingCount += result.OmittedFindingCount;
+            hasHighConfidenceFinding |= result.HasHighConfidenceFinding;
+            foreach (var finding in result.Findings)
             {
-                if (!previousWasCarriageReturn)
+                if (!uniqueFindings.Add(finding))
                 {
-                    line++;
-                    column = 1;
+                    continue;
                 }
 
-                previousWasCarriageReturn = false;
+                if (findings.Count < PackContentScanState.MaximumFindingCount)
+                {
+                    findings.Add(finding);
+                    hasRetainedHighConfidenceFinding |=
+                        finding.Severity == PackContentFindingSeverity.HighConfidence;
+                }
+                else
+                {
+                    if (
+                        finding.Severity == PackContentFindingSeverity.HighConfidence
+                        && !hasRetainedHighConfidenceFinding
+                    )
+                    {
+                        findings[^1] = finding;
+                        hasRetainedHighConfidenceFinding = true;
+                    }
+
+                    omittedFindingCount++;
+                }
+            }
+        }
+
+        return new PackContentScanResult(findings, omittedFindingCount, hasHighConfidenceFinding);
+    }
+
+    private static IEnumerable<IEnumerable<Rune>> DecodeCandidates(byte[] contents)
+    {
+        if (TryGetBomEncoding(contents, out var offset, out var unitBytes, out var littleEndian))
+        {
+            if (unitBytes == 4 && littleEndian && !IsValidUtf32(contents, offset, littleEndian))
+            {
+                yield return DecodeUtf16(contents, _utf16LittleEndianBom.Length, littleEndian);
+            }
+
+            yield return unitBytes == 2
+                ? DecodeUtf16(contents, offset, littleEndian)
+                : DecodeUtf32(contents, offset, littleEndian);
+            yield break;
+        }
+
+        yield return DecodeUtf8(contents);
+    }
+
+    private static IEnumerable<Rune> DecodeUtf8(byte[] contents)
+    {
+        var utf8Offset = contents.AsSpan().StartsWith(_utf8Bom) ? _utf8Bom.Length : 0;
+        while (utf8Offset < contents.Length)
+        {
+            var status = Rune.DecodeFromUtf8(
+                contents.AsSpan(utf8Offset),
+                out var rune,
+                out var bytesConsumed
+            );
+            if (status == OperationStatus.Done)
+            {
+                yield return rune;
+                utf8Offset += bytesConsumed;
                 continue;
             }
 
-            previousWasCarriageReturn = false;
-            var severity = GetSeverity(runes, index);
-            if (severity is { } foundSeverity)
+            yield return new Rune(0);
+            utf8Offset++;
+        }
+    }
+
+    private static bool TryGetBomEncoding(
+        byte[] contents,
+        out int offset,
+        out int unitBytes,
+        out bool littleEndian
+    )
+    {
+        var span = contents.AsSpan();
+        if (span.StartsWith(_utf32LittleEndianBom))
+        {
+            offset = 4;
+            unitBytes = 4;
+            littleEndian = true;
+            return true;
+        }
+
+        if (span.StartsWith(_utf32BigEndianBom))
+        {
+            offset = 4;
+            unitBytes = 4;
+            littleEndian = false;
+            return true;
+        }
+
+        if (span.StartsWith(_utf16LittleEndianBom))
+        {
+            offset = 2;
+            unitBytes = 2;
+            littleEndian = true;
+            return true;
+        }
+
+        if (span.StartsWith(_utf16BigEndianBom))
+        {
+            offset = 2;
+            unitBytes = 2;
+            littleEndian = false;
+            return true;
+        }
+
+        offset = 0;
+        unitBytes = 0;
+        littleEndian = false;
+        return false;
+    }
+
+    private static IEnumerable<Rune> DecodeUtf16(byte[] contents, int offset, bool littleEndian)
+    {
+        while (offset + 1 < contents.Length)
+        {
+            var first = ReadUInt16(contents, offset, littleEndian);
+            offset += 2;
+            if (char.IsHighSurrogate((char)first) && offset + 1 < contents.Length)
             {
-                findings.Add(
-                    new PackContentFinding(normalizedPath, line, column, rune.Value, foundSeverity)
-                );
+                var second = ReadUInt16(contents, offset, littleEndian);
+                if (char.IsLowSurrogate((char)second))
+                {
+                    yield return new Rune((char)first, (char)second);
+                    offset += 2;
+                    continue;
+                }
             }
 
-            column++;
+            if (char.IsSurrogate((char)first))
+            {
+                yield return new Rune(0);
+                continue;
+            }
+
+            yield return new Rune(first);
         }
 
-        return findings;
+        if (offset < contents.Length)
+        {
+            yield return new Rune(0);
+        }
     }
 
-    private static PackContentFindingSeverity? GetSeverity(Rune[] runes, int index)
+    private static IEnumerable<Rune> DecodeUtf32(byte[] contents, int offset, bool littleEndian)
     {
-        var rune = runes[index];
-        if (IsBidiControl(rune.Value) || rune.Value == 0x200B)
+        while (offset + 3 < contents.Length)
         {
-            return PackContentFindingSeverity.HighConfidence;
+            var value = ReadUInt32(contents, offset, littleEndian);
+            yield return Rune.TryCreate(unchecked((int)value), out var rune) ? rune : new Rune(0);
+            offset += 4;
         }
 
-        if (Rune.GetUnicodeCategory(rune) != UnicodeCategory.Format)
+        for (; offset < contents.Length; offset++)
         {
-            return null;
+            yield return new Rune(0);
         }
-
-        return rune.Value == 0x200D && IsValidEmojiJoiner(runes, index)
-            ? null
-            : PackContentFindingSeverity.Warning;
     }
 
-    private static bool IsBidiControl(int value) =>
-        value is 0x061C or 0x200E or 0x200F or >= 0x202A and <= 0x202E or >= 0x2066 and <= 0x2069;
-
-    private static bool IsValidEmojiJoiner(Rune[] runes, int index)
+    private static bool IsValidUtf32(byte[] contents, int offset, bool littleEndian)
     {
-        var previousIndex = index - 1;
-        while (previousIndex >= 0 && EmojiUnicodeData.IsExtend(runes[previousIndex]))
+        if ((contents.Length - offset) % 4 != 0)
         {
-            previousIndex--;
+            return false;
         }
 
-        var nextIndex = index + 1;
-        return previousIndex >= 0
-            && nextIndex < runes.Length
-            && EmojiUnicodeData.IsExtendedPictographic(runes[previousIndex])
-            && EmojiUnicodeData.IsExtendedPictographic(runes[nextIndex]);
+        while (offset < contents.Length)
+        {
+            var value = ReadUInt32(contents, offset, littleEndian);
+            if (!Rune.TryCreate(unchecked((int)value), out _))
+            {
+                return false;
+            }
+
+            offset += 4;
+        }
+
+        return true;
     }
+
+    private static ushort ReadUInt16(byte[] contents, int offset, bool littleEndian) =>
+        littleEndian
+            ? (ushort)(contents[offset] | contents[offset + 1] << 8)
+            : (ushort)(contents[offset] << 8 | contents[offset + 1]);
+
+    private static uint ReadUInt32(byte[] contents, int offset, bool littleEndian) =>
+        littleEndian
+            ? ReadUInt16(contents, offset, littleEndian)
+                | (uint)ReadUInt16(contents, offset + 2, littleEndian) << 16
+            : (uint)ReadUInt16(contents, offset, littleEndian) << 16
+                | ReadUInt16(contents, offset + 2, littleEndian);
 }

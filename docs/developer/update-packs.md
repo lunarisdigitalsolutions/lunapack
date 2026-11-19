@@ -84,8 +84,8 @@ Luna screens final text selected for creation or replacement after merge
 planning, before lifecycle hooks or project changes. Unicode bidi controls and
 U+200B block update unless you review the output and add
 `--allow-hidden-characters`. Other format characters remain warnings. The
-override does not suppress diagnostics, and binary or invalid UTF-8 payloads
-are skipped.
+override does not suppress retained diagnostics or omission summaries. NUL or
+invalid UTF-8 bytes do not block alone, but recoverable hidden controls do.
 
 When a new pack version stops declaring an owned target, update deletes that
 target without comparing its current bytes with the locked digest. This differs

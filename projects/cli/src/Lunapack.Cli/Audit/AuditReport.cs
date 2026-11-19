@@ -7,7 +7,8 @@ internal sealed record AuditReport(
     IReadOnlyList<ProjectLockFile.ResolvedPack> Packs,
     IReadOnlyList<AuditReport.ExternalSource> ExternalSources,
     IReadOnlyList<AuditReport.ExternalFile> ExternalFiles,
-    IReadOnlyList<PackContentFinding> HiddenCharacterFindings
+    IReadOnlyList<PackContentFinding> HiddenCharacterFindings,
+    long OmittedHiddenCharacterFindingCount
 )
 {
     internal sealed record ExternalSource(

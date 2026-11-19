@@ -1343,24 +1343,34 @@ internal sealed class PackLifecycleService(
         bool allowHiddenCharacters
     )
     {
-        var findings = updatePlan
+        var scans = updatePlan
             .Actions.Where(action =>
                 action.ResultingContents is not null && action is not SkipManagedFileUpdateAction
             )
             .GroupBy(action => action.TargetPathRelativeToProject, StringComparer.Ordinal)
             .Select(group => group.Last())
-            .SelectMany(action =>
+            .Select(action =>
                 action.ResultingContents is { } contents
                     ? PackContentScanner.Scan(action.TargetPathRelativeToProject, contents)
-                    : []
+                    : new PackContentScanResult([], 0, false)
             )
             .ToList();
+        var findings = scans.SelectMany(scan => scan.Findings);
         foreach (var finding in findings)
         {
             _console.Warning(PackContentDiagnosticFormatter.Format(finding));
         }
 
-        return PackContentScreeningPolicy.Blocks(findings, allowHiddenCharacters)
+        var omittedFindingCount = scans.Sum(scan => scan.OmittedFindingCount);
+        if (omittedFindingCount > 0)
+        {
+            _console.Warning(PackContentDiagnosticFormatter.FormatOmitted(omittedFindingCount));
+        }
+
+        return PackContentScreeningPolicy.Blocks(
+            scans.Any(scan => scan.HasHighConfidenceFinding),
+            allowHiddenCharacters
+        )
             ? ManifestOperationResult<bool>.Failure(PackContentScreeningPolicy.BlockingMessage)
             : ManifestOperationResult<bool>.Success(true);
     }

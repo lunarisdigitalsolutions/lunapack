@@ -2,7 +2,7 @@
 
 ## 1. Shared scanner
 
-- [x] 1.1 Implement the stateless scanner, finding model, strict UTF-8/NUL classification, Unicode severity rules, scalar-based locations, and shared diagnostic formatting; verify focused tests cover invalid UTF-8, binary payloads, CRLF/LF/CR, supplementary scalars, bidi controls, U+200B, other format characters, and valid emoji sequences.
+- [x] 1.1 Implement the stateless scanner, finding model, UTF-8 and BOM Unicode classification, Unicode severity rules, scalar-based locations, and shared diagnostic formatting; verify focused tests cover invalid UTF-8, opaque payloads, CRLF/LF/CR, supplementary scalars, bidi controls, U+200B, other format characters, and valid emoji sequences.
 
 ## 2. Lifecycle and audit warning-only screening
 
@@ -25,7 +25,13 @@
 
 - [x] 5.1 Run `dotnet build projects/cli/src/Lunapack.slnx`, `dotnet test projects/cli/src/Lunapack.slnx`, `openspec validate "screen-pack-content-hidden-characters" --type change --strict`, and `openspec status --change "screen-pack-content-hidden-characters"`; verify build/tests pass and every required artifact is complete.
 
+## 6. Security review hardening
+
+- [x] 6.1 Recover hidden controls from NUL-containing, invalid UTF-8, and BOM-tagged Unicode payloads without failing opaque content solely for encoding; verify focused and end-to-end tests cover every lifecycle and release boundary.
+- [x] 6.2 Reject terminal and hidden-format characters in managed paths, visibly escape legacy diagnostic paths, and bound retained findings per payload; verify path, output, omission, and high-confidence policy tests pass.
+- [x] 6.3 Run a local CLI smoke scenario for block, override, and audit behavior; verify the full build/test, documentation, and OpenSpec gates pass after the security fixes.
+
 ## Workflow follow-up
 
-- Commit each verified implementation phase atomically, then push the branch and open a pull request referencing #80; do not merge.
+- Commit each verified implementation phase atomically, update the open pull request, and push; do not merge.
 - After the user's manual pull-request review, archive this OpenSpec change in a separate commit and verify its archived status.

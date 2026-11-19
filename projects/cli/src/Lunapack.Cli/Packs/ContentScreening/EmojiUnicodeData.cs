@@ -106,4 +106,9 @@ internal static class EmojiUnicodeData
                 and <= 0xE007F
                 or >= 0xE0100
                 and <= 0xE01EF;
+
+    public static bool IsVariationSelector(Rune rune) =>
+        rune.Value is >= 0xFE00 and <= 0xFE0F or >= 0xE0100 and <= 0xE01EF;
+
+    public static bool IsKeycapBase(Rune rune) => rune.Value is >= '0' and <= '9' or '#' or '*';
 }

@@ -349,13 +349,21 @@ active `requiredWhen` parameter fails preflight. For real operations,
 prompting from unresolved required parameters to all configurable parameters
 and offers declared defaults.
 
-Luna screens only valid UTF-8 payloads selected as pack-managed files. It skips
-binary payloads containing NUL and payloads that strict UTF-8 decoding rejects.
-Diagnostics identify the relative path, 1-based line, 1-based Unicode-scalar
-column, code point, and severity. Unicode `Bidi_Control` characters and U+200B
-ZERO WIDTH SPACE are high-confidence findings; other Unicode format characters
-are warnings. Valid emoji zero-width joiners and variation-selector sequences
-do not generate findings.
+Luna screens payloads selected as pack-managed files. It streams strict UTF-8
+and supports UTF-8, UTF-16, and UTF-32 leading BOMs. NUL-containing or invalid
+UTF-8 bytes do not fail by themselves, but later recoverable hidden controls
+are still detected. Diagnostics identify the relative path, 1-based line,
+1-based Unicode-scalar column, code point, and severity. During invalid UTF-8
+recovery, each invalid byte occupies one scan position. Unicode `Bidi_Control`
+characters and U+200B ZERO WIDTH SPACE are high-confidence findings; other
+Unicode format characters and orphan variation selectors are warnings. Valid
+emoji zero-width joiners and variation-selector sequences do not generate
+findings.
+
+Managed paths reject terminal controls, hidden Unicode format characters, line
+separators, and paragraph separators. Diagnostic output visibly escapes unsafe
+legacy path characters. Luna retains at most 1,000 findings per payload and
+reports how many more were omitted without losing blocking evidence.
 
 For install and update, screening runs on final planned content after template
 rendering and merge planning, before hooks or mutation. For `luna pack validate`

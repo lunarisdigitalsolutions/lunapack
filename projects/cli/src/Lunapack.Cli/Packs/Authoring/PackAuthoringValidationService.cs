@@ -107,6 +107,8 @@ internal sealed class PackAuthoringValidationService(
     )
     {
         var findings = new List<PackContentFinding>();
+        var omittedFindingCount = 0L;
+        var hasHighConfidenceFinding = false;
         foreach (
             var managedFile in installationPlan
                 .ManagedFiles.GroupBy(managedFile => managedFile.SourcePath, StringComparer.Ordinal)
@@ -114,14 +116,17 @@ internal sealed class PackAuthoringValidationService(
         )
         {
             var source = ScreenManagedSource(packDirectory, managedFile);
-            if (source.Value is not { } sourceFindings)
+            if (source.Value is not { } result)
             {
                 return ManifestOperationResult<bool>.Failure(
-                    source.Error ?? $"Unable to screen managed source '{managedFile.SourcePath}'."
+                    source.Error
+                        ?? $"Unable to screen managed source '{PackContentDiagnosticFormatter.EscapePath(managedFile.SourcePath)}'."
                 );
             }
 
-            findings.AddRange(sourceFindings);
+            findings.AddRange(result.Findings);
+            omittedFindingCount += result.OmittedFindingCount;
+            hasHighConfidenceFinding |= result.HasHighConfidenceFinding;
         }
 
         foreach (var finding in findings)
@@ -129,12 +134,17 @@ internal sealed class PackAuthoringValidationService(
             console.Warning(PackContentDiagnosticFormatter.Format(finding));
         }
 
-        return PackContentScreeningPolicy.Blocks(findings, allowHiddenCharacters)
+        if (omittedFindingCount > 0)
+        {
+            console.Warning(PackContentDiagnosticFormatter.FormatOmitted(omittedFindingCount));
+        }
+
+        return PackContentScreeningPolicy.Blocks(hasHighConfidenceFinding, allowHiddenCharacters)
             ? ManifestOperationResult<bool>.Failure(PackContentScreeningPolicy.BlockingMessage)
             : ManifestOperationResult<bool>.Success(true);
     }
 
-    private ManifestOperationResult<IReadOnlyList<PackContentFinding>> ScreenManagedSource(
+    private ManifestOperationResult<PackContentScanResult> ScreenManagedSource(
         string packDirectory,
         PlannedManagedFile managedFile
     )
@@ -149,7 +159,7 @@ internal sealed class PackAuthoringValidationService(
                         managedFile.SourcePath
                     )
                 );
-            return ManifestOperationResult<IReadOnlyList<PackContentFinding>>.Success(
+            return ManifestOperationResult<PackContentScanResult>.Success(
                 PackContentScanner.Scan(
                     displayPath,
                     fileSystem.File.ReadAllBytes(managedFile.SourcePath)
@@ -161,8 +171,8 @@ internal sealed class PackAuthoringValidationService(
             var relativePath = ProjectPath.Normalize(
                 fileSystem.Path.GetRelativePath(packDirectory, managedFile.SourcePath)
             );
-            return ManifestOperationResult<IReadOnlyList<PackContentFinding>>.Failure(
-                $"Unable to read managed source '{relativePath}': {exception.Message}"
+            return ManifestOperationResult<PackContentScanResult>.Failure(
+                $"Unable to read managed source '{PackContentDiagnosticFormatter.EscapePath(relativePath)}': {PackContentDiagnosticFormatter.EscapePath(exception.Message)}"
             );
         }
     }

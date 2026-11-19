@@ -29,13 +29,13 @@ The lifecycle caller supplies final planned bytes after template rendering and m
 
 ### Classify text without extension allowlists
 
-Decode with strict UTF-8. Treat a payload containing a NUL byte as binary and skip it; skip any other payload that fails strict UTF-8 decoding. Do not use a replacement decoder, since replacement characters would make reported positions and code points inaccurate. This avoids extension allowlists that could miss text with an uncommon extension.
+Stream strict UTF-8 decoding without extension allowlists. Recognize leading UTF-8, UTF-16LE, UTF-16BE, UTF-32LE, and UTF-32BE BOMs and decode BOM-tagged text with a strict decoder. For unmarked invalid UTF-8, resynchronize one invalid byte at a time and continue classifying later valid scalars. Do not insert replacement characters into findings; NUL and invalid bytes do not fail an operation by themselves, but later recoverable hidden controls remain enforceable.
 
-Walk decoded Unicode scalars once while tracking 1-based line and scalar-column positions. Treat CRLF as one line break; also recognize LF and CR. Format code points as uppercase `U+` hexadecimal, padding values below `U+10000` to four digits. Emit slash-separated source-relative paths for author validation/publication and effective project-relative paths for install, update, and audit.
+Walk decoded Unicode scalars once while tracking 1-based line and scalar-column positions. Treat CRLF as one line break; also recognize LF and CR. For invalid-byte recovery, each invalid byte occupies one scan position. Format code points as uppercase `U+` hexadecimal, padding values below `U+10000` to four digits. Emit slash-separated source-relative paths for author validation/publication and effective project-relative paths for install, update, and audit.
 
 ### Keep the high-confidence set explicit
 
-Use the Unicode `Bidi_Control` property set and U+200B ZERO WIDTH SPACE as the high-confidence set. Report other `Format` category code points as warnings. Preserve a U+200D only when it participates in a valid emoji ZWJ sequence; use Unicode Extended_Pictographic/Extend data pinned to the CLI's targeted Unicode data version rather than treating every joiner as safe. Variation selectors are not `Format` characters; keep them out of findings and add regression cases for valid emoji variation sequences.
+Use the Unicode `Bidi_Control` property set and U+200B ZERO WIDTH SPACE as the high-confidence set. Report other `Format` category code points as warnings. Preserve a U+200D only when it participates in a valid emoji ZWJ sequence; use Unicode Extended_Pictographic/Extend data pinned to the CLI's targeted Unicode data version rather than treating every joiner as safe. Exempt variation selectors only when they follow a valid emoji or keycap base; report orphan selectors as warnings.
 
 This boundary is intentionally narrower than blocking every invisible character. It supports warning review without making legitimate format characters in authored text an automatic installation failure.
 
@@ -45,13 +45,15 @@ Run lifecycle scanning after final content planning but before hook execution or
 
 Use one formatter for findings, escaping path and character names through the existing CLI console boundary. In warning-only rollout, render every finding as a warning. In the later enforcement phase, high-confidence findings fail install, update, pack validation, and publication before side effects; warnings remain non-blocking. `--allow-hidden-characters` permits those operations to continue but leaves diagnostics visible. The override is command-scoped and is not persisted.
 
+Reject terminal controls, Unicode `Format` characters, line separators, and paragraph separators in project-relative and managed manifest paths. Escape those characters for legacy persisted diagnostics. Retain at most 1,000 findings per payload and retain separate high-confidence and omitted-count evidence so resource bounds cannot create an enforcement bypass.
+
 ### Gate enforcement on warning review
 
 Ship warning-only behavior first. Review findings from maintained packs and focused fixtures, correct false positives, and verify valid emoji sequences before enabling enforcement in a separate atomic implementation commit. The phase gate is a release/implementation sequence, not a runtime setting. Record the accepted compatibility and override decision in a new ADR because enforcement changes lifecycle and publication outcomes.
 
 ## Risks / Trade-offs
 
-- A valid UTF-8 binary payload without NUL may be scanned as text; an extension allowlist would avoid that case but could miss real text payloads. Keep the NUL heuristic explicit and cover representative binary fixtures.
+- Opaque payloads can contain byte sequences that resemble text controls. Scan recoverable Unicode scalars while failing only on actual hidden findings, and verify NUL, invalid UTF-8, and BOM cases end to end.
 - Scanning merged output can report a hidden character already present in consumer-owned target text. This reflects the final content LunaPack would write; findings identify the effective target and remain warnings unless high confidence.
 - Emoji property data can become stale as Unicode evolves. Pin the data version, cover known valid and invalid sequences, and review updates deliberately.
 - Runtime Unicode category tables may differ between supported runtimes. Keep the high-confidence ranges explicit and test warning classification against the supported CLI runtime baseline.

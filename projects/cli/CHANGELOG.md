@@ -13,8 +13,12 @@ Update this section before creating a release tag.
   pack-managed UTF-8 text for hidden Unicode. Bidi controls and U+200B block
   before side effects unless `--allow-hidden-characters` is supplied; other
   Unicode format characters remain warnings. `luna audit` reports installed
-  findings without changing state or success behavior. Binary and invalid UTF-8
-  payloads are skipped.
+  findings without changing state or success behavior. BOM-tagged UTF-16 and
+  UTF-32 content is decoded, and recoverable controls in NUL-containing or
+  invalid UTF-8 payloads remain enforceable without rejecting opaque bytes
+  alone. Managed paths reject terminal-control and hidden-format characters.
+  Diagnostic retention is bounded to 1,000 findings per payload with an
+  omission summary.
 
 ### Fixed
 

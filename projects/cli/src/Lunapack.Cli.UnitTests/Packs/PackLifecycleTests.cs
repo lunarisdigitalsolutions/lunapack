@@ -460,6 +460,43 @@ public sealed class PackLifecycleTests
     }
 
     [Test]
+    [Arguments("nul-utf8")]
+    [Arguments("invalid-utf8")]
+    [Arguments("utf16")]
+    public async Task Install_WhenOpaquePayloadHidesControl_BlocksBeforeMutation(string encoding)
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreatePackSource(workspace.Path);
+        var sourceFile = Path.Combine(
+            workspace.Path,
+            sourcePath,
+            "dotnet-gitignore",
+            "templates",
+            "dotnet.gitignore"
+        );
+        File.WriteAllBytes(
+            sourceFile,
+            encoding switch
+            {
+                "nul-utf8" => [0x41, 0x00, 0xE2, 0x80, 0xAE],
+                "invalid-utf8" => [0xC3, 0x28, 0xE2, 0x80, 0xAE],
+                _ => [0xFF, 0xFE, 0x2E, 0x20],
+            }
+        );
+        await ConfigureSourceAsync(workspace, sourcePath);
+        var initialState = await ReadStateAsync(workspace.Path);
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["install", "dotnet-gitignore"],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(await ReadStateAsync(workspace.Path)).IsEqualTo(initialState);
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, ".gitignore"))).IsFalse();
+    }
+
+    [Test]
     public async Task Install_WhenWarningCharacterExists_ReportsAndContinues()
     {
         var ansiConsole = new SpectreTestConsole();

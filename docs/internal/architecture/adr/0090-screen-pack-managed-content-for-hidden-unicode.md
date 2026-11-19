@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded by ADR-0091
 date: 2026-11-19
 decision-makers:
   - Lunaris Engineering

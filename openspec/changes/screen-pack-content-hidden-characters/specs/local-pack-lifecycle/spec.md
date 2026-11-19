@@ -4,7 +4,7 @@
 
 ### Requirement: Screen managed text before lifecycle changes
 
-`luna install` and `luna update` SHALL screen valid UTF-8 final managed-file content planned for creation or replacement after template rendering and merge planning, before hooks execute or project files or state change. Findings SHALL identify the effective project-relative target.
+`luna install` and `luna update` SHALL screen eligible final managed-file content planned for creation or replacement after template rendering and merge planning, before hooks execute or project files or state change. Findings SHALL identify the effective project-relative target.
 
 #### Scenario: Report a rendered install finding
 

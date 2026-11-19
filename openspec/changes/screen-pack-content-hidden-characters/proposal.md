@@ -7,9 +7,10 @@ Pack text can contain invisible or direction-changing Unicode characters that re
 ## What Changes
 
 - Add pack-content screening that reports each finding's path, 1-based line, Unicode-scalar column, code point, and severity.
-- Scan valid UTF-8 authored source files during local pack validation and publication, final rendered planned text during installation and update, and installed files during audit. Skip binary and invalid UTF-8 payloads.
+- Screen authored source files during local pack validation and publication, final rendered planned text during installation and update, and installed files during audit. Strictly decode UTF-8 and BOM-tagged UTF-16/UTF-32; resynchronize opaque payloads so recoverable hidden controls remain detectable without failing solely on encoding.
 - Begin with warning-only diagnostics. After false-positive review, block only high-confidence bidi controls and zero-width spaces for mutating and validation operations; keep other hidden format characters as warnings.
 - Preserve valid emoji joiners and variation selectors. Provide an explicit command-line override for the later blocking phase, proposed as `--allow-hidden-characters`.
+- Reject terminal controls and hidden Unicode format characters in managed paths, visibly escape diagnostic paths, and cap retained findings per payload while preserving blocking evidence.
 - Keep audit read-only and report-only. Document diagnostic output, blocking, override, and exit behavior for CLI users.
 
 ## Capabilities

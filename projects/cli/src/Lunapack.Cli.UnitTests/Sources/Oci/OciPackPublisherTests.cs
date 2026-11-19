@@ -491,9 +491,9 @@ public sealed class OciPackPublisherTests
             fileSystem.Path.Combine(_packDirectory, PackManifestStore.FileName),
             "id: backend\nversion: 1.0.0\nauthor: Test Author\nlicense: MIT\nmanagedFiles:\n  - source: README.md\n    target: docs/README.md\n"
         );
-        fileSystem.File.WriteAllText(
+        fileSystem.File.WriteAllBytes(
             fileSystem.Path.Combine(_packDirectory, "README.md"),
-            "safe\u202Ehidden"
+            [0x73, 0x61, 0x66, 0x65, 0x00, 0xE2, 0x80, 0xAE]
         );
         var registry = new FakeOciRegistryClient();
         var ansiConsole = new Spectre.Console.Testing.TestConsole();

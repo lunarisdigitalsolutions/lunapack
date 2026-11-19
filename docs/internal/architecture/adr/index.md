@@ -93,7 +93,8 @@ Create a new architecture decision record from the [MADR-based template](templat
 | [ADR-0087][adr-0087]                                                            | Keep source-ignore state in a per-project sidecar for settings compatibility.           |
 | [ADR-0088][adr-0088]                                                            | Share changed-pack publishing behavior across registry workflow packs.                  |
 | [ADR-0089][adr-0089]                                                            | Separate direct-pack root eligibility from dependency resolution.                       |
-| [ADR-0090](0090-screen-pack-managed-content-for-hidden-unicode.md)              | Screen managed pack text conservatively for hidden Unicode before content is applied.   |
+| [ADR-0090](0090-screen-pack-managed-content-for-hidden-unicode.md)              | Superseded by ADR-0091.                                                                 |
+| [ADR-0091](0091-fail-safe-hidden-unicode-screening.md)                          | Recover hidden controls safely and bound terminal-safe pack screening diagnostics.      |
 
 [adr-0070]: 0070-bind-privileged-workflows-to-trusted-provenance.md
 [adr-0071]: 0071-reject-filesystem-aliases-at-mutation-boundaries.md

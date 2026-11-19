@@ -4,7 +4,7 @@
 
 ### Requirement: Screen managed source content before publication
 
-`luna publish` SHALL screen valid UTF-8 source payloads selected by the pack's managed-file declarations before uploading any release content. Findings SHALL use source-relative paths and follow the warning, enforcement, and override behavior defined by `pack-content-screening`.
+`luna publish` SHALL screen eligible source payloads selected by the pack's managed-file declarations before uploading any release content. Findings SHALL use source-relative paths and follow the warning, enforcement, and override behavior defined by `pack-content-screening`.
 
 #### Scenario: Report a source finding during warning-only publication
 

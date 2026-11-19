@@ -8,21 +8,31 @@ Detect hidden Unicode characters in pack-managed text and provide consistent, ac
 
 ### Requirement: Screen eligible text payloads
 
-LunaPack SHALL screen valid UTF-8 text payloads. It SHALL skip binary payloads and payloads that cannot be decoded as UTF-8 without attempting a replacement-character decode.
+LunaPack SHALL stream strict UTF-8 decoding and SHALL decode BOM-tagged UTF-16LE, UTF-16BE, UTF-32LE, and UTF-32BE payloads. Opaque NUL-containing or invalid UTF-8 payloads SHALL not fail solely for encoding, but LunaPack SHALL resynchronize after invalid bytes and SHALL enforce any later recoverable hidden controls.
 
 #### Scenario: Screen valid UTF-8 text
 
 - **WHEN** an operation supplies a valid UTF-8 text payload for screening
 - **THEN** LunaPack scans the payload for hidden Unicode characters
 
-#### Scenario: Skip binary or invalid UTF-8 payloads
+#### Scenario: Screen BOM-tagged Unicode
 
-- **WHEN** an operation supplies a binary payload or bytes that cannot be decoded as UTF-8
-- **THEN** LunaPack skips screening that payload without failing solely because it was skipped
+- **WHEN** an operation supplies BOM-tagged UTF-16 or UTF-32 text containing a hidden character
+- **THEN** LunaPack decodes the payload and reports the hidden character
+
+#### Scenario: Skip an opaque payload without hidden controls
+
+- **WHEN** an operation supplies a NUL-containing or invalid Unicode payload with no recoverable hidden controls
+- **THEN** LunaPack does not fail solely because the payload is opaque
+
+#### Scenario: Recover a control from an opaque payload
+
+- **WHEN** a NUL-containing or invalid UTF-8 payload contains a later recoverable U+202E
+- **THEN** LunaPack reports and applies high-confidence policy to that character
 
 ### Requirement: Report precise finding locations
 
-Every finding SHALL report its operation-appropriate relative path, 1-based line, 1-based Unicode-scalar column, code point in `U+` hexadecimal notation, and severity. Paths SHALL use `/`; columns SHALL count Unicode scalar values rather than UTF-16 code units.
+Every finding SHALL report its operation-appropriate relative path, 1-based line, 1-based Unicode-scalar column, code point in `U+` hexadecimal notation, and severity. Paths SHALL use `/`; columns SHALL count Unicode scalar values rather than UTF-16 code units. During invalid UTF-8 recovery, each invalid byte SHALL occupy one scan position.
 
 #### Scenario: Report an authored source location
 
@@ -38,6 +48,29 @@ Every finding SHALL report its operation-appropriate relative path, 1-based line
 
 - **WHEN** a hidden character follows a supplementary Unicode scalar on the same line
 - **THEN** its reported column counts the supplementary scalar once
+
+### Requirement: Bound diagnostic retention
+
+LunaPack SHALL retain at most 1,000 findings per payload, SHALL report the number of omitted findings, and SHALL retain independent high-confidence evidence so an omitted blocker cannot bypass policy.
+
+#### Scenario: Block on a finding after the retained limit
+
+- **WHEN** a payload contains 1,000 warning findings followed by a high-confidence finding
+- **THEN** LunaPack reports the omission and applies blocking policy to the high-confidence finding
+
+### Requirement: Prevent unsafe managed paths in diagnostics
+
+Managed source and target paths SHALL reject terminal controls, Unicode `Format` characters, line separators, and paragraph separators. Diagnostic rendering SHALL visibly escape unsafe legacy path characters.
+
+#### Scenario: Reject a terminal-control path
+
+- **WHEN** a managed path contains an escape character
+- **THEN** path validation fails before planning or mutation
+
+#### Scenario: Escape a legacy diagnostic path
+
+- **WHEN** a persisted path contains a bidi control
+- **THEN** diagnostic output renders its code point visibly instead of changing terminal direction
 
 ### Requirement: Classify hidden format characters conservatively
 
@@ -63,6 +96,11 @@ LunaPack SHALL assign high-confidence severity to Unicode `Bidi_Control` charact
 - **WHEN** a variation selector participates in a valid emoji variation sequence
 - **THEN** screening does not report the selector as a finding
 
+#### Scenario: Report an orphan variation selector
+
+- **WHEN** a variation selector does not follow a valid emoji or keycap base
+- **THEN** LunaPack reports the selector as a warning
+
 ### Requirement: Keep the initial rollout warning-only
 
 During the initial warning-only rollout, findings SHALL not by themselves change an operation's exit status or prevent its planned writes or upload.
@@ -79,7 +117,7 @@ During the initial warning-only rollout, findings SHALL not by themselves change
 
 ### Requirement: Enforce high-confidence findings with an explicit override
 
-After false-positive review enables enforcement, install, update, pack validation, and publication SHALL fail before their side effects when high-confidence findings exist unless the user supplies `--allow-hidden-characters`. The override SHALL not suppress findings, and warning-severity findings SHALL not block these operations.
+After false-positive review enables enforcement, install, update, pack validation, and publication SHALL fail before their side effects when high-confidence findings exist unless the user supplies `--allow-hidden-characters`. The override SHALL not suppress retained findings or omission summaries, and warning-severity findings SHALL not block these operations.
 
 #### Scenario: Block installation before mutation
 
@@ -94,4 +132,4 @@ After false-positive review enables enforcement, install, update, pack validatio
 #### Scenario: Continue with an explicit override
 
 - **WHEN** enforcement is enabled and a user supplies `--allow-hidden-characters`
-- **THEN** LunaPack reports all findings and continues the operation under its existing validation and transaction rules
+- **THEN** LunaPack reports retained findings and omission summaries and continues the operation under its existing validation and transaction rules

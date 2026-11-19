@@ -22,6 +22,7 @@ internal sealed class AuditService(IFileSystem fileSystem, ProjectStateStore pro
         var sources = new List<AuditReport.ExternalSource>();
         var files = new List<AuditReport.ExternalFile>();
         var hiddenCharacterFindings = new List<PackContentFinding>();
+        var omittedHiddenCharacterFindingCount = 0L;
         var screenedTargets = new HashSet<string>(StringComparer.Ordinal);
         foreach (var pack in state.LockFile.Packs.OrderBy(pack => pack.Id, StringComparer.Ordinal))
         {
@@ -46,15 +47,16 @@ internal sealed class AuditService(IFileSystem fileSystem, ProjectStateStore pro
                 if (screenedTargets.Add(managedFile.TargetPath))
                 {
                     var screening = ScreenManagedFile(projectDirectory, managedFile);
-                    if (screening.Value is not { } findings)
+                    if (screening.Value is not { } result)
                     {
                         return ManifestOperationResult<AuditReport>.Failure(
                             screening.Error
-                                ?? $"Unable to screen managed target '{managedFile.TargetPath}'."
+                                ?? $"Unable to screen managed target '{PackContentDiagnosticFormatter.EscapePath(managedFile.TargetPath)}'."
                         );
                     }
 
-                    hiddenCharacterFindings.AddRange(findings);
+                    hiddenCharacterFindings.AddRange(result.Findings);
+                    omittedHiddenCharacterFindingCount += result.OmittedFindingCount;
                 }
 
                 var externalFile = CreateExternalFile(projectDirectory, pack, managedFile);
@@ -71,11 +73,17 @@ internal sealed class AuditService(IFileSystem fileSystem, ProjectStateStore pro
         }
 
         return ManifestOperationResult<AuditReport>.Success(
-            new AuditReport(state.LockFile.Packs, sources, files, hiddenCharacterFindings)
+            new AuditReport(
+                state.LockFile.Packs,
+                sources,
+                files,
+                hiddenCharacterFindings,
+                omittedHiddenCharacterFindingCount
+            )
         );
     }
 
-    private ManifestOperationResult<IReadOnlyList<PackContentFinding>> ScreenManagedFile(
+    private ManifestOperationResult<PackContentScanResult> ScreenManagedFile(
         string projectDirectory,
         ProjectLockFile.ManagedFile managedFile
     )
@@ -83,12 +91,14 @@ internal sealed class AuditService(IFileSystem fileSystem, ProjectStateStore pro
         var targetPath = fileSystem.Path.GetFullPath(managedFile.TargetPath, projectDirectory);
         if (!fileSystem.File.Exists(targetPath))
         {
-            return ManifestOperationResult<IReadOnlyList<PackContentFinding>>.Success([]);
+            return ManifestOperationResult<PackContentScanResult>.Success(
+                new PackContentScanResult([], 0, false)
+            );
         }
 
         try
         {
-            return ManifestOperationResult<IReadOnlyList<PackContentFinding>>.Success(
+            return ManifestOperationResult<PackContentScanResult>.Success(
                 PackContentScanner.Scan(
                     managedFile.TargetPath,
                     fileSystem.File.ReadAllBytes(targetPath)
@@ -97,8 +107,8 @@ internal sealed class AuditService(IFileSystem fileSystem, ProjectStateStore pro
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            return ManifestOperationResult<IReadOnlyList<PackContentFinding>>.Failure(
-                $"Unable to read managed target '{managedFile.TargetPath}' during audit: {exception.Message}"
+            return ManifestOperationResult<PackContentScanResult>.Failure(
+                $"Unable to read managed target '{PackContentDiagnosticFormatter.EscapePath(managedFile.TargetPath)}' during audit: {PackContentDiagnosticFormatter.EscapePath(exception.Message)}"
             );
         }
     }

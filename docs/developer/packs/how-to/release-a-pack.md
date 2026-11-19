@@ -27,6 +27,11 @@ override leaves every diagnostic visible and is not saved in `pack.yml`. Fix
 warnings about unused source aliases unless the source is intentionally
 reserved for an imminent selector.
 
+Validation also detects recoverable controls after NUL or invalid UTF-8 bytes
+and recognizes BOM-tagged UTF-16 and UTF-32 content. The CLI rejects managed
+paths containing terminal controls or hidden Unicode format characters rather
+than emitting terminal-spoofable diagnostics.
+
 When required metadata is missing, use the authoring commands instead of
 rewriting the whole manifest:
 
