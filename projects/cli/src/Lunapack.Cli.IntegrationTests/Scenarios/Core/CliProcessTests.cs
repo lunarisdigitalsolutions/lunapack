@@ -2677,6 +2677,7 @@ public sealed class CliProcessTests
             ("lint-staged-quality", "1.0.0"),
             ("lint-staged-scss", "1.0.0"),
             ("lint-staged-yaml", "1.0.0"),
+            ("luna-cli", "1.0.0"),
             ("madr-template", "1.0.0"),
             ("markdownlint-config", "1.0.0"),
             ("lunapack-pack-authoring", "1.0.0"),

@@ -2,25 +2,25 @@
 
 ## 1. Canonical Skill and Pack
 
-- [ ] 1.1 Write the portable `luna-cli` `SKILL.md` in the versioned pack target
+- [x] 1.1 Write the portable `luna-cli` `SKILL.md` in the versioned pack target
   with supported commands, examples, and approval boundaries; verify frontmatter
   and command syntax against Luna CLI help and public documentation.
-- [ ] 1.2 Add the versioned `luna-cli` pack manifest with the shared identity,
+- [x] 1.2 Add the versioned `luna-cli` pack manifest with the shared identity,
   `.agents/skills/luna-cli` target, and `copy/fail-if-exists`; verify
   `luna pack validate` and catalog validation for `luna-cli@1.0.0`.
-- [ ] 1.3 Smoke-test direct Skills CLI and LunaPack installs in separate clean
+- [x] 1.3 Smoke-test direct Skills CLI and LunaPack installs in separate clean
   fixtures; verify both yield the same identity and target, and verify an
   occupied target remains unchanged until removed through its current owner.
 
 ## 2. Public Guidance and Decision Record
 
-- [ ] 2.1 Add a focused developer how-to for both installation routes, project
+- [x] 2.1 Add a focused developer how-to for both installation routes, project
   ownership and switching, and safe Luna CLI workflows; verify examples and
   links against current commands and documented behavior.
-- [ ] 2.2 Add an accepted ADR for the canonical identity and one-installer
+- [x] 2.2 Add an accepted ADR for the canonical identity and one-installer
   ownership rule using the next sequence number; update the ADR index and verify
   its link and Markdown lint.
-- [ ] 2.3 Add the developer page to site navigation; run documentation lint and
+- [x] 2.3 Add the developer page to site navigation; run documentation lint and
   the documented Docusaurus production build.
 
 ## Workflow follow-up
