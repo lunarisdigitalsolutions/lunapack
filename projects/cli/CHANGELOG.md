@@ -9,6 +9,10 @@ Update this section before creating a release tag.
 
 ### Added
 
+- `luna doctor` reports project-relevant Git, credential-store, state, and
+  profile/cache problems with remediation. Its default checks are offline;
+  `--network` enables bounded, noninteractive checks for configured Git and OCI
+  sources.
 - Install, update, local pack validation, and OCI publication now screen
   pack-managed UTF-8 text for hidden Unicode. Bidi controls and U+200B block
   before side effects unless `--allow-hidden-characters` is supplied; other
@@ -31,6 +35,8 @@ Update this section before creating a release tag.
   Pack updates support explicit deletion with `--remove-modified`.
 - Git links now fetch selected files missing from cached content using the
   resolved commit.
+- Luna resolves Git from trusted absolute `PATH` entries instead of a
+  same-directory executable, and rejects credential-bearing HTTP Git URLs.
 
 ## Version 1.6.0 - 2026-11-17
 
