@@ -14,4 +14,4 @@ managedFiles:
     target: .agents/skills/luna-cli
     strategy:
       type: copy
-      method: fail-if-exists
+      method: overwrite

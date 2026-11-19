@@ -134,9 +134,15 @@ because a source was approved for discovery.
 ## Author Or Edit A Pack
 
 Work from the pack release directory. Use `luna pack` commands rather than
-building an invalid manifest incrementally by hand:
+building an invalid manifest incrementally by hand. Create and populate the
+selected payload paths before adding them to the manifest. This PowerShell
+example is run only in an explicitly approved authoring workspace:
 
 ```powershell
+New-Item -ItemType Directory -Force -Path targets/docs, targets/config | Out-Null
+Set-Content targets/docs/standard.md 'Document the standard.'
+Set-Content targets/config/settings.yml 'enabled: true'
+
 luna pack init `
   --id example-documentation-standard `
   --author "Example Engineering" `
@@ -154,12 +160,21 @@ files, hooks, tags, parameters, sources, and references. Preserve the existing
 manifest when a command fails; report the validation error instead of
 rewriting away the failure.
 
-For a release-ready result, validate the local release and then register its
-catalog as a project source before running catalog validation:
+For a release-ready result, validate the local release:
 
 ```powershell
 luna pack validate
-luna validate <pack-id>@<version>
+```
+
+Catalog-level validation requires a separate consumer project with the pack
+catalog configured as a source. Use only a separately approved source
+registration:
+
+```powershell
+luna init --workspace <consumer-project>
+luna sources add local pack-catalog <pack-catalog-relative-to-consumer> `
+  --workspace <consumer-project>
+luna validate <pack-id>@<version> --workspace <consumer-project>
 ```
 
 Do not publish a pack, add a source, grant trust, or run lifecycle scripts
