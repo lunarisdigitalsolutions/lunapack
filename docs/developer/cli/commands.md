@@ -91,6 +91,43 @@ suggestions even when the shell strips trailing whitespace or reports a cursor
 position beyond the rendered command line. Command containers return no value
 suggestions until an argument-taking command or option is selected.
 
+## Diagnose The Environment
+
+`luna doctor` checks the selected workspace without repairing or initializing
+it. Each result is `PASS`, `FAIL`, or `INFO` and includes remediation when an
+action can resolve the problem. The default checks are local: Git availability,
+native credential-store support, project and lock state, user settings,
+source-ignore state, and existing profile/cache directories. Luna never creates
+missing profile or cache directories during these checks. It may create and
+immediately remove one unique empty probe file in each existing profile/cache
+directory to verify write access.
+
+Use `luna doctor --network` to opt in to configured Git and OCI source checks.
+Local and locally ignored sources are not contacted. Each source has a
+five-second budget, and the complete network phase stops after 20 seconds.
+Git probes use an isolated command configuration with no terminal or
+credential-helper prompt, inherited header, or unqualified SSH helper. If a
+pack is already locked to an OCI source, the probe checks that configured
+repository; otherwise it checks the registry endpoint. OCI probes never
+prompt, save, or remove credentials and do not follow redirects. Windows can
+safely read an existing source-bound registry credential for the probe. On
+macOS and Linux, Luna does not open the native credential store for doctor;
+anonymous access and an existing noninteractive Azure identity remain
+available.
+
+The command exits non-zero only when a reported failure blocks an operation
+configured for the selected project. An unavailable prerequisite that no
+configured operation needs is informational. Authentication that was
+deliberately not attempted, such as a private Git HTTPS source requiring a
+credential helper, is also informational rather than a false blocking failure.
+Project configuration, lock state, user settings, source-ignore state, and
+credentials remain unchanged.
+
+```powershell
+luna doctor
+luna doctor --network --workspace ../another-project
+```
+
 ## Project And Sources
 
 - `luna init`: Creates version-1 `lunapack.yml` and `lunapack-lock.yml` with

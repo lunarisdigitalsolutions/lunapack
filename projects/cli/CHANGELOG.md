@@ -7,10 +7,19 @@ pack-package, documentation, CI, build, test, and release-process changes.
 
 Update this section before creating a release tag.
 
+### Added
+
+- `luna doctor` reports project-relevant Git, credential-store, state, and
+  profile/cache problems with remediation. Its default checks are offline;
+  `--network` enables bounded, noninteractive checks for configured Git and OCI
+  sources.
+
 ### Fixed
 
 - Git links now fetch selected files missing from cached content using the
   resolved commit.
+- Luna resolves Git from trusted absolute `PATH` entries instead of a
+  same-directory executable, and rejects credential-bearing HTTP Git URLs.
 
 ## Version 1.6.0 - 2026-11-17
 

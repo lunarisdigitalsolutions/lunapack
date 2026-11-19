@@ -4,6 +4,21 @@ Luna reads a small set of environment variables for user settings, cache
 placement, and lifecycle command resolution. Project behavior otherwise comes
 from CLI input and version-1 YAML documents.
 
+## Environment preflight
+
+Run `luna doctor` before troubleshooting a command failure. The default
+invocation is offline and still works when Luna preferences or project state
+are unreadable. `luna doctor --network` additionally checks only configured
+Git and OCI sources with bounded timeouts; see the
+[command reference](commands.md#diagnose-the-environment) for status, exit,
+credential, and cleanup behavior.
+
+Doctor does not create missing profile or cache directories. For an existing
+directory, its writability check creates one unpredictably named file with
+create-new semantics, keeps exclusive access to it, and uses delete-on-close.
+No project file is a probe target. A linked or reparse-point directory is
+rejected rather than followed.
+
 ## Luna settings
 
 | Variable                | Platforms | Default              | Behavior                           |
@@ -85,6 +100,11 @@ existing entries.
 
 Luna resolves lifecycle commands with the invoking process's `PATH`. On Windows,
 it also uses `PATHEXT`; when `PATHEXT` is absent, `.EXE` is the default extension.
+Luna resolves `git` to an absolute executable from absolute `PATH` entries and
+does not run a same-directory `git` executable from the selected workspace.
+Doctor Git probes also remove inherited Git config/environment authentication
+headers, isolate system and global Git config, and resolve SSH to an absolute
+non-workspace executable with terminal prompting disabled.
 Approved lifecycle processes inherit the invoking process environment, so
 remove unneeded credentials before running untrusted hooks.
 
