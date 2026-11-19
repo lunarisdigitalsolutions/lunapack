@@ -1,6 +1,7 @@
 using System.CommandLine;
 using Lunapack.Cli.Application;
 using Lunapack.Cli.Links;
+using Lunapack.Cli.Packs.ContentScreening;
 using Lunapack.Cli.Project;
 using Spectre.Console;
 
@@ -79,6 +80,11 @@ internal sealed class AuditCommandHandler(
         foreach (var file in report.ExternalFiles)
         {
             console.Info(AuditOutputFormatter.Format(file));
+        }
+
+        foreach (var finding in report.HiddenCharacterFindings)
+        {
+            console.Warning(PackContentDiagnosticFormatter.Format(finding));
         }
 
         var state = await projectStateStore.LoadAsync(projectDirectory);

@@ -37,6 +37,7 @@ internal sealed class UpdatePackCommandHandler(
         var configurationOptions = CreateConfigurationOptions(completionProvider);
         var scriptsOption = CreateScriptsOption();
         var skipInstructionsOption = CreateSkipInstructionsOption();
+        var allowHiddenCharactersOption = CreateAllowHiddenCharactersOption();
         var command = new Command("update", "Update installed packs.")
         {
             packReferenceArgument,
@@ -48,6 +49,7 @@ internal sealed class UpdatePackCommandHandler(
             skipParametersOption,
             scriptsOption,
             skipInstructionsOption,
+            allowHiddenCharactersOption,
         };
         AddConfigurationOptions(command, configurationOptions);
         command.SetAction(parseResult =>
@@ -69,7 +71,8 @@ internal sealed class UpdatePackCommandHandler(
                 configurationOptions.RemapFile,
                 configurationOptions.SaveRemap,
                 scriptsOption,
-                skipInstructionsOption
+                skipInstructionsOption,
+                allowHiddenCharactersOption
             )
         );
 
@@ -114,7 +117,8 @@ internal sealed class UpdatePackCommandHandler(
         Option<string[]> remapFileOption,
         Option<bool> saveRemapOption,
         Option<string?> scriptsOption,
-        Option<bool> skipInstructionsOption
+        Option<bool> skipInstructionsOption,
+        Option<bool> allowHiddenCharactersOption
     )
     {
         var referenceValues = parseResult.GetValue(packReferenceArgument) ?? [];
@@ -157,7 +161,8 @@ internal sealed class UpdatePackCommandHandler(
             skipVariableOption,
             remapDirectoryOption,
             remapFileOption,
-            saveRemapOption
+            saveRemapOption,
+            allowHiddenCharactersOption
         );
         var targetRemapping = CreateTargetRemapping(
             workspaceDirectory,
@@ -460,6 +465,12 @@ internal sealed class UpdatePackCommandHandler(
     private static Option<bool> CreateSkipInstructionsOption() =>
         new("--skip-instructions") { Description = "Skip lifecycle instructions." };
 
+    private static Option<bool> CreateAllowHiddenCharactersOption() =>
+        new("--allow-hidden-characters")
+        {
+            Description = "Continue after reviewing high-confidence hidden Unicode findings.",
+        };
+
     private Task<PackUpdateService.UpdateResult> UpdateAsync(
         string projectDirectory,
         PackReference? reference,
@@ -507,7 +518,10 @@ internal sealed class UpdatePackCommandHandler(
         PackUpdateOptions updateOptions
     )
     {
-        var availableUpdates = await updateSelectionService.GetAvailableAsync(projectDirectory);
+        var availableUpdates = await updateSelectionService.GetAvailableAsync(
+            projectDirectory,
+            allowHiddenCharacters: updateOptions.AllowHiddenCharacters
+        );
         if (availableUpdates.Value is not { } availability)
         {
             return PackUpdateService.UpdateResult.Failure(
@@ -602,7 +616,8 @@ internal sealed class UpdatePackCommandHandler(
         Option<string[]> skipVariableOption,
         Option<string[]> remapDirectoryOption,
         Option<string[]> remapFileOption,
-        Option<bool> saveRemapOption
+        Option<bool> saveRemapOption,
+        Option<bool> allowHiddenCharactersOption
     ) =>
         new()
         {
@@ -612,6 +627,7 @@ internal sealed class UpdatePackCommandHandler(
             DirectoryRemappings = parseResult.GetValue(remapDirectoryOption) ?? [],
             FileRemappings = parseResult.GetValue(remapFileOption) ?? [],
             SaveRemapping = parseResult.GetValue(saveRemapOption),
+            AllowHiddenCharacters = parseResult.GetValue(allowHiddenCharactersOption),
         };
 
     private static ManifestOperationResult<IReadOnlyList<PackReference>> ParseReferences(

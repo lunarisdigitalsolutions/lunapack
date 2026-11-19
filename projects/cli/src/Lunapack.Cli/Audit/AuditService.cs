@@ -1,6 +1,7 @@
 using System.IO.Abstractions;
 using System.Security.Cryptography;
 using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Packs.ContentScreening;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources;
 
@@ -20,6 +21,8 @@ internal sealed class AuditService(IFileSystem fileSystem, ProjectStateStore pro
 
         var sources = new List<AuditReport.ExternalSource>();
         var files = new List<AuditReport.ExternalFile>();
+        var hiddenCharacterFindings = new List<PackContentFinding>();
+        var screenedTargets = new HashSet<string>(StringComparer.Ordinal);
         foreach (var pack in state.LockFile.Packs.OrderBy(pack => pack.Id, StringComparer.Ordinal))
         {
             foreach (var (alias, source) in pack.ExternalSources)
@@ -40,6 +43,20 @@ internal sealed class AuditService(IFileSystem fileSystem, ProjectStateStore pro
 
             foreach (var managedFile in pack.ManagedFiles)
             {
+                if (screenedTargets.Add(managedFile.TargetPath))
+                {
+                    var screening = ScreenManagedFile(projectDirectory, managedFile);
+                    if (screening.Value is not { } findings)
+                    {
+                        return ManifestOperationResult<AuditReport>.Failure(
+                            screening.Error
+                                ?? $"Unable to screen managed target '{managedFile.TargetPath}'."
+                        );
+                    }
+
+                    hiddenCharacterFindings.AddRange(findings);
+                }
+
                 var externalFile = CreateExternalFile(projectDirectory, pack, managedFile);
                 if (externalFile.Error is { } error)
                 {
@@ -54,8 +71,36 @@ internal sealed class AuditService(IFileSystem fileSystem, ProjectStateStore pro
         }
 
         return ManifestOperationResult<AuditReport>.Success(
-            new AuditReport(state.LockFile.Packs, sources, files)
+            new AuditReport(state.LockFile.Packs, sources, files, hiddenCharacterFindings)
         );
+    }
+
+    private ManifestOperationResult<IReadOnlyList<PackContentFinding>> ScreenManagedFile(
+        string projectDirectory,
+        ProjectLockFile.ManagedFile managedFile
+    )
+    {
+        var targetPath = fileSystem.Path.GetFullPath(managedFile.TargetPath, projectDirectory);
+        if (!fileSystem.File.Exists(targetPath))
+        {
+            return ManifestOperationResult<IReadOnlyList<PackContentFinding>>.Success([]);
+        }
+
+        try
+        {
+            return ManifestOperationResult<IReadOnlyList<PackContentFinding>>.Success(
+                PackContentScanner.Scan(
+                    managedFile.TargetPath,
+                    fileSystem.File.ReadAllBytes(targetPath)
+                )
+            );
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return ManifestOperationResult<IReadOnlyList<PackContentFinding>>.Failure(
+                $"Unable to read managed target '{managedFile.TargetPath}' during audit: {exception.Message}"
+            );
+        }
     }
 
     private (AuditReport.ExternalFile? File, string? Error) CreateExternalFile(

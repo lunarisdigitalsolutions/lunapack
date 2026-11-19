@@ -1,3 +1,4 @@
+using Lunapack.Cli.Packs.ContentScreening;
 using Lunapack.Cli.Project;
 
 namespace Lunapack.Cli.Audit;
@@ -5,7 +6,8 @@ namespace Lunapack.Cli.Audit;
 internal sealed record AuditReport(
     IReadOnlyList<ProjectLockFile.ResolvedPack> Packs,
     IReadOnlyList<AuditReport.ExternalSource> ExternalSources,
-    IReadOnlyList<AuditReport.ExternalFile> ExternalFiles
+    IReadOnlyList<AuditReport.ExternalFile> ExternalFiles,
+    IReadOnlyList<PackContentFinding> HiddenCharacterFindings
 )
 {
     internal sealed record ExternalSource(

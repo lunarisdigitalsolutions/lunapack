@@ -321,11 +321,6 @@ internal sealed class CliApplication(
             console
         );
         var nextStepAdvisor = new NextStepAdvisor(fileSystem, projectStateStore);
-        var prerequisiteGuard = new WorkflowPrerequisiteGuard(
-            nextStepAdvisor,
-            nextStepRenderer,
-            console
-        );
         var lifecycleServices = CreateLifecycleServices(
             fileSystem,
             packCatalog,
@@ -343,6 +338,7 @@ internal sealed class CliApplication(
             ociPackSource,
             effectiveGitProcessRunner,
             gitRefResolver,
+            console,
             sourceIgnoreService
         );
         var linkServices = CreateLinkServices(
@@ -367,12 +363,18 @@ internal sealed class CliApplication(
             packUpdatePrompter ?? new ConsolePackUpdatePrompter(console),
             nextStepAdvisor,
             nextStepRenderer,
-            prerequisiteGuard,
+            CreateWorkflowPrerequisiteGuard(nextStepAdvisor, nextStepRenderer, console),
             CreateTrustService(projectStateStore, effectiveUserSettingsStore, console),
             gitRefResolver,
             effectiveGitProcessRunner
         );
     }
+
+    private static WorkflowPrerequisiteGuard CreateWorkflowPrerequisiteGuard(
+        NextStepAdvisor nextStepAdvisor,
+        NextStepRenderer nextStepRenderer,
+        CliConsole console
+    ) => new(nextStepAdvisor, nextStepRenderer, console);
 
     private PackCatalog CreatePackCatalog(
         CliConsole console,
@@ -404,12 +406,15 @@ internal sealed class CliApplication(
 
     private PackAuthoringValidationService CreatePackAuthoringValidationService(
         IGitProcessRunner gitProcessRunner,
-        GitRefResolver gitRefResolver
+        GitRefResolver gitRefResolver,
+        CliConsole console
     ) =>
         new(
+            fileSystem,
             new ExternalSourceRequirementPlanner(gitRefResolver),
             new ExternalSourceMaterializer(fileSystem, gitProcessRunner, gitRefResolver),
-            new PackInstallationPlanner(fileSystem, new PackTemplateRenderer(fileSystem))
+            new PackInstallationPlanner(fileSystem, new PackTemplateRenderer(fileSystem)),
+            console
         );
 
     private PackPublishingService CreatePackPublishingService(
@@ -444,12 +449,14 @@ internal sealed class CliApplication(
         OciPackSource ociPackSource,
         IGitProcessRunner gitProcessRunner,
         GitRefResolver gitRefResolver,
+        CliConsole console,
         ConfiguredSourceIgnoreService sourceIgnoreService
     )
     {
         var authoringValidationService = CreatePackAuthoringValidationService(
             gitProcessRunner,
-            gitRefResolver
+            gitRefResolver,
+            console
         );
         var packPublishingService = CreatePackPublishingService(
             projectStateStore,
