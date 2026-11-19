@@ -2,6 +2,7 @@ using System.CommandLine;
 using System.IO.Abstractions;
 using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.Completions;
+using Lunapack.Cli.Application.Diagnostics;
 using Lunapack.Cli.Application.Guidance;
 using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Audit;
@@ -42,15 +43,32 @@ internal sealed class CliApplication(
     public async Task<int> RunAsync(
         string[] args,
         string projectDirectory,
-        TextWriter? commandOutput = null
+        TextWriter? commandOutput = null,
+        TextWriter? commandError = null
     )
     {
+        var output = commandOutput ?? Console.Out;
+        var error = commandError ?? Console.Error;
+        var routesDiagnosticsToError = CliOutputFormatOption.RoutesDiagnosticsToError(args);
+        var diagnosticConsole = routesDiagnosticsToError
+            ? CreateDiagnosticConsole(error)
+            : ansiConsole;
+        var hasJsonCommand = CliOutputFormatOption.TryGetJsonCommand(args, out var jsonCommand);
+
         if (!CliLogLevelParser.TryParse(args, out var minimumLevel, out var logLevelError))
         {
-            return new CliConsole(ansiConsole, CliLogLevel.Info).Fail(logLevelError);
+            var logLevelExitCode = new CliConsole(diagnosticConsole, CliLogLevel.Info).Fail(
+                logLevelError
+            );
+            if (hasJsonCommand)
+            {
+                CliJsonWriter.WriteFailure(output, jsonCommand);
+            }
+
+            return logLevelExitCode;
         }
 
-        var console = new CliConsole(ansiConsole, minimumLevel);
+        var console = new CliConsole(diagnosticConsole, minimumLevel);
         console.Debug($"Running CLI command in {projectDirectory}");
         var nextStepRenderer = new NextStepRenderer(console);
         using var services = CreateCommandServices(console, nextStepRenderer);
@@ -64,6 +82,19 @@ internal sealed class CliApplication(
             services
         );
         var parseResult = rootCommand.Parse(args);
+        var invocationConfiguration = CreateInvocationConfiguration(output, error);
+        if (routesDiagnosticsToError && parseResult.Errors.Count > 0)
+        {
+            var parseConfiguration = new InvocationConfiguration { Output = error, Error = error };
+            var parseExitCode = await parseResult.InvokeAsync(parseConfiguration);
+            if (hasJsonCommand)
+            {
+                CliJsonWriter.WriteFailure(output, jsonCommand);
+            }
+
+            return parseExitCode;
+        }
+
         var preferenceError = await ApplyPreferencesAsync(
             parseResult,
             projectDirectory,
@@ -74,14 +105,15 @@ internal sealed class CliApplication(
         );
         if (preferenceError is not null)
         {
-            return console.Fail(preferenceError);
+            var preferenceExitCode = console.Fail(preferenceError);
+            if (hasJsonCommand)
+            {
+                CliJsonWriter.WriteFailure(output, jsonCommand);
+            }
+
+            return preferenceExitCode;
         }
 
-        var invocationConfiguration = new InvocationConfiguration
-        {
-            Output = commandOutput ?? Console.Out,
-            Error = Console.Error,
-        };
         if (args.Length == 0)
         {
             await rootCommand.Parse(["--help"]).InvokeAsync(invocationConfiguration);
@@ -92,6 +124,25 @@ internal sealed class CliApplication(
         console.Debug($"CLI command completed with exit code {exitCode}");
         return exitCode;
     }
+
+    private static IAnsiConsole CreateDiagnosticConsole(TextWriter output)
+    {
+        var console = AnsiConsole.Create(
+            new AnsiConsoleSettings
+            {
+                Ansi = AnsiSupport.No,
+                ColorSystem = ColorSystemSupport.NoColors,
+                Out = new AnsiConsoleOutput(output),
+            }
+        );
+        console.Profile.Capabilities.Interactive = false;
+        return console;
+    }
+
+    private static InvocationConfiguration CreateInvocationConfiguration(
+        TextWriter output,
+        TextWriter error
+    ) => new() { Output = output, Error = error };
 
     private static async Task<string?> ApplyPreferencesAsync(
         ParseResult parseResult,

@@ -39,7 +39,7 @@ public sealed class CliHelpDocumentationTests
         ),
         new("discover", null, ["--versions", "-v", "--allow-draft", "--only-composites"]),
         new("search", "<term>", ["--versions", "-v", "--allow-draft", "--only-composites"]),
-        new("validate", "<pack-reference>"),
+        new("validate", "<pack-reference>", ["--format"]),
         new("inspect", "<pack-reference>"),
         new(
             "pack add hook script command",
@@ -87,7 +87,7 @@ public sealed class CliHelpDocumentationTests
             ]
         ),
         new("uninstall", "<pack-reference> [<pack-reference>...]"),
-        new("outdated"),
+        new("outdated", null, ["--offline", "--format"]),
         new(
             "update",
             "[<pack-reference>...]",
@@ -112,7 +112,7 @@ public sealed class CliHelpDocumentationTests
             ]
         ),
         new("mv", "<source> <target>", ["--save-remap"]),
-        new("audit"),
+        new("audit", null, ["--format"]),
     ];
 
     [Test]
