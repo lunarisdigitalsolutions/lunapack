@@ -36,6 +36,8 @@ internal sealed record PackInstallationRequest(
 
     public bool SaveRemapping { get; init; }
 
+    public bool RemoveModified { get; init; }
+
     public static ManifestOperationResult<PackInstallationRequest> Create(
         IFileSystem fileSystem,
         string projectDirectory,

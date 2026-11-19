@@ -30,6 +30,7 @@ internal sealed class UpdatePackCommandHandler(
         var packReferenceArgument = CreatePackReferenceArgument(completionProvider);
         var promptOption = CreatePromptOption();
         var dryRunOption = CreateDryRunOption();
+        var removeModifiedOption = CreateRemoveModifiedOption();
         var noFileChangeOutputOption = CreateNoFileChangeOutputOption();
         var acceptSourcesOption = CreateAcceptSourcesOption();
         var promptParametersOption = CreatePromptParametersOption();
@@ -42,6 +43,7 @@ internal sealed class UpdatePackCommandHandler(
             packReferenceArgument,
             promptOption,
             dryRunOption,
+            removeModifiedOption,
             noFileChangeOutputOption,
             acceptSourcesOption,
             promptParametersOption,
@@ -58,6 +60,7 @@ internal sealed class UpdatePackCommandHandler(
                 packReferenceArgument,
                 promptOption,
                 dryRunOption,
+                removeModifiedOption,
                 noFileChangeOutputOption,
                 acceptSourcesOption,
                 promptParametersOption,
@@ -103,6 +106,7 @@ internal sealed class UpdatePackCommandHandler(
         Argument<string[]> packReferenceArgument,
         Option<bool> promptOption,
         Option<bool> dryRunOption,
+        Option<bool> removeModifiedOption,
         Option<bool> noFileChangeOutputOption,
         Option<bool> acceptSourcesOption,
         Option<bool> promptParametersOption,
@@ -157,7 +161,8 @@ internal sealed class UpdatePackCommandHandler(
             skipVariableOption,
             remapDirectoryOption,
             remapFileOption,
-            saveRemapOption
+            saveRemapOption,
+            removeModifiedOption
         );
         var targetRemapping = CreateTargetRemapping(
             workspaceDirectory,
@@ -316,7 +321,9 @@ internal sealed class UpdatePackCommandHandler(
                 workspaceDirectory,
                 referenceValue,
                 targetRemapping,
-                updateOptions.SaveRemapping
+                updateOptions.SaveRemapping,
+                dryRun,
+                updateOptions.RemoveModified
             );
             if (linkExitCode is not null)
             {
@@ -372,6 +379,12 @@ internal sealed class UpdatePackCommandHandler(
 
     private static Option<bool> CreateDryRunOption() =>
         new("--dry-run", "-D") { Description = "Plan updates without modifying files or state." };
+
+    private static Option<bool> CreateRemoveModifiedOption() =>
+        new("--remove-modified")
+        {
+            Description = "Delete locally modified managed files no longer declared by a pack.",
+        };
 
     private static Option<bool> CreateNoFileChangeOutputOption() =>
         new("--no-file-change-output")
@@ -602,7 +615,8 @@ internal sealed class UpdatePackCommandHandler(
         Option<string[]> skipVariableOption,
         Option<string[]> remapDirectoryOption,
         Option<string[]> remapFileOption,
-        Option<bool> saveRemapOption
+        Option<bool> saveRemapOption,
+        Option<bool> removeModifiedOption
     ) =>
         new()
         {
@@ -612,6 +626,7 @@ internal sealed class UpdatePackCommandHandler(
             DirectoryRemappings = parseResult.GetValue(remapDirectoryOption) ?? [],
             FileRemappings = parseResult.GetValue(remapFileOption) ?? [],
             SaveRemapping = parseResult.GetValue(saveRemapOption),
+            RemoveModified = parseResult.GetValue(removeModifiedOption),
         };
 
     private static ManifestOperationResult<IReadOnlyList<PackReference>> ParseReferences(

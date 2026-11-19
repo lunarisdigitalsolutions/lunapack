@@ -308,8 +308,8 @@ Dry runs group release selection, external sources, managed-file changes, and
 lifecycle work into labeled sections with ASCII action prefixes. Lifecycle
 script rows identify whether policy, `--scripts`, persisted trust, or interactive
 confirmation determines consent. Already locked source identities are not
-repeated as lifecycle actions. Successful installs and updates list each
-created, copied, replaced, merged, skipped, or deleted managed file by default.
+repeated as lifecycle actions. Successful installs and updates list each created, copied, replaced, merged,
+skipped, preserved, or deleted managed file by default.
 When the selected pack ID and version are available from multiple configured
 sources, install and update output identifies the selected source name and type.
 Pass `--no-file-change-output` to either command to suppress that success output;
@@ -333,8 +333,8 @@ effective target.
 `update` accepts `--dry-run` (`-D`), repeatable `--parameter`,
 `--prompt-parameters`, `--skip-parameters`, `--no-variables` (`-nv`), repeatable
 `--skip-variable` (`-sv`), repeatable `--remap-directory` and `--remap-file`,
-and `--save-remap`; update-all also accepts `--prompt` (`-p`). Unlike install,
-update reserves `-p` for update selection, so parameter values require the long
+`--save-remap`, and `--remove-modified`; update-all also accepts `--prompt`
+(`-p`). Unlike install, update reserves `-p` for update selection, so parameter values require the long
 `--parameter` form. Install and
 update dry runs prompt for every configurable parameter on an active graph path
 before planning. Add `--skip-parameters` to a dry run for noninteractive
@@ -351,6 +351,13 @@ relocate matching managed targets during that update. `--save-remap` persists
 provided mappings on that installed root and requires at least one remapping.
 Update keeps the installed destination and ownership, so `--destination` and
 `--adopt-existing` remain install-only.
+When an updated graph no longer declares a managed target, unchanged targets
+are deleted and modified targets are preserved by default, warned about, and
+removed from lock ownership. `--remove-modified` explicitly deletes those
+modified obsolete targets. It never overrides a strategy for a target still
+declared by the new graph, and named link updates reject the option. Dry runs
+label both preservation and forced deletion. Luna aborts the transaction if a
+target changes after planning.
 Both install and update accept `--accept-sources` for conflict-free proposed
 source additions. `install`, `update`, and `uninstall` accept
 `--scripts <prompt|run|skip>`; `prompt` is the default and requires effective
@@ -359,6 +366,8 @@ to no. Use `--skip-instructions` to suppress instruction loading and display
 without changing script consent behavior. Uninstall also accepts repeatable
 `--parameter` (`-p`), `--no-variables` (`-nv`), and repeatable
 `--skip-variable` (`-sv`) inputs.
+`--dry-run` and `--remove-modified` are pack-update options. Named link updates
+reject either option before changing files or state.
 Repeat `--parameter <name>=<value>` for each selected value of a multi-select
 enum. Repeated scalar names and duplicate or unknown selections are rejected.
 Interactive sessions show one prepared instruction step at a time and wait for

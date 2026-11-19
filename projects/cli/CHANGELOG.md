@@ -9,6 +9,9 @@ Update this section before creating a release tag.
 
 ### Fixed
 
+- Pack and link updates now preserve locally modified managed targets removed
+  from their next selection and warn that the files are no longer managed.
+  Pack updates support explicit deletion with `--remove-modified`.
 - Git links now fetch selected files missing from cached content using the
   resolved commit.
 

@@ -9,6 +9,11 @@ internal static class ProjectPath
 
     public static string? NormalizeOptional(string? path) => path?.Replace('\\', '/');
 
+    public static StringComparer ProjectRelativePathComparer(IFileSystem fileSystem) =>
+        fileSystem.Path.DirectorySeparatorChar == '\\' || OperatingSystem.IsMacOS()
+            ? StringComparer.OrdinalIgnoreCase
+            : StringComparer.Ordinal;
+
     public static ManifestOperationResult<string> NormalizeProjectRelativePath(
         IFileSystem fileSystem,
         string projectDirectory,

@@ -51,12 +51,24 @@ internal sealed class LinkCommandDispatcher(
         string projectDirectory,
         string name,
         ManagedFileTargetRemapping targetRemapping,
-        bool saveRemapping
+        bool saveRemapping,
+        bool dryRun,
+        bool removeModified
     )
     {
         if (!await IsConfiguredLinkAsync(projectDirectory, name))
         {
             return null;
+        }
+
+        if (dryRun)
+        {
+            return console.Fail("--dry-run is not available for named link updates.");
+        }
+
+        if (removeModified)
+        {
+            return console.Fail("--remove-modified is not available for named link updates.");
         }
 
         var exitCode = await linkLifecycleService.UpdateAsync(

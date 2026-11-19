@@ -24,7 +24,8 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
         string projectDirectory,
         ProjectLockFile previousLockFile,
         PackInstallationPlan installationPlan,
-        bool removeUnplannedManagedFiles = true
+        bool removeUnplannedManagedFiles = true,
+        bool removeModified = false
     )
     {
         var previousTargets = CreatePreviousTargetMap(previousLockFile);
@@ -36,7 +37,7 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
         }
 
         var plannedTargets = CreatePlannedTargetMap(installationPlan);
-        if (plannedTargets.Value is not { } plannedTargetMap)
+        if (plannedTargets.Value is null)
         {
             return ManifestOperationResult<PackUpdatePlan>.Failure(
                 plannedTargets.Error ?? "Unable to read planned target ownership."
@@ -55,10 +56,10 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
             projectDirectory,
             previousTargetMap,
             installationPlan.ManagedFiles,
-            plannedTargetMap,
             installationPlan.IgnoredDeclaredTargets,
             commandRemappedTargets,
-            removeUnplannedManagedFiles
+            removeUnplannedManagedFiles,
+            removeModified
         );
         if (updateActions.Value is not { } actions)
         {
@@ -88,6 +89,14 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
         {
             var declaredTarget = ProjectPath.Normalize(managedFile.DeclaredTargetPath);
             var key = new PackTargetKey(managedFile.Pack.Manifest.Id, declaredTarget);
+            if (
+                remappings.TryGetValue(key, out var configuredRemapping)
+                && configuredRemapping.Origin == ManagedFileRemappingOrigin.Command
+            )
+            {
+                continue;
+            }
+
             if (!previousTargets.TryGetValue(key, out var previousTarget))
             {
                 continue;
@@ -120,14 +129,16 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
         string projectDirectory,
         Dictionary<PackTargetKey, PreviousManagedTarget> previousTargetMap,
         IReadOnlyList<PlannedManagedFile> plannedManagedFiles,
-        Dictionary<PackTargetKey, PlannedManagedFile> plannedTargetMap,
         IReadOnlySet<string> ignoredDeclaredTargets,
         IReadOnlySet<PackTargetKey> commandRemappedTargets,
-        bool removeUnplannedManagedFiles
+        bool removeUnplannedManagedFiles,
+        bool removeModified
     )
     {
         var actions = new List<PlannedPackUpdateAction>();
-        var plannedResultingContents = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        var plannedResultingContents = new Dictionary<string, byte[]>(
+            ProjectPath.ProjectRelativePathComparer(fileSystem)
+        );
 
         var plannedUpdates = PlanManagedFileUpdates(
             projectDirectory,
@@ -146,15 +157,21 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
 
         if (removeUnplannedManagedFiles)
         {
-            PlanManagedFileRemovals(
+            var plannedRemovals = PlanManagedFileRemovals(
                 projectDirectory,
                 previousTargetMap,
                 plannedManagedFiles,
-                plannedTargetMap,
                 ignoredDeclaredTargets,
                 commandRemappedTargets,
-                actions
+                actions,
+                removeModified
             );
+            if (!plannedRemovals.IsSuccess)
+            {
+                return ManifestOperationResult<List<PlannedPackUpdateAction>>.Failure(
+                    plannedRemovals.Error ?? "Unable to plan managed-file removals."
+                );
+            }
         }
 
         return ManifestOperationResult<List<PlannedPackUpdateAction>>.Success(actions);
@@ -210,7 +227,19 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
             previousTarget,
             commandRemappedTargets.Contains(key)
         );
-        var targetPath = ProjectPath.Normalize(effectiveManagedFile.TargetPathRelativeToProject);
+        var normalizedTargetPath = ProjectPath.NormalizeProjectRelativePath(
+            fileSystem,
+            projectDirectory,
+            effectiveManagedFile.TargetPathRelativeToProject
+        );
+        if (normalizedTargetPath.Value is not { } targetPath)
+        {
+            return ManifestOperationResult<bool>.Failure(
+                normalizedTargetPath.Error
+                    ?? $"Invalid managed target '{effectiveManagedFile.TargetPathRelativeToProject}'."
+            );
+        }
+
         if (!plannedResultingContents.TryGetValue(targetPath, out var targetContents))
         {
             targetContents = fileSystem.File.Exists(effectiveManagedFile.TargetPath)
@@ -218,8 +247,18 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
                 : null;
         }
 
+        var relocation = TargetWasRelocated(projectDirectory, previousTarget, targetPath);
+        if (!relocation.IsSuccess)
+        {
+            return ManifestOperationResult<bool>.Failure(
+                relocation.Error ?? "Unable to compare managed target paths."
+            );
+        }
+        var targetWasRelocated = relocation.Value;
+
         var managedFileDoesNotRequireUpdate =
             previousTarget is not null
+            && !targetWasRelocated
             && targetContents is not null
             && string.Equals(
                 ComputeSha256(managedFile.Contents),
@@ -252,63 +291,274 @@ internal sealed class PackUpdatePlanner(IFileSystem fileSystem)
         return ManifestOperationResult<bool>.Success(true);
     }
 
-    private void PlanManagedFileRemovals(
+    private ManifestOperationResult<bool> TargetWasRelocated(
+        string projectDirectory,
+        PreviousManagedTarget? previousTarget,
+        string targetPath
+    )
+    {
+        if (previousTarget is null)
+        {
+            return ManifestOperationResult<bool>.Success(false);
+        }
+
+        var previousTargetPath = ProjectPath.NormalizeProjectRelativePath(
+            fileSystem,
+            projectDirectory,
+            previousTarget.ManagedFile.TargetPath
+        );
+        return previousTargetPath.Value is { } normalizedPreviousTargetPath
+            ? ManifestOperationResult<bool>.Success(
+                !ProjectPath
+                    .ProjectRelativePathComparer(fileSystem)
+                    .Equals(normalizedPreviousTargetPath, targetPath)
+            )
+            : ManifestOperationResult<bool>.Failure(
+                previousTargetPath.Error
+                    ?? $"Invalid locked managed target '{previousTarget.ManagedFile.TargetPath}'."
+            );
+    }
+
+    private ManifestOperationResult<bool> PlanManagedFileRemovals(
         string projectDirectory,
         Dictionary<PackTargetKey, PreviousManagedTarget> previousTargetMap,
         IReadOnlyList<PlannedManagedFile> plannedManagedFiles,
-        Dictionary<PackTargetKey, PlannedManagedFile> plannedTargetMap,
         IReadOnlySet<string> ignoredDeclaredTargets,
         IReadOnlySet<PackTargetKey> commandRemappedTargets,
-        List<PlannedPackUpdateAction> actions
+        List<PlannedPackUpdateAction> actions,
+        bool removeModified
     )
     {
-        var plannedTargetPaths = plannedManagedFiles
-            .Select(managedFile => ProjectPath.Normalize(managedFile.TargetPathRelativeToProject))
-            .ToHashSet(StringComparer.Ordinal);
-        foreach (var (key, previousTarget) in previousTargetMap)
+        var plannedTargets = CreatePlannedTargetPathMap(
+            projectDirectory,
+            previousTargetMap,
+            plannedManagedFiles,
+            commandRemappedTargets
+        );
+        if (plannedTargets.Value is not { } plannedEffectiveTargets)
         {
-            var plannedTargetRetainsPreviousPath =
-                plannedTargetMap.TryGetValue(key, out var plannedTarget)
-                && (
-                    !commandRemappedTargets.Contains(key)
-                    || string.Equals(
-                        ProjectPath.Normalize(plannedTarget.TargetPathRelativeToProject),
-                        ProjectPath.Normalize(previousTarget.ManagedFile.TargetPath),
-                        StringComparison.Ordinal
+            return ManifestOperationResult<bool>.Failure(
+                plannedTargets.Error ?? "Unable to normalize planned managed targets."
+            );
+        }
+
+        var previousTargets = CreatePreviousTargetPathGroups(projectDirectory, previousTargetMap);
+        if (previousTargets.Value is not { } previousTargetsByPath)
+        {
+            return ManifestOperationResult<bool>.Failure(
+                previousTargets.Error ?? "Unable to normalize previous managed targets."
+            );
+        }
+
+        var plannedTargetPaths = plannedEffectiveTargets.Values.ToHashSet(
+            ProjectPath.ProjectRelativePathComparer(fileSystem)
+        );
+        foreach (
+            var previousTargetsForPath in previousTargetsByPath.OrderBy(
+                entry => entry.Key,
+                StringComparer.Ordinal
+            )
+        )
+        {
+            if (
+                previousTargetsForPath.Value.Any(entry =>
+                    TargetIsStillPlannedOrIgnored(
+                        entry.Key,
+                        previousTargetsForPath.Key,
+                        plannedEffectiveTargets,
+                        plannedTargetPaths,
+                        ignoredDeclaredTargets,
+                        commandRemappedTargets
                     )
-                );
-            var targetIsStillPlannedOrIgnored =
-                plannedTargetRetainsPreviousPath
-                || plannedTargetPaths.Contains(
-                    ProjectPath.Normalize(previousTarget.ManagedFile.TargetPath)
                 )
-                || ignoredDeclaredTargets.Contains(key.TargetPath);
-            if (targetIsStillPlannedOrIgnored)
+            )
             {
                 continue;
             }
 
-            actions.Add(
-                new DeleteManagedFileUpdateAction(
-                    new ManagedRootOwner(
-                        ManagedRootKind.Pack,
-                        previousTarget.Pack.Id,
-                        previousTarget.Pack.Version
-                    ),
-                    new ManagedRootFile(
-                        previousTarget.Pack.PackPath,
-                        previousTarget.ManagedFile.DeclaredTargetPath
-                            ?? previousTarget.ManagedFile.TargetPath,
-                        previousTarget.ManagedFile.TargetPath,
-                        previousTarget.ManagedFile.Sha256
-                    ),
-                    fileSystem.Path.GetFullPath(
-                        previousTarget.ManagedFile.TargetPath,
-                        projectDirectory
-                    )
+            var plannedRemoval = PlanManagedFileRemoval(
+                projectDirectory,
+                previousTargetsForPath.Key,
+                previousTargetsForPath.Value,
+                actions,
+                removeModified
+            );
+            if (!plannedRemoval.IsSuccess)
+            {
+                return ManifestOperationResult<bool>.Failure(
+                    plannedRemoval.Error ?? "Unable to plan managed-file removal."
+                );
+            }
+        }
+
+        return ManifestOperationResult<bool>.Success(true);
+    }
+
+    private ManifestOperationResult<bool> PlanManagedFileRemoval(
+        string projectDirectory,
+        string previousTargetPath,
+        IReadOnlyList<KeyValuePair<PackTargetKey, PreviousManagedTarget>> previousTargets,
+        List<PlannedPackUpdateAction> actions,
+        bool removeModified
+    )
+    {
+        var previousTarget = previousTargets[0].Value;
+        var targetPath = fileSystem.Path.GetFullPath(previousTargetPath, projectDirectory);
+        try
+        {
+            ProjectMutationPathSecurity.EnsureNoAliases(fileSystem, projectDirectory, targetPath);
+            if (!fileSystem.File.Exists(targetPath))
+            {
+                return ManifestOperationResult<bool>.Success(true);
+            }
+
+            var plannedTargetSha256 = ComputeSha256(fileSystem.File.ReadAllBytes(targetPath));
+            var wasModified = previousTargets.Any(entry =>
+                !string.Equals(
+                    entry.Value.ManagedFile.Sha256,
+                    plannedTargetSha256,
+                    StringComparison.OrdinalIgnoreCase
                 )
             );
+            var previousOwner = new ManagedRootOwner(
+                ManagedRootKind.Pack,
+                previousTarget.Pack.Id,
+                previousTarget.Pack.Version
+            );
+            var previousFile = new ManagedRootFile(
+                previousTarget.Pack.PackPath,
+                previousTarget.ManagedFile.DeclaredTargetPath
+                    ?? previousTarget.ManagedFile.TargetPath,
+                previousTargetPath,
+                previousTarget.ManagedFile.Sha256
+            );
+            if (wasModified && !removeModified)
+            {
+                actions.Add(
+                    new PreserveManagedFileUpdateAction(previousOwner, previousFile, targetPath)
+                );
+                return ManifestOperationResult<bool>.Success(true);
+            }
+
+            actions.Add(
+                new DeleteManagedFileUpdateAction(
+                    previousOwner,
+                    previousFile,
+                    targetPath,
+                    plannedTargetSha256,
+                    wasModified
+                )
+            );
+            return ManifestOperationResult<bool>.Success(true);
         }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return ManifestOperationResult<bool>.Failure(
+                $"Unable to inspect obsolete managed target '{previousTargetPath}': {exception.Message}"
+            );
+        }
+    }
+
+    private static bool TargetIsStillPlannedOrIgnored(
+        PackTargetKey key,
+        string previousTargetPath,
+        IReadOnlyDictionary<PackTargetKey, string> plannedEffectiveTargets,
+        HashSet<string> plannedTargetPaths,
+        IReadOnlySet<string> ignoredDeclaredTargets,
+        IReadOnlySet<PackTargetKey> commandRemappedTargets
+    )
+    {
+        var plannedTargetRetainsPreviousPath =
+            plannedEffectiveTargets.TryGetValue(key, out var plannedTargetPath)
+            && (
+                !commandRemappedTargets.Contains(key)
+                || plannedTargetPaths.Comparer.Equals(plannedTargetPath, previousTargetPath)
+            );
+        return plannedTargetRetainsPreviousPath
+            || plannedTargetPaths.Contains(previousTargetPath)
+            || ignoredDeclaredTargets.Contains(key.TargetPath);
+    }
+
+    private ManifestOperationResult<Dictionary<PackTargetKey, string>> CreatePlannedTargetPathMap(
+        string projectDirectory,
+        IReadOnlyDictionary<PackTargetKey, PreviousManagedTarget> previousTargets,
+        IReadOnlyList<PlannedManagedFile> plannedManagedFiles,
+        IReadOnlySet<PackTargetKey> commandRemappedTargets
+    )
+    {
+        var targets = new Dictionary<PackTargetKey, string>();
+        foreach (var managedFile in plannedManagedFiles)
+        {
+            var key = new PackTargetKey(
+                managedFile.Pack.Manifest.Id,
+                ProjectPath.Normalize(managedFile.DeclaredTargetPath)
+            );
+            previousTargets.TryGetValue(key, out var previousTarget);
+            var effectiveManagedFile = GetEffectiveManagedFile(
+                projectDirectory,
+                managedFile,
+                previousTarget,
+                commandRemappedTargets.Contains(key)
+            );
+            var normalized = ProjectPath.NormalizeProjectRelativePath(
+                fileSystem,
+                projectDirectory,
+                effectiveManagedFile.TargetPathRelativeToProject
+            );
+            if (normalized.Value is not { } targetPath)
+            {
+                return ManifestOperationResult<Dictionary<PackTargetKey, string>>.Failure(
+                    normalized.Error
+                        ?? $"Invalid managed target '{managedFile.TargetPathRelativeToProject}'."
+                );
+            }
+
+            targets.Add(key, targetPath);
+        }
+
+        return ManifestOperationResult<Dictionary<PackTargetKey, string>>.Success(targets);
+    }
+
+    private ManifestOperationResult<
+        Dictionary<string, List<KeyValuePair<PackTargetKey, PreviousManagedTarget>>>
+    > CreatePreviousTargetPathGroups(
+        string projectDirectory,
+        IReadOnlyDictionary<PackTargetKey, PreviousManagedTarget> previousTargets
+    )
+    {
+        var groups = new Dictionary<
+            string,
+            List<KeyValuePair<PackTargetKey, PreviousManagedTarget>>
+        >(ProjectPath.ProjectRelativePathComparer(fileSystem));
+        foreach (var entry in previousTargets)
+        {
+            var normalized = ProjectPath.NormalizeProjectRelativePath(
+                fileSystem,
+                projectDirectory,
+                entry.Value.ManagedFile.TargetPath
+            );
+            if (normalized.Value is not { } targetPath)
+            {
+                return ManifestOperationResult<
+                    Dictionary<string, List<KeyValuePair<PackTargetKey, PreviousManagedTarget>>>
+                >.Failure(
+                    normalized.Error
+                        ?? $"Invalid locked managed target '{entry.Value.ManagedFile.TargetPath}'."
+                );
+            }
+
+            if (!groups.TryGetValue(targetPath, out var group))
+            {
+                group = [];
+                groups.Add(targetPath, group);
+            }
+
+            group.Add(entry);
+        }
+
+        return ManifestOperationResult<
+            Dictionary<string, List<KeyValuePair<PackTargetKey, PreviousManagedTarget>>>
+        >.Success(groups);
     }
 
     private ManifestOperationResult<PlannedPackUpdateAction> CreateUpdateAction(
