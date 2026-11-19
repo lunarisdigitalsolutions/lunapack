@@ -17,11 +17,11 @@
 
 ## 2. Integration validation
 
-- [ ] 2.1 Build the Release CLI solution and run all CLI test suites; verify
+- [x] 2.1 Build the Release CLI solution and run all CLI test suites; verify
   `dotnet build projects/cli/src/Lunapack.slnx --configuration Release --no-restore`
   and `dotnet test --solution projects/cli/src/Lunapack.slnx --configuration Release --no-build --no-restore`
   pass.
-- [ ] 2.2 Run strict validation with
+- [x] 2.2 Run strict validation with
   `openspec validate strict-managed-file-integrity-audit --type change --strict`;
   verify it reports no errors or warnings.
 
