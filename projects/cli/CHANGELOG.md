@@ -7,6 +7,13 @@ pack-package, documentation, CI, build, test, and release-process changes.
 
 Update this section before creating a release tag.
 
+### Lifecycle Hooks
+
+- Luna now records bounded per-user lifecycle script attempt history and adds
+  `luna hooks history` for read-only inspection of recent commands, authorization
+  sources, durations, and outcomes. History persistence failures warn without
+  changing script results or rollback behavior.
+
 ### Fixed
 
 - Git links now fetch selected files missing from cached content using the

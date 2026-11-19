@@ -20,11 +20,13 @@ internal sealed class CliConsole(IAnsiConsole ansiConsole, CliLogLevel minimumLe
 
     public void Info(string message) => Write(CliLogLevel.Info, message);
 
+    public void InfoLines(string message) => WriteLines(CliLogLevel.Info, message);
+
     public void MarkupInfo(string markup)
     {
         if (IsEnabled(CliLogLevel.Info))
         {
-            ansiConsole.MarkupLine(markup);
+            ansiConsole.MarkupLine(TerminalText.EncodeControls(markup));
         }
     }
 
@@ -34,6 +36,8 @@ internal sealed class CliConsole(IAnsiConsole ansiConsole, CliLogLevel minimumLe
 
     public void Warning(string message) => Write(CliLogLevel.Warning, message);
 
+    public void WarningLines(string message) => WriteLines(CliLogLevel.Warning, message);
+
     public void Error(string message) => Write(CliLogLevel.Error, message);
 
     public void Render(IRenderable renderable) => ansiConsole.Write(renderable);
@@ -42,7 +46,7 @@ internal sealed class CliConsole(IAnsiConsole ansiConsole, CliLogLevel minimumLe
     {
         var defaultChoice = defaultValue ? "Y" : "N";
         ansiConsole.Markup(
-            $"{Markup.Escape(prompt)} [[{(defaultValue ? "Y/n" : "y/N")}]] ({defaultChoice}) "
+            $"{Markup.Escape(TerminalText.EncodeControls(prompt))} [[{(defaultValue ? "Y/n" : "y/N")}]] ({defaultChoice}) "
         );
         var response = ansiConsole.Input.ReadKey(intercept: false);
         ansiConsole.WriteLine();
@@ -50,6 +54,20 @@ internal sealed class CliConsole(IAnsiConsole ansiConsole, CliLogLevel minimumLe
         return response is null || response.Value.Key == ConsoleKey.Enter
             ? defaultValue
             : response.Value.KeyChar is 'y' or 'Y';
+    }
+
+    public bool ConfirmWithDetails(
+        string prompt,
+        IEnumerable<string> details,
+        bool defaultValue = true
+    )
+    {
+        foreach (var detail in details)
+        {
+            ansiConsole.WriteLine(TerminalText.EncodeControls(detail));
+        }
+
+        return Confirm(prompt, defaultValue);
     }
 
     public bool WaitForContinue()
@@ -117,7 +135,7 @@ internal sealed class CliConsole(IAnsiConsole ansiConsole, CliLogLevel minimumLe
 
     public string PromptText(string prompt, string? defaultValue = null, bool allowEmpty = false)
     {
-        var textPrompt = new TextPrompt<string>(Markup.Escape(prompt));
+        var textPrompt = new TextPrompt<string>(Markup.Escape(TerminalText.EncodeControls(prompt)));
         if (defaultValue is not null)
         {
             textPrompt.DefaultValue(defaultValue);
@@ -132,14 +150,16 @@ internal sealed class CliConsole(IAnsiConsole ansiConsole, CliLogLevel minimumLe
     }
 
     public string PromptSecret(string prompt) =>
-        ansiConsole.Prompt(new TextPrompt<string>(Markup.Escape(prompt)).Secret());
+        ansiConsole.Prompt(
+            new TextPrompt<string>(Markup.Escape(TerminalText.EncodeControls(prompt))).Secret()
+        );
 
     public Task<T> RunWithStatusAsync<T>(string description, Func<Task<T>> action) =>
         IsEnabled(CliLogLevel.Info)
             ? ansiConsole
                 .Status()
                 .Spinner(Spinner.Known.Dots)
-                .StartAsync(description, _ => action())
+                .StartAsync(TerminalText.EncodeControls(description), _ => action())
             : action();
 
     private bool IsEnabled(CliLogLevel level) => level >= minimumLevel;
@@ -165,7 +185,9 @@ internal sealed class CliConsole(IAnsiConsole ansiConsole, CliLogLevel minimumLe
     {
         if (IsEnabled(CliLogLevel.Info))
         {
-            ansiConsole.MarkupLine($"[{style}]{Markup.Escape(message)}[/]");
+            ansiConsole.MarkupLine(
+                $"[{style}]{Markup.Escape(TerminalText.EncodeControls(message))}[/]"
+            );
         }
     }
 
@@ -173,8 +195,10 @@ internal sealed class CliConsole(IAnsiConsole ansiConsole, CliLogLevel minimumLe
     {
         var displayName = parameter.Definition.DisplayName ?? parameter.Id;
         var description = parameter.Definition.Description;
-        var details = description is null ? string.Empty : $"[grey]{Markup.Escape(description)}[/]";
-        return $"[bold]{Markup.Escape(displayName)}[/] ({details})\n";
+        var details = description is null
+            ? string.Empty
+            : $"[grey]{Markup.Escape(TerminalText.EncodeControls(description))}[/]";
+        return $"[bold]{Markup.Escape(TerminalText.EncodeControls(displayName))}[/] ({details})\n";
     }
 
     private void Write(CliLogLevel level, string message)
@@ -186,7 +210,7 @@ internal sealed class CliConsole(IAnsiConsole ansiConsole, CliLogLevel minimumLe
 
         if (level == CliLogLevel.Info)
         {
-            ansiConsole.WriteLine(message);
+            ansiConsole.WriteLine(TerminalText.EncodeControls(message));
             return;
         }
 
@@ -199,7 +223,16 @@ internal sealed class CliConsole(IAnsiConsole ansiConsole, CliLogLevel minimumLe
             _ => throw new InvalidOperationException($"Unsupported log level '{level}'."),
         };
         ansiConsole.MarkupLine(
-            $"[{style}]{level.ToString().ToLowerInvariant()}:[/] {Markup.Escape(message)}"
+            $"[{style}]{level.ToString().ToLowerInvariant()}:[/] {Markup.Escape(TerminalText.EncodeControls(message))}"
         );
+    }
+
+    private void WriteLines(CliLogLevel level, string message)
+    {
+        using var reader = new StringReader(message);
+        while (reader.ReadLine() is { } line)
+        {
+            Write(level, line);
+        }
     }
 }

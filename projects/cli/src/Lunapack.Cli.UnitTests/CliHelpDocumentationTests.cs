@@ -113,6 +113,7 @@ public sealed class CliHelpDocumentationTests
         ),
         new("mv", "<source> <target>", ["--save-remap"]),
         new("audit"),
+        new("hooks history", null, ["--limit"]),
     ];
 
     [Test]

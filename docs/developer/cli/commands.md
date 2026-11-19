@@ -297,6 +297,9 @@ includes the registry reference and verified manifest digest. There are no
 - `luna audit`: Reports resolved packs, dependencies, external alias mappings,
   fingerprints, refs, commits, source and target paths, ownership, digests, and
   drift or local-modification status.
+- `luna hooks history [--limit <count>]`: Shows recent local lifecycle script
+  attempts newest first. It is read-only, displays 20 entries by default, and
+  accepts limits from 1 through 100.
 
 `<pack-reference>` is a pack ID or `<id>@<version>`. When version is omitted,
 commands select the latest available release. `install` accepts `--dry-run`
@@ -359,6 +362,15 @@ to no. Use `--skip-instructions` to suppress instruction loading and display
 without changing script consent behavior. Uninstall also accepts repeatable
 `--parameter` (`-p`), `--no-variables` (`-nv`), and repeatable
 `--skip-variable` (`-sv`) inputs.
+Lifecycle history is stored per user in
+`~/.lunapack/lifecycle-hook-history.jsonl` with at most 100 entries. It records
+script start failures, cancellations, exits, authorization provenance, and
+sanitized arguments, but not instructions, skipped hooks, project paths,
+environment values, or output. `luna hooks history` never creates or changes
+the file. Delete it manually to clear history. Missing history is empty;
+unreadable or corrupt history returns a failure. See
+[Use lifecycle hooks](../lifecycle-hooks.md#inspect-local-script-history) for
+recorded fields and best-effort redaction limitations.
 Repeat `--parameter <name>=<value>` for each selected value of a multi-select
 enum. Repeated scalar names and duplicate or unknown selections are rejected.
 Interactive sessions show one prepared instruction step at a time and wait for

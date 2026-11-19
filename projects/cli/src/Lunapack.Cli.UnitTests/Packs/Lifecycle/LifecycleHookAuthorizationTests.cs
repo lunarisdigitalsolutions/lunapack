@@ -165,9 +165,16 @@ public sealed class LifecycleHookAuthorizationTests
             ScriptExecutionMode.Run,
             [invocation]
         );
+        var runAuthorization = run.RequireValue()
+            .Single()
+            .Script.RequireNotNull()
+            .Authorization.RequireNotNull();
 
         await Assert.That(skipped.RequireValue()).IsEmpty();
         await Assert.That(run.RequireValue()).Count().IsEqualTo(1);
+        await Assert
+            .That(runAuthorization.Kind)
+            .IsEqualTo(LifecycleScriptAuthorizationKind.InvocationRun);
         await Assert.That(confirmer.CallCount).IsEqualTo(0);
     }
 
@@ -519,7 +526,103 @@ public sealed class LifecycleHookAuthorizationTests
         );
 
         await Assert.That(result.RequireValue()).Count().IsEqualTo(1);
+        var authorization = result
+            .RequireValue()
+            .Single()
+            .Script.RequireNotNull()
+            .Authorization.RequireNotNull();
+        await Assert
+            .That(authorization.Kind)
+            .IsEqualTo(LifecycleScriptAuthorizationKind.PersistedTrust);
+        await Assert.That(authorization.TrustScopes).IsEquivalentTo([TrustScope.GlobalUser]);
         await Assert.That(confirmer.CallCount).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task AuthorizeAsync_WhenMultipleTrustScopesMatch_PreservesEveryScope()
+    {
+        using var workspace = new TestWorkspace();
+        var fileSystem = new FileSystem();
+        var settingsStore = new UserSettingsStore(fileSystem, workspace.Path);
+        var projectKey = settingsStore.GetProjectKey(workspace.Path).RequireValue();
+        var invocation = CreateInvocation(workspace.Path, Environment.ProcessPath.RequireNotNull());
+        var saved = await settingsStore.SaveAsync(
+            new UserSettings
+            {
+                Global = new UserTrust { Sources = [invocation.Pack.SourceIdentity] },
+                Projects =
+                {
+                    [projectKey] = new LocalProjectTrust
+                    {
+                        Sources = [invocation.Pack.SourceIdentity],
+                        Acknowledgements = new TrustAcknowledgements
+                        {
+                            Sources = [invocation.Pack.SourceIdentity],
+                        },
+                    },
+                },
+            }
+        );
+        var authorizer = new LifecycleHookAuthorizer(
+            settingsStore,
+            new TrustPolicy(fileSystem),
+            new LifecycleCommandResolver(fileSystem),
+            new RecordingConfirmer()
+        );
+        var configuration = CreateConfiguration() with
+        {
+            Trust = new ProjectConfiguration.ProjectTrust { Sources = ["local"] },
+        };
+
+        var result = await authorizer.AuthorizeAsync(
+            workspace.Path,
+            configuration,
+            ScriptExecutionMode.Prompt,
+            [invocation]
+        );
+        var authorization = result
+            .RequireValue()
+            .Single()
+            .Script.RequireNotNull()
+            .Authorization.RequireNotNull();
+
+        await Assert.That(saved.IsSuccess).IsTrue();
+        await Assert
+            .That(authorization.Kind)
+            .IsEqualTo(LifecycleScriptAuthorizationKind.PersistedTrust);
+        await Assert
+            .That(authorization.TrustScopes)
+            .IsEquivalentTo([TrustScope.Project, TrustScope.LocalUser, TrustScope.GlobalUser]);
+    }
+
+    [Test]
+    public async Task AuthorizeAsync_WhenInteractiveConfirmationAccepts_RecordsInteractiveSource()
+    {
+        using var workspace = new TestWorkspace();
+        var fileSystem = new FileSystem();
+        var authorizer = new LifecycleHookAuthorizer(
+            new UserSettingsStore(fileSystem, workspace.Path),
+            new TrustPolicy(fileSystem),
+            new LifecycleCommandResolver(fileSystem),
+            new RecordingConfirmer(accept: true)
+        );
+
+        var result = await authorizer.AuthorizeAsync(
+            workspace.Path,
+            CreateConfiguration(),
+            ScriptExecutionMode.Prompt,
+            [CreateInvocation(workspace.Path, Environment.ProcessPath.RequireNotNull())]
+        );
+        var authorization = result
+            .RequireValue()
+            .Single()
+            .Script.RequireNotNull()
+            .Authorization.RequireNotNull();
+
+        await Assert
+            .That(authorization.Kind)
+            .IsEqualTo(LifecycleScriptAuthorizationKind.InteractiveConfirmation);
+        await Assert.That(authorization.TrustScopes).IsEmpty();
     }
 
     [Test]
@@ -626,14 +729,14 @@ public sealed class LifecycleHookAuthorizationTests
         );
     }
 
-    private sealed class RecordingConfirmer : ILifecycleHookConfirmer
+    private sealed class RecordingConfirmer(bool accept = false) : ILifecycleHookConfirmer
     {
         public int CallCount { get; private set; }
 
         public bool Confirm(ResolvedLifecycleHookInvocation invocation)
         {
             CallCount++;
-            return false;
+            return accept;
         }
     }
 }

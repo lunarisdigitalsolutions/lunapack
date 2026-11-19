@@ -82,8 +82,9 @@ internal static class UserSettingsPathSecurity
     private static void ApplyWindows(string path, bool directory)
     {
         var identity = GetWindowsIdentity();
-        FileSystemSecurity security = directory ? new DirectorySecurity() : new FileSecurity();
-        security.SetOwner(identity);
+        FileSystemSecurity security = directory
+            ? new DirectoryInfo(path).GetAccessControl()
+            : new FileInfo(path).GetAccessControl();
         security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
         var inheritanceFlags = directory
             ? InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit

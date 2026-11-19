@@ -32,6 +32,23 @@ public sealed class ExternalSourcePromptTests
     }
 
     [Test]
+    public async Task ApproveAsync_WhenInfoLoggingIsDisabled_StillRendersSourceDetails()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        ansiConsole.Profile.Capabilities.Interactive = true;
+        ansiConsole.Input.PushKey(ConsoleKey.Enter);
+        var approver = new ConsoleExternalSourceApprover(
+            new CliConsole(ansiConsole, CliLogLevel.Error)
+        );
+
+        var approved = await approver.ApproveAsync([CreateRequirement()], CancellationToken.None);
+
+        await Assert.That(approved).IsTrue();
+        await Assert.That(ansiConsole.Output).Contains("engineering");
+        await Assert.That(ansiConsole.Output).Contains("required by foundation:shared");
+    }
+
+    [Test]
     public async Task PromptAsync_WhenIdentifierProvided_ReturnsTrimmedValueAndWarnsAboutConflict()
     {
         var ansiConsole = new SpectreTestConsole();

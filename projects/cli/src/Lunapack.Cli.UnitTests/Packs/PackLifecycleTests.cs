@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Lunapack.Cli.Catalog;
 using Lunapack.Cli.Packs;
+using Lunapack.Cli.Packs.Lifecycle;
 using Lunapack.Cli.Packs.ManagedFiles;
 using Lunapack.Cli.Packs.Planning;
 using Lunapack.Cli.Project;
@@ -53,6 +54,26 @@ public sealed class PackLifecycleTests
         );
         await Assert.That(lifecycleOutput).IsEqualTo("pre|post");
         await Assert.That(File.Exists(Path.Combine(workspace.Path, ".gitignore"))).IsTrue();
+        var history = (
+            await new LifecycleHookHistoryStore(
+                workspace.FileSystem,
+                workspace.UserSettingsStore.SettingsDirectory
+            ).LoadAsync()
+        ).RequireValue();
+        await Assert
+            .That(history.Select(entry => entry.Event))
+            .IsEquivalentTo(["preInstall", "postInstall"]);
+        await Assert
+            .That(
+                history.All(entry =>
+                    string.Equals(
+                        entry.AuthorizationSource,
+                        "scripts-run",
+                        StringComparison.Ordinal
+                    )
+                )
+            )
+            .IsTrue();
     }
 
     [Test]
@@ -73,6 +94,16 @@ public sealed class PackLifecycleTests
         await Assert.That(exitCode).IsEqualTo(0);
         await Assert.That(File.Exists(Path.Combine(workspace.Path, "lifecycle.txt"))).IsFalse();
         await Assert.That(File.Exists(Path.Combine(workspace.Path, ".gitignore"))).IsTrue();
+        await Assert
+            .That(
+                (
+                    await new LifecycleHookHistoryStore(
+                        workspace.FileSystem,
+                        workspace.UserSettingsStore.SettingsDirectory
+                    ).LoadAsync()
+                ).RequireValue()
+            )
+            .IsEmpty();
     }
 
     [Test]
@@ -250,6 +281,19 @@ public sealed class PackLifecycleTests
         await Assert.That(exitCode).IsEqualTo(1);
         await Assert.That(File.Exists(Path.Combine(workspace.Path, ".gitignore"))).IsFalse();
         await Assert.That(await ReadStateAsync(workspace.Path)).IsEqualTo(initialState);
+        await Assert
+            .That(
+                (
+                    await new LifecycleHookHistoryStore(
+                        workspace.FileSystem,
+                        workspace.UserSettingsStore.SettingsDirectory
+                    ).LoadAsync()
+                )
+                    .RequireValue()
+                    .Single()
+                    .Outcome
+            )
+            .IsEqualTo("failed");
     }
 
     [Test]

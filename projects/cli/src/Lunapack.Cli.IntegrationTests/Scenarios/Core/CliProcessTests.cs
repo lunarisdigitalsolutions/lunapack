@@ -209,6 +209,60 @@ public sealed class CliProcessTests
     }
 
     [Test]
+    public async Task History_WhenScriptRunsThroughCli_DisplaysPersistedAttemptWithoutMutation()
+    {
+        using var workspace = new TestWorkspace();
+        var profilePath = Path.Combine(workspace.Path, "profile");
+        var environment = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["LUNAPACK_USER_PROFILE"] = profilePath,
+        };
+        await CliProcess.InvokeAsync(workspace.Path, environment, "init");
+        var sourcePath = CreateInstructionPackSource(
+            workspace.Path,
+            "example",
+            "id: example\nversion: 1.0.0\nhooks:\n  preInstall:\n    - type: script\n      command: dotnet\n      arguments:\n        - --version\nmanagedFiles:\n  - source: templates/content.txt\n    target: .pack\n",
+            new Dictionary<string, string>(StringComparer.Ordinal)
+        );
+        await CliProcess.InvokeAsync(
+            workspace.Path,
+            environment,
+            "sources",
+            "add",
+            "local",
+            "local",
+            sourcePath
+        );
+
+        var install = await CliProcess.InvokeAsync(
+            workspace.Path,
+            environment,
+            "install",
+            "example",
+            "--scripts",
+            "run"
+        );
+        var historyPath = Path.Combine(profilePath, ".lunapack", "lifecycle-hook-history.jsonl");
+        var beforeRead = await File.ReadAllBytesAsync(historyPath);
+        var history = await CliProcess.InvokeAsync(
+            workspace.Path,
+            environment,
+            "hooks",
+            "history",
+            "--limit",
+            "1"
+        );
+
+        await Assert.That(install.ExitCode).IsEqualTo(0).Because(install.StandardOutput);
+        await Assert.That(history.ExitCode).IsEqualTo(0).Because(history.StandardOutput);
+        await Assert.That(history.StandardOutput).Contains("preInstall  example@1.0.0");
+        await Assert.That(history.StandardOutput).Contains("Authorization: --scripts run");
+        await Assert.That(history.StandardOutput).Contains("\"--version\"");
+        await Assert.That(install.StandardOutput).DoesNotContain("u000d");
+        await Assert.That(await File.ReadAllBytesAsync(historyPath)).IsEquivalentTo(beforeRead);
+    }
+
+    [Test]
     [Arguments("local-user")]
     [Arguments("project")]
     [Arguments("global-user")]
