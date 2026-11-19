@@ -30,7 +30,7 @@
       `docs/developer/cli/commands.md`, `docs/developer/manage-links.md`, and
       `projects/cli/CHANGELOG.md`; verify guidance covers default preservation,
       warning, ownership loss, dry-run, and `--remove-modified`.
-- [x] 3.4 Add ADR-0090 from the repository template and index it; verify the
+- [x] 3.4 Add ADR-0093 from the repository template and index it; verify the
       sequence, status, and index link.
 
 ## 4. Integration validation and review

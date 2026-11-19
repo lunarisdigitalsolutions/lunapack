@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.IO.Abstractions;
+using System.Text;
 using Lunapack.Cli.Application.CommandExecution;
 
 namespace Lunapack.Cli.Application.Paths;
@@ -14,6 +16,16 @@ internal static class ProjectPath
             ? StringComparer.OrdinalIgnoreCase
             : StringComparer.Ordinal;
 
+    public static bool ContainsUnsafePathCharacters(string path) =>
+        path.EnumerateRunes().Any(IsUnsafePathCharacter);
+
+    public static bool IsUnsafePathCharacter(Rune rune) =>
+        Rune.GetUnicodeCategory(rune)
+            is UnicodeCategory.Control
+                or UnicodeCategory.Format
+                or UnicodeCategory.LineSeparator
+                or UnicodeCategory.ParagraphSeparator;
+
     public static ManifestOperationResult<string> NormalizeProjectRelativePath(
         IFileSystem fileSystem,
         string projectDirectory,
@@ -25,6 +37,13 @@ internal static class ProjectPath
         {
             return ManifestOperationResult<string>.Failure(
                 "Path must be a non-empty path relative to the project directory."
+            );
+        }
+
+        if (ContainsUnsafePathCharacters(normalizedPath))
+        {
+            return ManifestOperationResult<string>.Failure(
+                "Path must not contain control or hidden Unicode format characters."
             );
         }
 

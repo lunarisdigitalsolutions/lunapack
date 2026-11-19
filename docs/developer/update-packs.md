@@ -37,9 +37,8 @@ Dry runs group source changes, managed-file actions, and lifecycle actions
 under labeled sections with ASCII action markers. A successful update lists
 managed-file changes by default. Pass `--no-file-change-output` to suppress
 that success list without hiding preservation warnings or the dry-run plan.
-When the selected pack ID
-and version exist in multiple configured sources, both forms identify the
-chosen source by name and type.
+When the selected pack ID and version exist in multiple configured sources,
+both forms identify the chosen source by name and type.
 
 ## Directly installable update roots
 
@@ -81,6 +80,13 @@ target content. Copy strategies may replace, back up, retain, or reject it,
 while merge strategies combine it according to their method. Review the dry
 run instead of assuming local edits are preserved.
 
+Luna screens final text selected for creation or replacement after merge
+planning, before lifecycle hooks or project changes. Unicode bidi controls and
+U+200B block update unless you review the output and add
+`--allow-hidden-characters`. Other format characters remain warnings. The
+override does not suppress retained diagnostics or omission summaries. NUL or
+invalid UTF-8 bytes do not block alone, but recoverable hidden controls do.
+
 When a new pack version stops declaring an owned target, update compares the
 current bytes with every prior lock-file digest for that effective path. An
 unchanged target is deleted. A modified target is preserved by default, reported
@@ -91,11 +97,10 @@ owner still manages the same target, update retains it.
 Use `--dry-run` to review preserved and deleted paths. Pass `--remove-modified`
 only when you intentionally want modified obsolete targets deleted. The option
 applies to pack updates only; it does not affect link updates or override
-strategies for targets still declared by the new graph. Luna
-rechecks the planned bytes immediately before deletion and aborts the
-transaction if a target changed after planning. A project `@ignore` remapping
-also preserves a target while dropping ownership when that is the intended
-migration.
+strategies for targets still declared by the new graph. Luna rechecks the
+planned bytes immediately before deletion and aborts the transaction if a
+target changed after planning. A project `@ignore` remapping also preserves a
+target while dropping ownership when that is the intended migration.
 
 `backup-and-overwrite` moves the current target to the first unused sibling
 name `<target>.1`, `<target>.2`, and so on, then writes new content. Existing

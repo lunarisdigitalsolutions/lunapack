@@ -5,7 +5,7 @@ decision-makers:
   - Lunaris Engineering
 ---
 
-# ADR-0090: Protect Modified Targets Removed by Pack Updates
+# ADR-0093: Protect Modified Targets Removed by Pack Updates
 
 ## Context and Problem Statement
 

@@ -6,6 +6,7 @@ using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Application.Paths;
 using Lunapack.Cli.Catalog;
+using Lunapack.Cli.Packs.ContentScreening;
 using Lunapack.Cli.Packs.ExternalSources;
 using Lunapack.Cli.Packs.Instructions;
 using Lunapack.Cli.Packs.Lifecycle;
@@ -97,6 +98,15 @@ internal sealed class PackLifecycleService(
         await using (preparedInstallation.Materialization)
         await using (preparedInstallation.ExternalMaterialization)
         {
+            var screening = ScreenPlannedContent(
+                preparedInstallation.UpdatePlan,
+                installationRequest.AllowHiddenCharacters
+            );
+            if (!screening.IsSuccess)
+            {
+                return _console.Fail(screening.Error);
+            }
+
             var hooks = await AuthorizeHooksAsync(
                 projectDirectory,
                 preparedInstallation.State,
@@ -154,6 +164,17 @@ internal sealed class PackLifecycleService(
         await using (preparedInstallation.Materialization)
         await using (preparedInstallation.ExternalMaterialization)
         {
+            var screening = ScreenPlannedContent(
+                preparedInstallation.UpdatePlan,
+                installationRequest.AllowHiddenCharacters
+            );
+            if (!screening.IsSuccess)
+            {
+                return ManifestOperationResult<PackInstallDryRunResult>.Failure(
+                    screening.Error ?? PackContentScreeningPolicy.BlockingMessage
+                );
+            }
+
             var lifecycle = await CreateDryRunLifecyclePlanAsync(
                 projectDirectory,
                 preparedInstallation.State,
@@ -836,6 +857,15 @@ internal sealed class PackLifecycleService(
         await using (preparedUpdate.Materialization)
         await using (preparedUpdate.ExternalMaterialization)
         {
+            var screening = ScreenPlannedContent(
+                preparedUpdate.UpdatePlan,
+                updateRequest.AllowHiddenCharacters
+            );
+            if (!screening.IsSuccess)
+            {
+                return _console.Fail(screening.Error);
+            }
+
             var hooks = await AuthorizeHooksAsync(
                 projectDirectory,
                 preparedUpdate.State,
@@ -960,6 +990,17 @@ internal sealed class PackLifecycleService(
         await using (preparedUpdate.Materialization)
         await using (preparedUpdate.ExternalMaterialization)
         {
+            var screening = ScreenPlannedContent(
+                preparedUpdate.UpdatePlan,
+                updateRequest.AllowHiddenCharacters
+            );
+            if (!screening.IsSuccess)
+            {
+                return ManifestOperationResult<PackUpdatePlan>.Failure(
+                    screening.Error ?? PackContentScreeningPolicy.BlockingMessage
+                );
+            }
+
             var lifecycle = await CreateDryRunLifecyclePlanAsync(
                 projectDirectory,
                 preparedUpdate.State,
@@ -1296,6 +1337,43 @@ internal sealed class PackLifecycleService(
         {
             _console.Info(ManagedFileRemappingFormatter.Format(remapping));
         }
+    }
+
+    private ManifestOperationResult<bool> ScreenPlannedContent(
+        PackUpdatePlan updatePlan,
+        bool allowHiddenCharacters
+    )
+    {
+        var scans = updatePlan
+            .Actions.Where(action =>
+                action.ResultingContents is not null && action is not SkipManagedFileUpdateAction
+            )
+            .GroupBy(action => action.TargetPathRelativeToProject, StringComparer.Ordinal)
+            .Select(group => group.Last())
+            .Select(action =>
+                action.ResultingContents is { } contents
+                    ? PackContentScanner.Scan(action.TargetPathRelativeToProject, contents)
+                    : new PackContentScanResult([], 0, false)
+            )
+            .ToList();
+        var findings = scans.SelectMany(scan => scan.Findings);
+        foreach (var finding in findings)
+        {
+            _console.Warning(PackContentDiagnosticFormatter.Format(finding));
+        }
+
+        var omittedFindingCount = scans.Sum(scan => scan.OmittedFindingCount);
+        if (omittedFindingCount > 0)
+        {
+            _console.Warning(PackContentDiagnosticFormatter.FormatOmitted(omittedFindingCount));
+        }
+
+        return PackContentScreeningPolicy.Blocks(
+            scans.Any(scan => scan.HasHighConfidenceFinding),
+            allowHiddenCharacters
+        )
+            ? ManifestOperationResult<bool>.Failure(PackContentScreeningPolicy.BlockingMessage)
+            : ManifestOperationResult<bool>.Success(true);
     }
 
     private async Task<ManifestOperationResult<PreparedPackUpdate>> PrepareUpdateAsync(
