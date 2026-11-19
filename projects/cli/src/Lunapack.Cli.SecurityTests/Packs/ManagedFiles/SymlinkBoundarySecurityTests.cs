@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO.Abstractions;
+using System.Security.Cryptography;
 using Lunapack.Cli.Application;
 using Lunapack.Cli.Packs.ManagedFiles;
 using Lunapack.Cli.Packs.Planning;
@@ -83,6 +84,61 @@ public sealed class SymlinkBoundarySecurityTests
                 ),
                 Path.Combine(link, "managed.txt"),
                 "replacement"u8.ToArray()
+            );
+            var transaction = new PackUpdateTransaction(new FileSystem(), CreateConsole());
+
+            var result = transaction.Apply(projectDirectory, new PackUpdatePlan([action]));
+
+            await Assert.That(result.IsSuccess).IsFalse();
+            await Assert.That(result.Error).Contains("link or reparse point");
+            await Assert.That(File.ReadAllText(outsidePath)).IsEqualTo("outside content");
+        }
+        finally
+        {
+            if (Directory.Exists(link))
+            {
+                Directory.Delete(link);
+            }
+
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Test]
+    public async Task Apply_WhenDeleteTargetAncestorIsSymbolicLink_PreservesOutsideFile()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"lunapack-security-{Guid.NewGuid():N}");
+        var projectDirectory = Directory.CreateDirectory(Path.Combine(root, "project")).FullName;
+        var outsideDirectory = Directory.CreateDirectory(Path.Combine(root, "outside")).FullName;
+        var outsidePath = Path.Combine(outsideDirectory, "managed.txt");
+        var link = Path.Combine(projectDirectory, "linked");
+        File.WriteAllText(outsidePath, "outside content");
+
+        try
+        {
+            try
+            {
+                Directory.CreateSymbolicLink(link, outsideDirectory);
+            }
+            catch (Exception exception)
+                when (exception is IOException or UnauthorizedAccessException)
+            {
+                Skip.Test($"Symbolic links are unavailable: {exception.Message}");
+            }
+
+            var action = new DeleteManagedFileUpdateAction(
+                new ManagedRootOwner(ManagedRootKind.Pack, "example", "1.0.0"),
+                new ManagedRootFile(
+                    "source.txt",
+                    "linked/managed.txt",
+                    "linked/managed.txt",
+                    Convert.ToHexString(SHA256.HashData("outside content"u8))
+                ),
+                Path.Combine(link, "managed.txt"),
+                Convert.ToHexString(SHA256.HashData("outside content"u8))
             );
             var transaction = new PackUpdateTransaction(new FileSystem(), CreateConsole());
 

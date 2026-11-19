@@ -766,21 +766,17 @@ internal sealed class PackUpdateService(
             );
         }
 
-        updateRequest = updateRequest with { AcceptSources = acceptSources };
-        if (options.SaveRemapping)
-        {
-            selectedRequestedRoots =
-            [
-                .. selectedRequestedRoots.Select(root =>
-                    string.Equals(root.Id, updateRequestRoot.Id, StringComparison.Ordinal)
-                        ? root with
-                        {
-                            Remap = updateRequest.TargetRemapping?.MergeInto(root.Remap),
-                        }
-                        : root
-                ),
-            ];
-        }
+        updateRequest = ConfigureUpdateRequest(
+            updateRequest,
+            acceptSources,
+            options.RemoveModified
+        );
+        selectedRequestedRoots = ApplySavedRemapping(
+            selectedRequestedRoots,
+            updateRequestRoot,
+            updateRequest,
+            options.SaveRemapping
+        );
         if (promptParameters is not null)
         {
             var parameters = await packLifecycleService.PromptUpdateParametersAsync(
@@ -822,6 +818,32 @@ internal sealed class PackUpdateService(
             ? UpdateResult.Success(outcomes, appliedPlan)
             : UpdateResult.LifecycleFailure();
     }
+
+    private static PackInstallationRequest ConfigureUpdateRequest(
+        PackInstallationRequest request,
+        bool acceptSources,
+        bool removeModified
+    ) => request with { AcceptSources = acceptSources, RemoveModified = removeModified };
+
+    private static IReadOnlyList<ProjectConfiguration.RequestedPack> ApplySavedRemapping(
+        IReadOnlyList<ProjectConfiguration.RequestedPack> requestedRoots,
+        ProjectConfiguration.RequestedPack updateRequestRoot,
+        PackInstallationRequest updateRequest,
+        bool saveRemapping
+    ) =>
+        saveRemapping
+            ?
+            [
+                .. requestedRoots.Select(root =>
+                    string.Equals(root.Id, updateRequestRoot.Id, StringComparison.Ordinal)
+                        ? root with
+                        {
+                            Remap = updateRequest.TargetRemapping?.MergeInto(root.Remap),
+                        }
+                        : root
+                ),
+            ]
+            : requestedRoots;
 
     private ManifestOperationResult<PackInstallationRequest> CreateUpdateRequest(
         string projectDirectory,
