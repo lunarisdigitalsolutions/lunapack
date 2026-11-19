@@ -1,0 +1,17 @@
+id: luna-cli
+name: Luna CLI agent skill
+version: 1.0.0
+license: MIT
+author: Lunaris Digital Solutions <info@lunaris.digital>
+description: Provide safe, harness-independent Luna CLI workflows for coding agents.
+homepage: https://lunapack.dev/developer/luna-cli-skill
+tags:
+  - agents
+  - guidance
+  - lunapack
+managedFiles:
+  - directory: targets/.agents/skills/luna-cli
+    target: .agents/skills/luna-cli
+    strategy:
+      type: copy
+      method: overwrite

@@ -12,6 +12,7 @@ const sidebars = {
       collapsed: false,
       items: [
         'installation',
+        'luna-cli-skill',
         'sources',
         'evaluate-packs',
         'install-packs',
