@@ -112,8 +112,9 @@ public sealed class LifecycleHookProcessSecurityTests
                     );
 
                     await Assert.That(result.IsSuccess).IsTrue();
-                    await Assert.That(console.Output).Contains("\\u001B[31m");
-                    await Assert.That(console.Output).DoesNotContain(name);
+                    var renderedWarning = console.Output.ReplaceLineEndings(string.Empty);
+                    await Assert.That(renderedWarning).Contains("\\u001B[31m");
+                    await Assert.That(renderedWarning).DoesNotContain(name);
                 }
             );
         });
