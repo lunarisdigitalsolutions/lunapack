@@ -7,6 +7,15 @@ pack-package, documentation, CI, build, test, and release-process changes.
 
 Update this section before creating a release tag.
 
+### Added
+
+- Install, update, local pack validation, and OCI publication now screen
+  pack-managed UTF-8 text for hidden Unicode. Bidi controls and U+200B block
+  before side effects unless `--allow-hidden-characters` is supplied; other
+  Unicode format characters remain warnings. `luna audit` reports installed
+  findings without changing state or success behavior. Binary and invalid UTF-8
+  payloads are skipped.
+
 ### Fixed
 
 - Git links now fetch selected files missing from cached content using the

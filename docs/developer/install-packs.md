@@ -28,6 +28,14 @@ bindings, and explicit `--parameter` values; the preview fails when a required
 parameter remains unresolved. Remove `--dry-run` when the plan is ready to
 apply.
 
+Luna screens final rendered managed-file text before hooks or project changes.
+High-confidence bidi controls and U+200B ZERO WIDTH SPACE stop the install;
+other Unicode format characters produce warnings. Every finding shows the
+effective project-relative target and a scalar-based location. Review the
+bytes before using `--allow-hidden-characters`; the option permits the
+operation but does not hide findings. Binary or invalid UTF-8 payloads are
+skipped.
+
 Pass `--prompt-parameters` on a real install to answer every configurable
 parameter instead of only unresolved required parameters. Optional prompts
 offer their declared defaults.
