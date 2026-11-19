@@ -93,7 +93,11 @@ Create a new architecture decision record from the [MADR-based template](templat
 | [ADR-0087][adr-0087]                                                            | Keep source-ignore state in a per-project sidecar for settings compatibility.           |
 | [ADR-0088][adr-0088]                                                            | Share changed-pack publishing behavior across registry workflow packs.                  |
 | [ADR-0089][adr-0089]                                                            | Separate direct-pack root eligibility from dependency resolution.                       |
-| [ADR-0090][adr-0090]                                                            | Diagnose environment blockers through opt-in, bounded project preflight checks.         |
+| [ADR-0090][adr-0090]                                                            | Version CLI JSON diagnostics behind explicit public DTOs.                               |
+| [ADR-0091](0091-screen-pack-managed-content-for-hidden-unicode.md)              | Screen pack-managed text for hidden Unicode with fail-safe, bounded diagnostics.        |
+| [ADR-0092][adr-0092]                                                            | Keep one canonical Luna CLI skill across installation routes.                           |
+| [ADR-0093][adr-0093]                                                            | Preserve modified targets removed by pack updates, with explicit removal.               |
+| [ADR-0094][adr-0094]                                                            | Diagnose environment blockers through opt-in, bounded project preflight checks.         |
 
 [adr-0070]: 0070-bind-privileged-workflows-to-trusted-provenance.md
 [adr-0071]: 0071-reject-filesystem-aliases-at-mutation-boundaries.md
@@ -115,4 +119,7 @@ Create a new architecture decision record from the [MADR-based template](templat
 [adr-0087]: 0087-store-source-ignores-in-compatible-sidecar.md
 [adr-0088]: 0088-share-changed-pack-publishing-across-workflow-packs.md
 [adr-0089]: 0089-separate-direct-pack-roots-from-dependency-resolution.md
-[adr-0090]: 0090-provide-read-only-environment-preflight.md
+[adr-0090]: 0090-version-cli-json-diagnostics.md
+[adr-0092]: 0092-keep-one-canonical-luna-cli-skill.md
+[adr-0093]: 0093-protect-modified-targets-removed-by-updates.md
+[adr-0094]: 0094-provide-read-only-environment-preflight.md

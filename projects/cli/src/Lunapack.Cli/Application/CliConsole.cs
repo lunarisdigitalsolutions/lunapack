@@ -1,10 +1,15 @@
+using Lunapack.Cli.Application.Diagnostics;
 using Lunapack.Cli.Packs;
 using Spectre.Console;
 using Spectre.Console.Rendering;
 
 namespace Lunapack.Cli.Application;
 
-internal sealed class CliConsole(IAnsiConsole ansiConsole, CliLogLevel minimumLevel)
+internal sealed class CliConsole(
+    IAnsiConsole ansiConsole,
+    CliLogLevel minimumLevel,
+    bool sanitizeOutput = false
+)
 {
     public bool IsInteractive => ansiConsole.Profile.Capabilities.Interactive;
 
@@ -24,7 +29,7 @@ internal sealed class CliConsole(IAnsiConsole ansiConsole, CliLogLevel minimumLe
     {
         if (IsEnabled(CliLogLevel.Info))
         {
-            ansiConsole.MarkupLine(markup);
+            ansiConsole.MarkupLine(Sanitize(markup));
         }
     }
 
@@ -42,7 +47,7 @@ internal sealed class CliConsole(IAnsiConsole ansiConsole, CliLogLevel minimumLe
     {
         var defaultChoice = defaultValue ? "Y" : "N";
         ansiConsole.Markup(
-            $"{Markup.Escape(prompt)} [[{(defaultValue ? "Y/n" : "y/N")}]] ({defaultChoice}) "
+            $"{Markup.Escape(Sanitize(prompt))} [[{(defaultValue ? "Y/n" : "y/N")}]] ({defaultChoice}) "
         );
         var response = ansiConsole.Input.ReadKey(intercept: false);
         ansiConsole.WriteLine();
@@ -117,7 +122,7 @@ internal sealed class CliConsole(IAnsiConsole ansiConsole, CliLogLevel minimumLe
 
     public string PromptText(string prompt, string? defaultValue = null, bool allowEmpty = false)
     {
-        var textPrompt = new TextPrompt<string>(Markup.Escape(prompt));
+        var textPrompt = new TextPrompt<string>(Markup.Escape(Sanitize(prompt)));
         if (defaultValue is not null)
         {
             textPrompt.DefaultValue(defaultValue);
@@ -132,14 +137,14 @@ internal sealed class CliConsole(IAnsiConsole ansiConsole, CliLogLevel minimumLe
     }
 
     public string PromptSecret(string prompt) =>
-        ansiConsole.Prompt(new TextPrompt<string>(Markup.Escape(prompt)).Secret());
+        ansiConsole.Prompt(new TextPrompt<string>(Markup.Escape(Sanitize(prompt))).Secret());
 
     public Task<T> RunWithStatusAsync<T>(string description, Func<Task<T>> action) =>
         IsEnabled(CliLogLevel.Info)
             ? ansiConsole
                 .Status()
                 .Spinner(Spinner.Known.Dots)
-                .StartAsync(description, _ => action())
+                .StartAsync(Sanitize(description), _ => action())
             : action();
 
     private bool IsEnabled(CliLogLevel level) => level >= minimumLevel;
@@ -165,16 +170,16 @@ internal sealed class CliConsole(IAnsiConsole ansiConsole, CliLogLevel minimumLe
     {
         if (IsEnabled(CliLogLevel.Info))
         {
-            ansiConsole.MarkupLine($"[{style}]{Markup.Escape(message)}[/]");
+            ansiConsole.MarkupLine($"[{style}]{Markup.Escape(Sanitize(message))}[/]");
         }
     }
 
-    private static string FormatParameterPrompt(PackParameterPrompt parameter)
+    private string FormatParameterPrompt(PackParameterPrompt parameter)
     {
         var displayName = parameter.Definition.DisplayName ?? parameter.Id;
         var description = parameter.Definition.Description;
         var details = description is null ? string.Empty : $"[grey]{Markup.Escape(description)}[/]";
-        return $"[bold]{Markup.Escape(displayName)}[/] ({details})\n";
+        return Sanitize($"[bold]{Markup.Escape(displayName)}[/] ({details})\n");
     }
 
     private void Write(CliLogLevel level, string message)
@@ -186,7 +191,7 @@ internal sealed class CliConsole(IAnsiConsole ansiConsole, CliLogLevel minimumLe
 
         if (level == CliLogLevel.Info)
         {
-            ansiConsole.WriteLine(message);
+            ansiConsole.WriteLine(Sanitize(message));
             return;
         }
 
@@ -199,7 +204,10 @@ internal sealed class CliConsole(IAnsiConsole ansiConsole, CliLogLevel minimumLe
             _ => throw new InvalidOperationException($"Unsupported log level '{level}'."),
         };
         ansiConsole.MarkupLine(
-            $"[{style}]{level.ToString().ToLowerInvariant()}:[/] {Markup.Escape(message)}"
+            $"[{style}]{level.ToString().ToLowerInvariant()}:[/] {Markup.Escape(Sanitize(message))}"
         );
     }
+
+    private string Sanitize(string value) =>
+        sanitizeOutput ? CliTerminalSanitizer.Sanitize(value) : value;
 }

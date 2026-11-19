@@ -192,6 +192,30 @@ public sealed class LinkLifecycleServiceTests
     }
 
     [Test]
+    public async Task UpdateAsync_WhenOrphanedTargetModified_PreservesFileAndDropsOwnership()
+    {
+        var fileSystem = CreateFileSystem();
+        var console = new SpectreTestConsole();
+        var service = CreateService(fileSystem, console);
+        await WriteConfigurationAsync(fileSystem, CreateConfiguration());
+        await service.InstallAsync(_projectDirectory, "agents");
+        fileSystem.File.Delete(SourceFilePath("agents", "ai-team.agent.md"));
+        fileSystem.File.WriteAllText(TargetPath("ai-team.agent.md"), "local change");
+
+        var exitCode = await service.UpdateAsync(_projectDirectory, "agents");
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert
+            .That(fileSystem.File.ReadAllText(TargetPath("ai-team.agent.md")))
+            .IsEqualTo("local change");
+        await Assert
+            .That(Unwrap(console))
+            .Contains("Preserved locally modified target '.github/agents/ai-team.agent.md'");
+        var lockFile = await LoadLockFileAsync(fileSystem);
+        await Assert.That(lockFile.Links["agents"].Files.Count).IsEqualTo(1);
+    }
+
+    [Test]
     public async Task UpdateAsync_WhenTargetDirectoryBecomesIgnored_PreservesFilesAndDropsOwnership()
     {
         var fileSystem = CreateFileSystem();

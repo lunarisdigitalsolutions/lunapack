@@ -3,6 +3,7 @@ using System.IO.Abstractions;
 using System.Security.Cryptography;
 using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Paths;
 using Lunapack.Cli.Packs.ManagedFiles;
 using Lunapack.Cli.Packs.Planning;
 using Lunapack.Cli.Project;
@@ -184,7 +185,7 @@ internal sealed class LinkLifecycleService(
     {
         ArgumentNullException.ThrowIfNull(lockFile);
 
-        var ownership = ManagedRootInventory.CreateOwnershipMap(lockFile);
+        var ownership = ManagedRootInventory.CreateOwnershipMap(lockFile, fileSystem);
         return
         [
             .. lockFile
@@ -372,6 +373,12 @@ internal sealed class LinkLifecycleService(
             if (savedState.IsSuccess)
             {
                 isPersisted = true;
+                foreach (var action in updatePlan.Actions.OfType<PreserveManagedFileUpdateAction>())
+                {
+                    console.Warning(
+                        $"Preserved locally modified target '{action.TargetPathRelativeToProject}'; it is no longer managed by LunaPack."
+                    );
+                }
                 return 0;
             }
 
@@ -403,14 +410,24 @@ internal sealed class LinkLifecycleService(
         foreach (var file in lockedLink.Files)
         {
             var targetPath = fileSystem.Path.GetFullPath(file.TargetPath, projectDirectory);
-            if (fileSystem.File.Exists(targetPath) && !TargetMatchesDigest(targetPath, file.Sha256))
+            if (!fileSystem.File.Exists(targetPath))
+            {
+                continue;
+            }
+
+            if (!TargetMatchesDigest(targetPath, file.Sha256))
             {
                 preserved.Add(file.TargetPath);
                 continue;
             }
 
             actions.Add(
-                new DeleteManagedFileUpdateAction(owner, ToManagedRootFile(file), targetPath)
+                new DeleteManagedFileUpdateAction(
+                    owner,
+                    ToManagedRootFile(file),
+                    targetPath,
+                    file.Sha256
+                )
             );
         }
 
@@ -525,7 +542,7 @@ internal sealed class LinkLifecycleService(
     )
     {
         var hasConflictingOwner =
-            ownership.TryGetValue(file.TargetPath, out var owners)
+            ownership.TryGetValue(ProjectPath.Normalize(file.TargetPath), out var owners)
             && owners.Exists(candidate => !candidate.Matches(owner));
         if (hasConflictingOwner)
         {

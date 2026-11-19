@@ -19,6 +19,8 @@ copying an entire repository and losing ownership history.
 3. [Evaluate a pack](evaluate-packs.md) before changing project files.
 4. [Discover and install a pack](install-packs.md).
 5. [Update packs](update-packs.md) when a newer release is available.
+6. [Install the Luna CLI agent skill](luna-cli-skill.md) to guide agent
+   workflows.
 
 ```text
 pack.yml -> luna -> project files

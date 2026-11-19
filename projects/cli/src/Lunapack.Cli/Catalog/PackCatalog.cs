@@ -100,13 +100,15 @@ internal sealed class PackCatalog : IDisposable
     public Task<ManifestOperationResult<IReadOnlyList<CatalogPack>>> BrowseForUpdatesAsync(
         string projectDirectory,
         ProjectConfiguration configuration,
-        IReadOnlyDictionary<string, string?> requestedPacks
-    ) => BrowseAsync(projectDirectory, configuration, requestedPacks);
+        IReadOnlyDictionary<string, string?> requestedPacks,
+        bool requireComplete = false
+    ) => BrowseAsync(projectDirectory, configuration, requestedPacks, requireComplete);
 
     private async Task<ManifestOperationResult<IReadOnlyList<CatalogPack>>> BrowseAsync(
         string projectDirectory,
         ProjectConfiguration configuration,
-        IReadOnlyDictionary<string, string?>? requestedPacks
+        IReadOnlyDictionary<string, string?>? requestedPacks,
+        bool requireComplete = false
     )
     {
         _console.Debug($"Browsing {configuration.Sources.Count} configured pack sources");
@@ -122,7 +124,8 @@ internal sealed class PackCatalog : IDisposable
             projectDirectory,
             configuration,
             ignoreContext,
-            requestedPacks
+            requestedPacks,
+            requireComplete
         );
     }
 
@@ -132,7 +135,8 @@ internal sealed class PackCatalog : IDisposable
         string projectDirectory,
         ProjectConfiguration configuration,
         ConfiguredSourceIgnoreService.SourceIgnoreContext ignoreContext,
-        IReadOnlyDictionary<string, string?>? requestedPacks
+        IReadOnlyDictionary<string, string?>? requestedPacks,
+        bool requireComplete
     )
     {
         var catalog = new List<CatalogPack>();
@@ -161,7 +165,8 @@ internal sealed class PackCatalog : IDisposable
                 projectDirectory,
                 source,
                 sourceOrder,
-                requestedPacks
+                requestedPacks,
+                requireComplete
             );
             if (sourceCatalog.Value is not { } sourcePacks)
             {
@@ -184,6 +189,13 @@ internal sealed class PackCatalog : IDisposable
         {
             return ManifestOperationResult<IReadOnlyList<CatalogPack>>.Failure(
                 string.Join(Environment.NewLine, failedSources)
+            );
+        }
+
+        if (requireComplete && failedSources.Count > 0)
+        {
+            return ManifestOperationResult<IReadOnlyList<CatalogPack>>.Failure(
+                $"Unable to check all configured pack sources:{Environment.NewLine}{string.Join(Environment.NewLine, failedSources)}"
             );
         }
 
@@ -287,7 +299,8 @@ internal sealed class PackCatalog : IDisposable
         string projectDirectory,
         ProjectConfiguration.Source source,
         int sourceOrder,
-        IReadOnlyDictionary<string, string?>? requestedPacks = null
+        IReadOnlyDictionary<string, string?>? requestedPacks = null,
+        bool requireComplete = false
     ) =>
         source switch
         {
@@ -308,7 +321,8 @@ internal sealed class PackCatalog : IDisposable
                     projectDirectory,
                     ociSource,
                     sourceOrder,
-                    requestedPacks
+                    requestedPacks,
+                    requireComplete
                 ),
             _ => Task.FromResult(
                 ManifestOperationResult<IReadOnlyList<CatalogPack>>.Failure(

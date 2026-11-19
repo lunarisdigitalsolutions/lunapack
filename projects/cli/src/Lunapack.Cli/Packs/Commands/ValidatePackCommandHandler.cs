@@ -1,5 +1,6 @@
 using System.CommandLine;
 using Lunapack.Cli.Application;
+using Lunapack.Cli.Application.Diagnostics;
 using Lunapack.Cli.Packs.Validation;
 
 namespace Lunapack.Cli.Packs.Commands;
@@ -23,18 +24,30 @@ internal sealed class ValidatePackCommandHandler(
         {
             packReferenceArgument,
         };
+        var formatOption = CliOutputFormatOption.Create();
+        command.Options.Add(formatOption);
         command.SetAction(async parseResult =>
         {
+            if (!CliOutputFormatOption.TryParse(parseResult.GetValue(formatOption), out var format))
+            {
+                return console.Fail(
+                    CliOutputFormatOption.FormatUnsupportedMessage(
+                        parseResult.GetValue(formatOption)
+                    )
+                );
+            }
+
+            var output = parseResult.InvocationConfiguration.Output;
             var packReferenceValue = parseResult.GetValue(packReferenceArgument);
             if (packReferenceValue is null)
             {
-                return console.Fail("A pack ID is required.");
+                return Fail("A pack ID is required.", format, output);
             }
 
             var packReference = PackReference.Parse(packReferenceValue);
             if (packReference.Value is not { } reference)
             {
-                return console.Fail(packReference.Error);
+                return Fail(packReference.Error, format, output);
             }
 
             var result = await packValidationService.ValidateAsync(
@@ -47,7 +60,7 @@ internal sealed class ValidatePackCommandHandler(
             );
             if (result.Value is not { } validation)
             {
-                return console.Fail(result.Error);
+                return Fail(result.Error, format, output);
             }
 
             var manifest = validation.Manifest;
@@ -58,7 +71,18 @@ internal sealed class ValidatePackCommandHandler(
                     console.Error(issue);
                 }
 
+                if (format == CliOutputFormat.Json)
+                {
+                    CliJsonWriter.WriteValidation(output, new CliJsonValidationResult(false));
+                }
+
                 return 1;
+            }
+
+            if (format == CliOutputFormat.Json)
+            {
+                CliJsonWriter.WriteValidation(output, new CliJsonValidationResult(true));
+                return 0;
             }
 
             console.Info($"{manifest.Id}@{manifest.Version} is valid.");
@@ -66,5 +90,16 @@ internal sealed class ValidatePackCommandHandler(
         });
 
         return command;
+    }
+
+    private int Fail(string? message, CliOutputFormat format, TextWriter output)
+    {
+        var exitCode = console.Fail(message);
+        if (format == CliOutputFormat.Json)
+        {
+            CliJsonWriter.WriteValidation(output, null);
+        }
+
+        return exitCode;
     }
 }
