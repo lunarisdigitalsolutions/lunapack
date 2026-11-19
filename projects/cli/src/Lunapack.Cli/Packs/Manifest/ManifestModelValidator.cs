@@ -849,19 +849,31 @@ internal static partial class ManifestModelValidator
             issues.Add("Project configuration schema version must be 1.");
         }
 
-        var sourceNames = configuration
-            .Sources.Select(source => source.Name)
+        var sources = configuration.Sources ?? [];
+        if (configuration.Sources is null)
+        {
+            issues.Add("Project sources must be a list.");
+        }
+
+        var sourceNames = sources
+            .OfType<ProjectConfiguration.Source>()
+            .Select(source => source.Name)
             .ToHashSet(StringComparer.Ordinal);
         var hasInvalidSourceNames =
-            sourceNames.Count != configuration.Sources.Count
-            || sourceNames.Any(string.IsNullOrEmpty);
+            sourceNames.Count != sources.Count || sourceNames.Any(string.IsNullOrEmpty);
         if (hasInvalidSourceNames)
         {
             issues.Add("Project sources must have non-empty unique names.");
         }
 
-        foreach (var source in configuration.Sources)
+        foreach (var source in sources)
         {
+            if (source is null)
+            {
+                issues.Add("Project source entries must define a source.");
+                continue;
+            }
+
             switch (source)
             {
                 case ProjectConfiguration.LocalSource localSource:
@@ -886,7 +898,7 @@ internal static partial class ManifestModelValidator
             }
         }
 
-        ValidateSourceFingerprintUniqueness(configuration.Sources, issues);
+        ValidateSourceFingerprintUniqueness(sources, issues);
         ValidateRemapping(configuration.Remap, issues);
         ValidateRequestedPacks(configuration.Packs, issues);
         ValidateLinks(configuration.Links, sourceNames, issues);
@@ -904,6 +916,11 @@ internal static partial class ManifestModelValidator
         var fingerprints = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var source in sources)
         {
+            if (source is null)
+            {
+                continue;
+            }
+
             var created = SourceIdentityNormalizer.Create(source);
             if (created.Value is not { } fingerprint)
             {
@@ -923,11 +940,17 @@ internal static partial class ManifestModelValidator
     }
 
     private static void ValidateLinks(
-        Dictionary<string, ProjectConfiguration.Link> links,
+        Dictionary<string, ProjectConfiguration.Link>? links,
         HashSet<string> configuredSourceNames,
         List<string> issues
     )
     {
+        if (links is null)
+        {
+            issues.Add("Project links must be a map.");
+            return;
+        }
+
         foreach (var (name, link) in links)
         {
             if (!IsPackId(name))
@@ -935,18 +958,31 @@ internal static partial class ManifestModelValidator
                 issues.Add($"Link name '{name}' must use pack-ID syntax.");
             }
 
+            if (link is null)
+            {
+                issues.Add($"Link '{name}' is required.");
+                continue;
+            }
+
             if (string.IsNullOrEmpty(link.Source) || !configuredSourceNames.Contains(link.Source))
             {
                 issues.Add($"Link '{name}' must reference a configured source name.");
             }
 
-            if (link.Includes.Count == 0 || link.Includes.Any(string.IsNullOrEmpty))
+            var includes = link.Includes ?? [];
+            var excludes = link.Excludes ?? [];
+            if (link.Includes is null || link.Excludes is null)
+            {
+                issues.Add($"Link '{name}' include and exclude values must be lists.");
+            }
+
+            if (includes.Count == 0 || includes.Any(string.IsNullOrEmpty))
             {
                 issues.Add($"Link '{name}' must declare at least one non-empty include pattern.");
             }
 
-            var hasUnsafePatterns = link
-                .Includes.Concat(link.Excludes)
+            var hasUnsafePatterns = includes
+                .Concat(excludes)
                 .Any(pattern => !IsSafeProjectRelativePath(pattern));
             if (hasUnsafePatterns)
             {
@@ -970,29 +1006,46 @@ internal static partial class ManifestModelValidator
     }
 
     private static void ValidateProjectTrust(
-        ProjectConfiguration.ProjectTrust trust,
+        ProjectConfiguration.ProjectTrust? trust,
         HashSet<string> configuredSourceNames,
         List<string> issues
     )
     {
+        if (trust is null)
+        {
+            issues.Add("Project trust must be an object.");
+            return;
+        }
+
+        var sources = trust.Sources ?? [];
+        var packs = trust.Packs ?? [];
+        if (trust.Sources is null || trust.Packs is null)
+        {
+            issues.Add("Project trust sources and packs must be lists.");
+        }
+
         var hasInvalidTrustedSources =
-            trust.Sources.Any(source =>
+            sources.Any(source =>
                 string.IsNullOrEmpty(source) || !configuredSourceNames.Contains(source)
             )
-            || trust.Sources.Distinct(StringComparer.Ordinal).Count() != trust.Sources.Count;
+            || sources.Distinct(StringComparer.Ordinal).Count() != sources.Count;
         if (hasInvalidTrustedSources)
         {
             issues.Add("Trusted sources must be unique configured source names.");
         }
 
         var hasInvalidTrustedPacks =
-            trust.Packs.Any(pack =>
-                string.IsNullOrEmpty(pack.Id)
+            packs.Any(pack =>
+                pack is null
+                || string.IsNullOrEmpty(pack.Id)
                 || pack.Id.Contains('@')
                 || !configuredSourceNames.Contains(pack.Source)
             )
-            || trust.Packs.Select(pack => (pack.Source, pack.Id)).Distinct().Count()
-                != trust.Packs.Count;
+            || packs
+                .OfType<ProjectConfiguration.TrustedPack>()
+                .Select(pack => (pack.Source, pack.Id))
+                .Distinct()
+                .Count() != packs.OfType<ProjectConfiguration.TrustedPack>().Count();
         if (hasInvalidTrustedPacks)
         {
             issues.Add(
@@ -1011,13 +1064,32 @@ internal static partial class ManifestModelValidator
             issues.Add("Project lock file schema version must be 1.");
         }
 
-        foreach (var resolvedPack in lockFile.Packs)
+        var packs = lockFile.Packs ?? [];
+        var links = lockFile.Links ?? [];
+        if (lockFile.Packs is null || lockFile.Links is null)
         {
+            issues.Add("Project lock packs and links must be lists or maps.");
+        }
+
+        foreach (var resolvedPack in packs)
+        {
+            if (resolvedPack is null)
+            {
+                issues.Add("Resolved packs must define a pack.");
+                continue;
+            }
+
             ValidateResolvedPack(resolvedPack, issues);
         }
 
-        foreach (var (name, resolvedLink) in lockFile.Links)
+        foreach (var (name, resolvedLink) in links)
         {
+            if (resolvedLink is null)
+            {
+                issues.Add($"Resolved link '{name}' is required.");
+                continue;
+            }
+
             ValidateResolvedLink(name, resolvedLink, issues);
         }
 
@@ -1050,8 +1122,20 @@ internal static partial class ManifestModelValidator
             issues.Add($"Resolved link '{name}' must record a resolved Git commit.");
         }
 
-        foreach (var file in resolvedLink.Files)
+        var files = resolvedLink.Files ?? [];
+        if (resolvedLink.Files is null)
         {
+            issues.Add($"Resolved link '{name}' files must be a list.");
+        }
+
+        foreach (var file in files)
+        {
+            if (file is null)
+            {
+                issues.Add($"Resolved link '{name}' file entries must define a file.");
+                continue;
+            }
+
             var hasInvalidFile =
                 !IsSafeProjectRelativePath(file.SourcePath)
                 || !IsSafeProjectRelativePath(file.DeclaredTargetPath)
@@ -1306,12 +1390,24 @@ internal static partial class ManifestModelValidator
     }
 
     private static void ValidateRequestedPacks(
-        IReadOnlyList<ProjectConfiguration.RequestedPack> requestedPacks,
+        IReadOnlyList<ProjectConfiguration.RequestedPack>? requestedPacks,
         List<string> issues
     )
     {
+        if (requestedPacks is null)
+        {
+            issues.Add("Project packs must be a list.");
+            return;
+        }
+
         foreach (var requestedPack in requestedPacks)
         {
+            if (requestedPack is null)
+            {
+                issues.Add("Requested pack entries must define a pack.");
+                continue;
+            }
+
             if (string.IsNullOrEmpty(requestedPack.Id))
             {
                 issues.Add("Requested packs must define an ID.");
@@ -1339,6 +1435,11 @@ internal static partial class ManifestModelValidator
         List<string> issues
     )
     {
+        if (remapping is not null && (remapping.Directories is null || remapping.Files is null))
+        {
+            issues.Add("Managed file remapping directories and files must be maps.");
+        }
+
         ValidateRemapping(remapping?.Directories, remapping?.Files, "Managed file", issues);
     }
 
@@ -1363,10 +1464,16 @@ internal static partial class ManifestModelValidator
     }
 
     private static void ValidateVariables(
-        IReadOnlyDictionary<string, object> variables,
+        IReadOnlyDictionary<string, object>? variables,
         List<string> issues
     )
     {
+        if (variables is null)
+        {
+            issues.Add("Project variables must be a map.");
+            return;
+        }
+
         foreach (var (name, value) in variables)
         {
             var hasInvalidVariable =
@@ -1451,8 +1558,20 @@ internal static partial class ManifestModelValidator
             ValidateLocalResolvedPackSource(resolvedPack, issues);
         }
 
-        foreach (var packReference in resolvedPack.Packs)
+        var packReferences = resolvedPack.Packs ?? [];
+        if (resolvedPack.Packs is null)
         {
+            issues.Add($"Resolved pack '{resolvedPack.Id}' references must be a list.");
+        }
+
+        foreach (var packReference in packReferences)
+        {
+            if (packReference is null)
+            {
+                issues.Add($"Resolved pack '{resolvedPack.Id}' references must define a pack.");
+                continue;
+            }
+
             if (string.IsNullOrEmpty(packReference.Id) || !IsSemanticVersion(packReference.Version))
             {
                 issues.Add("Resolved pack references must define an ID and semantic version.");
@@ -1469,8 +1588,22 @@ internal static partial class ManifestModelValidator
         List<string> issues
     )
     {
-        foreach (var managedFile in resolvedPack.ManagedFiles)
+        var managedFiles = resolvedPack.ManagedFiles ?? [];
+        if (resolvedPack.ManagedFiles is null)
         {
+            issues.Add($"Resolved pack '{resolvedPack.Id}' managed files must be a list.");
+        }
+
+        foreach (var managedFile in managedFiles)
+        {
+            if (managedFile is null)
+            {
+                issues.Add(
+                    $"Resolved pack '{resolvedPack.Id}' managed file entries must define a file."
+                );
+                continue;
+            }
+
             var hasInvalidManagedFile =
                 !IsSafeProjectRelativePath(managedFile.DeclaredTargetPath)
                 || !IsSafeProjectRelativePath(managedFile.TargetPath)
@@ -1498,7 +1631,13 @@ internal static partial class ManifestModelValidator
         List<string> issues
     )
     {
-        foreach (var (alias, externalSource) in resolvedPack.ExternalSources)
+        var externalSources = resolvedPack.ExternalSources ?? [];
+        if (resolvedPack.ExternalSources is null)
+        {
+            issues.Add($"Resolved pack '{resolvedPack.Id}' external sources must be a map.");
+        }
+
+        foreach (var (alias, externalSource) in externalSources)
         {
             if (!IsSourceAlias(alias))
             {
@@ -1567,10 +1706,21 @@ internal static partial class ManifestModelValidator
             return;
         }
 
-        if (!resolvedPack.ExternalSources.TryGetValue(sourceAlias, out var declared))
+        if (
+            resolvedPack.ExternalSources is null
+            || !resolvedPack.ExternalSources.TryGetValue(sourceAlias, out var declared)
+        )
         {
             issues.Add(
                 $"Resolved managed file references external source '{managedFile.SourceAlias}' that pack '{resolvedPack.Id}' does not record."
+            );
+            return;
+        }
+
+        if (declared is null)
+        {
+            issues.Add(
+                $"Resolved managed file external source '{managedFile.SourceAlias}' in pack '{resolvedPack.Id}' is required."
             );
             return;
         }
@@ -1804,12 +1954,7 @@ internal static partial class ManifestModelValidator
     private static bool IsAbsolutePath(string value) =>
         value.StartsWith('/')
         || value.StartsWith('\\')
-        || (
-            value.Length >= 3
-            && char.IsAsciiLetter(value[0])
-            && value[1] == ':'
-            && (value[2] == '/' || value[2] == '\\')
-        );
+        || (value.Length >= 2 && char.IsAsciiLetter(value[0]) && value[1] == ':');
 
     private static bool IsGitCommit(string? value) =>
         value is not null && GitCommitRegex().IsMatch(value);

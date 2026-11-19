@@ -91,6 +91,42 @@ public sealed class StrictAuditProcessTests
         await Assert.That(result.StandardOutput).Contains("Unable to read lunapack-lock.yml");
     }
 
+    [Test]
+    public async Task StrictAudit_WhenLockCollectionsAreNull_ReturnsOperationError()
+    {
+        using var workspace = await CreateWorkspaceAsync();
+        File.WriteAllText(
+            Path.Combine(workspace.Path, "lunapack-lock.yml"),
+            "schemaVersion: 1\npacks:\nlinks:\n"
+        );
+
+        var result = await CliProcess.InvokeAsync(workspace.Path, "audit", "--strict");
+
+        await Assert.That(result.ExitCode).IsEqualTo(1);
+        await Assert.That(result.StandardOutput).Contains("Invalid lunapack-lock.yml");
+    }
+
+    [Test]
+    public async Task StrictAudit_WhenTargetIsDriveRelative_ReturnsOperationError()
+    {
+        using var workspace = await CreateWorkspaceAsync();
+        var lockPath = Path.Combine(workspace.Path, "lunapack-lock.yml");
+        var lockContents = File.ReadAllText(lockPath);
+        File.WriteAllText(
+            lockPath,
+            lockContents.Replace(
+                "targetPath: pack.txt",
+                "targetPath: 'Z:outside.txt'",
+                StringComparison.Ordinal
+            )
+        );
+
+        var result = await CliProcess.InvokeAsync(workspace.Path, "audit", "--strict");
+
+        await Assert.That(result.ExitCode).IsEqualTo(1);
+        await Assert.That(result.StandardOutput).Contains("Invalid lunapack-lock.yml");
+    }
+
     private static async Task<TestWorkspace> CreateWorkspaceAsync()
     {
         var workspace = new TestWorkspace();

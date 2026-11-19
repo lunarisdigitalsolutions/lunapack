@@ -300,8 +300,9 @@ includes the registry reference and verified manifest digest. There are no
   instead reports the locked integrity status for every pack- and link-managed
   target. It returns `0` when every target matches, `2` for one or more missing
   or modified targets, and `1` for invalid usage or unreadable project or target
-  state. `--fail-fast` requires `--strict` and stops after the first integrity
-  violation. Without `--strict`, findings remain report-only.
+  state, including unsafe or filesystem-aliased lock paths. `--fail-fast`
+  requires `--strict` and stops after the first integrity violation. Without
+  `--strict`, findings remain report-only.
 
 `<pack-reference>` is a pack ID or `<id>@<version>`. When version is omitted,
 commands select the latest available release. `install` accepts `--dry-run`

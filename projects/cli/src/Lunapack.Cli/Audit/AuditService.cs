@@ -1,6 +1,7 @@
 using System.IO.Abstractions;
 using System.Security.Cryptography;
 using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Paths;
 using Lunapack.Cli.Packs.ManagedFiles;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources;
@@ -106,10 +107,13 @@ internal sealed class AuditService(IFileSystem fileSystem, ProjectStateStore pro
         ManagedRootFile file
     )
     {
-        var targetPath = fileSystem.Path.GetFullPath(file.TargetPath, projectDirectory);
         try
         {
-            using var stream = fileSystem.File.OpenRead(targetPath);
+            using var stream = ProjectFileReader.OpenRead(
+                fileSystem,
+                projectDirectory,
+                file.TargetPath
+            );
             var digest = Convert.ToHexString(SHA256.HashData(stream));
             var status = string.Equals(digest, file.Sha256, StringComparison.OrdinalIgnoreCase)
                 ? ManagedFileIntegrityStatus.Current
@@ -133,6 +137,12 @@ internal sealed class AuditService(IFileSystem fileSystem, ProjectStateStore pro
         {
             return ManifestOperationResult<ManagedFileIntegrityResult>.Failure(
                 $"Unable to read managed target '{file.TargetPath}' owned by {AuditOutputFormatter.Format(owner)}: {exception.Message}"
+            );
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException)
+        {
+            return ManifestOperationResult<ManagedFileIntegrityResult>.Failure(
+                $"Unable to resolve managed target '{file.TargetPath}' owned by {AuditOutputFormatter.Format(owner)}: {exception.Message}"
             );
         }
     }
@@ -169,6 +179,12 @@ internal sealed class AuditService(IFileSystem fileSystem, ProjectStateStore pro
             );
         }
 
+        var target = GetTargetStatus(projectDirectory, managedFile);
+        if (target.Value is not { } targetStatus)
+        {
+            return (null, target.Error ?? "Unable to inspect managed target.");
+        }
+
         return (
             new AuditReport.ExternalFile(
                 pack.Id,
@@ -181,7 +197,7 @@ internal sealed class AuditService(IFileSystem fileSystem, ProjectStateStore pro
                 sourcePath,
                 managedFile.TargetPath,
                 managedFile.Sha256,
-                GetTargetStatus(projectDirectory, managedFile)
+                targetStatus
             ),
             null
         );
@@ -211,17 +227,41 @@ internal sealed class AuditService(IFileSystem fileSystem, ProjectStateStore pro
             : "configuration drift";
     }
 
-    private string GetTargetStatus(string projectDirectory, ProjectLockFile.ManagedFile managedFile)
+    private ManifestOperationResult<string> GetTargetStatus(
+        string projectDirectory,
+        ProjectLockFile.ManagedFile managedFile
+    )
     {
-        var targetPath = fileSystem.Path.GetFullPath(managedFile.TargetPath, projectDirectory);
-        if (!fileSystem.File.Exists(targetPath))
+        try
         {
-            return "missing target";
+            using var stream = ProjectFileReader.OpenRead(
+                fileSystem,
+                projectDirectory,
+                managedFile.TargetPath
+            );
+            var digest = Convert.ToHexString(SHA256.HashData(stream));
+            return ManifestOperationResult<string>.Success(
+                string.Equals(digest, managedFile.Sha256, StringComparison.OrdinalIgnoreCase)
+                    ? "current"
+                    : "locally modified"
+            );
         }
-
-        var digest = Convert.ToHexString(SHA256.HashData(fileSystem.File.ReadAllBytes(targetPath)));
-        return string.Equals(digest, managedFile.Sha256, StringComparison.OrdinalIgnoreCase)
-            ? "current"
-            : "locally modified";
+        catch (Exception exception)
+            when (exception is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return ManifestOperationResult<string>.Success("missing target");
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return ManifestOperationResult<string>.Failure(
+                $"Unable to read managed target '{managedFile.TargetPath}': {exception.Message}"
+            );
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException)
+        {
+            return ManifestOperationResult<string>.Failure(
+                $"Unable to resolve managed target '{managedFile.TargetPath}': {exception.Message}"
+            );
+        }
     }
 }

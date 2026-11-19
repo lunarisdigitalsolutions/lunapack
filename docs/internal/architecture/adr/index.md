@@ -94,6 +94,7 @@ Create a new architecture decision record from the [MADR-based template](templat
 | [ADR-0088][adr-0088]                                                            | Share changed-pack publishing behavior across registry workflow packs.                  |
 | [ADR-0089][adr-0089]                                                            | Separate direct-pack root eligibility from dependency resolution.                       |
 | [ADR-0090](0090-define-strict-audit-exit-codes.md)                              | Reserve strict audit exit 2 for integrity violations and 1 for usage or state errors.   |
+| [ADR-0091](0091-confine-managed-file-audit-reads.md)                            | Confine lock-backed managed-file audit reads to non-aliased workspace paths.            |
 
 [adr-0070]: 0070-bind-privileged-workflows-to-trusted-provenance.md
 [adr-0071]: 0071-reject-filesystem-aliases-at-mutation-boundaries.md

@@ -34,6 +34,19 @@ informational.
 - **WHEN** a user runs `luna audit --fail-fast` without `--strict`
 - **THEN** LunaPack reports invalid usage and returns exit code `1`
 
+### Requirement: Confine strict audit reads
+
+Strict audit SHALL normalize every lock target beneath the selected workspace
+and SHALL reject existing symbolic-link or reparse-point ancestors and targets
+as operation errors. It SHALL NOT hash content reached outside the workspace.
+
+#### Scenario: Reject a target outside the workspace
+
+- **WHEN** strict audit encounters a drive-relative or otherwise escaping
+  target, or a target that crosses an existing filesystem alias
+- **THEN** it reports an operation error without hashing outside content and
+  returns exit code `1`
+
 ### Requirement: Distinguish strict audit outcomes
 
 `luna audit --strict` SHALL return exit code `0` when all locked targets match,
@@ -55,5 +68,5 @@ operation error, not as an integrity violation.
 #### Scenario: Return the operation-error code
 
 - **WHEN** strict audit encounters invalid command usage or cannot read project
-  or target state
+  or target state, including explicit-null required collections
 - **THEN** it reports the operation error and returns exit code `1`

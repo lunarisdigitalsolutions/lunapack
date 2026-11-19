@@ -46,8 +46,10 @@ luna audit --strict
 
 Strict mode reads every pack and Luna Link target recorded in
 `lunapack-lock.yml`, computes its SHA-256 digest, and reports the owner, path,
-and `current`, `missing`, or `modified` status. It does not resolve a current
-source or change project files or lock state.
+and `current`, `missing`, or `modified` status. Before opening a target, Luna
+normalizes it beneath the selected workspace and rejects symbolic links or
+reparse-point ancestors and targets. It does not follow audit paths outside the
+workspace, resolve a current source, or change project files or lock state.
 
 Add `--fail-fast` to stop after the first missing or modified target:
 
@@ -67,7 +69,9 @@ Strict audit exit codes distinguish content violations from command failures:
 | `2`       | One or more recorded targets were missing or had changed.   |
 
 Source-provenance drift and ownership conflicts do not by themselves change the
-strict integrity outcome. They remain informational audit statuses.
+strict integrity outcome. They remain informational audit statuses. Unsafe
+paths, malformed collection state, inaccessible targets, and filesystem aliases
+are operation errors and return `1`.
 
 ## Recover deliberately
 

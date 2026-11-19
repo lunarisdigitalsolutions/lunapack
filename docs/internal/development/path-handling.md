@@ -50,6 +50,10 @@ normalization and inspects each existing path component below the workspace.
 Symbolic links, junctions, and other reparse points abort the operation. Shared
 transactions validate every action before the first mutation; direct move,
 uninstall, rollback, and state-restoration paths apply the same boundary.
+Read-only managed-file audit uses `ProjectFileReader` for the same project-root
+confinement and existing-alias checks before and after opening a target for
+hashing. Unsafe, inaccessible, or aliased targets are operation errors rather
+than content-integrity violations.
 
 Managed writes create a unique sibling file and move it over the destination.
 This gives a replaced hard-linked target a new file identity, preserving content

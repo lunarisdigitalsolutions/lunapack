@@ -50,6 +50,20 @@ Only missing targets and digest mismatches are integrity violations. A target
 read failure is an operation error, not evidence of modified content, and
 returns exit code `1`.
 
+### Confine every audit read to the workspace
+
+Strict mode validates each lock target through `ProjectPath`, rejects aliases
+using the shared mutation-path security boundary, and opens the target
+read-only before and after checking existing path components. A missing file is
+a managed-content violation; malformed paths, links or reparse points, access
+failures, and structurally invalid state are operation errors. This prevents a
+lock-controlled path from reading outside the selected workspace.
+
+As with other filesystem alias checks, inspection and open remain separate
+operations. A process running with the same user identity can still race an
+entry replacement; the audit narrows that residual race by holding a read-only
+handle with no write/delete sharing on platforms that enforce it.
+
 ### Make strict behavior opt-in
 
 `--strict` activates integrity exit behavior on the existing `luna audit`
@@ -74,7 +88,9 @@ command guidance.
 - **Full scans add file I/O:** Strict mode is opt-in; `--fail-fast` can stop
   after the first integrity violation.
 - **Targets can change during inspection:** Treat read failures as operation
-  errors with exit code `1`; never silently report a clean result.
+  errors with exit code `1`; never silently report a clean result. The
+  deterministic alias boundary does not claim race-free confinement against a
+  same-user process.
 
 ## Migration Plan
 
