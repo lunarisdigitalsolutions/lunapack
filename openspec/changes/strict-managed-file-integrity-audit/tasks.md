@@ -7,7 +7,7 @@
   to exit codes `0`, `2`, and `1`. Add unit tests for matching, missing,
   modified, aggregate, fail-fast, and unreadable cases; verify
   `./test.ps1 unit` passes.
-- [ ] 1.2 Add CLI integration tests for strict exit codes, rejecting
+- [x] 1.2 Add CLI integration tests for strict exit codes, rejecting
   `--fail-fast` without `--strict`, and preserving default report-only behavior;
   verify `./test.ps1 int` passes.
 - [ ] 1.3 Update `docs/developer/advanced/audit-and-recover.md`,
