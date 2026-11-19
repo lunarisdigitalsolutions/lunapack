@@ -17,6 +17,49 @@ dependencies, and managed targets. External pack content adds source and file
 records with fingerprints, refs, commits, digests, and status. Installed Luna
 Links include each target's status.
 
+## Automate the audit
+
+Use JSON when a script or CI job must inspect the result:
+
+```powershell
+luna audit --format json
+```
+
+JSON goes to standard output; diagnostics go to standard error. The result
+contains `packs`, `links`, `externalSources`, and `externalFiles` arrays.
+Top-level `findings` provide stable identifiers, and `summary` provides
+`totalFindings` plus `info`, `warning`, and `error` counts. Audit does not change
+its exit behavior because a finding has a particular severity. See the
+[command reference](../cli/commands.md#machine-readable-command-output) for
+the complete envelope and compatibility policy.
+
+JSON status values are stable tokens:
+
+| Result | JSON status values |
+| --- | --- |
+| External source | `current`, `missing-workspace-source`, `invalid-workspace-source`, `configuration-drift` |
+| External file | `current`, `missing-target`, `modified-target` |
+| Link file | `current`, `missing-target`, `modified-target`, `conflicting-owner` |
+
+Each finding includes `code`, `severity`, `subject`, and a human-readable
+`message`. External-source and external-file subjects use the source alias as
+`id` and include the owning `packId`. External-file and link-file subjects
+include the project-relative `path`; link-file subjects use the link name as
+`id`. Message wording is not a stable contract.
+
+Audit findings use these schema-version-1 identifiers:
+
+| Code | Severity |
+| --- | --- |
+| `audit.external-source.missing-workspace` | `warning` |
+| `audit.external-source.invalid-workspace` | `error` |
+| `audit.external-source.configuration-drift` | `warning` |
+| `audit.external-file.missing-target` | `warning` |
+| `audit.external-file.modified-target` | `warning` |
+| `audit.link-file.missing-target` | `warning` |
+| `audit.link-file.modified-target` | `warning` |
+| `audit.link-file.conflicting-owner` | `error` |
+
 ## Interpret statuses
 
 External source records use these statuses:

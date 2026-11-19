@@ -222,7 +222,7 @@ public sealed class OciPackPublisherTests
     }
 
     [Test]
-    public async Task GetAvailableAsync_WhenRepositoryEnumerationIsDenied_QueriesLockedOciReleaseDirectly()
+    public async Task GetAvailableAsync_WhenRepositoryEnumerationIsDenied_FailsClosed()
     {
         var fileSystem = CreateFileSystem();
         var registry = new FakeOciRegistryClient();
@@ -260,11 +260,9 @@ public sealed class OciPackPublisherTests
         await Assert.That(stateSaved.IsSuccess).IsTrue().Because(stateSaved.Error ?? string.Empty);
         await Assert
             .That(availability.IsSuccess)
-            .IsTrue()
+            .IsFalse()
             .Because(availability.Error ?? string.Empty);
-        await Assert
-            .That(availability.RequireValue().Updates.Single().Latest.Manifest.Version)
-            .IsEqualTo("1.1.0");
+        await Assert.That(availability.Error).Contains("discovery is incomplete");
         await Assert.That(ansiConsole.Output).Contains("catalog enumeration");
         await Assert.That(ansiConsole.Output).Contains("incomplete");
     }

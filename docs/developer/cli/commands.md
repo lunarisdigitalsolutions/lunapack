@@ -185,8 +185,9 @@ project. Pack trust and pack-trust revocation require `--source` or `-s`. See
   installable packs and configured links. Pack results include their latest
   eligible releases; link results include source, target, and installation
   status. Both raw and composite packs appear by default.
-- `luna validate <pack-reference>`: Validates the selected release from configured
-  local, Git, or OCI sources, or the latest release when version is omitted.
+- `luna validate <pack-reference> [--format text|json]`: Validates the selected
+  release from configured local, Git, or OCI sources, or the latest release
+  when version is omitted. JSON reports a Boolean `valid` result.
   Direct references can select draft and dependency-only packs even though
   discovery and search hide those packs by default.
 - `luna inspect <pack-reference>`: Shows the selected pack's identity,
@@ -286,17 +287,83 @@ includes the registry reference and verified manifest digest. There are no
 - `luna uninstall <pack-reference> [<pack-reference>...]`: Removes one or more
   installed roots and unchanged files no longer owned by another pack. When
   supplied, each version must match the currently installed release.
-- `luna outdated`: Lists installed roots with a newer release or changed
-  external content. `--offline` avoids remote checks and reports uncertainty.
+- `luna outdated [--offline] [--format text|json]`: Lists installed roots with a
+  newer release or changed external content. `--offline` avoids remote checks
+  and reports uncertainty.
 - `luna update [<pack-reference>...]`: Updates all roots or one or more selected
   roots.
 - `luna mv <source> <target>` (`luna move`): Moves one managed file or all
   managed files below a directory and updates lock ownership. If files were
   moved manually, it can rebind ownership when only the targets exist.
   `--save-remap` also records the move as a reusable project mapping.
-- `luna audit`: Reports resolved packs, dependencies, external alias mappings,
-  fingerprints, refs, commits, source and target paths, ownership, digests, and
-  drift or local-modification status.
+- `luna audit [--format text|json]`: Reports resolved packs, dependencies,
+  external alias mappings, fingerprints, refs, commits, source and target
+  paths, ownership, digests, and drift or local-modification status.
+
+## Machine-readable command output
+
+The root `luna audit`, `luna outdated`, and `luna validate <pack-reference>`
+commands default to their existing text format. Pass `--format json` for one
+machine-readable JSON object. The separate local-manifest `luna pack validate`
+command does not accept this option.
+
+For example:
+
+```powershell
+luna validate dotnet-gitignore --format json
+```
+
+```json
+{"schemaVersion":1,"command":"validate","result":{"valid":true}}
+```
+
+Standard output contains only the JSON object. Human-readable diagnostics,
+logs, parser help, validation issues, and ANSI-independent progress output go
+to standard error. A supported command that cannot produce its result writes
+`result: null`; an invalid audit or outdated prerequisite does not add partial
+result arrays. If `outdated` cannot completely inspect configured remote
+sources or receives partial OCI release discovery, it fails with
+`result: null` instead of reporting an incomplete catalog as fully checked.
+An unsupported format is an error, writes no command data to standard output,
+and keeps the process unsuccessful.
+
+Every JSON object contains an integer `schemaVersion` of `1`, a `command` value
+of `audit`, `outdated`, or `validate`, and `result`. The result shapes are:
+
+| Command | Result fields |
+| --- | --- |
+| `audit` | `packs`, `links`, `externalSources`, and `externalFiles` arrays |
+| `outdated` | `updates`, `outdatedLinks`, `integrityViolations`, and `uncheckedOciPacks` arrays; Boolean `remoteRefsChecked` |
+| `validate` | Boolean `valid` |
+
+Audit pack entries contain `id`, `version`, `sourcePath`, `packPath`,
+`dependencies` with `id` and `version`, and `managedFiles` with `targetPath` and
+`sha256`. Audit link entries contain `name`, `sourceName`, `resolvedCommit`, and
+`files` with `targetPath` and `status`.
+
+Audit external-source entries contain `packId`, `packVersion`, `alias`,
+`workspaceSourceName`, `fingerprint`, `ref`, `resolvedCommit`, and `status`.
+External-file entries add `sourcePath`, `targetPath`, and `sha256`. Audit JSON
+also contains top-level `findings` and `summary`; see
+[Audit ownership and recover drift](../advanced/audit-and-recover.md) for stable
+codes and severity semantics.
+
+Outdated update entries contain `id`, `currentVersion`, `latestVersion`, and
+`reason`. Outdated-link entries contain `name` and `reasons`. Integrity
+violations contain `id`, `version`, `sourceName`, `lockedManifestDigest`, and
+`observedManifestDigest`; unchecked OCI entries contain `id`, `version`, and
+`sourceName`. Array properties remain present when empty. Optional values use
+JSON `null`.
+
+Online outdated results set `remoteRefsChecked` to true only after every
+configured update source and locked OCI release check completes. `--offline`
+sets it to false.
+
+Within schema version 1, added fields and finding codes are compatible.
+Renaming or removing a field or code, or changing its type or meaning, requires
+a new schema version. Do not parse human-readable `message` wording as a stable
+identifier, and do not infer process success from a finding's severity: exit
+behavior remains command-specific.
 
 `<pack-reference>` is a pack ID or `<id>@<version>`. When version is omitted,
 commands select the latest available release. `install` accepts `--dry-run`
