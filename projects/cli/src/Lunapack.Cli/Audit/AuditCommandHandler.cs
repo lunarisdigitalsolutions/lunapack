@@ -18,24 +18,51 @@ internal sealed class AuditCommandHandler(
     public Command CreateCommand(string projectDirectory, Option<string?> workspaceOption)
     {
         var command = new Command("audit", "Report resolved pack and link state.");
+        var strictOption = new Option<bool>("--strict")
+        {
+            Description =
+                "Fail when a managed target is missing or differs from its locked digest.",
+        };
+        var failFastOption = new Option<bool>("--fail-fast")
+        {
+            Description = "Stop strict audit after the first integrity violation.",
+        };
+        command.Options.Add(strictOption);
+        command.Options.Add(failFastOption);
         command.SetAction(parseResult =>
             AuditAsync(
                 workspaceDirectoryResolver.Resolve(
                     projectDirectory,
                     parseResult.GetValue(workspaceOption)
-                )
+                ),
+                parseResult.GetValue(strictOption),
+                parseResult.GetValue(failFastOption)
             )
         );
 
         return command;
     }
 
-    public async Task<int> AuditAsync(string projectDirectory)
+    public async Task<int> AuditAsync(
+        string projectDirectory,
+        bool strict = false,
+        bool failFast = false
+    )
     {
+        if (failFast && !strict)
+        {
+            return console.Fail("Option '--fail-fast' requires '--strict'.");
+        }
+
         var prerequisiteFailure = await prerequisiteGuard.RequireWorkspaceAsync(projectDirectory);
         if (prerequisiteFailure is not null)
         {
             return prerequisiteFailure.Value;
+        }
+
+        if (strict)
+        {
+            return await AuditStrictAsync(projectDirectory, failFast);
         }
 
         var inspected = await auditService.InspectAsync(projectDirectory);
@@ -89,6 +116,63 @@ internal sealed class AuditCommandHandler(
 
         RenderLinks(projectDirectory, projectState.LockFile);
         return 0;
+    }
+
+    private async Task<int> AuditStrictAsync(string projectDirectory, bool failFast)
+    {
+        var state = await projectStateStore.LoadAsync(projectDirectory);
+        if (state.Value is not { } projectState)
+        {
+            return console.Fail(state.Error);
+        }
+
+        var inspected = auditService.InspectManagedFiles(
+            projectDirectory,
+            projectState.LockFile,
+            failFast
+        );
+        if (inspected.Value is not { } reports)
+        {
+            return console.Fail(inspected.Error);
+        }
+
+        RenderIntegrity(reports);
+        var violationCount = reports.Count(report => report.IsViolation);
+        if (violationCount == 0)
+        {
+            return 0;
+        }
+
+        console.Error(
+            $"Managed file integrity audit found {violationCount} violation{(violationCount == 1 ? string.Empty : "s")}."
+        );
+        return 2;
+    }
+
+    private void RenderIntegrity(IReadOnlyList<ManagedFileIntegrityResult> reports)
+    {
+        if (reports.Count == 0)
+        {
+            console.Info("No managed files are recorded in the lock file.");
+            return;
+        }
+
+        var table = new Table()
+            .Title("[bold]Managed file integrity[/]")
+            .Border(TableBorder.Rounded);
+        table.AddColumn("[bold]Owner[/]");
+        table.AddColumn("[bold]Target[/]");
+        table.AddColumn("[bold]Status[/]");
+        foreach (var report in reports)
+        {
+            table.AddRow(
+                Markup.Escape(AuditOutputFormatter.Format(report.Owner)),
+                Markup.Escape(report.TargetPath),
+                Markup.Escape(AuditOutputFormatter.Format(report.Status))
+            );
+        }
+
+        console.Render(table);
     }
 
     private void RenderLinks(string projectDirectory, ProjectLockFile lockFile)

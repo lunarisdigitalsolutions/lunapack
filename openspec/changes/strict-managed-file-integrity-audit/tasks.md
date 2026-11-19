@@ -2,7 +2,7 @@
 
 ## 1. Strict audit behavior
 
-- [ ] 1.1 Add `--strict` and `--fail-fast` handling and a structured scan of all
+- [x] 1.1 Add `--strict` and `--fail-fast` handling and a structured scan of all
   locked pack and link targets; map clean, integrity, usage, and read outcomes
   to exit codes `0`, `2`, and `1`. Add unit tests for matching, missing,
   modified, aggregate, fail-fast, and unreadable cases; verify

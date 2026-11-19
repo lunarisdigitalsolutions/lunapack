@@ -1,6 +1,7 @@
 using System.IO.Abstractions;
 using System.Security.Cryptography;
 using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Packs.ManagedFiles;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources;
 
@@ -56,6 +57,84 @@ internal sealed class AuditService(IFileSystem fileSystem, ProjectStateStore pro
         return ManifestOperationResult<AuditReport>.Success(
             new AuditReport(state.LockFile.Packs, sources, files)
         );
+    }
+
+    public ManifestOperationResult<IReadOnlyList<ManagedFileIntegrityResult>> InspectManagedFiles(
+        string projectDirectory,
+        ProjectLockFile lockFile,
+        bool failFast
+    )
+    {
+        ArgumentNullException.ThrowIfNull(lockFile);
+
+        var reports = new List<ManagedFileIntegrityResult>();
+        var roots = ManagedRootInventory
+            .FromLockFile(lockFile)
+            .OrderBy(root => root.Owner.Kind)
+            .ThenBy(root => root.Owner.Name, StringComparer.Ordinal)
+            .ThenBy(root => root.Owner.Version, StringComparer.Ordinal);
+        foreach (var root in roots)
+        {
+            foreach (
+                var file in root.Files.OrderBy(file => file.TargetPath, StringComparer.Ordinal)
+            )
+            {
+                var inspected = InspectManagedFile(projectDirectory, root.Owner, file);
+                if (inspected.Value is not { } report)
+                {
+                    return ManifestOperationResult<
+                        IReadOnlyList<ManagedFileIntegrityResult>
+                    >.Failure(inspected.Error ?? "Unable to inspect managed file.");
+                }
+
+                reports.Add(report);
+                if (failFast && report.IsViolation)
+                {
+                    return ManifestOperationResult<
+                        IReadOnlyList<ManagedFileIntegrityResult>
+                    >.Success(reports);
+                }
+            }
+        }
+
+        return ManifestOperationResult<IReadOnlyList<ManagedFileIntegrityResult>>.Success(reports);
+    }
+
+    private ManifestOperationResult<ManagedFileIntegrityResult> InspectManagedFile(
+        string projectDirectory,
+        ManagedRootOwner owner,
+        ManagedRootFile file
+    )
+    {
+        var targetPath = fileSystem.Path.GetFullPath(file.TargetPath, projectDirectory);
+        try
+        {
+            using var stream = fileSystem.File.OpenRead(targetPath);
+            var digest = Convert.ToHexString(SHA256.HashData(stream));
+            var status = string.Equals(digest, file.Sha256, StringComparison.OrdinalIgnoreCase)
+                ? ManagedFileIntegrityStatus.Current
+                : ManagedFileIntegrityStatus.Modified;
+            return ManifestOperationResult<ManagedFileIntegrityResult>.Success(
+                new ManagedFileIntegrityResult(owner, file.TargetPath, status)
+            );
+        }
+        catch (Exception exception)
+            when (exception is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return ManifestOperationResult<ManagedFileIntegrityResult>.Success(
+                new ManagedFileIntegrityResult(
+                    owner,
+                    file.TargetPath,
+                    ManagedFileIntegrityStatus.Missing
+                )
+            );
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return ManifestOperationResult<ManagedFileIntegrityResult>.Failure(
+                $"Unable to read managed target '{file.TargetPath}' owned by {AuditOutputFormatter.Format(owner)}: {exception.Message}"
+            );
+        }
     }
 
     private (AuditReport.ExternalFile? File, string? Error) CreateExternalFile(
