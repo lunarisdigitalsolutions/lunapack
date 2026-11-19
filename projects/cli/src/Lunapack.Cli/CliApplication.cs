@@ -662,6 +662,7 @@ internal sealed class CliApplication(
             new PackUpdateTransaction(fileSystem, console),
             projectStateStore,
             console,
+            new LifecycleHookPolicyStore(fileSystem, userSettingsStore.SettingsDirectory),
             new GitPackMaterializer(
                 fileSystem,
                 gitProcessRunner,

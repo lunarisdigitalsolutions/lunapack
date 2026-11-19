@@ -50,27 +50,29 @@ internal sealed class UpdatePackCommandHandler(
             skipInstructionsOption,
         };
         AddConfigurationOptions(command, configurationOptions);
-        command.SetAction(parseResult =>
-            ExecuteCommandAsync(
-                projectDirectory,
-                workspaceOption,
-                parseResult,
-                packReferenceArgument,
-                promptOption,
-                dryRunOption,
-                noFileChangeOutputOption,
-                acceptSourcesOption,
-                promptParametersOption,
-                skipParametersOption,
-                configurationOptions.Parameter,
-                configurationOptions.NoVariables,
-                configurationOptions.SkipVariable,
-                configurationOptions.RemapDirectory,
-                configurationOptions.RemapFile,
-                configurationOptions.SaveRemap,
-                scriptsOption,
-                skipInstructionsOption
-            )
+        command.SetAction(
+            (parseResult, cancellationToken) =>
+                ExecuteCommandAsync(
+                    projectDirectory,
+                    workspaceOption,
+                    parseResult,
+                    packReferenceArgument,
+                    promptOption,
+                    dryRunOption,
+                    noFileChangeOutputOption,
+                    acceptSourcesOption,
+                    promptParametersOption,
+                    skipParametersOption,
+                    configurationOptions.Parameter,
+                    configurationOptions.NoVariables,
+                    configurationOptions.SkipVariable,
+                    configurationOptions.RemapDirectory,
+                    configurationOptions.RemapFile,
+                    configurationOptions.SaveRemap,
+                    scriptsOption,
+                    skipInstructionsOption,
+                    cancellationToken
+                )
         );
 
         return command;
@@ -114,7 +116,8 @@ internal sealed class UpdatePackCommandHandler(
         Option<string[]> remapFileOption,
         Option<bool> saveRemapOption,
         Option<string?> scriptsOption,
-        Option<bool> skipInstructionsOption
+        Option<bool> skipInstructionsOption,
+        CancellationToken cancellationToken
     )
     {
         var referenceValues = parseResult.GetValue(packReferenceArgument) ?? [];
@@ -193,7 +196,8 @@ internal sealed class UpdatePackCommandHandler(
             acceptSources,
             promptParameters,
             updateOptions,
-            parsedTargetRemapping
+            parsedTargetRemapping,
+            cancellationToken
         );
     }
 
@@ -228,7 +232,8 @@ internal sealed class UpdatePackCommandHandler(
         bool acceptSources,
         PackParameterPromptCallback? promptParameters,
         PackUpdateOptions updateOptions,
-        ManagedFileTargetRemapping targetRemapping
+        ManagedFileTargetRemapping targetRemapping,
+        CancellationToken cancellationToken
     )
     {
         if (prompt)
@@ -241,7 +246,8 @@ internal sealed class UpdatePackCommandHandler(
                     skipInstructions,
                     acceptSources,
                     promptParameters,
-                    updateOptions
+                    updateOptions,
+                    cancellationToken
                 ),
                 dryRun,
                 showFileChanges
@@ -260,7 +266,8 @@ internal sealed class UpdatePackCommandHandler(
                     "Updating packs...",
                     acceptSources,
                     promptParameters,
-                    updateOptions
+                    updateOptions,
+                    cancellationToken
                 ),
                 dryRun,
                 showFileChanges
@@ -278,7 +285,8 @@ internal sealed class UpdatePackCommandHandler(
             acceptSources,
             promptParameters,
             updateOptions,
-            targetRemapping
+            targetRemapping,
+            cancellationToken
         );
     }
 
@@ -306,7 +314,8 @@ internal sealed class UpdatePackCommandHandler(
         bool acceptSources,
         PackParameterPromptCallback? promptParameters,
         PackUpdateOptions updateOptions,
-        ManagedFileTargetRemapping targetRemapping
+        ManagedFileTargetRemapping targetRemapping,
+        CancellationToken cancellationToken
     )
     {
         for (var index = 0; index < referenceValues.Length; index++)
@@ -339,7 +348,8 @@ internal sealed class UpdatePackCommandHandler(
                     $"Updating {reference.Id}...",
                     acceptSources,
                     promptParameters,
-                    updateOptions
+                    updateOptions,
+                    cancellationToken
                 ),
                 dryRun,
                 showFileChanges
@@ -451,7 +461,8 @@ internal sealed class UpdatePackCommandHandler(
     {
         var option = new Option<string?>("--scripts")
         {
-            Description = "Lifecycle script mode: prompt, run, or skip.",
+            Description =
+                "Lifecycle script mode: prompt, run, or skip. Authorized hooks warn on inherited environment names and have per-hook timeouts.",
         };
         option.CompletionSources.Add("prompt", "run", "skip");
         return option;
@@ -469,7 +480,8 @@ internal sealed class UpdatePackCommandHandler(
         string status,
         bool acceptSources,
         PackParameterPromptCallback? promptParameters,
-        PackUpdateOptions updateOptions
+        PackUpdateOptions updateOptions,
+        CancellationToken cancellationToken
     ) =>
         scriptMode == ScriptExecutionMode.Prompt
             ? packUpdateService.UpdateAsync(
@@ -480,7 +492,8 @@ internal sealed class UpdatePackCommandHandler(
                 skipInstructions,
                 acceptSources,
                 promptParameters,
-                updateOptions
+                updateOptions,
+                cancellationToken
             )
             : console.RunWithStatusAsync(
                 status,
@@ -493,7 +506,8 @@ internal sealed class UpdatePackCommandHandler(
                         skipInstructions,
                         acceptSources,
                         promptParameters,
-                        updateOptions
+                        updateOptions,
+                        cancellationToken
                     )
             );
 
@@ -504,7 +518,8 @@ internal sealed class UpdatePackCommandHandler(
         bool skipInstructions,
         bool acceptSources,
         PackParameterPromptCallback? promptParameters,
-        PackUpdateOptions updateOptions
+        PackUpdateOptions updateOptions,
+        CancellationToken cancellationToken
     )
     {
         var availableUpdates = await updateSelectionService.GetAvailableAsync(projectDirectory);
@@ -548,7 +563,8 @@ internal sealed class UpdatePackCommandHandler(
             skipInstructions,
             acceptSources,
             promptParameters,
-            updateOptions
+            updateOptions,
+            cancellationToken
         );
     }
 

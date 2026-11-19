@@ -7,6 +7,7 @@ using Lunapack.Cli.Packs.Manifest;
 using Lunapack.Cli.Packs.Planning;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources.Git;
+using Lunapack.Cli.Trust;
 
 namespace Lunapack.Cli.UnitTests.Packs.ExternalSources;
 
@@ -570,7 +571,11 @@ public sealed class ExternalPackLifecycleTests
                 runner,
                 refResolver
             ),
-            configuredExternalSourceConsentCoordinator: consentCoordinator
+            configuredExternalSourceConsentCoordinator: consentCoordinator,
+            configuredHookPolicyStore: new LifecycleHookPolicyStore(
+                workspace.FileSystem,
+                workspace.UserSettingsStore.SettingsDirectory
+            )
         );
     }
 

@@ -159,6 +159,26 @@ public sealed class CliHelpDocumentationTests
     }
 
     [Test]
+    public async Task Scenario_LifecycleCommandsRequestHelp_DescribeRuntimeGuardrails()
+    {
+        foreach (var command in new[] { "install", "uninstall", "update" })
+        {
+            using var workspace = new TestWorkspace(ansiConsole: new SpectreTestConsole());
+            await using var output = new StringWriter();
+
+            var exitCode = await workspace.Application.RunAsync(
+                [command, "--help"],
+                workspace.Path,
+                output
+            );
+
+            await Assert.That(exitCode).IsEqualTo(0);
+            await Assert.That(output.ToString()).Contains("inherited environment names");
+            await Assert.That(output.ToString()).Contains("per-hook timeouts");
+        }
+    }
+
+    [Test]
     public async Task GlobalOptions_WhenDocumented_MatchLiveHelp()
     {
         var documentation = await File.ReadAllTextAsync(

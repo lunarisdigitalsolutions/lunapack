@@ -58,7 +58,10 @@ public sealed class PackLifecycleTests
     [Test]
     public async Task Install_WhenScriptsSkip_DoesNotExecuteHooks()
     {
-        using var workspace = new TestWorkspace();
+        var ansiConsole = new SpectreTestConsole();
+        ansiConsole.Profile.Capabilities.Interactive = false;
+        ansiConsole.Profile.Width = 500;
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
         var sourcePath = CreatePackSource(
             workspace.Path,
             $"id: dotnet-gitignore\nversion: 1.0.0\nhooks:\n  preInstall:\n    - type: script\n      command: {ShellExecutable}\n      arguments:\n        - {ShellArgument}\n        - 'echo hook > lifecycle.txt'\nmanagedFiles:\n  - source: templates/dotnet.gitignore\n    target: .gitignore\n"
@@ -73,6 +76,9 @@ public sealed class PackLifecycleTests
         await Assert.That(exitCode).IsEqualTo(0);
         await Assert.That(File.Exists(Path.Combine(workspace.Path, "lifecycle.txt"))).IsFalse();
         await Assert.That(File.Exists(Path.Combine(workspace.Path, ".gitignore"))).IsTrue();
+        await Assert
+            .That(ansiConsole.Output)
+            .DoesNotContain("inherits environment variables outside the allow-list");
     }
 
     [Test]
@@ -142,6 +148,9 @@ public sealed class PackLifecycleTests
         await Assert.That(preWarning >= 0 && postWarning > preWarning).IsTrue();
         await Assert.That(instruction > postWarning).IsTrue();
         await Assert.That(output).Contains("scopes: project");
+        await Assert
+            .That(output)
+            .DoesNotContain("inherits environment variables outside the allow-list");
         await Assert.That(File.Exists(Path.Combine(workspace.Path, "lifecycle.txt"))).IsFalse();
         await Assert.That(File.Exists(Path.Combine(workspace.Path, ".gitignore"))).IsTrue();
     }
@@ -471,6 +480,9 @@ public sealed class PackLifecycleTests
         await Assert.That(trustExitCode).IsEqualTo(0);
         await Assert.That(exitCode).IsEqualTo(0);
         await Assert.That(output).Contains($"allowed (trust: {scopeName})");
+        await Assert
+            .That(output)
+            .DoesNotContain("inherits environment variables outside the allow-list");
         await Assert.That(File.Exists(Path.Combine(workspace.Path, ".gitignore"))).IsFalse();
     }
 
@@ -765,21 +777,28 @@ public sealed class PackLifecycleTests
     [Test]
     public async Task Install_WhenConditionFalse_OmitsTargetAndLockOwnership()
     {
-        using var workspace = new TestWorkspace();
+        var ansiConsole = new SpectreTestConsole();
+        ansiConsole.Profile.Capabilities.Interactive = false;
+        ansiConsole.Profile.Width = 500;
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
         var sourcePath = CreatePackSource(
             workspace.Path,
-            "id: dotnet-gitignore\nversion: 1.0.0\nparameters:\n  includeCi:\n    type: bool\nmanagedFiles:\n  - source: templates/dotnet.gitignore\n    target: .gitignore\n    condition: includeCi\n"
+            $"id: dotnet-gitignore\nversion: 1.0.0\nparameters:\n  includeCi:\n    type: bool\n    default: false\nhooks:\n  preInstall:\n    - type: script\n      condition: includeCi\n      command: {ShellExecutable}\n      arguments:\n        - {ShellArgument}\n        - 'echo hook > lifecycle.txt'\nmanagedFiles:\n  - source: templates/dotnet.gitignore\n    target: .gitignore\n    condition: includeCi\n"
         );
         await ConfigureSourceAsync(workspace, sourcePath);
 
         var exitCode = await workspace.Application.RunAsync(
-            ["install", "dotnet-gitignore"],
+            ["install", "dotnet-gitignore", "--scripts", "run"],
             workspace.Path
         );
         var state = await workspace.StateStore.LoadAsync(workspace.Path);
 
         await Assert.That(exitCode).IsEqualTo(0);
         await Assert.That(File.Exists(Path.Combine(workspace.Path, ".gitignore"))).IsFalse();
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, "lifecycle.txt"))).IsFalse();
+        await Assert
+            .That(ansiConsole.Output)
+            .DoesNotContain("inherits environment variables outside the allow-list");
         await Assert.That(state.RequireValue().LockFile.Packs.Single().ManagedFiles).IsEmpty();
     }
 
@@ -2513,7 +2532,11 @@ public sealed class PackLifecycleTests
             new PackUpdatePlanner(workspace.FileSystem),
             new PackUpdateTransaction(workspace.FileSystem, TestConsole.Create()),
             projectStateStore ?? workspace.StateStore,
-            TestConsole.Create()
+            TestConsole.Create(),
+            configuredHookPolicyStore: new LifecycleHookPolicyStore(
+                workspace.FileSystem,
+                workspace.UserSettingsStore.SettingsDirectory
+            )
         );
     }
 

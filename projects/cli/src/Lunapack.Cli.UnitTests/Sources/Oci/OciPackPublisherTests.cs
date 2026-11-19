@@ -596,7 +596,8 @@ public sealed class OciPackPublisherTests
             new PackUpdatePlanner(fileSystem),
             new PackUpdateTransaction(fileSystem, console),
             stateStore,
-            console
+            console,
+            new LifecycleHookPolicyStore(fileSystem, @"C:\profile\.lunapack")
         );
 
     private static OciSourceCredentialCoordinator CreateCoordinator(

@@ -1,22 +1,22 @@
 using System.IO.Abstractions;
+using Lunapack.Cli.Application;
 using Lunapack.Cli.Catalog;
 using Lunapack.Cli.Packs.Lifecycle;
 using Lunapack.Cli.Packs.Manifest;
 using Lunapack.Cli.Sources;
+using SpectreTestConsole = Spectre.Console.Testing.TestConsole;
 
 namespace Lunapack.Cli.UnitTests.Packs.Lifecycle;
 
 public sealed class LifecycleHookExecutorTests
 {
     [Test]
-    public async Task CreateStartInfo_WhenConsoleIsInteractive_InheritsTerminalStreams()
+    public async Task Scenario_ConsoleIsInteractive_StartInfoInheritsTerminalStreams()
     {
-        using var workspace = new TestWorkspace();
-
-        var startInfo = LifecycleHookExecutor.CreateStartInfo(
-            workspace.Path,
-            CreateInvocation(),
-            isInteractive: true
+        var startInfo = LifecycleHookExecutor.CreateInheritedStartInfo(
+            Environment.CurrentDirectory,
+            "executable",
+            []
         );
 
         await Assert.That(startInfo.RedirectStandardInput).IsFalse();
@@ -26,40 +26,31 @@ public sealed class LifecycleHookExecutorTests
     }
 
     [Test]
-    public async Task ExecuteAsync_WhenHookExitsNonzero_ReturnsFailureContext()
+    [Arguments(true)]
+    [Arguments(false)]
+    public async Task Scenario_ConsoleModeConfiguresSupervisorStreams(bool isInteractive)
     {
-        using var workspace = new TestWorkspace();
-        var result = await CreateExecutor()
-            .ExecuteAsync(workspace.Path, CreateInvocation(ShellArgument, FailureCommand));
+        var ansiConsole = new SpectreTestConsole();
+        ansiConsole.Profile.Capabilities.Interactive = isInteractive;
+        var executor = new LifecycleHookExecutor(
+            new FileSystem(),
+            new CliConsole(ansiConsole, CliLogLevel.Info)
+        );
 
-        await Assert.That(result.IsSuccess).IsFalse();
-        await Assert.That(result.Error).Contains("exited with code 7");
+        var startInfo = executor.CreateSupervisorStartInfo(
+            Environment.CurrentDirectory,
+            CreateInvocation(),
+            Path.Combine(Path.GetTempPath(), "result.txt"),
+            Path.Combine(Path.GetTempPath(), "control.txt")
+        );
+
+        await Assert.That(startInfo.RedirectStandardOutput).IsEqualTo(!isInteractive);
+        await Assert.That(startInfo.RedirectStandardError).IsEqualTo(!isInteractive);
+        await Assert.That(startInfo.CreateNoWindow).IsEqualTo(!isInteractive);
     }
 
-    [Test]
-    public async Task ExecuteAsync_WhenCanceled_TerminatesProcessTreeAndReturnsFailure()
+    private static ResolvedLifecycleHookInvocation CreateInvocation()
     {
-        using var workspace = new TestWorkspace();
-        using var cancellation = new CancellationTokenSource();
-        cancellation.Cancel();
-
-        var result = await CreateExecutor()
-            .ExecuteAsync(
-                workspace.Path,
-                CreateInvocation(ShellArgument, LongRunningCommand),
-                cancellation.Token
-            );
-
-        await Assert.That(result.IsSuccess).IsFalse();
-        await Assert.That(result.Error).Contains("canceled");
-    }
-
-    private static LifecycleHookExecutor CreateExecutor() =>
-        new(new FileSystem(), TestConsole.Create());
-
-    private static ResolvedLifecycleHookInvocation CreateInvocation(params string[] arguments)
-    {
-        var executable = ShellExecutable;
         var pack = new DiscoveredPack(
             "source",
             "source/example",
@@ -74,24 +65,12 @@ public sealed class LifecycleHookExecutorTests
                 new PackManifest.PackHook
                 {
                     Type = "script",
-                    Command = executable,
-                    Arguments = [.. arguments],
+                    Command = "executable",
+                    Arguments = [],
                 },
                 null
             ),
-            executable
+            "executable"
         );
     }
-
-    private static string ShellExecutable =>
-        OperatingSystem.IsWindows()
-            ? Path.Combine(Environment.SystemDirectory, "cmd.exe")
-            : "/bin/sh";
-
-    private static string ShellArgument => OperatingSystem.IsWindows() ? "/c" : "-c";
-
-    private static string FailureCommand => OperatingSystem.IsWindows() ? "exit /b 7" : "exit 7";
-
-    private static string LongRunningCommand =>
-        OperatingSystem.IsWindows() ? "ping -n 10 127.0.0.1 > nul" : "sleep 10";
 }

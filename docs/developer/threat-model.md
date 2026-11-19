@@ -232,21 +232,21 @@ Treat every pack and source as publisher code.
 
 ### TM-E01: User-Authority Execution by Lifecycle Scripts
 
-| Field         | Assessment                                                                                                                                                                        |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Component     | Lifecycle hook authorization and process launch                                                                                                                                   |
-| Asset         | Current user's files, credentials, processes, and network access                                                                                                                  |
-| Scenario      | A malicious pack convinces a user or automation to approve a hook that performs arbitrary actions.                                                                                |
-| Preconditions | Script execution is explicitly approved, previously trusted, or selected with `--scripts run`.                                                                                    |
-| Likelihood    | Medium                                                                                                                                                                            |
-| Impact        | Arbitrary code execution with the invoking user's full ambient authority.                                                                                                         |
-| Severity      | High                                                                                                                                                                              |
-| Controls      | Prompt, run, and skip modes; source-scoped trust; dominant denial; escaped preview; direct executable resolution; literal argv; snapshot hashing; and pre-mutation authorization. |
-| Fix           | Treat approval as code execution. Use denial or skip mode where hooks are not required. LunaPack does not claim sandboxing.                                                       |
-| Priority      | Permanent trust boundary                                                                                                                                                          |
-| Status        | Accepted by design                                                                                                                                                                |
-| Verification  | Trust-scope, denial, argument, digest, cancellation, and rollback tests.                                                                                                          |
-| Residual risk | Authorized code can create irreversible external effects that no transaction can restore.                                                                                         |
+| Field         | Assessment                                                                                                                                                                                                      |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Component     | Lifecycle hook authorization and process launch                                                                                                                                                                 |
+| Asset         | Current user's files, credentials, processes, and network access                                                                                                                                                |
+| Scenario      | A malicious pack convinces a user or automation to approve a hook that performs arbitrary actions.                                                                                                              |
+| Preconditions | Script execution is explicitly approved, previously trusted, or selected with `--scripts run`.                                                                                                                  |
+| Likelihood    | Medium                                                                                                                                                                                                          |
+| Impact        | Arbitrary code execution with the invoking user's full ambient authority.                                                                                                                                       |
+| Severity      | High                                                                                                                                                                                                            |
+| Controls      | Prompt, run, and skip modes; source-scoped trust; dominant denial; escaped preview; value-free environment warnings; per-hook timeouts with process-tree cleanup; literal argv; and pre-mutation authorization. |
+| Fix           | Treat approval as code execution. Use denial or skip mode where hooks are not required. LunaPack does not claim sandboxing.                                                                                     |
+| Priority      | Permanent trust boundary                                                                                                                                                                                        |
+| Status        | Accepted by design                                                                                                                                                                                              |
+| Verification  | Trust-scope, denial, argument, digest, cancellation, and rollback tests.                                                                                                                                        |
+| Residual risk | Authorized scripts inherit every process environment value; warnings do not filter values or prevent access. Code can also create irreversible external effects that no transaction can restore.                |
 
 ## Safer Operation
 
@@ -262,6 +262,9 @@ Treat every pack and source as publisher code.
    digest does not replace publisher review or signature verification.
 9. Verify Luna release archives with `SHA256SUMS.txt`; prefer immutable image
    digests when available.
+10. Configure lifecycle script warnings and deadlines at the narrowest needed
+    scope; the warning allow-list does not restrict environment access. See the
+    [script policy reference](cli/trust-and-scripts.md#lifecycle-script-policy).
 
 Diagnostics and hook output may contain private paths, URLs, usernames, or tool
 output. Redact them before sharing. LunaPack does not collect telemetry.
