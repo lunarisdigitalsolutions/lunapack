@@ -27,6 +27,7 @@ internal sealed class PackLifecycleService(
     PackUpdateTransaction updateTransaction,
     IProjectStateStore projectStateStore,
     CliConsole console,
+    GitTransportPolicy transportPolicy,
     GitPackMaterializer? configuredGitPackMaterializer = null,
     LifecycleHookPlanner? configuredHookPlanner = null,
     LifecycleHookAuthorizer? configuredHookAuthorizer = null,
@@ -44,7 +45,7 @@ internal sealed class PackLifecycleService(
 
     private readonly GitPackMaterializer _gitPackMaterializer =
         configuredGitPackMaterializer
-        ?? new GitPackMaterializer(fileSystem, new GitProcessRunner(), console);
+        ?? new GitPackMaterializer(fileSystem, new GitProcessRunner(), console, transportPolicy);
     private readonly CliConsole _console = console;
     private readonly ConfiguredSourceIgnoreService? _sourceIgnoreService =
         configuredSourceIgnoreService;
@@ -61,10 +62,15 @@ internal sealed class PackLifecycleService(
         configuredHookExecutor ?? new(fileSystem, console);
     private readonly ExternalSourceRequirementPlanner _externalSourceRequirementPlanner =
         configuredExternalSourceRequirementPlanner
-        ?? new(new GitRefResolver(new GitProcessRunner()));
+        ?? new(new GitRefResolver(new GitProcessRunner()), transportPolicy);
     private readonly ExternalSourceMaterializer _externalSourceMaterializer =
         configuredExternalSourceMaterializer
-        ?? new(fileSystem, new GitProcessRunner(), new GitRefResolver(new GitProcessRunner()));
+        ?? new(
+            fileSystem,
+            new GitProcessRunner(),
+            new GitRefResolver(new GitProcessRunner()),
+            transportPolicy
+        );
     private readonly ExternalSourceConsentCoordinator _externalSourceConsentCoordinator =
         configuredExternalSourceConsentCoordinator
         ?? new(
@@ -1165,6 +1171,7 @@ internal sealed class PackLifecycleService(
         }
 
         var externalMaterialization = await _externalSourceMaterializer.MaterializeAsync(
+            projectDirectory,
             preparedSources.Requirements
         );
         if (externalMaterialization.Value is not { } materialization)
@@ -1476,6 +1483,7 @@ internal sealed class PackLifecycleService(
         }
 
         var requirements = await _externalSourceRequirementPlanner.PlanAsync(
+            projectDirectory,
             graph,
             configuration,
             parameters,

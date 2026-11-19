@@ -12,7 +12,8 @@ internal sealed class GitLinkSourceProvider(
     IFileSystem fileSystem,
     IGitProcessRunner processRunner,
     GitRefResolver refResolver,
-    GitLinkCache cache
+    GitLinkCache cache,
+    GitTransportPolicy transportPolicy
 ) : ILinkSourceProvider
 {
     private const int DefaultTimeoutSeconds = 300;
@@ -43,7 +44,25 @@ internal sealed class GitLinkSourceProvider(
                 Ref = linkRef,
             }
             : gitSource;
-        var resolution = await refResolver.ResolveAsync(effectiveSource, null, cancellationToken);
+        var authorization = await transportPolicy.AuthorizeAsync(
+            projectDirectory,
+            effectiveSource.Url,
+            effectiveSource.Name
+        );
+        if (!authorization.IsSuccess)
+        {
+            return ManifestOperationResult<LinkSourceListing>.Failure(
+                authorization.Error ?? $"Unable to authorize Git link source '{gitSource.Name}'."
+            );
+        }
+        var transportMode = authorization.Value;
+
+        var resolution = await refResolver.ResolveAsync(
+            effectiveSource,
+            null,
+            cancellationToken,
+            transportMode
+        );
         if (resolution.Value is not { } resolvedRef)
         {
             return ManifestOperationResult<LinkSourceListing>.Failure(
@@ -63,9 +82,23 @@ internal sealed class GitLinkSourceProvider(
 
         var cached = cache.LoadMetadata(identity, resolvedRef.ResolvedCommit);
         return cached is null
-            ? await ListFromGitAsync(effectiveSource, identity, provenance, cancellationToken)
+            ? await ListFromGitAsync(
+                effectiveSource,
+                identity,
+                provenance,
+                transportMode,
+                cancellationToken
+            )
             : ManifestOperationResult<LinkSourceListing>.Success(
-                CreateListing(identity, provenance, string.Empty, cached.Tree, null)
+                CreateListing(
+                    identity,
+                    provenance,
+                    string.Empty,
+                    cached.Tree,
+                    transportMode,
+                    effectiveSource.Name,
+                    null
+                )
             );
     }
 
@@ -139,6 +172,7 @@ internal sealed class GitLinkSourceProvider(
         ProjectConfiguration.GitSource source,
         ConfiguredSourceIdentity identity,
         GitSourceProvenance provenance,
+        GitTransportMode transportMode,
         CancellationToken cancellationToken
     )
     {
@@ -146,8 +180,10 @@ internal sealed class GitLinkSourceProvider(
         var fetched = await FetchAsync(
             repository,
             source.Url,
+            source.Name,
             provenance.ResolvedCommit,
             CreateTimeout(source),
+            transportMode,
             cancellationToken
         );
         if (!fetched.IsSuccess)
@@ -161,13 +197,26 @@ internal sealed class GitLinkSourceProvider(
         var listed = await processRunner.RunAsync(
             ["-C", repository, "ls-tree", "-r", "-z", "FETCH_HEAD"],
             CreateTimeout(source),
+            transportMode,
+            source.Url,
             cancellationToken
         );
         if (listed.Value is not { } output)
         {
             GitTemporaryWorkspace.Delete(fileSystem, repository);
             return ManifestOperationResult<LinkSourceListing>.Failure(
-                listed.Error ?? "Unable to enumerate the Git link source tree."
+                GitSourceFailureFormatter.Format(
+                    source.Name,
+                    listed.Error,
+                    "Unable to enumerate the Git link source tree."
+                )
+            );
+        }
+        if (output.StandardOutputTruncated)
+        {
+            GitTemporaryWorkspace.Delete(fileSystem, repository);
+            return ManifestOperationResult<LinkSourceListing>.Failure(
+                "Git link tree output was truncated; the source cannot be resolved safely."
             );
         }
 
@@ -194,6 +243,8 @@ internal sealed class GitLinkSourceProvider(
                 provenance,
                 repository,
                 tree,
+                transportMode,
+                source.Name,
                 () => GitTemporaryWorkspace.Delete(fileSystem, repository)
             )
         );
@@ -202,32 +253,56 @@ internal sealed class GitLinkSourceProvider(
     private async Task<ManifestOperationResult<bool>> FetchAsync(
         string repository,
         string sourceUrl,
+        string sourceName,
         string resolvedCommit,
         TimeSpan timeout,
+        GitTransportMode transportMode,
         CancellationToken cancellationToken
     )
     {
-        var commands = new[]
-        {
-            new[] { "init", "--quiet", repository },
-            ["-C", repository, "remote", "add", "origin", sourceUrl],
+        var commands = ((
+            string[] Arguments,
+            GitTransportMode TransportMode,
+            string? RepositoryUrl
+        )[])
             [
-                "-C",
-                repository,
-                "fetch",
-                "--depth=1",
-                "--filter=blob:none",
-                "origin",
-                resolvedCommit,
-            ],
-        };
-        foreach (var arguments in commands)
+                (["init", "--quiet", repository], GitTransportMode.SecureOnly, (string?)null),
+                (
+                    ["-C", repository, "remote", "add", "--", "origin", sourceUrl],
+                    GitTransportMode.SecureOnly,
+                    null
+                ),
+                (
+                    [
+                        "-C",
+                        repository,
+                        "fetch",
+                        "--depth=1",
+                        "--filter=blob:none",
+                        "origin",
+                        resolvedCommit,
+                    ],
+                    transportMode,
+                    sourceUrl
+                ),
+            ];
+        foreach (var (arguments, commandTransportMode, repositoryUrl) in commands)
         {
-            var result = await processRunner.RunAsync(arguments, timeout, cancellationToken);
+            var result = await processRunner.RunAsync(
+                arguments,
+                timeout,
+                commandTransportMode,
+                repositoryUrl,
+                cancellationToken
+            );
             if (!result.IsSuccess)
             {
                 return ManifestOperationResult<bool>.Failure(
-                    result.Error ?? "Git link source fetch failed."
+                    GitSourceFailureFormatter.Format(
+                        sourceName,
+                        result.Error,
+                        "Git link source fetch failed."
+                    )
                 );
             }
         }
@@ -259,8 +334,10 @@ internal sealed class GitLinkSourceProvider(
                 var fetched = await FetchAsync(
                     repository,
                     gitSource.Url,
+                    listing.SourceName,
                     gitSource.ResolvedCommit,
                     TimeSpan.FromSeconds(DefaultTimeoutSeconds),
+                    listing.TransportMode,
                     cancellationToken
                 );
                 if (!fetched.IsSuccess)
@@ -275,6 +352,9 @@ internal sealed class GitLinkSourceProvider(
                 repository,
                 gitSource.Path,
                 missingPaths,
+                listing.TransportMode,
+                gitSource.Url,
+                listing.SourceName,
                 cancellationToken
             );
             if (!checkout.IsSuccess)
@@ -297,6 +377,9 @@ internal sealed class GitLinkSourceProvider(
         string repository,
         string? basePath,
         IReadOnlyList<string> selectedPaths,
+        GitTransportMode transportMode,
+        string sourceUrl,
+        string sourceName,
         CancellationToken cancellationToken
     )
     {
@@ -305,42 +388,62 @@ internal sealed class GitLinkSourceProvider(
         );
         var commands = new[]
         {
-            new[] { "-C", repository, "sparse-checkout", "init", "--no-cone" },
-            [
-                "-C",
-                repository,
-                "sparse-checkout",
-                "set",
-                "--no-cone",
-                "--",
-                .. repositoryPaths.Select(path => $"/{path}"),
-            ],
-            [
-                "-c",
-                "core.autocrlf=false",
-                "-c",
-                "core.eol=lf",
-                "-c",
-                "core.symlinks=false",
-                "-C",
-                repository,
-                "checkout",
-                "--quiet",
-                "--detach",
-                "FETCH_HEAD",
-            ],
+            (
+                new[] { "-C", repository, "sparse-checkout", "init", "--no-cone" },
+                GitTransportMode.SecureOnly,
+                (string?)null
+            ),
+            (
+                (string[])
+                    [
+                        "-C",
+                        repository,
+                        "sparse-checkout",
+                        "set",
+                        "--no-cone",
+                        "--",
+                        .. repositoryPaths.Select(path => $"/{path}"),
+                    ],
+                GitTransportMode.SecureOnly,
+                null
+            ),
+            (
+                new[]
+                {
+                    "-c",
+                    "core.autocrlf=false",
+                    "-c",
+                    "core.eol=lf",
+                    "-c",
+                    "core.symlinks=false",
+                    "-C",
+                    repository,
+                    "checkout",
+                    "--quiet",
+                    "--detach",
+                    "FETCH_HEAD",
+                },
+                transportMode,
+                sourceUrl
+            ),
         };
-        foreach (var arguments in commands)
+        foreach (var (arguments, commandTransportMode, repositoryUrl) in commands)
         {
             var result = await processRunner.RunAsync(
                 arguments,
                 TimeSpan.FromSeconds(DefaultTimeoutSeconds),
+                commandTransportMode,
+                repositoryUrl,
                 cancellationToken
             );
             if (!result.IsSuccess)
             {
                 return ManifestOperationResult<bool>.Failure(
-                    result.Error ?? "Git link source checkout failed."
+                    GitSourceFailureFormatter.Format(
+                        sourceName,
+                        result.Error,
+                        "Git link source checkout failed."
+                    )
                 );
             }
         }
@@ -393,6 +496,8 @@ internal sealed class GitLinkSourceProvider(
         GitSourceProvenance provenance,
         string repository,
         IReadOnlyList<GitLinkCacheEntry> tree,
+        GitTransportMode transportMode,
+        string sourceName,
         Action? cleanup
     ) =>
         new(identity, provenance, repository, [.. tree.Select(entry => entry.Path)])
@@ -402,6 +507,8 @@ internal sealed class GitLinkSourceProvider(
                 entry => entry.BlobId,
                 StringComparer.Ordinal
             ),
+            TransportMode = transportMode,
+            SourceName = sourceName,
             Cleanup = cleanup,
         };
 

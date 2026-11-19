@@ -32,6 +32,31 @@ public sealed class ConfigCommandTests
     }
 
     [Test]
+    public async Task Set_WhenInsecureTransportPreferenceSelected_PersistsAndListsValue()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var store = CreateUserSettingsStore(workspace);
+
+        var setExitCode = await workspace.Application.RunAsync(
+            ["config", "set", "git.allow-insecure-transport", "true", "--global"],
+            workspace.Path
+        );
+        var listExitCode = await workspace.Application.RunAsync(
+            ["config", "list", "--global"],
+            workspace.Path
+        );
+        var settings = await store.LoadAsync();
+
+        await Assert.That(setExitCode).IsEqualTo(0);
+        await Assert.That(listExitCode).IsEqualTo(0);
+        await Assert
+            .That(settings.RequireValue().Global.Preferences?.Git?.AllowInsecureTransport)
+            .IsTrue();
+        await Assert.That(ansiConsole.Output).Contains("git.allow-insecure-transport=true");
+    }
+
+    [Test]
     public async Task Set_WhenProjectScopeSelected_UpdatesOnlyProjectConfiguration()
     {
         using var workspace = new TestWorkspace();

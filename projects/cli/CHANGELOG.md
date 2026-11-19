@@ -7,6 +7,16 @@ pack-package, documentation, CI, build, test, and release-process changes.
 
 Update this section before creating a release tag.
 
+### Git Sources
+
+- Git operations now reject `http://` and `git://` sources by default. The
+  scope-wide `git.allow-insecure-transport` preference provides a warned
+  opt-in; opted-in HTTP operations skip Git credential helpers. Secure HTTPS
+  operations require certificate verification and a direct final URL because
+  redirects are disabled. Git URLs containing queries or fragments and
+  checkout smudge filters are rejected; option-like repository locations are
+  rejected before Git runs.
+
 ### Fixed
 
 - Git links now fetch selected files missing from cached content using the

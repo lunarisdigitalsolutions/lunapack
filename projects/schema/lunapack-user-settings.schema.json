@@ -190,11 +190,23 @@
         "discover": {
           "$ref": "#/definitions/catalogPreferences"
         },
+        "git": {
+          "$ref": "#/definitions/gitPreferences"
+        },
         "search": {
           "$ref": "#/definitions/catalogPreferences"
         },
         "nextSteps": {
           "$ref": "#/definitions/nextStepPreferences"
+        }
+      }
+    },
+    "gitPreferences": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allowInsecureTransport": {
+          "type": "boolean"
         }
       }
     },
