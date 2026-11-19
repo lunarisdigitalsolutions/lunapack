@@ -140,7 +140,8 @@ internal sealed class PackUpdateSelectionService(
         return await packCatalog.BrowseForUpdatesAsync(
             projectDirectory,
             state.Configuration,
-            requestedPacks
+            requestedPacks,
+            requireComplete: true
         );
     }
 

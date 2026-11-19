@@ -19,6 +19,10 @@ Update this section before creating a release tag.
   alone. Managed paths reject terminal-control and hidden-format characters.
   Diagnostic retention is bounded to 1,000 findings per payload with an
   omission summary.
+- `luna audit`, `luna outdated`, and `luna validate <pack-reference>` accept
+  `--format json` for versioned machine-readable results. JSON stays on
+  standard output while human-readable diagnostics use standard error; audit
+  results include stable finding codes and severity counts.
 
 ### Fixed
 

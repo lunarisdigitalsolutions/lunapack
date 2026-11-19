@@ -1,4 +1,5 @@
 ﻿using System.Text.Json.Serialization;
+using Lunapack.Cli.Application.Diagnostics;
 using Lunapack.Cli.Links;
 using Lunapack.Cli.Packs.Manifest;
 using Lunapack.Cli.Project;
@@ -19,4 +20,16 @@ namespace Lunapack.Cli.Application.Serialization;
 [JsonSerializable(typeof(GitLinkCacheMetadata))]
 [JsonSerializable(typeof(OciPackArtifact.OciPackConfig))]
 [JsonSerializable(typeof(OciPackArtifact.OciPackImageManifest))]
+[JsonSerializable(
+    typeof(CliJsonEnvelope<CliJsonAuditResult>),
+    TypeInfoPropertyName = "CliJsonAuditEnvelope"
+)]
+[JsonSerializable(
+    typeof(CliJsonEnvelope<CliJsonOutdatedResult>),
+    TypeInfoPropertyName = "CliJsonOutdatedEnvelope"
+)]
+[JsonSerializable(
+    typeof(CliJsonEnvelope<CliJsonValidationResult>),
+    TypeInfoPropertyName = "CliJsonValidationEnvelope"
+)]
 internal partial class LunapackJsonContext : JsonSerializerContext { }

@@ -1,5 +1,6 @@
 using System.CommandLine;
 using Lunapack.Cli.Application;
+using Lunapack.Cli.Application.Diagnostics;
 using Lunapack.Cli.Links;
 using Lunapack.Cli.Packs.ContentScreening;
 using Lunapack.Cli.Project;
@@ -19,32 +20,90 @@ internal sealed class AuditCommandHandler(
     public Command CreateCommand(string projectDirectory, Option<string?> workspaceOption)
     {
         var command = new Command("audit", "Report resolved pack and link state.");
-        command.SetAction(parseResult =>
-            AuditAsync(
+        var formatOption = CliOutputFormatOption.Create();
+        command.Options.Add(formatOption);
+        command.SetAction(async parseResult =>
+        {
+            if (!CliOutputFormatOption.TryParse(parseResult.GetValue(formatOption), out var format))
+            {
+                return console.Fail(
+                    CliOutputFormatOption.FormatUnsupportedMessage(
+                        parseResult.GetValue(formatOption)
+                    )
+                );
+            }
+
+            return await AuditAsync(
                 workspaceDirectoryResolver.Resolve(
                     projectDirectory,
                     parseResult.GetValue(workspaceOption)
-                )
-            )
-        );
+                ),
+                format,
+                parseResult.InvocationConfiguration.Output
+            );
+        });
 
         return command;
     }
 
-    public async Task<int> AuditAsync(string projectDirectory)
+    public async Task<int> AuditAsync(
+        string projectDirectory,
+        CliOutputFormat format,
+        TextWriter output
+    )
     {
         var prerequisiteFailure = await prerequisiteGuard.RequireWorkspaceAsync(projectDirectory);
         if (prerequisiteFailure is not null)
         {
+            WriteJsonFailure(format, output);
             return prerequisiteFailure.Value;
         }
 
         var inspected = await auditService.InspectAsync(projectDirectory);
         if (inspected.Value is not { } report)
         {
-            return console.Fail(inspected.Error);
+            return Fail(inspected.Error, format, output);
         }
 
+        if (format == CliOutputFormat.Json)
+        {
+            var loadedState = await projectStateStore.LoadAsync(projectDirectory);
+            if (loadedState.Value is not { } state)
+            {
+                return Fail(loadedState.Error, format, output);
+            }
+
+            var links = linkLifecycleService.Audit(projectDirectory, state.LockFile);
+            var findings = AuditJsonMapper.MapFindings(report, links);
+            CliJsonWriter.WriteAudit(
+                output,
+                AuditJsonMapper.MapResult(report, links),
+                findings,
+                CliJsonSummary.FromFindings(findings)
+            );
+            return 0;
+        }
+
+        RenderReport(report);
+        var textState = await projectStateStore.LoadAsync(projectDirectory);
+        if (textState.Value is not { } projectState)
+        {
+            return console.Fail(textState.Error);
+        }
+
+        RenderLinks(linkLifecycleService.Audit(projectDirectory, projectState.LockFile));
+        return 0;
+    }
+
+    private int Fail(string? message, CliOutputFormat format, TextWriter output)
+    {
+        var exitCode = console.Fail(message);
+        WriteJsonFailure(format, output);
+        return exitCode;
+    }
+
+    private void RenderReport(AuditReport report)
+    {
         var table = new Table().Title("[bold]Resolved packs[/]").Border(TableBorder.Rounded);
         table.AddColumn("[bold]Pack[/]");
         table.AddColumn("[bold]Source[/]");
@@ -95,20 +154,18 @@ internal sealed class AuditCommandHandler(
                 )
             );
         }
-
-        var state = await projectStateStore.LoadAsync(projectDirectory);
-        if (state.Value is not { } projectState)
-        {
-            return console.Fail(state.Error);
-        }
-
-        RenderLinks(projectDirectory, projectState.LockFile);
-        return 0;
     }
 
-    private void RenderLinks(string projectDirectory, ProjectLockFile lockFile)
+    private static void WriteJsonFailure(CliOutputFormat format, TextWriter output)
     {
-        var reports = linkLifecycleService.Audit(projectDirectory, lockFile);
+        if (format == CliOutputFormat.Json)
+        {
+            CliJsonWriter.WriteAuditFailure(output);
+        }
+    }
+
+    private void RenderLinks(IReadOnlyList<LinkAuditReport> reports)
+    {
         if (reports.Count == 0)
         {
             return;

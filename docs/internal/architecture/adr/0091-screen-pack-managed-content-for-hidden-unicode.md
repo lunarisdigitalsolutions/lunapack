@@ -5,7 +5,7 @@ decision-makers:
   - Lunaris Engineering
 ---
 
-# Screen Pack-Managed Content for Hidden Unicode
+# ADR-0091: Screen Pack-Managed Content for Hidden Unicode
 
 ## Context and Problem Statement
 
