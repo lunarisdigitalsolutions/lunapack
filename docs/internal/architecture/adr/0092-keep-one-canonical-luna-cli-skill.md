@@ -50,7 +50,7 @@ The LunaPack release selects the canonical directory with
 `copy/overwrite`. Initial installation still rejects an occupied target that
 is not managed by LunaPack; the strategy lets a later release replace the same
 LunaPack-owned file. The Skills CLI installation URL pins commit
-`690521e024a7e62e14a9a3aa8dda3663ba241591` and runs exact package version
+`117cecc18e8c33418b8a540b2637b384441601e9` and runs exact package version
 `skills@1.9.0`; the LunaPack Git source uses the same full commit. Agent
 instruction installation does not follow an unpinned npm tag or a moving
 repository ref.

@@ -20,7 +20,7 @@ canonical content at `.agents/skills/luna-cli`.
 
 Use exact package and repository revisions for agent instructions. `skills` at
 version `1.9.0` reads the canonical directory from commit
-`690521e024a7e62e14a9a3aa8dda3663ba241591`; neither value follows a mutable
+`117cecc18e8c33418b8a540b2637b384441601e9`; neither value follows a mutable
 tag.
 
 First prove that no installer owns a target or stale lock entry:
@@ -66,7 +66,7 @@ use `--rename` or a manual copy to bypass an ownership record.
 
 ```powershell
 npx --yes skills@1.9.0 add `
-  https://github.com/lunarisdigitalsolutions/lunapack/tree/690521e024a7e62e14a9a3aa8dda3663ba241591/projects/packs/lunapack/guidance/luna-cli/1.0.0/targets/.agents/skills/luna-cli `
+  https://github.com/lunarisdigitalsolutions/lunapack/tree/117cecc18e8c33418b8a540b2637b384441601e9/projects/packs/lunapack/guidance/luna-cli/1.0.0/targets/.agents/skills/luna-cli `
   --skill luna-cli `
   --copy
 ```
@@ -114,7 +114,7 @@ not configured, add the public repository as a Git source:
 ```powershell
 luna sources add github repository-packs `
   lunarisdigitalsolutions/lunapack `
-  --ref 690521e024a7e62e14a9a3aa8dda3663ba241591 `
+  --ref 117cecc18e8c33418b8a540b2637b384441601e9 `
   --path projects/packs
 ```
 
@@ -182,7 +182,7 @@ To move from LunaPack to the Skills CLI:
 luna uninstall luna-cli --scripts skip --skip-instructions
 # Run the ownership preflight before the next command.
 npx --yes skills@1.9.0 add `
-  https://github.com/lunarisdigitalsolutions/lunapack/tree/690521e024a7e62e14a9a3aa8dda3663ba241591/projects/packs/lunapack/guidance/luna-cli/1.0.0/targets/.agents/skills/luna-cli `
+  https://github.com/lunarisdigitalsolutions/lunapack/tree/117cecc18e8c33418b8a540b2637b384441601e9/projects/packs/lunapack/guidance/luna-cli/1.0.0/targets/.agents/skills/luna-cli `
   --skill luna-cli `
   --copy
 ```
