@@ -5,7 +5,7 @@ decision-makers:
   - Lunaris Engineering
 ---
 
-# ADR-0091: Keep One Canonical Luna CLI Skill
+# ADR-0092: Keep One Canonical Luna CLI Skill
 
 ## Context and Problem Statement
 

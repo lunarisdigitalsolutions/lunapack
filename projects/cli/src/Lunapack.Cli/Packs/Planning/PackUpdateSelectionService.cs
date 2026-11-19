@@ -18,7 +18,8 @@ internal sealed class PackUpdateSelectionService(
 
     public async Task<ManifestOperationResult<PackUpdateAvailability>> GetAvailableAsync(
         string projectDirectory,
-        bool offline = false
+        bool offline = false,
+        bool allowHiddenCharacters = true
     )
     {
         var loadedState = await projectStateStore.LoadAsync(projectDirectory);
@@ -71,7 +72,8 @@ internal sealed class PackUpdateSelectionService(
             projectDirectory,
             state,
             catalogPacks,
-            versionUpdates
+            versionUpdates,
+            allowHiddenCharacters
         );
         return updates.Value is { } availableUpdates
             ? ManifestOperationResult<PackUpdateAvailability>.Success(
@@ -138,7 +140,8 @@ internal sealed class PackUpdateSelectionService(
         return await packCatalog.BrowseForUpdatesAsync(
             projectDirectory,
             state.Configuration,
-            requestedPacks
+            requestedPacks,
+            requireComplete: true
         );
     }
 
@@ -217,7 +220,8 @@ internal sealed class PackUpdateSelectionService(
         string projectDirectory,
         ProjectState state,
         IReadOnlyList<CatalogPack> catalog,
-        IReadOnlyList<AvailablePackUpdate> versionUpdates
+        IReadOnlyList<AvailablePackUpdate> versionUpdates,
+        bool allowHiddenCharacters
     )
     {
         var updates = versionUpdates.ToList();
@@ -252,6 +256,9 @@ internal sealed class PackUpdateSelectionService(
                     root.Destination,
                     false
                 )
+                {
+                    AllowHiddenCharacters = allowHiddenCharacters,
+                }
             );
             if (preview.Value is not { } plan)
             {

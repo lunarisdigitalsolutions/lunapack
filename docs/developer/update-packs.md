@@ -80,6 +80,13 @@ target content. Copy strategies may replace, back up, retain, or reject it,
 while merge strategies combine it according to their method. Review the dry
 run instead of assuming local edits are preserved.
 
+Luna screens final text selected for creation or replacement after merge
+planning, before lifecycle hooks or project changes. Unicode bidi controls and
+U+200B block update unless you review the output and add
+`--allow-hidden-characters`. Other format characters remain warnings. The
+override does not suppress retained diagnostics or omission summaries. NUL or
+invalid UTF-8 bytes do not block alone, but recoverable hidden controls do.
+
 When a new pack version stops declaring an owned target, update deletes that
 target without comparing its current bytes with the locked digest. This differs
 from uninstall, which refuses to remove a modified target. Use `--dry-run` to

@@ -1,5 +1,6 @@
 ﻿using System.CommandLine;
 using Lunapack.Cli.Application;
+using Lunapack.Cli.Application.Diagnostics;
 using Lunapack.Cli.Links;
 using Lunapack.Cli.Packs.Planning;
 using Lunapack.Cli.Project;
@@ -26,24 +27,44 @@ internal sealed class OutdatedPackCommandHandler(
             Description = "Use lock and cache evidence without contacting remotes.",
         };
         command.Options.Add(offlineOption);
-        command.SetAction(parseResult =>
-            OutdatedAsync(
+        var formatOption = CliOutputFormatOption.Create();
+        command.Options.Add(formatOption);
+        command.SetAction(async parseResult =>
+        {
+            if (!CliOutputFormatOption.TryParse(parseResult.GetValue(formatOption), out var format))
+            {
+                return console.Fail(
+                    CliOutputFormatOption.FormatUnsupportedMessage(
+                        parseResult.GetValue(formatOption)
+                    )
+                );
+            }
+
+            return await OutdatedAsync(
                 workspaceDirectoryResolver.Resolve(
                     projectDirectory,
                     parseResult.GetValue(workspaceOption)
                 ),
-                parseResult.GetValue(offlineOption)
-            )
-        );
+                parseResult.GetValue(offlineOption),
+                format,
+                parseResult.InvocationConfiguration.Output
+            );
+        });
 
         return command;
     }
 
-    public async Task<int> OutdatedAsync(string projectDirectory, bool offline = false)
+    public async Task<int> OutdatedAsync(
+        string projectDirectory,
+        bool offline,
+        CliOutputFormat format,
+        TextWriter output
+    )
     {
         var prerequisiteFailure = await prerequisiteGuard.RequireSourcesAsync(projectDirectory);
         if (prerequisiteFailure is not null)
         {
+            WriteJsonFailure(format, output);
             return prerequisiteFailure.Value;
         }
 
@@ -53,7 +74,7 @@ internal sealed class OutdatedPackCommandHandler(
         );
         if (availableUpdates.Value is not { } availability)
         {
-            return console.Fail(availableUpdates.Error);
+            return Fail(availableUpdates.Error, format, output);
         }
 
         var updates = availability.Updates;
@@ -70,10 +91,19 @@ internal sealed class OutdatedPackCommandHandler(
             var reportedLinks = await linkLifecycleService.OutdatedAsync(projectDirectory);
             if (reportedLinks.Value is not { } resolvedLinks)
             {
-                return console.Fail(reportedLinks.Error);
+                return Fail(reportedLinks.Error, format, output);
             }
 
             outdatedLinks = resolvedLinks;
+        }
+
+        if (format == CliOutputFormat.Json)
+        {
+            CliJsonWriter.WriteOutdated(
+                output,
+                OutdatedJsonMapper.Map(availability, outdatedLinks, remoteRefsChecked: !offline)
+            );
+            return availability.IntegrityViolations.Count > 0 ? 1 : 0;
         }
 
         RenderAvailableUpdates(updates);
@@ -95,6 +125,21 @@ internal sealed class OutdatedPackCommandHandler(
         }
 
         return availability.IntegrityViolations.Count > 0 ? 1 : 0;
+    }
+
+    private int Fail(string? message, CliOutputFormat format, TextWriter output)
+    {
+        var exitCode = console.Fail(message);
+        WriteJsonFailure(format, output);
+        return exitCode;
+    }
+
+    private static void WriteJsonFailure(CliOutputFormat format, TextWriter output)
+    {
+        if (format == CliOutputFormat.Json)
+        {
+            CliJsonWriter.WriteOutdated(output, null);
+        }
     }
 
     private void RenderAvailableUpdates(IReadOnlyList<AvailablePackUpdate> updates)

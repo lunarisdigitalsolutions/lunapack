@@ -25,21 +25,38 @@ internal sealed class OciPackDiscovery(
         int sourceOrder,
         CancellationToken cancellationToken = default
     ) =>
-        BrowseAsync(projectDirectory, source, sourceOrder, requestedPacks: null, cancellationToken);
+        BrowseAsync(
+            projectDirectory,
+            source,
+            sourceOrder,
+            requestedPacks: null,
+            requireComplete: false,
+            cancellationToken: cancellationToken
+        );
 
     public Task<ManifestOperationResult<IReadOnlyList<CatalogPack>>> BrowseForUpdatesAsync(
         string projectDirectory,
         ProjectConfiguration.OciSource source,
         int sourceOrder,
         IReadOnlyDictionary<string, string?> requestedPacks,
+        bool requireComplete = false,
         CancellationToken cancellationToken = default
-    ) => BrowseAsync(projectDirectory, source, sourceOrder, requestedPacks, cancellationToken);
+    ) =>
+        BrowseAsync(
+            projectDirectory,
+            source,
+            sourceOrder,
+            requestedPacks,
+            requireComplete,
+            cancellationToken
+        );
 
     private async Task<ManifestOperationResult<IReadOnlyList<CatalogPack>>> BrowseAsync(
         string projectDirectory,
         ProjectConfiguration.OciSource source,
         int sourceOrder,
         IReadOnlyDictionary<string, string?>? requestedPacks,
+        bool requireComplete,
         CancellationToken cancellationToken
     )
     {
@@ -74,10 +91,12 @@ internal sealed class OciPackDiscovery(
                 console.Warning(
                     $"{enumerationError}; catalog enumeration is unavailable; directly queried {requestedPacks.Count} requested pack ID(s), so discovery remains incomplete."
                 );
-                if (directPacks.Count == 0)
+                if (directPacks.Count == 0 || requireComplete)
                 {
                     return Failure<IReadOnlyList<CatalogPack>>(
-                        $"{enumerationError}; no requested OCI releases were found by direct lookup."
+                        directPacks.Count == 0
+                            ? $"{enumerationError}; no requested OCI releases were found by direct lookup."
+                            : $"{enumerationError}; OCI catalog discovery is incomplete."
                     );
                 }
 
@@ -106,6 +125,13 @@ internal sealed class OciPackDiscovery(
 
         if (result.HadFailures)
         {
+            if (requireComplete)
+            {
+                return Failure<IReadOnlyList<CatalogPack>>(
+                    $"OCI source '{source.Name}' discovery is incomplete; some repositories or releases were unavailable."
+                );
+            }
+
             console.Warning(
                 $"OCI source '{source.Name}' discovery is incomplete; some repositories or releases were unavailable."
             );

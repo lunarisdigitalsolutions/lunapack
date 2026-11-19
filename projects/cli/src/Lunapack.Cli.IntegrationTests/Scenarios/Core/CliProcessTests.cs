@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 
 namespace Lunapack.Cli.IntegrationTests.Scenarios.Core;
 
@@ -72,6 +73,30 @@ public sealed class CliProcessTests
             .That(warningLogging.StandardOutput)
             .DoesNotContain("debug: Running CLI command");
         await Assert.That(warningLogging.StandardError).IsEmpty();
+    }
+
+    [Test]
+    public async Task Scenario_AuditJson_RoutesDebugDiagnosticsToStandardError()
+    {
+        using var workspace = new TestWorkspace();
+        await CliProcess.InvokeAsync(workspace.Path, "init");
+
+        var result = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "audit",
+            "--format",
+            "json",
+            "--log-level",
+            "debug"
+        );
+
+        await Assert.That(result.ExitCode).IsZero();
+        using var document = JsonDocument.Parse(result.StandardOutput);
+        await Assert
+            .That(document.RootElement.GetProperty("command").GetString())
+            .IsEqualTo("audit");
+        await Assert.That(result.StandardError).Contains("debug: Running CLI command");
+        await Assert.That(result.StandardError).DoesNotContain("\u001b");
     }
 
     [Test]
