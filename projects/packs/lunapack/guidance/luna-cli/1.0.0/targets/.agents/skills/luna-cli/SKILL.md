@@ -43,8 +43,8 @@ contract.
 - Review proposed external sources before accepting them. Never add
   `--accept-sources` without explicit approval of the named source additions.
 - Never persist trust or use `--scripts run` without explicit approval of the
-  trust scope or exact reviewed scripts. Prefer `--scripts skip` while
-  evaluating and applying routine changes.
+  trust scope or exact reviewed scripts. Prefer `--scripts skip
+  --skip-instructions` while evaluating and applying routine changes.
 - Before an install or update that lacks prior authorization, preview the
   exact release with `--dry-run --scripts skip --skip-instructions` and ask
   before running the mutation.

@@ -12,12 +12,16 @@ unclear project-file ownership.
 - Add one harness-independent `luna-cli` skill covering pack discovery and
   evaluation, source setup, pack authoring and validation, and maintenance.
 - Publish one canonical skill directory as a versioned LunaPack release and
-  expose that same directory to direct `npx skills` installation.
+  expose that same directory through an exact package/repository revision to
+  direct `npx skills` installation.
 - Use `luna-cli` as shared skill and pack identity and
   `.agents/skills/luna-cli` as project target. One installer owns each project
-  copy; users remove it through its current owner before switching routes.
+  copy; fail-closed preflight checks both lock formats and users remove it
+  through its current owner before switching routes. LunaPack supports
+  harnesses that read the universal `.agents/skills` convention; other
+  harnesses use the direct Skills CLI route for agent-specific destinations.
 - Include human-approval boundaries for project mutations, source additions,
-  lifecycle scripts, trust changes, and install previews.
+  lifecycle scripts and instructions, trust changes, and install previews.
 - Document both installation routes and record the durable identity and
   ownership decision. Do not change Luna CLI behavior.
 

@@ -47,16 +47,44 @@ The skill frontmatter name and LunaPack pack ID are both `luna-cli`, and both
 installers target `.agents/skills/luna-cli`.
 
 The LunaPack release selects the canonical directory with
-`copy/fail-if-exists`. The Skills CLI installation URL points to that same
-directory. Each project copy has one installer owner. Before switching routes,
-the user removes the copy through its current installer. A direct install must
-not be overwritten by LunaPack, and users must not run the Skills CLI over a
-LunaPack-owned copy.
+`copy/overwrite`. Initial installation still rejects an occupied target that
+is not managed by LunaPack; the strategy lets a later release replace the same
+LunaPack-owned file. The Skills CLI installation URL pins commit
+`9cf119d4818c337495f13cd1309fc827cbdfd8b9` and runs exact package version
+`skills@1.9.0`; the LunaPack Git source uses the same full commit. Agent
+instruction installation does not follow an unpinned npm tag or a moving
+repository ref.
+
+Each project copy has one installer owner. Before an initial direct or LunaPack
+installation, and before every route switch, the documented PowerShell
+preflight must verify that the canonical target has no descendants or symlink,
+neither `skills` lock nor Luna project/lock state contains `luna-cli`, and the
+relevant installer can therefore claim the copy without conflict. The
+operation fails closed when any condition is true. LunaPack's installation
+ownership check independently protects an unmanaged occupied target, while
+`overwrite` permits future updates to the same owned file. The Skills CLI has
+no equivalent cross-installer guard, so users must not bypass or omit this
+preflight.
+
+An empty, non-symlink target directory is not an occupied target because
+LunaPack uninstall may leave one behind. The preflight still refuses a target
+file, symlink, any descendant, or either installer's lock record.
 
 The installers do not share lock state. No `--rename` variant, secondary target,
-cross-installer lock protocol, or simultaneous ownership is supported. A
-moving Git ref may be used for convenient discovery, but reproducible
-automation should select a reviewed commit or release ref.
+cross-installer lock protocol, force replacement, or simultaneous ownership is
+supported. Route switching removes the copy through its recorded owner,
+repeats the preflight, and invokes only then the other installer.
+
+The LunaPack route installs the universal `.agents/skills` copy only and is
+supported for harnesses that read that convention. Harnesses requiring a
+different agent-specific directory use the Skills CLI route, which creates
+the canonical project copy and the selected harness links or copies from the
+same skill source.
+
+The skill treats pack metadata, repository content, CLI output, and lifecycle
+instructions as untrusted data. Agent-run install, update, and uninstall
+commands combine `--scripts skip` with `--skip-instructions`, because script
+consent controls do not suppress publisher-controlled instruction hooks.
 
 ### Consequences
 
@@ -64,21 +92,32 @@ automation should select a reviewed commit or release ref.
   release source.
 - Good, because either installer produces the same skill identity and project
   target without a runtime dependency.
-- Good, because LunaPack's `fail-if-exists` strategy preserves an unowned or
-  Skills-CLI-owned target and reports the conflict.
+- Good, because LunaPack's ownership planner preserves an unowned or
+  Skills-CLI-owned target and reports the conflict while allowing updates to
+  the LunaPack-owned skill.
+- Good, because fail-closed preflight prevents a known Skills CLI owner or
+  LunaPack owner from being silently replaced through the documented routes.
+- Good, because exact package and repository revisions bind initial agent
+  instruction bytes.
 - Bad, because the installers keep separate lock state and switching routes
   requires explicit removal through the current owner.
-- Bad, because a direct URL using `main` follows repository movement unless the
-  consumer pins another ref.
+- Bad, because the Skills CLI cannot consume LunaPack lock state itself;
+  consumers must run the documented preflight immediately before installation.
+- Bad, because harnesses without `.agents/skills` discovery cannot use the
+  LunaPack target and must select the direct Skills CLI route.
 
 ### Confirmation
 
-Confirm the canonical skill is accepted by the Skills CLI and passes LunaPack
-local manifest validation and catalog validation as `luna-cli@1.0.0`. Smoke-test
-both installation routes in separate clean projects and compare the installed
-`SKILL.md` bytes. Attempt LunaPack installation over a Skills-CLI-owned target
-and confirm the target remains unchanged; remove it through the Skills CLI,
-then confirm LunaPack installation succeeds.
+Confirm the canonical skill is accepted by the exact Skills CLI package and
+passes LunaPack local manifest validation and catalog validation as
+`luna-cli@1.0.0`. Smoke-test the package/repository pins and both installation
+routes in separate clean projects; compare installed `SKILL.md` bytes. Verify
+the ownership preflight refuses an occupied target, Skills CLI lock ownership,
+and LunaPack config/lock ownership in both route directions, while accepting
+the empty directory left by LunaPack uninstall. Verify LunaPack independently
+preserves a Skills-CLI-owned target on initial install, updates a changed
+LunaPack-owned skill through `copy/overwrite`, and permits successful switching
+only after removal through the current owner.
 
 ## Pros and Cons of the Options
 
