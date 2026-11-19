@@ -433,11 +433,14 @@ internal static partial class ManifestModelValidator
                 continue;
             }
 
+            var targetIsValid =
+                !string.IsNullOrEmpty(managedFile.Target)
+                && IsSafeProjectRelativePath(managedFile.Target);
             if (string.IsNullOrEmpty(managedFile.Target))
             {
                 issues.Add("Managed file target is required.");
             }
-            else if (!IsSafeProjectRelativePath(managedFile.Target))
+            else if (!targetIsValid)
             {
                 issues.Add("Managed file target must stay inside the project.");
             }
@@ -449,6 +452,11 @@ internal static partial class ManifestModelValidator
             else if (managedFile.Condition is { } condition)
             {
                 ValidateCondition(condition, declarations, "Managed file condition", false, issues);
+            }
+
+            if (!targetIsValid)
+            {
+                continue;
             }
 
             ValidateSelector(managedFile, sources, issues);
@@ -520,7 +528,7 @@ internal static partial class ManifestModelValidator
             && !IsSafeProjectRelativePath(selector.Value);
         if (hasUnsafeSelectorPath)
         {
-            issues.Add($"Managed file selector '{selector.Value}' must stay inside its source.");
+            issues.Add("Managed file selector must stay inside its source.");
         }
 
         foreach (var exclusion in selector.Exclusions)
@@ -1880,11 +1888,17 @@ internal static partial class ManifestModelValidator
     }
 
     private static bool IsRelativePath(string? value) =>
-        !string.IsNullOrEmpty(value) && !IsAbsolutePath(value);
+        !string.IsNullOrEmpty(value)
+        && !IsAbsolutePath(value)
+        && !ProjectPath.ContainsUnsafePathCharacters(value);
 
     private static bool IsSafeProjectRelativePath(string? value)
     {
-        if (string.IsNullOrEmpty(value) || IsAbsolutePath(value))
+        if (
+            string.IsNullOrEmpty(value)
+            || IsAbsolutePath(value)
+            || ProjectPath.ContainsUnsafePathCharacters(value)
+        )
         {
             return false;
         }

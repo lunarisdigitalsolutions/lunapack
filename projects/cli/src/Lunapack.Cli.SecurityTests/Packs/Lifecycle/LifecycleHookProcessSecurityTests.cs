@@ -43,7 +43,10 @@ public sealed class LifecycleHookProcessSecurityTests
                 CreatePolicy(timeoutSeconds: 1)
             );
 
-            await Assert.That(result.Outcome).IsEqualTo(LifecycleHookOutcome.TimedOut);
+            await Assert
+                .That(result.Outcome)
+                .IsEqualTo(LifecycleHookOutcome.TimedOut)
+                .Because(result.Error ?? "No lifecycle error was returned.");
             await Assert.That(result.Error).Contains("exceeded its 1-second timeout");
         });
     }

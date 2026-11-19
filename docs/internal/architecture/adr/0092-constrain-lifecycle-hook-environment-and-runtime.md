@@ -5,7 +5,7 @@ decision-makers:
   - Lunaris Engineering
 ---
 
-# ADR-0090: Constrain Lifecycle Hook Environment Warnings and Runtime
+# ADR-0092: Constrain Lifecycle Hook Environment Warnings and Runtime
 
 ## Context and Problem Statement
 

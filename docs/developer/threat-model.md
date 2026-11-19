@@ -132,6 +132,24 @@ Treat every pack and source as publisher code.
 | Verification  | Traversal, rooted-path, collision, link-like-entry, corrupt ZIP, size-boundary, cleanup, and no-mutation tests.                                                                                                                                |
 | Residual risk | An authorized publisher can still supply harmful but structurally valid pack content or scripts.                                                                                                                                               |
 
+### TM-T05: Review Bypass Through Hidden Unicode
+
+| Field         | Assessment                                                                                                                                                                                                                                    |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Component     | Managed pack content, managed paths, install/update plans, author validation, publication, and audit output                                                                                                                                   |
+| Asset         | Human-readable review state and the bytes LunaPack will apply or publish                                                                                                                                                                      |
+| Scenario      | A pack uses bidi controls, zero-width characters, invalid-byte prefixes, BOM ambiguity, or terminal controls in paths so a reviewer sees text or output that differs from the actual bytes.                                                   |
+| Preconditions | A user reviews, installs, validates, or publishes pack-managed content, or audits files after an attacker can modify them.                                                                                                                    |
+| Likelihood    | Medium                                                                                                                                                                                                                                        |
+| Impact        | Deceptive content can bypass visual review, conceal or split identifiers, spoof diagnostic paths, and reach lifecycle or release boundaries without an obvious warning.                                                                       |
+| Severity      | High                                                                                                                                                                                                                                          |
+| Controls      | Final-plan, raw-source, and installed-target screening; strict/recovering Unicode decoding; high-confidence blocker policy; terminal-safe path validation and diagnostics; emoji exemptions; bounded finding retention; audit-only reporting. |
+| Fix           | Implemented. Inspect every reported code point and use `--allow-hidden-characters` only for a reviewed byte sequence.                                                                                                                         |
+| Priority      | Implemented review control                                                                                                                                                                                                                    |
+| Status        | Fixed for the classified Unicode and path cases; semantic review still matters                                                                                                                                                                |
+| Verification  | Scalar-location, all-bidi, U+200B, NUL/invalid/BOM, orphan-selector, truncation, terminal-path, state-preservation, authoring, publication, and lifecycle tests.                                                                              |
+| Residual risk | Hidden characters outside the blocker or scanner scope can remain warnings, and valid Unicode cannot prove benign intent. Different editors and terminals may still render the same bytes differently.                                        |
+
 ## Repudiation
 
 ### TM-R01: Lifecycle Action Denial
@@ -254,7 +272,8 @@ Treat every pack and source as publisher code.
 2. Pin full Git commits and exact Luna versions in reproducible automation.
 3. Inspect unfamiliar packs and run `--dry-run` before applying changes.
 4. Review managed targets, external sources, templates, instructions, and hook
-   arguments.
+   arguments. Investigate every hidden-Unicode finding in the original bytes;
+   do not judge only by rendered text.
 5. Use `--scripts skip` or the narrowest trust scope that satisfies the workflow.
 6. Keep `lunapack-lock.yml` under review and use `luna audit` for drift.
 7. Run untrusted evaluation in a disposable workspace with minimal credentials.

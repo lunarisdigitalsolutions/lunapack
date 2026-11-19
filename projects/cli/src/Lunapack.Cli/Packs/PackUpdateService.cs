@@ -770,22 +770,12 @@ internal sealed class PackUpdateService(
         CancellationToken cancellationToken = default
     )
     {
-        var updateRequestResult = PackInstallationRequest.Create(
-            fileSystem,
+        var updateRequestResult = CreateUpdateRequest(
             projectDirectory,
-            updateRequestRoot.Version is null
-                ? updateRequestRoot.Id
-                : $"{updateRequestRoot.Id}@{updateRequestRoot.Version}",
-            updateRequestRoot.Destination,
-            adoptExisting: false,
-            options.Parameters,
-            options.NoVariables,
-            options.SkippedVariables,
-            options.DirectoryRemappings,
-            options.FileRemappings,
+            updateRequestRoot,
             scriptMode,
             skipInstructions,
-            options.SaveRemapping
+            options
         );
         if (updateRequestResult.Value is not { } updateRequest)
         {
@@ -861,6 +851,32 @@ internal sealed class PackUpdateService(
                     : root
             ),
         ];
+
+    private ManifestOperationResult<PackInstallationRequest> CreateUpdateRequest(
+        string projectDirectory,
+        ProjectConfiguration.RequestedPack requestedRoot,
+        ScriptExecutionMode scriptMode,
+        bool skipInstructions,
+        PackUpdateOptions options
+    ) =>
+        PackInstallationRequest.Create(
+            fileSystem,
+            projectDirectory,
+            requestedRoot.Version is null
+                ? requestedRoot.Id
+                : $"{requestedRoot.Id}@{requestedRoot.Version}",
+            requestedRoot.Destination,
+            adoptExisting: false,
+            options.Parameters,
+            options.NoVariables,
+            options.SkippedVariables,
+            options.DirectoryRemappings,
+            options.FileRemappings,
+            scriptMode,
+            skipInstructions,
+            options.SaveRemapping,
+            options.AllowHiddenCharacters
+        );
 
     internal sealed record UpdateResult(
         IReadOnlyList<UpdateOutcome> Outcomes,

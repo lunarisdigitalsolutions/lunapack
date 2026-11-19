@@ -36,6 +36,8 @@ managed-file move paths. It:
 
 - accepts either separator;
 - rejects empty and rooted paths, including UNC and drive-qualified paths;
+- rejects terminal controls, Unicode `Format` characters, line separators, and
+  paragraph separators;
 - resolves `.` and `..` through the injected filesystem abstraction;
 - rejects a location outside the project directory; and
 - returns a slash-only, project-relative path without a trailing slash.
@@ -73,9 +75,11 @@ symlinks and reparse points before reading bytes.
 Pack authoring applies `NormalizeProjectRelativePath` to file, directory,
 target, composite-reference remap, and lifecycle-script file input. Manifest
 deserialization normalizes composite remap keys and values through `ProjectPath`;
-`@ignore` remains a reserved non-path target. Glob input uses `Normalize` before
-separate checks reject rooted and parent-traversing patterns. Persisted
-`pack.yml` paths always use `/`.
+`@ignore` remains a reserved non-path target. `ManifestModelValidator` applies
+`ProjectPath.ContainsUnsafePathCharacters` to manifest and persisted
+project-relative path fields that are validated without an injected filesystem.
+Glob input uses `Normalize` before separate checks reject rooted and
+parent-traversing patterns. Persisted `pack.yml` paths always use `/`.
 
 External selectors first pass through the managed-file compatibility adapter:
 legacy `source`-only files remain pack-relative, while `source` plus `path`,
@@ -112,5 +116,6 @@ See [ADR-0057](../architecture/adr/0057-resolve-template-paths-from-installation
 
 Add focused tests for each new path boundary. Cover Windows-style input,
 slash-only persisted output, `.` and `..` behavior where project-relative input
-is accepted, and matching against an existing canonical lock target. Run the
-relevant lifecycle or process test when changing path identity or persistence.
+is accepted, terminal and hidden Unicode path characters, and matching against
+an existing canonical lock target. Run the relevant lifecycle or process test
+when changing path identity or persistence.

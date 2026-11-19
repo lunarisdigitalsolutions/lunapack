@@ -239,7 +239,7 @@ internal static class LifecycleHookSupervisor
             StartInfo = LifecycleHookExecutor.CreateInheritedStartInfo(
                 projectDirectory,
                 executable,
-                arguments.ToArray()
+                arguments
             ),
         };
 
