@@ -150,7 +150,9 @@ luna audit
 ```
 
 The audit should list `luna-cli@1.0.0` and
-`.agents/skills/luna-cli/SKILL.md`.
+both `.agents/skills/luna-cli/SKILL.md` and
+`.agents/skills/luna-cli/LICENSE.md`. Both files are part of the canonical
+skill directory and are installed by either route.
 
 The LunaPack manifest uses `copy/overwrite` so later releases can update the
 same LunaPack-owned skill. Initial installation still rejects an unmanaged

@@ -1595,8 +1595,10 @@ public sealed class CliProcessTests
         using var workspace = new TestWorkspace();
         var sourcePath = CopySamplePackSourceToWorkspace(workspace.Path);
         await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
-        var skillPath = Path.Combine(workspace.Path, ".agents", "skills", "luna-cli", "SKILL.md");
-        Directory.CreateDirectory(Path.Combine(workspace.Path, ".agents", "skills", "luna-cli"));
+        var skillDirectory = Path.Combine(workspace.Path, ".agents", "skills", "luna-cli");
+        var skillPath = Path.Combine(skillDirectory, "SKILL.md");
+        var licensePath = Path.Combine(skillDirectory, "LICENSE.md");
+        Directory.CreateDirectory(skillDirectory);
         File.WriteAllText(skillPath, "unmanaged");
 
         var conflict = await CliProcess.InvokeAsync(
@@ -1622,6 +1624,9 @@ public sealed class CliProcessTests
         );
 
         await Assert.That(install.ExitCode).IsEqualTo(0);
+        await Assert
+            .That(File.ReadAllText(licensePath))
+            .IsEqualTo(File.ReadAllText(Path.Combine(GetRepositoryRoot(), "LICENSE.md")));
         CreateUpdatedLunaCliRelease(workspace.Path, sourcePath);
 
         var update = await CliProcess.InvokeAsync(
@@ -1634,6 +1639,7 @@ public sealed class CliProcessTests
         );
 
         await Assert.That(update.ExitCode).IsEqualTo(0);
+        await Assert.That(File.Exists(licensePath)).IsTrue();
         await Assert.That(File.ReadAllText(skillPath)).Contains("<!-- Updated release -->");
         await Assert
             .That(File.ReadAllText(Path.Combine(workspace.Path, "lunapack-lock.yml")))
