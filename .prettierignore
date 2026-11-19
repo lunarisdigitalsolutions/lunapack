@@ -1,2 +1,5 @@
 # Pack source artifacts can contain templates that are invalid before rendering.
 projects/packs/**
+
+# Official SBOM schemas must remain byte-identical to pinned upstream fixtures.
+projects/cli/src/Lunapack.Cli.UnitTests/TestData/SbomSchemas/*.json

@@ -8,6 +8,7 @@ internal sealed record CliInvocationStreams(
     TextWriter DiagnosticOutput,
     IAnsiConsole DiagnosticConsole,
     bool RoutesDiagnosticsToError,
+    bool IsSbomCommand,
     string? JsonCommand
 )
 {
@@ -20,7 +21,11 @@ internal sealed record CliInvocationStreams(
     {
         var output = commandOutput ?? Console.Out;
         var rawError = commandError ?? Console.Error;
-        var routesDiagnosticsToError = CliOutputFormatOption.RoutesDiagnosticsToError(args);
+        var isSbomCommand =
+            CliOutputFormatOption.TryGetCommand(args, out var requestedCommand)
+            && string.Equals(requestedCommand, "sbom", StringComparison.Ordinal);
+        var routesDiagnosticsToError =
+            isSbomCommand || CliOutputFormatOption.RoutesDiagnosticsToError(args);
         var diagnosticOutput = routesDiagnosticsToError
             ? new CliSanitizingTextWriter(rawError)
             : rawError;
@@ -39,6 +44,7 @@ internal sealed record CliInvocationStreams(
             diagnosticOutput,
             diagnosticConsole,
             routesDiagnosticsToError,
+            isSbomCommand,
             jsonCommand
         );
     }

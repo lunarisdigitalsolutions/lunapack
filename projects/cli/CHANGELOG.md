@@ -23,6 +23,8 @@ Update this section before creating a release tag.
   `--format json` for versioned machine-readable results. JSON stays on
   standard output while human-readable diagnostics use standard error; audit
   results include stable finding codes and severity counts.
+- `luna sbom` exports lock-derived dependency inventories as CycloneDX 1.6/1.7
+  or SPDX 2.3/3.0.1 JSON, with optional safe project-relative file output.
 
 ### Fixed
 

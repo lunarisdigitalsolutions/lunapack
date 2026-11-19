@@ -21,6 +21,7 @@ using Lunapack.Cli.Packs.Publishing;
 using Lunapack.Cli.Packs.Validation;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Project.Commands;
+using Lunapack.Cli.Sbom;
 using Lunapack.Cli.Sources;
 using Lunapack.Cli.Sources.Commands;
 using Lunapack.Cli.Sources.Git;
@@ -74,7 +75,8 @@ internal sealed class CliApplication(
             minimumLevel,
             sanitizeOutput: streams.RoutesDiagnosticsToError
         );
-        console.Debug($"Running CLI command in {projectDirectory}");
+        DebugUnlessSbom(console, streams, $"Running CLI command in {projectDirectory}");
+
         var nextStepRenderer = new NextStepRenderer(console);
         using var services = CreateCommandServices(console, nextStepRenderer);
         var suppressNextStepsOption = CreateSuppressNextStepsOption();
@@ -84,7 +86,9 @@ internal sealed class CliApplication(
             console,
             suppressNextStepsOption,
             workspaceOption,
-            services
+            services,
+            streams.CommandOutput,
+            streams.DiagnosticOutput
         );
         var parseResult = rootCommand.Parse(args);
         var invocationConfiguration = CreateInvocationConfiguration(
@@ -97,23 +101,19 @@ internal sealed class CliApplication(
             return parseOrHelpExitCode;
         }
 
-        var preferenceError = await ApplyPreferencesAsync(
+        var preferenceExitCode = await ApplyPreferencesAndReportAsync(
             parseResult,
             projectDirectory,
             workspaceOption,
             suppressNextStepsOption,
             services,
-            nextStepRenderer
+            nextStepRenderer,
+            console,
+            streams
         );
-        if (preferenceError is not null)
+        if (preferenceExitCode is { } exitCode)
         {
-            var preferenceExitCode = console.Fail(preferenceError);
-            if (streams.JsonCommand is { } jsonCommand)
-            {
-                CliJsonWriter.WriteFailure(streams.CommandOutput, jsonCommand);
-            }
-
-            return preferenceExitCode;
+            return exitCode;
         }
 
         if (args.Length == 0)
@@ -122,8 +122,9 @@ internal sealed class CliApplication(
         }
 
         var commandExitCode = await parseResult.InvokeAsync(invocationConfiguration);
+        var completionMessage = $"CLI command completed with exit code {commandExitCode}";
+        DebugUnlessSbom(console, streams, completionMessage);
 
-        console.Debug($"CLI command completed with exit code {commandExitCode}");
         return commandExitCode;
     }
 
@@ -151,6 +152,18 @@ internal sealed class CliApplication(
         ).Fail(CliOutputFormatOption.FormatUnsupportedMessage(requestedFormat));
     }
 
+    private static void DebugUnlessSbom(
+        CliConsole console,
+        CliInvocationStreams streams,
+        string message
+    )
+    {
+        if (!streams.IsSbomCommand)
+        {
+            console.Debug(message);
+        }
+    }
+
     private static async Task<int?> InvokeParseErrorOrHelpAsync(
         IReadOnlyList<string> args,
         ParseResult parseResult,
@@ -166,9 +179,11 @@ internal sealed class CliApplication(
             return null;
         }
 
+        var helpOutput =
+            streams.IsSbomCommand && isHelpRequest ? streams.CommandOutput : streams.RawError;
         var invocationConfiguration = new InvocationConfiguration
         {
-            Output = streams.RawError,
+            Output = helpOutput,
             Error = streams.DiagnosticOutput,
         };
         var exitCode = await parseResult.InvokeAsync(invocationConfiguration);
@@ -184,6 +199,44 @@ internal sealed class CliApplication(
         TextWriter output,
         TextWriter error
     ) => new() { Output = output, Error = error };
+
+    private static async Task<int?> ApplyPreferencesAndReportAsync(
+        ParseResult parseResult,
+        string projectDirectory,
+        Option<string?> workspaceOption,
+        Option<bool> suppressNextStepsOption,
+        CommandServices services,
+        NextStepRenderer nextStepRenderer,
+        CliConsole console,
+        CliInvocationStreams streams
+    )
+    {
+        if (streams.IsSbomCommand)
+        {
+            return null;
+        }
+
+        var preferenceError = await ApplyPreferencesAsync(
+            parseResult,
+            projectDirectory,
+            workspaceOption,
+            suppressNextStepsOption,
+            services,
+            nextStepRenderer
+        );
+        if (preferenceError is null)
+        {
+            return null;
+        }
+
+        var exitCode = console.Fail(preferenceError);
+        if (streams.JsonCommand is { } jsonCommand)
+        {
+            CliJsonWriter.WriteFailure(streams.CommandOutput, jsonCommand);
+        }
+
+        return exitCode;
+    }
 
     private static async Task<string?> ApplyPreferencesAsync(
         ParseResult parseResult,
@@ -225,7 +278,9 @@ internal sealed class CliApplication(
         CliConsole console,
         Option<bool> suppressNextStepsOption,
         Option<string?> workspaceOption,
-        CommandServices services
+        CommandServices services,
+        TextWriter commandOutput,
+        TextWriter commandError
     )
     {
         var rootCommand = new RootCommand("Manage LunaPack packs.");
@@ -281,15 +336,14 @@ internal sealed class CliApplication(
             workspaceOption,
             console
         );
-        AddAuditCommand(
+        AddAuditAndSbomCommands(
             rootCommand,
             fileSystem,
-            services.ProjectStateStore,
-            services.LinkServices.LinkLifecycleService,
-            services.WorkspaceDirectoryResolver,
+            services,
             projectDirectory,
             workspaceOption,
-            services.PrerequisiteGuard,
+            commandOutput,
+            commandError,
             console
         );
         AddLinksCommand(
@@ -995,6 +1049,63 @@ internal sealed class CliApplication(
                 workspaceDirectoryResolver,
                 prerequisiteGuard,
                 console
+            ).CreateCommand(projectDirectory, workspaceOption)
+        );
+
+    private static void AddAuditAndSbomCommands(
+        RootCommand rootCommand,
+        IFileSystem fileSystem,
+        CommandServices services,
+        string projectDirectory,
+        Option<string?> workspaceOption,
+        TextWriter commandOutput,
+        TextWriter commandError,
+        CliConsole console
+    )
+    {
+        AddAuditCommand(
+            rootCommand,
+            fileSystem,
+            services.ProjectStateStore,
+            services.LinkServices.LinkLifecycleService,
+            services.WorkspaceDirectoryResolver,
+            projectDirectory,
+            workspaceOption,
+            services.PrerequisiteGuard,
+            console
+        );
+        AddSbomCommand(
+            rootCommand,
+            fileSystem,
+            services.ProjectStateStore,
+            services.WorkspaceDirectoryResolver,
+            projectDirectory,
+            workspaceOption,
+            commandOutput,
+            commandError,
+            TimeProvider.System
+        );
+    }
+
+    private static void AddSbomCommand(
+        RootCommand rootCommand,
+        IFileSystem fileSystem,
+        ProjectStateStore projectStateStore,
+        WorkspaceDirectoryResolver workspaceDirectoryResolver,
+        string projectDirectory,
+        Option<string?> workspaceOption,
+        TextWriter commandOutput,
+        TextWriter commandError,
+        TimeProvider timeProvider
+    ) =>
+        rootCommand.Add(
+            new SbomCommandHandler(
+                fileSystem,
+                projectStateStore,
+                workspaceDirectoryResolver,
+                commandOutput,
+                commandError,
+                timeProvider
             ).CreateCommand(projectDirectory, workspaceOption)
         );
 

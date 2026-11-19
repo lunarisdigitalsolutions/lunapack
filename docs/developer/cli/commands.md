@@ -366,6 +366,55 @@ Renaming or removing a field or code, or changing its type or meaning, requires
 a new schema version. Do not parse human-readable `message` wording as a stable
 identifier, and do not infer process success from a finding's severity: exit
 behavior remains command-specific.
+The separate `luna sbom --target <target> [--output <path>]` command exports a
+lock-derived dependency inventory as CycloneDX 1.6 or 1.7 JSON, or SPDX 2.3 or
+3.0.1 JSON. It writes its document directly rather than using the diagnostic
+envelope above.
+
+### Export Dependency Inventory
+
+`luna sbom` requires one of these targets:
+
+| Target          | Document format       |
+| --------------- | --------------------- |
+| `cyclonedx-1.6` | CycloneDX 1.6 JSON    |
+| `cyclonedx-1.7` | CycloneDX 1.7 JSON    |
+| `spdx-2.3`      | SPDX 2.3 JSON         |
+| `spdx-3.0.1`    | SPDX 3.0.1 JSON-LD    |
+
+```powershell
+luna sbom --target cyclonedx-1.7 > inventory.json
+luna sbom --target spdx-3.0.1 --output artifacts/inventory.spdx.json
+```
+
+The export reads validated `lunapack-lock.yml` state only. It contains resolved
+packs and direct dependency edges, Luna Links, managed-file target paths, the
+recorded SHA-256 digest for each managed file, and recorded source identities,
+Git refs and commits, and OCI registry, repository, tag, and digest evidence.
+Unavailable optional evidence is omitted. The command does not contact
+catalogs, Git hosts, or OCI registries, and it does not read or rehash current
+managed-file content.
+
+Without `--output`, standard output contains only the generated JSON. With
+`--output`, Luna writes UTF-8 JSON atomically at a project-relative path and
+does not create missing parent directories. Both slash styles are accepted.
+Rooted or escaping paths, links and reparse points in the output path,
+`lunapack.yml`, `lunapack-lock.yml`, and locked managed-file targets are
+rejected. A failed export preserves project configuration, lock state, managed
+files, and any existing protected destination.
+
+Inventory identifiers and collections are stable for unchanged lock state.
+CycloneDX documents omit generation time. SPDX documents include one current
+UTC creation timestamp and use it in document-generation identifiers, so their
+bytes and document namespaces can differ while inventory identities,
+relationships, and ordering remain stable.
+
+Exported source URLs omit credentials, query strings, and fragments. Repository
+coordinates, immutable resolution evidence, local source paths, and managed
+target paths can still be sensitive; review the document before sharing it.
+The generated document is an inventory of lock-file evidence. It is not a
+signature, attestation, vulnerability report, license determination, or proof
+that current managed-file bytes match the lock.
 
 `<pack-reference>` is a pack ID or `<id>@<version>`. When version is omitted,
 commands select the latest available release. `install` accepts `--dry-run`
@@ -493,10 +542,10 @@ available to composite resolution, validation, and inspection. See the
 [pack manifest reference](../packs/reference/manifest.md) for
 `directInstallable`.
 
-LunaPack writes output through Spectre.Console on standard output; info output
-is plain, while
-verbose, debug, warning, and error output has colored level prefixes. The default
-level is `info`; longer catalog and lifecycle operations show a spinner. Discover,
+Except for raw SBOM documents, LunaPack writes output through Spectre.Console.
+Standard human output is plain, while verbose, debug, warning, and error output
+has colored level prefixes. The default level is `info`; longer catalog and
+lifecycle operations show a spinner. Discover,
 search, audit, outdated, and variable-list results render as tables.
 Successful actions are green; guidance and instruction headings use cyan.
 Catalog summaries include elapsed duration. Managed-file phases and successful
@@ -513,8 +562,10 @@ omit recommendation and recovery guidance for one invocation.
 
 Successful commands return exit code `0`. Invalid input, validation failures,
 resolution conflicts, denied trust, Git failures, and filesystem or state-write
-failures return a nonzero exit code. Luna does not currently provide JSON output
-or stable machine-readable diagnostic codes.
+failures return a nonzero exit code. SBOM export errors are written to standard
+error so successful standard-output documents remain raw JSON. The audit,
+outdated, and validate commands use the versioned `--format json` contract
+described above.
 
 Log-level completion uses the lower-case `verbose`, `debug`, `info`, `warning`,
 and `error` values.

@@ -13,3 +13,6 @@
 *.jpg binary
 *.pdf binary
 *.png binary
+
+# Preserve official SBOM fixtures byte-for-byte for source hash verification.
+projects/cli/src/Lunapack.Cli.UnitTests/TestData/SbomSchemas/*.json binary

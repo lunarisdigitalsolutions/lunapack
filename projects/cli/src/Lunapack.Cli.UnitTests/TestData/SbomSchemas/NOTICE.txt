@@ -1,0 +1,29 @@
+SBOM schemas used by serializer tests
+
+These schemas are test fixtures only. Production exports do not load these files or access the network.
+
+CycloneDX 1.6
+Source: https://raw.githubusercontent.com/CycloneDX/specification/55343ba19dee1785acf1ce9191540d5fd7b590db/schema/bom-1.6.schema.json
+SHA-256: 3e92dddbc30cf7f6a02b80f0942b1a4cfd4fb1c26f1dfc4310afa9d613cafb93
+License: Apache License 2.0, as stated by the schema's $comment.
+License text: https://www.apache.org/licenses/LICENSE-2.0
+
+CycloneDX 1.7
+Source: https://raw.githubusercontent.com/CycloneDX/specification/4b3f59453366e27c8073fd24e98bf21ef8892c8e/schema/bom-1.7.schema.json
+SHA-256: df472ef4aaf593904c479293723a1a5c191d6672715c93b3c0b5c318f3914221
+License: Apache License 2.0, as stated by the schema's $comment.
+License text: https://www.apache.org/licenses/LICENSE-2.0
+
+SPDX 2.3
+Source: https://raw.githubusercontent.com/spdx/spdx-spec/aadf3b0b8dbbabdb4d880b0fc714255fea436ff7/schemas/spdx-schema.json
+SHA-256: 239208b7ac287b3cf5d9a9af23f9d69863971102a5e1587a27a398b43490b89b
+License: Creative Commons Attribution 3.0 Unported (CC-BY-3.0).
+License text: https://spdx.github.io/spdx-spec/v2.3/front/copyright/
+
+SPDX 3.0.1
+Source: https://spdx.org/schema/3.0.1/spdx-json-schema.json
+SHA-256: 582c64e809d5b3ef9bd0c4de13a32391b47b0284a3e8d199569fb96f649234b1
+License: Community Specification License 1.0; pre-existing portions are licensed under CC-BY-3.0.
+License information: https://spdx.github.io/spdx-spec/v3.0.1/front/copyright/
+Community Specification License: https://spdx.github.io/spdx-spec/v3.0.1/licenses/Community-Spec-1.0/
+CC-BY-3.0: https://spdx.github.io/spdx-spec/v3.0.1/licenses/CC-BY-3.0/

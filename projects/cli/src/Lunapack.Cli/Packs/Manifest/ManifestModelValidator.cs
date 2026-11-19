@@ -383,7 +383,7 @@ internal static partial class ManifestModelValidator
             issues.Add($"Pack source '{alias}' must declare type 'git'.");
         }
 
-        if (string.IsNullOrEmpty(source.Ref))
+        if (!GitRefSafety.IsSafe(source.Ref))
         {
             issues.Add($"Pack source '{alias}' must pin a ref.");
         }
@@ -970,7 +970,7 @@ internal static partial class ManifestModelValidator
                 issues.Add($"Link '{name}' paths must be safe relative paths.");
             }
 
-            if (link.Ref is { Length: 0 })
+            if (link.Ref is not null && !GitRefSafety.IsSafe(link.Ref))
             {
                 issues.Add($"Link '{name}' ref must not be empty.");
             }
@@ -1053,10 +1053,7 @@ internal static partial class ManifestModelValidator
             issues.Add($"Resolved link '{name}' must define a SHA-256 definition hash.");
         }
 
-        if (resolvedLink.GitSource is { } gitSource && !IsGitCommit(gitSource.ResolvedCommit))
-        {
-            issues.Add($"Resolved link '{name}' must record a resolved Git commit.");
-        }
+        ValidateResolvedLinkProvenance(name, resolvedLink, issues);
 
         foreach (var file in resolvedLink.Files)
         {
@@ -1071,6 +1068,82 @@ internal static partial class ManifestModelValidator
                     $"Resolved link '{name}' files must define safe source, declared, and effective target paths and a SHA-256 hash."
                 );
             }
+        }
+
+        var duplicateTarget = resolvedLink
+            .Files.GroupBy(file => file.TargetPath, StringComparer.Ordinal)
+            .FirstOrDefault(group => group.Count() > 1);
+        if (duplicateTarget is not null)
+        {
+            issues.Add(
+                $"Resolved link '{name}' contains duplicate managed-file target '{duplicateTarget.Key}'."
+            );
+        }
+    }
+
+    private static void ValidateResolvedLinkProvenance(
+        string name,
+        ProjectLockFile.ResolvedLink resolvedLink,
+        List<string> issues
+    )
+    {
+        if (resolvedLink.SourceIdentity is { Type: "git" } sourceIdentity)
+        {
+            if (resolvedLink.GitSource is not { } gitSource)
+            {
+                issues.Add($"Resolved link '{name}' must record Git provenance.");
+                return;
+            }
+
+            ValidateGitSource(gitSource, issues);
+            var identityRepository = SourceIdentityNormalizer.NormalizeRepository(
+                sourceIdentity.Url ?? string.Empty
+            );
+            var provenanceRepository = SourceIdentityNormalizer.NormalizeRepository(
+                gitSource.Url ?? string.Empty
+            );
+            var invalidIdentity =
+                (sourceIdentity.Ref is not null && !GitRefSafety.IsSafe(sourceIdentity.Ref))
+                || !identityRepository.IsSuccess
+                || !provenanceRepository.IsSuccess
+                || !string.Equals(
+                    identityRepository.Value,
+                    provenanceRepository.Value,
+                    StringComparison.Ordinal
+                )
+                || !string.Equals(sourceIdentity.Path, gitSource.Path, StringComparison.Ordinal);
+            if (invalidIdentity)
+            {
+                issues.Add(
+                    $"Resolved link '{name}' Git source identity and provenance must match."
+                );
+            }
+
+            return;
+        }
+
+        if (resolvedLink.SourceIdentity is { Type: "local" } localIdentity)
+        {
+            var invalidLocalIdentity =
+                localIdentity.Url is not null
+                || localIdentity.Ref is not null
+                || !IsRelativePath(localIdentity.Path);
+            if (invalidLocalIdentity)
+            {
+                issues.Add($"Resolved link '{name}' has an invalid local source identity.");
+            }
+
+            if (resolvedLink.GitSource is not null)
+            {
+                issues.Add($"Resolved local link '{name}' cannot define Git provenance.");
+            }
+
+            return;
+        }
+
+        if (resolvedLink.SourceIdentity is not null)
+        {
+            issues.Add($"Resolved link '{name}' source identity type is unsupported.");
         }
     }
 
@@ -1180,7 +1253,7 @@ internal static partial class ManifestModelValidator
                 && source.Url is null
                 && source.Ref is null,
             "git" => !string.IsNullOrEmpty(source.Url)
-                && source.Ref is not ""
+                && (source.Ref is null || GitRefSafety.IsSafe(source.Ref))
                 && (source.Path is null || IsSafeProjectRelativePath(source.Path)),
             "oci" => IsValidOciSourceIdentity(source),
             _ => false,
@@ -1278,7 +1351,7 @@ internal static partial class ManifestModelValidator
         var isInvalidGitSource =
             !string.Equals(source.Type, "git", StringComparison.Ordinal)
             || string.IsNullOrEmpty(source.Url)
-            || source.Ref is ""
+            || (source.Ref is not null && !GitRefSafety.IsSafe(source.Ref))
             || (source.Path is not null && !IsSafeProjectRelativePath(source.Path))
             || source.TimeoutSeconds is < 1 or > 300;
         if (isInvalidGitSource)
@@ -1499,6 +1572,16 @@ internal static partial class ManifestModelValidator
 
             ValidateResolvedManagedFileProvenance(resolvedPack, managedFile, issues);
         }
+
+        var duplicateTarget = resolvedPack
+            .ManagedFiles.GroupBy(file => file.TargetPath, StringComparer.Ordinal)
+            .FirstOrDefault(group => group.Count() > 1);
+        if (duplicateTarget is not null)
+        {
+            issues.Add(
+                $"Resolved pack '{resolvedPack.Id}' contains duplicate managed-file target '{duplicateTarget.Key}'."
+            );
+        }
     }
 
     private static void ValidateResolvedPackExternalSources(
@@ -1525,7 +1608,7 @@ internal static partial class ManifestModelValidator
 
             var hasInvalidExternalSource =
                 string.IsNullOrEmpty(externalSource.SourceName)
-                || string.IsNullOrEmpty(externalSource.Ref)
+                || !GitRefSafety.IsSafe(externalSource.Ref)
                 || !IsSourceFingerprint(externalSource.Fingerprint)
                 || !IsGitCommit(externalSource.ResolvedCommit);
             if (hasInvalidExternalSource)
@@ -1656,7 +1739,7 @@ internal static partial class ManifestModelValidator
         var hasInvalidSourceIdentity =
             !string.Equals(identity.Type, "git", StringComparison.Ordinal)
             || !identityRepository.IsSuccess
-            || identity.Ref is ""
+            || (identity.Ref is not null && !GitRefSafety.IsSafe(identity.Ref))
             || (identity.Path is not null && !IsSafeProjectRelativePath(identity.Path));
         if (hasInvalidSourceIdentity)
         {
@@ -1783,7 +1866,7 @@ internal static partial class ManifestModelValidator
             !string.Equals(source.Type, "git", StringComparison.Ordinal)
             || string.IsNullOrEmpty(source.Url)
             || !SourceIdentityNormalizer.NormalizeRepository(source.Url).IsSuccess
-            || source.Ref is ""
+            || (source.Ref is not null && !GitRefSafety.IsSafe(source.Ref))
             || (source.Path is not null && !IsSafeProjectRelativePath(source.Path))
             || !IsGitCommit(source.ResolvedCommit);
         if (isInvalidGitSource)
