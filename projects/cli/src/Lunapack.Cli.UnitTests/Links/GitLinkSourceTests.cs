@@ -1,6 +1,7 @@
 using System.IO.Abstractions.TestingHelpers;
 using System.Text;
 using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Links;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources;
@@ -229,6 +230,73 @@ public sealed class GitLinkSourceTests
     }
 
     [Test]
+    public async Task MaterializeAsync_WhenCheckedOutBlobExceedsByteLimit_Fails()
+    {
+        var fileSystem = new MockFileSystem();
+        var cache = new GitLinkCache(fileSystem, "/cache/sources");
+        var contents = Encoding.UTF8.GetBytes("agent");
+        var blobId = GitObjectId.ComputeBlobId(contents, 40);
+        var identity = ConfiguredSourceIdentity.Create(CreateSource());
+        cache.SaveMetadata(
+            new GitLinkCacheMetadata
+            {
+                ResolvedCommit = Commit,
+                Source = identity,
+                Tree = [new GitLinkCacheEntry { BlobId = blobId, Path = "agents/a.md" }],
+            }
+        );
+        var runner = new ScriptedGitProcessRunner
+        {
+            FileSystem = fileSystem,
+            TreeOutput = $"100644 blob {blobId} 5\tagents/a.md",
+            CheckedOutFiles = new Dictionary<string, byte[]>(StringComparer.Ordinal)
+            {
+                ["agents/a.md"] = contents,
+            },
+        };
+        var provider = new GitLinkSourceProvider(
+            fileSystem,
+            runner,
+            new GitRefResolver(runner),
+            cache
+        );
+        using var listing = (
+            await provider.ListAsync(
+                "/project",
+                CreateSource(),
+                CreateLink(),
+                null,
+                CancellationToken.None
+            )
+        ).RequireValue();
+        using var workspace = LinkOperationWorkspace.Create(fileSystem);
+
+        var result = await provider.MaterializeAsync(
+            listing,
+            ["agents/a.md"],
+            workspace,
+            ResourceLimits.Default with
+            {
+                PackSnapshotBytes = 4,
+            },
+            CancellationToken.None
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert
+            .That(result.ErrorKind)
+            .IsEqualTo(ManifestOperationErrorKind.ResourceLimitExceeded);
+        await Assert.That(result.Error).Contains("4 byte limit");
+        await Assert
+            .That(
+                runner.Invocations.Any(arguments =>
+                    arguments.Contains("checkout", StringComparer.Ordinal)
+                )
+            )
+            .IsFalse();
+    }
+
+    [Test]
     public async Task TryReadBlob_WhenCachedBytesAreTampered_DiscardsTheEntry()
     {
         var fileSystem = new MockFileSystem();
@@ -301,6 +369,33 @@ public sealed class GitLinkSourceTests
     }
 
     [Test]
+    public async Task LoadMetadata_WhenMetadataExceedsLimit_TreatsEntryAsMiss()
+    {
+        var fileSystem = new MockFileSystem();
+        var cache = new GitLinkCache(fileSystem, "/cache/sources");
+        var identity = ConfiguredSourceIdentity.Create(CreateSource());
+        cache.SaveMetadata(
+            new GitLinkCacheMetadata
+            {
+                ResolvedCommit = Commit,
+                Source = identity,
+                Tree = [new GitLinkCacheEntry { BlobId = AgentBlobId, Path = "agents/a.md" }],
+            }
+        );
+
+        var metadata = cache.LoadMetadata(
+            identity,
+            Commit,
+            ResourceLimits.Default with
+            {
+                LockFileBytes = 1,
+            }
+        );
+
+        await Assert.That(metadata).IsNull();
+    }
+
+    [Test]
     public async Task ListAsync_WhenTreeIsFetched_DoesNotRequireAPackManifest()
     {
         var fileSystem = new MockFileSystem();
@@ -332,6 +427,38 @@ public sealed class GitLinkSourceTests
                 )
             )
             .IsTrue();
+    }
+
+    [Test]
+    public async Task ListAsync_WhenTreeRecordLimitIsLower_RejectsBeforeListing()
+    {
+        var runner = new ScriptedGitProcessRunner
+        {
+            TreeOutput = string.Join(
+                '\0',
+                $"100644 blob {AgentBlobId}\tagents/one.md",
+                $"100644 blob {AgentBlobId}\tagents/two.md"
+            ),
+        };
+        var provider = CreateProvider(new MockFileSystem(), runner);
+
+        var listing = await provider.ListAsync(
+            "/project",
+            CreateSource(),
+            CreateLink(),
+            null,
+            ResourceLimits.Default with
+            {
+                FilesPerGraph = 1,
+            },
+            CancellationToken.None
+        );
+
+        await Assert.That(listing.IsSuccess).IsFalse();
+        await Assert
+            .That(listing.ErrorKind)
+            .IsEqualTo(ManifestOperationErrorKind.ResourceLimitExceeded);
+        await Assert.That(listing.Error).Contains("1 record limit");
     }
 
     [Test]
@@ -433,13 +560,18 @@ public sealed class GitLinkSourceTests
 
         public bool FetchSucceeds { get; init; } = true;
 
+        public MockFileSystem? FileSystem { get; init; }
+
+        public IReadOnlyDictionary<string, byte[]> CheckedOutFiles { get; init; } =
+            new Dictionary<string, byte[]>(StringComparer.Ordinal);
+
         public List<IReadOnlyList<string>> Invocations { get; } = [];
 
         public bool ResolveRefs { get; init; } = true;
 
         public List<TimeSpan> Timeouts { get; } = [];
 
-        public string TreeOutput { get; init; } = $"100644 blob {AgentBlobId}\tagents/a.md";
+        public string TreeOutput { get; init; } = $"100644 blob {AgentBlobId} 5\tagents/a.md";
 
         public Task<ManifestOperationResult<GitProcessOutput>> RunAsync(
             IReadOnlyList<string> arguments,
@@ -467,6 +599,19 @@ public sealed class GitLinkSourceTests
                 return Task.FromResult(
                     ManifestOperationResult<GitProcessOutput>.Failure("Fetch failed.")
                 );
+            }
+
+            if (FileSystem is not null && arguments.Contains("checkout", StringComparer.Ordinal))
+            {
+                var directoryArgument = arguments.ToList().IndexOf("-C") + 1;
+                var repository = arguments[directoryArgument];
+                foreach (var (path, contents) in CheckedOutFiles)
+                {
+                    FileSystem.AddFile(
+                        FileSystem.Path.Combine(repository, path),
+                        new MockFileData(contents)
+                    );
+                }
             }
 
             return Task.FromResult(

@@ -85,6 +85,41 @@ public sealed class PackValidationServiceTests
         await Assert.That(exitCode).IsEqualTo(1);
     }
 
+    [Test]
+    public async Task ValidateAsync_WhenMatchingPacksSpanSources_UsesSharedCatalogBudget()
+    {
+        using var workspace = new TestWorkspace();
+        CreatePack(Path.Combine(workspace.Path, "source-a"), "example-a", "1.0.0", true);
+        CreatePack(Path.Combine(workspace.Path, "source-b"), "example-b", "2.0.0", true);
+        await workspace.Application.RunAsync(["init"], workspace.Path);
+        await workspace.Application.RunAsync(
+            ["sources", "add", "local", "local-a", "source-a"],
+            workspace.Path
+        );
+        await workspace.Application.RunAsync(
+            ["sources", "add", "local", "local-b", "source-b"],
+            workspace.Path
+        );
+        await workspace.Application.RunAsync(
+            ["config", "set", "resource-limits.files-per-graph", "1", "--project"],
+            workspace.Path
+        );
+        var validationService = new PackValidationService(
+            workspace.FileSystem,
+            workspace.StateStore,
+            new LocalPackDiscovery(workspace.FileSystem, TestConsole.Create()),
+            new PackCatalog(workspace.FileSystem, TestConsole.Create())
+        );
+
+        var result = await validationService.ValidateAsync(workspace.Path, "example", null);
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert
+            .That(result.ErrorKind)
+            .IsEqualTo(ManifestOperationErrorKind.ResourceLimitExceeded);
+        await Assert.That(result.Error).Contains("1 record limit");
+    }
+
     private static void CreatePack(
         string sourceDirectory,
         string directoryName,

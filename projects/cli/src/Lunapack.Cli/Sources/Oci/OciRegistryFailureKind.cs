@@ -8,6 +8,7 @@ internal enum OciRegistryFailureKind
     Dns,
     InvalidResponse,
     NotFound,
+    ResourceLimitExceeded,
     Timeout,
     Tls,
     Unavailable,

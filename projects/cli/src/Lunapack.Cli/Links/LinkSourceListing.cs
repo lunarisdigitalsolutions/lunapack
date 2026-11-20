@@ -12,6 +12,9 @@ internal sealed record LinkSourceListing(
     public IReadOnlyDictionary<string, string> BlobIds { get; init; } =
         new Dictionary<string, string>(StringComparer.Ordinal);
 
+    public IReadOnlyDictionary<string, long> BlobSizes { get; init; } =
+        new Dictionary<string, long>(StringComparer.Ordinal);
+
     public Action? Cleanup { get; init; }
 
     public void Dispose() => Cleanup?.Invoke();

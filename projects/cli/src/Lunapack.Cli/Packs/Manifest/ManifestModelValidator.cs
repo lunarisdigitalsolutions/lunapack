@@ -2,6 +2,7 @@
 using System.Text.RegularExpressions;
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Application.Paths;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Packs.ManagedFiles;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources;
@@ -892,6 +893,12 @@ internal static partial class ManifestModelValidator
         ValidateLinks(configuration.Links, sourceNames, issues);
         ValidateProjectTrust(configuration.Trust, sourceNames, issues);
         ValidateVariables(configuration.Variables, issues);
+        issues.AddRange(
+            ResourceLimits.ValidateOverrides(
+                configuration.Preferences?.ResourceLimits,
+                projectScope: true
+            )
+        );
 
         return issues;
     }
@@ -1077,6 +1084,12 @@ internal static partial class ManifestModelValidator
             "Global user trust",
             issues
         );
+        issues.AddRange(
+            ResourceLimits.ValidateOverrides(
+                settings.Global.Preferences?.ResourceLimits,
+                projectScope: false
+            )
+        );
 
         foreach (var (projectPath, projectTrust) in settings.Projects)
         {
@@ -1096,6 +1109,12 @@ internal static partial class ManifestModelValidator
                 projectTrust.Acknowledgements.Packs,
                 $"Project trust acknowledgement '{projectPath}'",
                 issues
+            );
+            issues.AddRange(
+                ResourceLimits.ValidateOverrides(
+                    projectTrust.Preferences?.ResourceLimits,
+                    projectScope: false
+                )
             );
         }
 
@@ -1739,7 +1758,11 @@ internal static partial class ManifestModelValidator
             || !string.Equals(identity.Path, location.Value.Path, StringComparison.Ordinal)
             || !IsOciDigest(provenance.ManifestDigest)
             || !IsOciDigest(provenance.ContentDigest)
-            || provenance.ContentSize is < 1 or > OciPackArchive.MaximumArchiveBytes
+            || provenance.ContentSize < 1
+            || provenance.ContentSize
+                > ResourceLimits
+                    .GetDefinition(ResourceLimits.ResourceLimitKey.OciDownloadBytes)
+                    .MaximumValue
             || !string.Equals(provenance.RegistryUrl, location.Value.Url, StringComparison.Ordinal)
             || !string.Equals(provenance.Repository, repository.Value, StringComparison.Ordinal)
             || !string.Equals(version.Value, resolvedPack.Version, StringComparison.Ordinal);

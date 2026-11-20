@@ -4,6 +4,7 @@ using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Application.Guidance;
 using Lunapack.Cli.Application.Paths;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Packs.ManagedFiles;
 using Lunapack.Cli.Packs.Manifest;
 using Lunapack.Cli.Sources;
@@ -14,6 +15,7 @@ namespace Lunapack.Cli.Packs.Authoring;
 internal sealed class PackAuthoringCommandHandler(
     IFileSystem fileSystem,
     PackManifestStore manifestStore,
+    CliPreferenceService preferenceService,
     WorkspaceDirectoryResolver workspaceDirectoryResolver,
     NextStepAdvisor nextStepAdvisor,
     NextStepRenderer nextStepRenderer,
@@ -103,7 +105,7 @@ internal sealed class PackAuthoringCommandHandler(
             }
 
             var version = parseResult.GetValue(versionOption) ?? "1.0.0";
-            var result = await manifestStore.CreateAsync(
+            var result = await CreateManifestAsync(
                 ResolveWorkspace(parseResult, projectDirectory, workspaceOption),
                 new PackManifest
                 {
@@ -282,7 +284,7 @@ internal sealed class PackAuthoringCommandHandler(
             return console.Fail(prepared.Error);
         }
 
-        var result = await manifestStore.UpdateAsync(
+        var result = await UpdateManifestAsync(
             workspace,
             manifest => AddManagedSelector(manifest, values)
         );
@@ -683,7 +685,7 @@ internal sealed class PackAuthoringCommandHandler(
         int? replacePosition
     )
     {
-        var result = await manifestStore.UpdateAsync(
+        var result = await UpdateManifestAsync(
             workspace,
             manifest =>
             {
@@ -736,7 +738,7 @@ internal sealed class PackAuthoringCommandHandler(
                 return console.Fail("A property and value are required.");
             }
 
-            var result = await manifestStore.UpdateAsync(
+            var result = await UpdateManifestAsync(
                 ResolveWorkspace(parseResult, projectDirectory, workspaceOption),
                 manifest => SetMetadata(manifest, property, value)
             );
@@ -825,7 +827,7 @@ internal sealed class PackAuthoringCommandHandler(
             );
         }
 
-        var result = await manifestStore.UpdateAsync(
+        var result = await UpdateManifestAsync(
             workspace,
             manifest =>
             {
@@ -914,7 +916,7 @@ internal sealed class PackAuthoringCommandHandler(
             {
                 return console.Fail(defaultValue.Error);
             }
-            var result = await manifestStore.UpdateAsync(
+            var result = await UpdateManifestAsync(
                 ResolveWorkspace(parseResult, projectDirectory, workspaceOption),
                 manifest =>
                 {
@@ -996,7 +998,7 @@ internal sealed class PackAuthoringCommandHandler(
                 return console.Fail("A non-empty tag is required.");
             }
 
-            var result = await manifestStore.UpdateAsync(
+            var result = await UpdateManifestAsync(
                 ResolveWorkspace(parseResult, projectDirectory, workspaceOption),
                 manifest =>
                 {
@@ -1046,7 +1048,7 @@ internal sealed class PackAuthoringCommandHandler(
                 return console.Fail(normalizedResult.Error);
             }
 
-            var result = await manifestStore.UpdateAsync(
+            var result = await UpdateManifestAsync(
                 ResolveWorkspace(parseResult, projectDirectory, workspaceOption),
                 manifest =>
                 {
@@ -1102,7 +1104,7 @@ internal sealed class PackAuthoringCommandHandler(
                 return console.Fail("A supported lifecycle hook event is required.");
             }
 
-            var result = await manifestStore.UpdateAsync(
+            var result = await UpdateManifestAsync(
                 ResolveWorkspace(parseResult, projectDirectory, workspaceOption),
                 manifest => RemoveHook(manifest, hook, position)
             );
@@ -1127,7 +1129,7 @@ internal sealed class PackAuthoringCommandHandler(
                 return console.Fail($"A {kind} name is required.");
             }
 
-            var result = await manifestStore.UpdateAsync(
+            var result = await UpdateManifestAsync(
                 ResolveWorkspace(parseResult, projectDirectory, workspaceOption),
                 manifest => RemoveNamed(manifest, kind, name)
             );
@@ -1145,7 +1147,7 @@ internal sealed class PackAuthoringCommandHandler(
         var command = new Command(name, $"Display local pack {name}.");
         command.SetAction(async parseResult =>
         {
-            var result = await manifestStore.LoadAsync(
+            var result = await LoadManifestAsync(
                 ResolveWorkspace(parseResult, projectDirectory, workspaceOption)
             );
             if (result.Value is not { } manifest)
@@ -1180,16 +1182,29 @@ internal sealed class PackAuthoringCommandHandler(
         command.SetAction(async parseResult =>
         {
             var workspace = ResolveWorkspace(parseResult, projectDirectory, workspaceOption);
-            var result = await manifestStore.LoadAsync(workspace);
+            var resourceLimitsResult = await ResolveResourceLimitsAsync(workspace);
+            if (resourceLimitsResult.Value is not { } resourceLimits)
+            {
+                return console.Fail(resourceLimitsResult.Error);
+            }
+
+            var result = await manifestStore.LoadAsync(workspace, resourceLimits.PackManifestBytes);
             if (result.Value is not { } manifest)
             {
                 return console.Fail(result.Error);
             }
 
-            var sourceFiles = fileSystem
-                .Directory.EnumerateFiles(workspace, "*", SearchOption.AllDirectories)
-                .Select(path => fileSystem.Path.GetRelativePath(workspace, path))
-                .ToArray();
+            var enumeratedFiles = PackSnapshotFileEnumerator.Enumerate(
+                fileSystem,
+                workspace,
+                manifest.Id,
+                resourceLimits
+            );
+            if (enumeratedFiles.Value is not { } sourceFiles)
+            {
+                return console.Fail(enumeratedFiles.Error);
+            }
+
             var issues = await PackManifestValidator.ValidateAsync(manifest, sourceFiles);
             if (issues.Count > 0)
             {
@@ -1203,7 +1218,8 @@ internal sealed class PackAuthoringCommandHandler(
 
             var externalValidation = await validationService.ValidateExternalSourcesAsync(
                 workspace,
-                manifest
+                manifest,
+                resourceLimits
             );
             if (!externalValidation.IsSuccess)
             {
@@ -1226,6 +1242,49 @@ internal sealed class PackAuthoringCommandHandler(
             return 0;
         });
         return command;
+    }
+
+    private async Task<ManifestOperationResult<PackManifest>> CreateManifestAsync(
+        string workspace,
+        PackManifest manifest
+    )
+    {
+        var limits = await ResolveResourceLimitsAsync(workspace);
+        return limits.Value is { } resourceLimits
+            ? await manifestStore.CreateAsync(workspace, manifest, resourceLimits.PackManifestBytes)
+            : ManifestOperationResult<PackManifest>.Failure(limits.Error!, limits.ErrorKind);
+    }
+
+    private async Task<ManifestOperationResult<PackManifest>> LoadManifestAsync(string workspace)
+    {
+        var limits = await ResolveResourceLimitsAsync(workspace);
+        return limits.Value is { } resourceLimits
+            ? await manifestStore.LoadAsync(workspace, resourceLimits.PackManifestBytes)
+            : ManifestOperationResult<PackManifest>.Failure(limits.Error!, limits.ErrorKind);
+    }
+
+    private async Task<ManifestOperationResult<PackManifest>> UpdateManifestAsync(
+        string workspace,
+        Func<PackManifest, string?> mutation
+    )
+    {
+        var limits = await ResolveResourceLimitsAsync(workspace);
+        return limits.Value is { } resourceLimits
+            ? await manifestStore.UpdateAsync(workspace, mutation, resourceLimits.PackManifestBytes)
+            : ManifestOperationResult<PackManifest>.Failure(limits.Error!, limits.ErrorKind);
+    }
+
+    private async Task<ManifestOperationResult<ResourceLimits>> ResolveResourceLimitsAsync(
+        string workspace
+    )
+    {
+        var preferences = await preferenceService.ResolveAsync(workspace);
+        return preferences.Value is { } effectivePreferences
+            ? ManifestOperationResult<ResourceLimits>.Success(effectivePreferences.ResourceLimits)
+            : ManifestOperationResult<ResourceLimits>.Failure(
+                preferences.Error ?? "Unable to resolve CLI preferences.",
+                preferences.ErrorKind
+            );
     }
 
     private string ResolveWorkspace(
@@ -1687,7 +1746,7 @@ internal sealed class PackAuthoringCommandHandler(
         }
 
         var packPath = ProjectPath.NormalizeOptional(basePath)?.Trim('/');
-        var result = await manifestStore.UpdateAsync(
+        var result = await UpdateManifestAsync(
             manifestDirectory,
             manifest =>
                 AddPackSource(manifest, alias, repositoryUrl, resolvedRef, packPath, description)
@@ -1769,7 +1828,7 @@ internal sealed class PackAuthoringCommandHandler(
                 return console.Fail("A pack source alias is required.");
             }
 
-            var result = await manifestStore.UpdateAsync(
+            var result = await UpdateManifestAsync(
                 ResolveWorkspace(parseResult, projectDirectory, workspaceOption),
                 manifest => RemovePackSource(manifest, alias)
             );

@@ -1,4 +1,5 @@
 ﻿using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Catalog;
 using Lunapack.Cli.Packs.ExternalSources;
 using Lunapack.Cli.Packs.Manifest;
@@ -15,7 +16,8 @@ internal sealed class PackAuthoringValidationService(
 {
     public async Task<ManifestOperationResult<bool>> ValidateExternalSourcesAsync(
         string packDirectory,
-        PackManifest manifest
+        PackManifest manifest,
+        ResourceLimits? resourceLimits = null
     )
     {
         var graph = CreateValidationGraph(packDirectory, manifest);
@@ -53,7 +55,8 @@ internal sealed class PackAuthoringValidationService(
             );
         }
 
-        var materialization = await materializer.MaterializeAsync(sourcePlan);
+        var limits = resourceLimits ?? ResourceLimits.Default;
+        var materialization = await materializer.MaterializeAsync(sourcePlan, limits);
         if (materialization.Value is not { } externalSources)
         {
             return ManifestOperationResult<bool>.Failure(
@@ -70,7 +73,8 @@ internal sealed class PackAuthoringValidationService(
                 approvedPlan.CandidateConfiguration,
                 request,
                 resolvedParameters,
-                externalSources.Roots
+                externalSources.Roots,
+                limits
             );
             return planned.Value is not null
                 ? ManifestOperationResult<bool>.Success(true)

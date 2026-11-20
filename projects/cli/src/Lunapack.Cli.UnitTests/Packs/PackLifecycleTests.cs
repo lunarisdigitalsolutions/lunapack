@@ -31,6 +31,111 @@ public sealed class PackLifecycleTests
     }
 
     [Test]
+    public async Task Install_WhenRenderedFileExceedsLimit_PreservesWorkspaceAndState()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreatePackSource(workspace.Path, templateContents: "1234");
+        await ConfigureSourceAsync(workspace, sourcePath);
+        var configured = await workspace.Application.RunAsync(
+            ["config", "set", "resource-limits.rendered-file-bytes", "3", "--project"],
+            workspace.Path
+        );
+        var configurationPath = GetManifestPath(workspace.Path);
+        var lockPath = Path.Combine(workspace.Path, ProjectStateStore.LockFileName);
+        var originalConfiguration = File.ReadAllText(configurationPath);
+        var originalLock = File.ReadAllText(lockPath);
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["install", "dotnet-gitignore"],
+            workspace.Path
+        );
+
+        await Assert.That(configured).IsEqualTo(0);
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, ".gitignore"))).IsFalse();
+        await Assert.That(File.ReadAllText(configurationPath)).IsEqualTo(originalConfiguration);
+        await Assert.That(File.ReadAllText(lockPath)).IsEqualTo(originalLock);
+    }
+
+    [Test]
+    public async Task Install_WhenRenderedTotalExceedsLimit_PreservesWorkspaceAndState()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreatePackSource(
+            workspace.Path,
+            "id: dotnet-gitignore\nversion: 1.0.0\nmanagedFiles:\n  - source: templates/first.txt\n    target: first.txt\n  - source: templates/second.txt\n    target: second.txt\n",
+            templateContents: "1234"
+        );
+        File.WriteAllText(
+            Path.Combine(workspace.Path, sourcePath, "dotnet-gitignore", "templates", "first.txt"),
+            "1234"
+        );
+        File.WriteAllText(
+            Path.Combine(workspace.Path, sourcePath, "dotnet-gitignore", "templates", "second.txt"),
+            "5678"
+        );
+        await ConfigureSourceAsync(workspace, sourcePath);
+        var configured = await workspace.Application.RunAsync(
+            ["config", "set", "resource-limits.rendered-total-bytes", "7", "--project"],
+            workspace.Path
+        );
+        var configurationPath = GetManifestPath(workspace.Path);
+        var lockPath = Path.Combine(workspace.Path, ProjectStateStore.LockFileName);
+        var originalConfiguration = File.ReadAllText(configurationPath);
+        var originalLock = File.ReadAllText(lockPath);
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["install", "dotnet-gitignore"],
+            workspace.Path
+        );
+
+        await Assert.That(configured).IsEqualTo(0);
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, "first.txt"))).IsFalse();
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, "second.txt"))).IsFalse();
+        await Assert.That(File.ReadAllText(configurationPath)).IsEqualTo(originalConfiguration);
+        await Assert.That(File.ReadAllText(lockPath)).IsEqualTo(originalLock);
+    }
+
+    [Test]
+    public async Task Install_WhenResultingLockExceedsLimit_AbortsBeforePreHookAndMutation()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreatePackSource(
+            workspace.Path,
+            $"id: dotnet-gitignore\nversion: 1.0.0\nhooks:\n  preInstall:\n    - type: script\n      command: {ShellExecutable}\n      arguments:\n        - {ShellArgument}\n        - 'echo ran > pre-hook.txt'\nmanagedFiles:\n  - source: templates/dotnet.gitignore\n    target: .gitignore\n"
+        );
+        await ConfigureSourceAsync(workspace, sourcePath);
+        var lockPath = Path.Combine(workspace.Path, ProjectStateStore.LockFileName);
+        var lockLimit = new FileInfo(lockPath).Length;
+        var configured = await workspace.Application.RunAsync(
+            [
+                "config",
+                "set",
+                "resource-limits.lock-file-bytes",
+                lockLimit.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                "--project",
+            ],
+            workspace.Path
+        );
+        var configurationPath = GetManifestPath(workspace.Path);
+        var originalConfiguration = File.ReadAllText(configurationPath);
+        var originalLock = File.ReadAllText(lockPath);
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["install", "dotnet-gitignore", "--scripts", "run"],
+            workspace.Path
+        );
+
+        await Assert.That(configured).IsEqualTo(0);
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, "pre-hook.txt"))).IsFalse();
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, ".gitignore"))).IsFalse();
+        await Assert.That(File.ReadAllText(configurationPath)).IsEqualTo(originalConfiguration);
+        await Assert.That(File.ReadAllText(lockPath)).IsEqualTo(originalLock);
+    }
+
+    [Test]
     public async Task Install_WhenScriptsRun_ExecutesPreAndPostHooksAroundManagedFiles()
     {
         using var workspace = new TestWorkspace();
@@ -1262,6 +1367,35 @@ public sealed class PackLifecycleTests
         var projectState = state.RequireValue();
         await Assert.That(projectState.Configuration.Packs).IsEmpty();
         await Assert.That(projectState.LockFile.Packs).IsEmpty();
+    }
+
+    [Test]
+    public async Task Uninstall_WhenSnapshotExceedsLimit_AbortsWithoutDeletingOwnedState()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreatePackSource(workspace.Path);
+        await ConfigureSourceAsync(workspace, sourcePath);
+        await workspace.Application.RunAsync(["install", "dotnet-gitignore"], workspace.Path);
+        var configured = await workspace.Application.RunAsync(
+            ["config", "set", "resource-limits.pack-snapshot-bytes", "1", "--project"],
+            workspace.Path
+        );
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["uninstall", "dotnet-gitignore"],
+            workspace.Path
+        );
+        var state = await workspace.StateStore.LoadAsync(workspace.Path);
+
+        await Assert.That(configured).IsEqualTo(0);
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, ".gitignore"))).IsTrue();
+        await Assert
+            .That(state.RequireValue().Configuration.Packs.Select(pack => pack.Id))
+            .IsEquivalentTo(["dotnet-gitignore"]);
+        await Assert
+            .That(state.RequireValue().LockFile.Packs.Select(pack => pack.Id))
+            .IsEquivalentTo(["dotnet-gitignore"]);
     }
 
     [Test]

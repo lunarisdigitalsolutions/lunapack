@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO.Abstractions;
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Project;
@@ -56,22 +57,26 @@ internal sealed class CliPreferenceService(
                     userProject?.NextSteps?.Enabled,
                     global?.NextSteps?.Enabled,
                     defaultValue: true
+                ),
+                ResourceLimits.Resolve(
+                    local?.ResourceLimits,
+                    userProject?.ResourceLimits,
+                    global?.ResourceLimits
                 )
             )
         );
     }
 
-    public async Task<ManifestOperationResult<IReadOnlyList<KeyValuePair<string, bool>>>> ListAsync(
-        string projectDirectory,
-        Scope scope
-    )
+    public async Task<
+        ManifestOperationResult<IReadOnlyList<KeyValuePair<string, string>>>
+    > ListAsync(string projectDirectory, Scope scope)
     {
         var preferences = await LoadPreferencesAsync(projectDirectory, scope);
         return preferences.IsSuccess
-            ? ManifestOperationResult<IReadOnlyList<KeyValuePair<string, bool>>>.Success(
+            ? ManifestOperationResult<IReadOnlyList<KeyValuePair<string, string>>>.Success(
                 GetConfiguredValues(preferences.Value)
             )
-            : ManifestOperationResult<IReadOnlyList<KeyValuePair<string, bool>>>.Failure(
+            : ManifestOperationResult<IReadOnlyList<KeyValuePair<string, string>>>.Failure(
                 preferences.Error!
             );
     }
@@ -83,23 +88,51 @@ internal sealed class CliPreferenceService(
         Scope scope
     )
     {
-        if (!TryParseKey(key, out var preferenceKey))
+        if (TryParseKey(key, out var preferenceKey))
+        {
+            if (!bool.TryParse(value, out var parsedPreferenceValue))
+            {
+                return Task.FromResult(
+                    ManifestOperationResult<bool>.Failure(
+                        $"Preference '{key}' must be 'true' or 'false'."
+                    )
+                );
+            }
+
+            return UpdateAsync(projectDirectory, preferenceKey, parsedPreferenceValue, scope);
+        }
+
+        if (!ResourceLimits.TryParseKey(key, out var resourceLimitKey))
         {
             return Task.FromResult(
                 ManifestOperationResult<bool>.Failure($"Unknown preference key '{key}'.")
             );
         }
 
-        if (!bool.TryParse(value, out var parsedValue))
+        var definition = ResourceLimits.GetDefinition(resourceLimitKey);
+        if (
+            !long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var limit)
+            || limit <= 0
+            || limit > definition.MaximumValue
+        )
         {
             return Task.FromResult(
                 ManifestOperationResult<bool>.Failure(
-                    $"Preference '{key}' must be 'true' or 'false'."
+                    $"Resource limit '{key}' must be a positive integer no greater than {definition.MaximumValue.ToString(CultureInfo.InvariantCulture)} {definition.Unit}."
                 )
             );
         }
 
-        return UpdateAsync(projectDirectory, preferenceKey, parsedValue, scope);
+        if (scope == Scope.Local && limit > definition.DefaultValue)
+        {
+            return Task.FromResult(
+                ManifestOperationResult<bool>.Failure(
+                    $"Project resource limit '{key}' cannot exceed the built-in default of {definition.DefaultValue.ToString(CultureInfo.InvariantCulture)} {definition.Unit}."
+                )
+            );
+        }
+
+        return UpdateResourceLimitAsync(projectDirectory, resourceLimitKey, limit, scope);
     }
 
     public Task<ManifestOperationResult<bool>> RemoveAsync(
@@ -108,14 +141,16 @@ internal sealed class CliPreferenceService(
         Scope scope
     )
     {
-        if (!TryParseKey(key, out var preferenceKey))
+        if (TryParseKey(key, out var preferenceKey))
         {
-            return Task.FromResult(
-                ManifestOperationResult<bool>.Failure($"Unknown preference key '{key}'.")
-            );
+            return UpdateAsync(projectDirectory, preferenceKey, null, scope);
         }
 
-        return UpdateAsync(projectDirectory, preferenceKey, null, scope);
+        return ResourceLimits.TryParseKey(key, out var resourceLimitKey)
+            ? UpdateResourceLimitAsync(projectDirectory, resourceLimitKey, null, scope)
+            : Task.FromResult(
+                ManifestOperationResult<bool>.Failure($"Unknown preference key '{key}'.")
+            );
     }
 
     private async Task<ManifestOperationResult<CliPreferences?>> LoadLocalPreferencesAsync(
@@ -195,7 +230,7 @@ internal sealed class CliPreferenceService(
             var currentPreferences = projectState.Configuration.Preferences;
             if (value is null && GetValue(currentPreferences, preferenceKey) is null)
             {
-                return MissingValueFailure(preferenceKey);
+                return MissingValueFailure(GetPreferenceKeyName(preferenceKey));
             }
 
             var saved = await projectStateStore.SaveAsync(
@@ -222,7 +257,7 @@ internal sealed class CliPreferenceService(
             var currentPreferences = userSettings.Global.Preferences;
             if (value is null && GetValue(currentPreferences, preferenceKey) is null)
             {
-                return MissingValueFailure(preferenceKey);
+                return MissingValueFailure(GetPreferenceKeyName(preferenceKey));
             }
 
             userSettings.Global.Preferences = UpdatePreferences(
@@ -243,7 +278,7 @@ internal sealed class CliPreferenceService(
             var currentPreferences = projectSettings?.Preferences;
             if (value is null && GetValue(currentPreferences, preferenceKey) is null)
             {
-                return MissingValueFailure(preferenceKey);
+                return MissingValueFailure(GetPreferenceKeyName(preferenceKey));
             }
 
             projectSettings ??= new LocalProjectTrust();
@@ -258,9 +293,94 @@ internal sealed class CliPreferenceService(
         return await userSettingsStore.SaveAsync(userSettings);
     }
 
-    private static ManifestOperationResult<bool> MissingValueFailure(PreferenceKey key) =>
+    private async Task<ManifestOperationResult<bool>> UpdateResourceLimitAsync(
+        string projectDirectory,
+        ResourceLimits.ResourceLimitKey resourceLimitKey,
+        long? value,
+        Scope scope
+    )
+    {
+        var key = ResourceLimits.GetDefinition(resourceLimitKey).Name;
+        if (scope == Scope.Local)
+        {
+            var state = await projectStateStore.LoadAsync(projectDirectory);
+            if (state.Value is not { } projectState)
+            {
+                return ManifestOperationResult<bool>.Failure(state.Error!);
+            }
+
+            var preferences = projectState.Configuration.Preferences;
+            if (value is null && preferences?.ResourceLimits?.GetValue(resourceLimitKey) is null)
+            {
+                return MissingValueFailure(key);
+            }
+
+            return await projectStateStore.SaveAsync(
+                projectDirectory,
+                projectState with
+                {
+                    Configuration = projectState.Configuration with
+                    {
+                        Preferences = UpdateResourceLimitPreferences(
+                            preferences,
+                            resourceLimitKey,
+                            value
+                        ),
+                    },
+                }
+            );
+        }
+
+        var settings = await userSettingsStore.LoadAsync();
+        if (settings.Value is not { } userSettings)
+        {
+            return ManifestOperationResult<bool>.Failure(settings.Error!);
+        }
+
+        if (scope == Scope.Global)
+        {
+            var preferences = userSettings.Global.Preferences;
+            if (value is null && preferences?.ResourceLimits?.GetValue(resourceLimitKey) is null)
+            {
+                return MissingValueFailure(key);
+            }
+
+            userSettings.Global.Preferences = UpdateResourceLimitPreferences(
+                preferences,
+                resourceLimitKey,
+                value
+            );
+        }
+        else
+        {
+            var projectKey = userSettingsStore.GetProjectKey(projectDirectory);
+            if (projectKey.Value is not { } keyValue)
+            {
+                return ManifestOperationResult<bool>.Failure(projectKey.Error!);
+            }
+
+            userSettings.Projects.TryGetValue(keyValue, out var projectSettings);
+            var preferences = projectSettings?.Preferences;
+            if (value is null && preferences?.ResourceLimits?.GetValue(resourceLimitKey) is null)
+            {
+                return MissingValueFailure(key);
+            }
+
+            projectSettings ??= new LocalProjectTrust();
+            projectSettings.Preferences = UpdateResourceLimitPreferences(
+                preferences,
+                resourceLimitKey,
+                value
+            );
+            userSettings.Projects[keyValue] = projectSettings;
+        }
+
+        return await userSettingsStore.SaveAsync(userSettings);
+    }
+
+    private static ManifestOperationResult<bool> MissingValueFailure(string key) =>
         ManifestOperationResult<bool>.Failure(
-            $"Preference '{GetKeyName(key)}' is not set in the selected scope."
+            $"Preference '{key}' is not set in the selected scope."
         );
 
     private static CliPreferences? UpdatePreferences(
@@ -288,7 +408,32 @@ internal sealed class CliPreferenceService(
             },
             _ => throw new ArgumentOutOfRangeException(nameof(key), key, null),
         };
-        return updated.Discover is null && updated.Search is null && updated.NextSteps is null
+        return
+            updated.Discover is null
+            && updated.Search is null
+            && updated.NextSteps is null
+            && updated.ResourceLimits is null
+            ? null
+            : updated;
+    }
+
+    private static CliPreferences? UpdateResourceLimitPreferences(
+        CliPreferences? preferences,
+        ResourceLimits.ResourceLimitKey key,
+        long? value
+    )
+    {
+        var updated = (preferences ?? new CliPreferences()) with
+        {
+            ResourceLimits = (
+                preferences?.ResourceLimits ?? new ResourceLimitPreferences()
+            ).WithValue(key, value),
+        };
+        return
+            updated.Discover is null
+            && updated.Search is null
+            && updated.NextSteps is null
+            && updated.ResourceLimits is null
             ? null
             : updated;
     }
@@ -298,20 +443,37 @@ internal sealed class CliPreferenceService(
             ? new CatalogPreferences { OnlyComposites = onlyComposites }
             : null;
 
-    private static List<KeyValuePair<string, bool>> GetConfiguredValues(CliPreferences? preferences)
+    private static List<KeyValuePair<string, string>> GetConfiguredValues(
+        CliPreferences? preferences
+    )
     {
-        var values = new List<KeyValuePair<string, bool>>();
+        var values = new List<KeyValuePair<string, string>>();
         AddValue(values, "discover.only-composites", preferences?.Discover?.OnlyComposites);
         AddValue(values, "next-steps.enabled", preferences?.NextSteps?.Enabled);
         AddValue(values, "search.only-composites", preferences?.Search?.OnlyComposites);
+        foreach (var definition in ResourceLimits.Definitions)
+        {
+            if (preferences?.ResourceLimits?.GetValue(definition.Key) is { } value)
+            {
+                values.Add(
+                    new KeyValuePair<string, string>(
+                        definition.Name,
+                        value.ToString(CultureInfo.InvariantCulture)
+                    )
+                );
+            }
+        }
+
         return values;
     }
 
-    private static void AddValue(List<KeyValuePair<string, bool>> values, string key, bool? value)
+    private static void AddValue(List<KeyValuePair<string, string>> values, string key, bool? value)
     {
         if (value is { } configuredValue)
         {
-            values.Add(new KeyValuePair<string, bool>(key, configuredValue));
+            values.Add(
+                new KeyValuePair<string, string>(key, configuredValue.ToString().ToLowerInvariant())
+            );
         }
     }
 
@@ -343,7 +505,7 @@ internal sealed class CliPreferenceService(
         return Enum.IsDefined(preferenceKey);
     }
 
-    private static string GetKeyName(PreferenceKey key) =>
+    private static string GetPreferenceKeyName(PreferenceKey key) =>
         key switch
         {
             PreferenceKey.DiscoverOnlyComposites => "discover.only-composites",
@@ -369,6 +531,7 @@ internal sealed class CliPreferenceService(
     internal sealed record EffectivePreferences(
         bool DiscoverOnlyComposites,
         bool SearchOnlyComposites,
-        bool NextStepsEnabled
+        bool NextStepsEnabled,
+        ResourceLimits ResourceLimits
     );
 }

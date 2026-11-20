@@ -33,7 +33,11 @@ different repository is still rejected.
 
 Git must be available on the process path. LunaPack caches discovered Git metadata
 under the workspace `.lunapack` directory and never stores Git credentials there.
-The lock document records the resolved commit used for each Git pack.
+Online lifecycle operations resolve the configured ref or remote HEAD and reload
+the manifest from that commit instead of trusting cached manifest content. The
+cache can still support explicitly cached catalog presentation, but it does not
+authorize installs, updates, scripts, or managed files. The lock document records
+the resolved commit used for each Git pack.
 
 OCI sources use an ordered `sources` sequence entry with `type: oci`, a required
 HTTPS `url`, and an optional repository `path`. An optional `username` is
@@ -76,8 +80,8 @@ profile root for isolated automation; Luna stores settings beneath that root's
 
 ## CLI preferences
 
-Use `luna config` to set, list, or remove Boolean preferences. Supported keys
-are:
+Use `luna config` to set, list, or remove Boolean preferences and resource
+limits. Boolean preference keys are:
 
 | Key                        | Built-in default | Effect                                           |
 | -------------------------- | ---------------- | ------------------------------------------------ |
@@ -92,8 +96,8 @@ luna config list --global
 luna config remove discover.only-composites --project
 ```
 
-Preference values are optional in project and user settings. Project-local
-values go in `lunapack.yml`:
+Boolean preference values are optional in project and user settings.
+Project-local values go in `lunapack.yml`:
 
 ```yml
 preferences:
@@ -101,7 +105,72 @@ preferences:
     onlyComposites: true
   nextSteps:
     enabled: false
+  resourceLimits:
+    packManifestBytes: 524288
 ```
+
+### Resource limits
+
+Resource-limit keys use positive decimal integers. Byte limits count raw bytes;
+`MiB` and `GiB` below use binary units (`1 MiB = 1,048,576 bytes`,
+`1 GiB = 1,073,741,824 bytes`). Project settings may lower defaults but cannot
+raise them. Global and user-project settings may raise or lower defaults, up to
+the finite user ceiling.
+
+| Key                                      | Unit       | Default and project maximum | User ceiling |
+| ---------------------------------------- | ---------- | --------------------------: | -----------: |
+| `resource-limits.project-manifest-bytes` | bytes      |                       1 MiB |       16 MiB |
+| `resource-limits.pack-manifest-bytes`    | bytes      |                       1 MiB |       64 MiB |
+| `resource-limits.lock-file-bytes`        | bytes      |                      64 MiB |        1 GiB |
+| `resource-limits.pack-document-bytes`    | bytes      |                      16 MiB |      256 MiB |
+| `resource-limits.pack-snapshot-bytes`    | bytes      |                       2 GiB |       16 GiB |
+| `resource-limits.rendered-file-bytes`    | bytes      |                      64 MiB |      256 MiB |
+| `resource-limits.rendered-total-bytes`   | bytes      |                     512 MiB |        4 GiB |
+| `resource-limits.dependency-depth`       | edges      |                          64 |          128 |
+| `resource-limits.dependency-nodes`       | nodes      |                       1,024 |      100,000 |
+| `resource-limits.dependency-references`  | references |                     100,000 |    1,000,000 |
+| `resource-limits.files-per-pack`         | files      |                      10,000 |      100,000 |
+| `resource-limits.files-per-graph`        | files      |                     100,000 |    1,000,000 |
+| `resource-limits.oci-archive-entries`    | entries    |                     100,000 |    1,000,000 |
+| `resource-limits.oci-download-bytes`     | bytes      |                     512 MiB |       16 GiB |
+| `resource-limits.oci-entry-bytes`        | bytes      |                     512 MiB |        4 GiB |
+| `resource-limits.oci-expanded-bytes`     | bytes      |                       2 GiB |       16 GiB |
+
+`files-per-pack` and `files-per-graph` count both regular files and
+directories. Files selected through Luna Links count toward the same snapshot
+and graph budgets. Luna stops enumeration before retaining a collection above
+those limits and streams selected link content under the aggregate snapshot
+byte budget.
+
+Luna also applies compiled safeguards that settings cannot raise: retained
+pack-catalog manifest content and OCI repository/tag pagination payloads are
+limited to 64 MiB in aggregate; Git path and external-source enumeration
+output is limited to 64 MiB, and one path or metadata record is limited to
+1 MiB. These safeguards bound intermediate process output and registry pages
+even when the per-manifest, per-pack, or graph count limits are raised within
+their user ceilings.
+
+Before deserializing a lock file, Luna scans its YAML collections to reject an
+over-limit pack list, reference list, link record, or managed-file list. YAML
+aliases are rejected in lock state so one compact alias cannot expand retained
+object counts after the preflight. Composite graph resolution shares one
+catalog byte budget across every root and dependency lookup.
+
+```powershell
+luna config set resource-limits.pack-manifest-bytes 2097152 --global
+luna config set resource-limits.files-per-pack 5000 --project
+luna config list --global
+luna config remove resource-limits.pack-manifest-bytes --global
+```
+
+`luna config set` rejects zero, negative, non-integer, overflowing, and
+above-ceiling values. Zero never means unlimited. The compiled bootstrap
+ceilings remain 16 MiB for `lunapack.yml` and 1 MiB for
+`~/.lunapack/config.yml`; a settings file cannot raise the ceiling used to
+read itself. Project-local resource limits are stored under
+`preferences.resourceLimits` in `lunapack.yml`. User-owned limits are stored
+under the matching scope's `preferences.resourceLimits` in
+`~/.lunapack/config.yml`.
 
 `--project` stores values in the current `lunapack.yml`; `--local` is an alias.
 `--user-project` stores values in the user profile's `.lunapack/config.yml`
@@ -113,13 +182,23 @@ no `lunapack.yml` exists. `--workspace` selects which project receives
 project-local or user-project values.
 
 `luna config list` shows values explicitly stored in the selected scope; it
-does not print built-in defaults. `set` accepts only `true` or `false`, and
-unknown keys fail without changing settings. `remove` fails when the selected
-scope has no value for that key.
+does not print built-in defaults. `set` accepts `true` or `false` for Boolean
+preferences and positive decimal integers for resource limits. Unknown keys
+fail without changing settings. `remove` fails when the selected scope has no
+value for that key.
 
-For each key, Luna selects the first configured value from project-local,
-user-project, and global settings, then uses the built-in default. An explicit
-`false` overrides less-specific `true` values. `--only-composites` enables the
-composite filter for one discover or search invocation; it does not disable a
-filter already enabled by settings. `--suppress-next-steps` always suppresses
-guidance for the current invocation.
+The same effective limits apply when Luna publishes a pack to OCI. Publication
+validates and archives the authoring tree and extracted result with the
+project's resolved byte and entry limits before contacting the publication
+endpoint. Pack-authoring manifest reads, writes, tree enumeration, and
+validation also use the resolved values.
+
+For Boolean preferences, Luna selects the first configured value from
+project-local, user-project, and global settings, then uses the built-in
+default. For resource limits, Luna selects the user-project value over global,
+or the built-in default, and then applies the project-local value only as a
+lower cap. A repository-controlled value therefore cannot raise a stricter
+user setting. An explicit `false` overrides less-specific `true` values.
+`--only-composites` enables the composite filter for one discover or search
+invocation; it does not disable a filter already enabled by settings.
+`--suppress-next-steps` always suppresses guidance for the current invocation.

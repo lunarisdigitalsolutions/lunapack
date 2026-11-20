@@ -15,7 +15,8 @@ internal sealed record CatalogPack(
     ConfiguredSourceIdentity SourceIdentity,
     GitSourceProvenance? GitSource = null,
     string? RepositoryPath = null,
-    OciSourceProvenance? OciSource = null
+    OciSourceProvenance? OciSource = null,
+    long ManifestByteCount = 0
 )
 {
     public CatalogPack(

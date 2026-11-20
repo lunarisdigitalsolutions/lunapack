@@ -467,6 +467,8 @@ public sealed class OciSourceCredentialCoordinatorTests
                     new Uri(source.Url),
                     credential,
                     "partition",
+                    100_000,
+                    64L * 1024 * 1024,
                     CancellationToken.None
                 ),
             CancellationToken.None
@@ -501,6 +503,8 @@ public sealed class OciSourceCredentialCoordinatorTests
                     new Uri(source.Url),
                     credential,
                     "partition",
+                    100_000,
+                    64L * 1024 * 1024,
                     CancellationToken.None
                 ),
             CancellationToken.None

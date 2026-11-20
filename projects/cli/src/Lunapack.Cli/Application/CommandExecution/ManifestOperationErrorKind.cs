@@ -4,4 +4,6 @@ internal enum ManifestOperationErrorKind
 {
     General,
     PackNotFound,
+    ResourceLimitExceeded,
+    SourceIntegrityMismatch,
 }

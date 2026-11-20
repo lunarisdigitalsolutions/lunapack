@@ -138,7 +138,8 @@ internal sealed class PackUpdateSelectionService(
         return await packCatalog.BrowseForUpdatesAsync(
             projectDirectory,
             state.Configuration,
-            requestedPacks
+            requestedPacks,
+            state.EffectiveResourceLimits
         );
     }
 
@@ -147,6 +148,7 @@ internal sealed class PackUpdateSelectionService(
     > CheckLockedOciReleasesAsync(string projectDirectory, ProjectState state)
     {
         var violations = new List<OciReleaseIntegrityViolation>();
+        var manifestBudget = new CatalogManifestBudget(state.EffectiveResourceLimits);
         foreach (var lockedPack in state.LockFile.Packs)
         {
             if (lockedPack.OciSource is null)
@@ -157,7 +159,9 @@ internal sealed class PackUpdateSelectionService(
             var observed = await packCatalog.ResolveLockedOciTagAsync(
                 projectDirectory,
                 state.Configuration,
-                lockedPack
+                lockedPack,
+                state.EffectiveResourceLimits,
+                manifestBudget
             );
             if (!observed.IsSuccess)
             {

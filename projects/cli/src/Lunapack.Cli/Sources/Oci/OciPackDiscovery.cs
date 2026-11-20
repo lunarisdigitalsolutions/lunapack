@@ -2,6 +2,7 @@ using System.IO.Abstractions;
 using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Application.Paths;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Catalog;
 using Lunapack.Cli.Packs.Planning;
 using Lunapack.Cli.Project;
@@ -23,27 +24,46 @@ internal sealed class OciPackDiscovery(
         string projectDirectory,
         ProjectConfiguration.OciSource source,
         int sourceOrder,
+        ResourceLimits? resourceLimits = null,
         CancellationToken cancellationToken = default
     ) =>
-        BrowseAsync(projectDirectory, source, sourceOrder, requestedPacks: null, cancellationToken);
+        BrowseAsync(
+            projectDirectory,
+            source,
+            sourceOrder,
+            requestedPacks: null,
+            resourceLimits,
+            cancellationToken
+        );
 
     public Task<ManifestOperationResult<IReadOnlyList<CatalogPack>>> BrowseForUpdatesAsync(
         string projectDirectory,
         ProjectConfiguration.OciSource source,
         int sourceOrder,
         IReadOnlyDictionary<string, string?> requestedPacks,
+        ResourceLimits? resourceLimits = null,
         CancellationToken cancellationToken = default
-    ) => BrowseAsync(projectDirectory, source, sourceOrder, requestedPacks, cancellationToken);
+    ) =>
+        BrowseAsync(
+            projectDirectory,
+            source,
+            sourceOrder,
+            requestedPacks,
+            resourceLimits,
+            cancellationToken
+        );
 
     private async Task<ManifestOperationResult<IReadOnlyList<CatalogPack>>> BrowseAsync(
         string projectDirectory,
         ProjectConfiguration.OciSource source,
         int sourceOrder,
         IReadOnlyDictionary<string, string?>? requestedPacks,
+        ResourceLimits? resourceLimits,
         CancellationToken cancellationToken
     )
     {
-        var context = CreateContext(projectDirectory, source);
+        var effectiveResourceLimits = resourceLimits ?? ResourceLimits.Default;
+        var context = CreateContext(projectDirectory, source, effectiveResourceLimits);
         if (context.Value is not { } discoveryContext)
         {
             return Failure<IReadOnlyList<CatalogPack>>(
@@ -59,33 +79,14 @@ internal sealed class OciPackDiscovery(
         );
         if (repositories.Value is not { } repositoryNames)
         {
-            if (requestedPacks is { Count: > 0 })
-            {
-                var directPacks = await DiscoverRequestedPacksAsync(
-                    projectDirectory,
-                    source,
-                    sourceOrder,
-                    requestedPacks,
-                    cancellationToken
-                );
-                var enumerationError =
-                    repositories.Error
-                    ?? $"Unable to enumerate OCI repositories for source '{source.Name}'.";
-                console.Warning(
-                    $"{enumerationError}; catalog enumeration is unavailable; directly queried {requestedPacks.Count} requested pack ID(s), so discovery remains incomplete."
-                );
-                if (directPacks.Count == 0)
-                {
-                    return Failure<IReadOnlyList<CatalogPack>>(
-                        $"{enumerationError}; no requested OCI releases were found by direct lookup."
-                    );
-                }
-
-                return ManifestOperationResult<IReadOnlyList<CatalogPack>>.Success(directPacks);
-            }
-
-            return Failure<IReadOnlyList<CatalogPack>>(
-                repositories.Error ?? $"Unable to list repositories for '{source.Name}'."
+            return await BrowseAfterRepositoryListFailureAsync(
+                projectDirectory,
+                source,
+                sourceOrder,
+                requestedPacks,
+                effectiveResourceLimits,
+                repositories,
+                cancellationToken
             );
         }
 
@@ -97,6 +98,11 @@ internal sealed class OciPackDiscovery(
             repositoryNames,
             cancellationToken
         );
+        if (result.Error is not null)
+        {
+            return Failure<IReadOnlyList<CatalogPack>>(result.Error, result.ErrorKind);
+        }
+
         if (result.HadFailures && result.Packs.Count == 0)
         {
             return Failure<IReadOnlyList<CatalogPack>>(
@@ -114,15 +120,73 @@ internal sealed class OciPackDiscovery(
         return ManifestOperationResult<IReadOnlyList<CatalogPack>>.Success(result.Packs);
     }
 
-    private async Task<List<CatalogPack>> DiscoverRequestedPacksAsync(
+    private async Task<
+        ManifestOperationResult<IReadOnlyList<CatalogPack>>
+    > BrowseAfterRepositoryListFailureAsync(
+        string projectDirectory,
+        ProjectConfiguration.OciSource source,
+        int sourceOrder,
+        IReadOnlyDictionary<string, string?>? requestedPacks,
+        ResourceLimits resourceLimits,
+        ManifestOperationResult<IReadOnlyList<string>> repositories,
+        CancellationToken cancellationToken
+    )
+    {
+        if (repositories.ErrorKind == ManifestOperationErrorKind.ResourceLimitExceeded)
+        {
+            return Failure<IReadOnlyList<CatalogPack>>(
+                repositories.Error ?? "OCI repository enumeration exceeded its resource limit.",
+                repositories.ErrorKind
+            );
+        }
+
+        if (requestedPacks is not { Count: > 0 })
+        {
+            return Failure<IReadOnlyList<CatalogPack>>(
+                repositories.Error ?? $"Unable to list repositories for '{source.Name}'."
+            );
+        }
+
+        var directPacks = await DiscoverRequestedPacksAsync(
+            projectDirectory,
+            source,
+            sourceOrder,
+            requestedPacks,
+            resourceLimits,
+            cancellationToken
+        );
+        if (directPacks.Value is not { } discoveredPacks)
+        {
+            return Failure<IReadOnlyList<CatalogPack>>(
+                directPacks.Error ?? "Unable to query requested OCI releases.",
+                directPacks.ErrorKind
+            );
+        }
+
+        var enumerationError =
+            repositories.Error
+            ?? $"Unable to enumerate OCI repositories for source '{source.Name}'.";
+        console.Warning(
+            $"{enumerationError}; catalog enumeration is unavailable; directly queried {requestedPacks.Count} requested pack ID(s), so discovery remains incomplete."
+        );
+        return discoveredPacks.Count == 0
+            ? Failure<IReadOnlyList<CatalogPack>>(
+                $"{enumerationError}; no requested OCI releases were found by direct lookup."
+            )
+            : ManifestOperationResult<IReadOnlyList<CatalogPack>>.Success(discoveredPacks);
+    }
+
+    private async Task<ManifestOperationResult<List<CatalogPack>>> DiscoverRequestedPacksAsync(
         string projectDirectory,
         ProjectConfiguration.OciSource source,
         int sourceOrder,
         IReadOnlyDictionary<string, string?> requestedPacks,
+        ResourceLimits resourceLimits,
         CancellationToken cancellationToken
     )
     {
         var packs = new List<CatalogPack>();
+        var manifestBudget = new CatalogManifestBudget(resourceLimits);
         foreach (
             var requestedPack in requestedPacks.OrderBy(pack => pack.Key, StringComparer.Ordinal)
         )
@@ -133,12 +197,31 @@ internal sealed class OciPackDiscovery(
                 sourceOrder,
                 requestedPack.Key,
                 requestedPack.Value,
+                resourceLimits,
                 cancellationToken
             );
             if (result.Value is { } candidates)
             {
+                var observed = manifestBudget.Observe(candidates);
+                if (!observed.IsSuccess)
+                {
+                    return ManifestOperationResult<List<CatalogPack>>.Failure(
+                        observed.Error!,
+                        observed.ErrorKind
+                    );
+                }
+
                 packs.AddRange(candidates);
                 continue;
+            }
+
+            if (result.ErrorKind == ManifestOperationErrorKind.ResourceLimitExceeded)
+            {
+                return ManifestOperationResult<List<CatalogPack>>.Failure(
+                    result.Error
+                        ?? "Requested OCI pack manifest exceeds its configured byte limit.",
+                    result.ErrorKind
+                );
             }
 
             console.Warning(
@@ -146,7 +229,7 @@ internal sealed class OciPackDiscovery(
             );
         }
 
-        return packs;
+        return ManifestOperationResult<List<CatalogPack>>.Success(packs);
     }
 
     public static ManifestOperationResult<IReadOnlyList<CatalogPack>> BrowseCached(
@@ -164,9 +247,11 @@ internal sealed class OciPackDiscovery(
         int sourceOrder,
         string packId,
         string? requestedVersion,
+        ResourceLimits? resourceLimits = null,
         CancellationToken cancellationToken = default
     )
     {
+        var effectiveResourceLimits = resourceLimits ?? ResourceLimits.Default;
         var repository = OciRepositoryTagMapper.CreateRepository(source, packId);
         if (repository.Value is not { } repositoryName)
         {
@@ -175,7 +260,7 @@ internal sealed class OciPackDiscovery(
             );
         }
 
-        var context = CreateContext(projectDirectory, source);
+        var context = CreateContext(projectDirectory, source, effectiveResourceLimits);
         if (context.Value is not { } discoveryContext)
         {
             return Failure<IReadOnlyList<CatalogPack>>(
@@ -224,6 +309,11 @@ internal sealed class OciPackDiscovery(
             GetRecentTags(repositoryTags),
             cancellationToken
         );
+        if (result.Error is not null)
+        {
+            return Failure<IReadOnlyList<CatalogPack>>(result.Error, result.ErrorKind);
+        }
+
         if (result.HadFailures && result.Packs.Count == 0)
         {
             return Failure<IReadOnlyList<CatalogPack>>(
@@ -289,7 +379,8 @@ internal sealed class OciPackDiscovery(
 
     private ManifestOperationResult<DiscoveryContext> CreateContext(
         string projectDirectory,
-        ProjectConfiguration.OciSource source
+        ProjectConfiguration.OciSource source,
+        ResourceLimits resourceLimits
     )
     {
         var location = SourceIdentityNormalizer.NormalizeOciLocation(source.Url, source.Path);
@@ -317,7 +408,8 @@ internal sealed class OciPackDiscovery(
                 new Uri(location.Value.Url),
                 partitionId,
                 ConfiguredSourceIdentity.Create(source),
-                ProjectPath.NormalizeOptional(source.Path)?.Trim('/')
+                ProjectPath.NormalizeOptional(source.Path)?.Trim('/'),
+                resourceLimits
             )
         );
     }
@@ -337,6 +429,8 @@ internal sealed class OciPackDiscovery(
                     context.Registry,
                     credential,
                     context.PartitionId,
+                    context.ResourceLimits.FilesPerGraph,
+                    CatalogManifestBudget.MaximumManifestBytes,
                     cancellationToken
                 ),
             cancellationToken
@@ -348,7 +442,10 @@ internal sealed class OciPackDiscovery(
                     source,
                     result.Failure,
                     "Unable to enumerate OCI repositories."
-                )
+                ),
+                result.Failure?.Kind == OciRegistryFailureKind.ResourceLimitExceeded
+                    ? ManifestOperationErrorKind.ResourceLimitExceeded
+                    : ManifestOperationErrorKind.General
             );
     }
 
@@ -363,6 +460,7 @@ internal sealed class OciPackDiscovery(
     {
         var packs = new List<CatalogPack>();
         var hadFailures = false;
+        var manifestBudget = new CatalogManifestBudget(context.ResourceLimits);
         foreach (var repository in repositories)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -379,6 +477,17 @@ internal sealed class OciPackDiscovery(
                 context,
                 cancellationToken
             );
+            if (result.Error is not null)
+            {
+                return result;
+            }
+
+            var observed = manifestBudget.Observe(result.Packs);
+            if (!observed.IsSuccess)
+            {
+                return new DiscoveryResult([], false, observed.Error, observed.ErrorKind);
+            }
+
             packs.AddRange(result.Packs);
             hadFailures |= result.HadFailures;
         }
@@ -418,6 +527,16 @@ internal sealed class OciPackDiscovery(
                 return new DiscoveryResult([], HadFailures: false);
             }
 
+            if (tags.ErrorKind == ManifestOperationErrorKind.ResourceLimitExceeded)
+            {
+                return new DiscoveryResult(
+                    [],
+                    HadFailures: false,
+                    tags.Error ?? "OCI tag enumeration exceeded its configured limit.",
+                    tags.ErrorKind
+                );
+            }
+
             console.Warning(
                 FormatRepositoryFailure(
                     source,
@@ -453,6 +572,7 @@ internal sealed class OciPackDiscovery(
     {
         var packs = new List<CatalogPack>();
         var hadFailures = false;
+        var manifestBudget = new CatalogManifestBudget(context.ResourceLimits);
         foreach (var releaseTag in releaseTags)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -468,6 +588,12 @@ internal sealed class OciPackDiscovery(
             );
             if (candidate.Value is { } pack)
             {
+                var observed = manifestBudget.Observe(pack);
+                if (!observed.IsSuccess)
+                {
+                    return new DiscoveryResult(packs, false, observed.Error, observed.ErrorKind);
+                }
+
                 packs.Add(pack);
             }
             else if (!candidate.IsSuccess)
@@ -475,6 +601,16 @@ internal sealed class OciPackDiscovery(
                 if (candidate.ErrorKind == ManifestOperationErrorKind.PackNotFound)
                 {
                     continue;
+                }
+
+                if (candidate.ErrorKind == ManifestOperationErrorKind.ResourceLimitExceeded)
+                {
+                    return new DiscoveryResult(
+                        packs,
+                        HadFailures: false,
+                        candidate.Error ?? "OCI pack manifest exceeds its configured byte limit.",
+                        candidate.ErrorKind
+                    );
                 }
 
                 hadFailures = true;
@@ -508,6 +644,8 @@ internal sealed class OciPackDiscovery(
                     repository,
                     credential,
                     context.PartitionId,
+                    context.ResourceLimits.FilesPerGraph,
+                    CatalogManifestBudget.MaximumManifestBytes,
                     cancellationToken
                 ),
             cancellationToken
@@ -517,7 +655,9 @@ internal sealed class OciPackDiscovery(
             : ManifestOperationResult<IReadOnlyList<string>>.Failure(
                 result.Failure?.Message ?? "Unable to list OCI tags.",
                 result.Failure?.Kind == OciRegistryFailureKind.NotFound
-                    ? ManifestOperationErrorKind.PackNotFound
+                        ? ManifestOperationErrorKind.PackNotFound
+                    : result.Failure?.Kind == OciRegistryFailureKind.ResourceLimitExceeded
+                        ? ManifestOperationErrorKind.ResourceLimitExceeded
                     : ManifestOperationErrorKind.General
             );
     }
@@ -553,7 +693,8 @@ internal sealed class OciPackDiscovery(
                 packId,
                 tag,
                 workspace.Path,
-                cancellationToken: cancellationToken
+                cancellationToken: cancellationToken,
+                resourceLimits: context.ResourceLimits
             );
             if (release.Value is not { } packRelease)
             {
@@ -575,7 +716,8 @@ internal sealed class OciPackDiscovery(
                     source.Name,
                     context.SourceIdentity,
                     RepositoryPath: repository,
-                    OciSource: packRelease.Provenance
+                    OciSource: packRelease.Provenance,
+                    ManifestByteCount: packRelease.ManifestByteCount
                 )
             );
         }
@@ -635,10 +777,16 @@ internal sealed class OciPackDiscovery(
         Uri Registry,
         string PartitionId,
         ConfiguredSourceIdentity SourceIdentity,
-        string? SourcePath
+        string? SourcePath,
+        ResourceLimits ResourceLimits
     );
 
-    private sealed record DiscoveryResult(List<CatalogPack> Packs, bool HadFailures);
+    private sealed record DiscoveryResult(
+        List<CatalogPack> Packs,
+        bool HadFailures,
+        string? Error = null,
+        ManifestOperationErrorKind ErrorKind = ManifestOperationErrorKind.General
+    );
 
     private sealed record ReleaseTag(string Tag, NuGetVersion Version);
 }

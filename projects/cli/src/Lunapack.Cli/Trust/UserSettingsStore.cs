@@ -1,6 +1,8 @@
 using System.IO.Abstractions;
+using System.Text;
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Application.Paths;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Application.Serialization;
 using Lunapack.Cli.Packs.Manifest;
 using YamlDotNet.Serialization;
@@ -48,34 +50,51 @@ internal sealed class UserSettingsStore
     public ManifestOperationResult<string> GetProjectKey(string projectDirectory) =>
         CanonicalProjectPath.Resolve(_fileSystem, projectDirectory);
 
-    public Task<ManifestOperationResult<UserSettings>> LoadAsync()
+    public async Task<ManifestOperationResult<UserSettings>> LoadAsync()
     {
         try
         {
             var pathError = ValidateExistingPaths();
             if (pathError is not null)
             {
-                return Result(ManifestOperationResult<UserSettings>.Failure(pathError));
+                return ManifestOperationResult<UserSettings>.Failure(pathError);
             }
 
             if (!_fileSystem.File.Exists(SettingsPath))
             {
-                return Result(ManifestOperationResult<UserSettings>.Success(new UserSettings()));
+                return ManifestOperationResult<UserSettings>.Success(new UserSettings());
             }
 
-            var settings = _deserializer.Deserialize<UserSettings>(
-                _fileSystem.File.ReadAllText(SettingsPath)
+            var read = await BoundedFileReader.ReadTextAsync(
+                _fileSystem,
+                SettingsPath,
+                ResourceLimits.UserSettingsBootstrapBytes,
+                "User settings"
             );
-            if (settings is null || !IsValid(settings))
+            if (read.Value is not { } contents)
             {
-                return Result(
-                    ManifestOperationResult<UserSettings>.Failure(
-                        $"Invalid user settings in '{SettingsPath}'."
-                    )
+                return ManifestOperationResult<UserSettings>.Failure(read.Error!);
+            }
+
+            var unknownResourceLimit = ResourceLimitYamlValidator.ValidateUserSettings(
+                contents.Text
+            );
+            if (unknownResourceLimit is not null)
+            {
+                return ManifestOperationResult<UserSettings>.Failure(
+                    $"Invalid user settings in '{SettingsPath}': {unknownResourceLimit}"
                 );
             }
 
-            return Result(ManifestOperationResult<UserSettings>.Success(Normalize(settings)));
+            var settings = _deserializer.Deserialize<UserSettings>(contents.Text);
+            if (settings is null || !IsValid(settings))
+            {
+                return ManifestOperationResult<UserSettings>.Failure(
+                    $"Invalid user settings in '{SettingsPath}'."
+                );
+            }
+
+            return ManifestOperationResult<UserSettings>.Success(Normalize(settings));
         }
         catch (Exception exception)
             when (exception
@@ -84,10 +103,8 @@ internal sealed class UserSettingsStore
                         or YamlDotNet.Core.YamlException
             )
         {
-            return Result(
-                ManifestOperationResult<UserSettings>.Failure(
-                    $"Unable to read user settings: {exception.Message}"
-                )
+            return ManifestOperationResult<UserSettings>.Failure(
+                $"Unable to read user settings: {exception.Message}"
             );
         }
     }
@@ -98,6 +115,17 @@ internal sealed class UserSettingsStore
         {
             return Result(
                 ManifestOperationResult<bool>.Failure("Refusing to write invalid user settings.")
+            );
+        }
+
+        var serialized = _serializer.Serialize(Normalize(settings));
+        var serializedByteCount = Encoding.UTF8.GetByteCount(serialized);
+        if (serializedByteCount > ResourceLimits.UserSettingsBootstrapBytes)
+        {
+            return Result(
+                ManifestOperationResult<bool>.Failure(
+                    $"User settings would exceed the {ResourceLimits.UserSettingsBootstrapBytes} byte bootstrap limit ({serializedByteCount} bytes)."
+                )
             );
         }
 
@@ -114,10 +142,7 @@ internal sealed class UserSettingsStore
             }
 
             EnsureSettingsDirectory();
-            _fileSystem.File.WriteAllText(
-                temporaryPath,
-                _serializer.Serialize(Normalize(settings))
-            );
+            _fileSystem.File.WriteAllText(temporaryPath, serialized);
             UserSettingsPathSecurity.Apply(temporaryPath, directory: false);
             _fileSystem.File.Move(temporaryPath, SettingsPath, overwrite: true);
             return Result(ManifestOperationResult<bool>.Success(true));

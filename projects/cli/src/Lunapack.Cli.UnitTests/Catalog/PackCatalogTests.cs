@@ -1,5 +1,7 @@
 using System.IO.Abstractions.TestingHelpers;
 using Lunapack.Cli.Application;
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Catalog;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources;
@@ -37,6 +39,54 @@ public sealed class PackCatalogTests
                     .PackDirectory
             )
             .IsEqualTo(PacksPath("releases", "first"));
+    }
+
+    [Test]
+    public async Task ResolveLocked_WhenSharedCatalogBudgetIsReused_RejectsAggregateOverrun()
+    {
+        var description = new string('x', 34 * 1024 * 1024);
+        var fileSystem = CreateFileSystem([
+            (PacksPath("example", "pack.yml"), CreatePack("example", "1.0.0", description)),
+        ]);
+        var catalog = new PackCatalog(fileSystem, TestConsole.Create());
+        var source = new ProjectConfiguration.LocalSource
+        {
+            Name = "local",
+            Path = _packsDirectory,
+        };
+        var lockedPack = new ProjectLockFile.ResolvedPack
+        {
+            Id = "example",
+            Version = "1.0.0",
+            PackPath = "example",
+            SourceIdentity = ConfiguredSourceIdentity.Create(source),
+            SourceName = source.Name,
+        };
+        var configuration = new ProjectConfiguration { Sources = [source] };
+        var limits = ResourceLimits.Default with { PackManifestBytes = 36L * 1024 * 1024 };
+        var budget = new CatalogManifestBudget(limits);
+
+        var first = await catalog.ResolveLockedAsync(
+            _projectDirectory,
+            configuration,
+            lockedPack,
+            limits,
+            budget
+        );
+        var second = await catalog.ResolveLockedAsync(
+            _projectDirectory,
+            configuration,
+            lockedPack,
+            limits,
+            budget
+        );
+
+        await Assert.That(first.IsSuccess).IsTrue().Because(first.Error ?? string.Empty);
+        await Assert.That(second.IsSuccess).IsFalse();
+        await Assert
+            .That(second.ErrorKind)
+            .IsEqualTo(ManifestOperationErrorKind.ResourceLimitExceeded);
+        await Assert.That(second.Error).Contains("byte aggregate limit");
     }
 
     [Test]
@@ -126,6 +176,119 @@ public sealed class PackCatalogTests
         var packs = result.RequireValue();
         await Assert.That(packs).Count().IsEqualTo(1);
         await Assert.That(packs[0].Manifest.Id).IsEqualTo("valid");
+    }
+
+    [Test]
+    public async Task Browse_WhenPackManifestExceedsEffectiveLimit_FailsWithLowerBound()
+    {
+        var manifest = CreatePack("example", "1.0.0");
+        var fileSystem = CreateFileSystem([(PacksPath("example", "pack.yml"), manifest)]);
+        var catalog = new PackCatalog(fileSystem, TestConsole.Create());
+        var configuration = new ProjectConfiguration
+        {
+            Sources =
+            [
+                new ProjectConfiguration.LocalSource { Name = "local", Path = _packsDirectory },
+            ],
+        };
+        var resourceLimits = ResourceLimits.Default with
+        {
+            PackManifestBytes = manifest.Length - 1,
+        };
+
+        var result = await catalog.BrowseAsync(_projectDirectory, configuration, resourceLimits);
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("pack.yml");
+        await Assert.That(result.Error).Contains("byte limit");
+        await Assert.That(result.Error).Contains("at least");
+    }
+
+    [Test]
+    public async Task Browse_WhenPackSnapshotExceedsFileLimit_FailsBeforeRetainingList()
+    {
+        var manifest = CreatePack("example", "1.0.0");
+        var fileSystem = CreateFileSystem([
+            (PacksPath("example", "pack.yml"), manifest),
+            (PacksPath("example", "first.txt"), "first"),
+            (PacksPath("example", "second.txt"), "second"),
+        ]);
+        var catalog = new PackCatalog(fileSystem, TestConsole.Create());
+        var configuration = new ProjectConfiguration
+        {
+            Sources =
+            [
+                new ProjectConfiguration.LocalSource { Name = "local", Path = _packsDirectory },
+            ],
+        };
+        var resourceLimits = ResourceLimits.Default with { FilesPerPack = 2 };
+
+        var result = await catalog.BrowseAsync(_projectDirectory, configuration, resourceLimits);
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("2 file and directory limit");
+        await Assert.That(result.Error).Contains("at least 3 entries observed");
+    }
+
+    [Test]
+    public async Task Browse_WhenManifestEnumerationExceedsGraphRecordLimit_FailsBeforeSort()
+    {
+        var fileSystem = CreateFileSystem([
+            (PacksPath("first", "pack.yml"), CreatePack("first", "1.0.0")),
+            (PacksPath("second", "pack.yml"), CreatePack("second", "1.0.0")),
+        ]);
+        var catalog = new PackCatalog(fileSystem, TestConsole.Create());
+        var configuration = new ProjectConfiguration
+        {
+            Sources =
+            [
+                new ProjectConfiguration.LocalSource { Name = "local", Path = _packsDirectory },
+            ],
+        };
+
+        var result = await catalog.BrowseAsync(
+            _projectDirectory,
+            configuration,
+            ResourceLimits.Default with
+            {
+                FilesPerGraph = 1,
+            }
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert
+            .That(result.ErrorKind)
+            .IsEqualTo(ManifestOperationErrorKind.ResourceLimitExceeded);
+        await Assert.That(result.Error).Contains("at least 2 pack manifests observed");
+    }
+
+    [Test]
+    public async Task Browse_WhenPackSnapshotExceedsByteLimit_FailsAtBoundary()
+    {
+        var manifest = CreatePack("example", "1.0.0");
+        var content = "content";
+        var fileSystem = CreateFileSystem([
+            (PacksPath("example", "pack.yml"), manifest),
+            (PacksPath("example", "content.txt"), content),
+        ]);
+        var catalog = new PackCatalog(fileSystem, TestConsole.Create());
+        var configuration = new ProjectConfiguration
+        {
+            Sources =
+            [
+                new ProjectConfiguration.LocalSource { Name = "local", Path = _packsDirectory },
+            ],
+        };
+        var snapshotBytes = fileSystem
+            .Directory.EnumerateFiles(PacksPath("example"), "*", SearchOption.AllDirectories)
+            .Sum(path => fileSystem.FileInfo.New(path).Length);
+        var resourceLimits = ResourceLimits.Default with { PackSnapshotBytes = snapshotBytes - 1 };
+
+        var result = await catalog.BrowseAsync(_projectDirectory, configuration, resourceLimits);
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("byte limit");
+        await Assert.That(result.Error).Contains($"at least {snapshotBytes} bytes observed");
     }
 
     [Test]

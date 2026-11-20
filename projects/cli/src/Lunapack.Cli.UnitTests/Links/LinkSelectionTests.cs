@@ -1,4 +1,6 @@
 using System.IO.Abstractions.TestingHelpers;
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Links;
 using Lunapack.Cli.Packs.ManagedFiles;
 using Lunapack.Cli.Project;
@@ -134,6 +136,26 @@ public sealed class LinkSelectionTests
         );
 
         await Assert.That(selection.RequireValue()).IsEquivalentTo(["agents/nested/deep.agent.md"]);
+    }
+
+    [Test]
+    public async Task Select_WhenSelectedPathAndParentExceedEntryLimit_FailsDuringSelection()
+    {
+        var selection = LinkSelectionService.Select(
+            "agents",
+            CreateLink(includes: ["agents/CSharpExpert.agent.md"]),
+            _candidates,
+            ResourceLimits.Default with
+            {
+                FilesPerPack = 1,
+            }
+        );
+
+        await Assert.That(selection.IsSuccess).IsFalse();
+        await Assert
+            .That(selection.ErrorKind)
+            .IsEqualTo(ManifestOperationErrorKind.ResourceLimitExceeded);
+        await Assert.That(selection.Error).Contains("at least 2 entries selected");
     }
 
     [Test]

@@ -1,7 +1,10 @@
 using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
 using Lunapack.Cli.Application;
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Catalog;
+using Lunapack.Cli.Packs;
 using Lunapack.Cli.Packs.Manifest;
 using Lunapack.Cli.Packs.Planning;
 using Lunapack.Cli.Sources;
@@ -84,6 +87,185 @@ public sealed class OperationPackSnapshotterTests
         security.PrepareForDelete(new FileSystem(), snapshotRoot);
         GitTemporaryWorkspace.Delete(new FileSystem(), snapshotRoot);
         await Assert.That(Directory.Exists(snapshotRoot)).IsFalse();
+    }
+
+    [Test]
+    public async Task Snapshot_WhenFilesAndBytesMatchLimits_AcceptsBoundary()
+    {
+        var fileSystem = new MockFileSystem();
+        var root = fileSystem.Path.GetFullPath("workspace");
+        var packDirectory = fileSystem.Path.Combine(root, "source", "example");
+        var manifestPath = fileSystem.Path.Combine(packDirectory, "pack.yml");
+        var contentPath = fileSystem.Path.Combine(packDirectory, "content.txt");
+        var snapshotRoot = fileSystem.Path.Combine(root, "snapshot");
+        fileSystem.AddFile(manifestPath, new MockFileData("manifest"));
+        fileSystem.AddFile(contentPath, new MockFileData("content"));
+        var resourceLimits = ResourceLimits.Default with
+        {
+            FilesPerPack = 2,
+            PackSnapshotBytes = 15,
+        };
+
+        var result = new OperationPackSnapshotter(
+            fileSystem,
+            new NoOpOperationSnapshotSecurity(),
+            TestConsole.Create()
+        ).Snapshot(CreateDiscoveredPack(root, packDirectory), snapshotRoot, resourceLimits);
+
+        await Assert.That(result.IsSuccess).IsTrue().Because(result.Error ?? string.Empty);
+    }
+
+    [Test]
+    public async Task Snapshot_WhenFileCountExceedsLimit_RemovesPartialSnapshot()
+    {
+        var fileSystem = new MockFileSystem();
+        var root = fileSystem.Path.GetFullPath("workspace");
+        var packDirectory = fileSystem.Path.Combine(root, "source", "example");
+        var snapshotRoot = fileSystem.Path.Combine(root, "snapshot");
+        fileSystem.AddFile(
+            fileSystem.Path.Combine(packDirectory, "pack.yml"),
+            new MockFileData("manifest")
+        );
+        fileSystem.AddFile(
+            fileSystem.Path.Combine(packDirectory, "content.txt"),
+            new MockFileData("content")
+        );
+        var resourceLimits = ResourceLimits.Default with { FilesPerPack = 1 };
+
+        var result = new OperationPackSnapshotter(
+            fileSystem,
+            new NoOpOperationSnapshotSecurity(),
+            TestConsole.Create()
+        ).Snapshot(CreateDiscoveredPack(root, packDirectory), snapshotRoot, resourceLimits);
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("2 entries observed");
+        await Assert.That(fileSystem.Directory.Exists(snapshotRoot)).IsFalse();
+    }
+
+    [Test]
+    public async Task Snapshot_WhenCopiedBytesExceedLimit_RemovesPartialSnapshot()
+    {
+        var fileSystem = new MockFileSystem();
+        var root = fileSystem.Path.GetFullPath("workspace");
+        var packDirectory = fileSystem.Path.Combine(root, "source", "example");
+        var snapshotRoot = fileSystem.Path.Combine(root, "snapshot");
+        fileSystem.AddFile(
+            fileSystem.Path.Combine(packDirectory, "pack.yml"),
+            new MockFileData("manifest")
+        );
+        fileSystem.AddFile(
+            fileSystem.Path.Combine(packDirectory, "content.txt"),
+            new MockFileData("content")
+        );
+        var resourceLimits = ResourceLimits.Default with { PackSnapshotBytes = 14 };
+
+        var result = new OperationPackSnapshotter(
+            fileSystem,
+            new NoOpOperationSnapshotSecurity(),
+            TestConsole.Create()
+        ).Snapshot(CreateDiscoveredPack(root, packDirectory), snapshotRoot, resourceLimits);
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("byte limit");
+        await Assert.That(result.Error).Contains("at least 15 bytes observed");
+        await Assert.That(fileSystem.Directory.Exists(snapshotRoot)).IsFalse();
+    }
+
+    [Test]
+    public async Task Snapshot_WhenDirectoryTreeExceedsLimit_RemovesPartialSnapshot()
+    {
+        var fileSystem = new MockFileSystem();
+        var root = fileSystem.Path.GetFullPath("workspace");
+        var packDirectory = fileSystem.Path.Combine(root, "source", "example");
+        var snapshotRoot = fileSystem.Path.Combine(root, "snapshot");
+        fileSystem.AddFile(
+            fileSystem.Path.Combine(packDirectory, "pack.yml"),
+            new MockFileData("manifest")
+        );
+        fileSystem.AddDirectory(fileSystem.Path.Combine(packDirectory, "first"));
+        fileSystem.AddDirectory(fileSystem.Path.Combine(packDirectory, "second"));
+
+        var result = new OperationPackSnapshotter(
+            fileSystem,
+            new NoOpOperationSnapshotSecurity(),
+            TestConsole.Create()
+        ).Snapshot(
+            CreateDiscoveredPack(root, packDirectory),
+            snapshotRoot,
+            ResourceLimits.Default with
+            {
+                FilesPerPack = 1,
+            }
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("1 file and directory limit");
+        await Assert.That(result.Error).Contains("at least 2 entries observed");
+        await Assert.That(fileSystem.Directory.Exists(snapshotRoot)).IsFalse();
+    }
+
+    [Test]
+    public async Task Snapshot_WhenFileAndDirectoryShareLimit_RejectsCombinedCount()
+    {
+        var fileSystem = new MockFileSystem();
+        var root = fileSystem.Path.GetFullPath("workspace");
+        var packDirectory = fileSystem.Path.Combine(root, "source", "example");
+        var snapshotRoot = fileSystem.Path.Combine(root, "snapshot");
+        fileSystem.AddFile(
+            fileSystem.Path.Combine(packDirectory, "pack.yml"),
+            new MockFileData("manifest")
+        );
+        fileSystem.AddDirectory(fileSystem.Path.Combine(packDirectory, "directory"));
+
+        var result = new OperationPackSnapshotter(
+            fileSystem,
+            new NoOpOperationSnapshotSecurity(),
+            TestConsole.Create()
+        ).Snapshot(
+            CreateDiscoveredPack(root, packDirectory),
+            snapshotRoot,
+            ResourceLimits.Default with
+            {
+                FilesPerPack = 1,
+            }
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("1 file and directory limit");
+        await Assert.That(result.Error).Contains("at least 2 entries observed");
+        await Assert.That(fileSystem.Directory.Exists(snapshotRoot)).IsFalse();
+    }
+
+    [Test]
+    public async Task Enumerate_WhenSourceListExceedsLimit_StopsBeforeRetainingExtraFile()
+    {
+        var fileSystem = new MockFileSystem();
+        var packDirectory = fileSystem.Path.GetFullPath("pack");
+        fileSystem.AddFile(
+            fileSystem.Path.Combine(packDirectory, "first.txt"),
+            new MockFileData("first")
+        );
+        fileSystem.AddFile(
+            fileSystem.Path.Combine(packDirectory, "second.txt"),
+            new MockFileData("second")
+        );
+
+        var result = PackSnapshotFileEnumerator.Enumerate(
+            fileSystem,
+            packDirectory,
+            "example",
+            ResourceLimits.Default with
+            {
+                FilesPerPack = 1,
+            }
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert
+            .That(result.ErrorKind)
+            .IsEqualTo(ManifestOperationErrorKind.ResourceLimitExceeded);
+        await Assert.That(result.Value).IsNull();
     }
 
     private static bool IsReadOnly(string path)

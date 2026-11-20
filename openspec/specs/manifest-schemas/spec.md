@@ -616,9 +616,35 @@ The `lunapack.yml` schema SHALL require every local, Git, GitHub-derived, and OC
 - **WHEN** a version-1 project configuration contains empty `trust.sources` and `trust.packs` collections with omitted denial
 - **THEN** the project configuration is valid without a schema-version migration and does not deny scripts
 
+### Requirement: Validate project resource-limit preferences
+
+The version-1 `lunapack.yml` schema SHALL permit optional
+`preferences.resourceLimits` with known positive-integer keys. Each project
+value SHALL be no greater than its built-in default. Omission SHALL preserve
+existing project configurations, and unknown resource-limit keys SHALL be
+rejected.
+
+#### Scenario: Validate a project resource-limit reduction
+
+- **WHEN** a project preference sets a known resource limit to a positive value
+  no greater than its built-in default
+- **THEN** the project configuration is valid
+
+#### Scenario: Reject a project resource-limit increase
+
+- **WHEN** a project preference raises a resource limit above its built-in
+  default
+- **THEN** the project configuration is invalid
+
+#### Scenario: Preserve configurations without resource limits
+
+- **WHEN** a version-1 project configuration omits
+  `preferences.resourceLimits`
+- **THEN** the configuration remains valid without a schema-version migration
+
 ### Requirement: Define cross-platform user trust settings
 
-LunaPack SHALL define a user-settings document at `~/.lunapack/config.yml`. It SHALL contain optional global source and source-plus-pack-ID trust entries, optional global `deny.scripts` policy, and optional local-project trust records keyed by canonical absolute project directory. A local-project record SHALL support the same grants and denial policy and MAY acknowledge project-scoped source and pack declarations by their exact source identities. Acknowledgements SHALL contain only positive source and pack entries and SHALL not contain denial policy. Omitted denial SHALL default to `false`; omitted source and pack collections SHALL default to empty. Duplicate, incomplete, version-qualified, or unsafe project-path entries SHALL be invalid.
+LunaPack SHALL define a user-settings document at `~/.lunapack/config.yml`. It SHALL contain optional global source and source-plus-pack-ID trust entries, optional global `deny.scripts` policy, optional global `preferences.resourceLimits`, and optional local-project trust records keyed by canonical absolute project directory. A local-project record SHALL support the same grants, denial policy, resource-limit preferences, and MAY acknowledge project-scoped source and pack declarations by their exact source identities. User-owned resource-limit values SHALL be positive integers no greater than their documented finite hard ceilings. Acknowledgements SHALL contain only positive source and pack entries and SHALL not contain denial policy. Omitted denial SHALL default to `false`; omitted source and pack collections SHALL default to empty. Duplicate, incomplete, version-qualified, or unsafe project-path entries SHALL be invalid.
 
 #### Scenario: Validate global and local-user trust
 
@@ -643,6 +669,18 @@ LunaPack SHALL define a user-settings document at `~/.lunapack/config.yml`. It S
 #### Scenario: Reject a relative local-project key
 
 - **WHEN** a local-project trust record uses a relative project path
+- **THEN** the user settings are invalid
+
+#### Scenario: Validate user-owned resource-limit increases
+
+- **WHEN** global-user or user-project settings set a known resource limit to a
+  positive value within its hard ceiling
+- **THEN** the user settings are valid
+
+#### Scenario: Reject a user-owned resource limit above its hard ceiling
+
+- **WHEN** a global-user or user-project value exceeds its documented hard
+  ceiling
 - **THEN** the user settings are invalid
 
 ### Requirement: Persist immutable configured-source identity for every resolved pack

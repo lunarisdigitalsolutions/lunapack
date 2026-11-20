@@ -7,4 +7,6 @@ internal sealed record CliPreferences
     public CatalogPreferences? Search { get; set; }
 
     public NextStepPreferences? NextSteps { get; set; }
+
+    public ResourceLimitPreferences? ResourceLimits { get; set; }
 }

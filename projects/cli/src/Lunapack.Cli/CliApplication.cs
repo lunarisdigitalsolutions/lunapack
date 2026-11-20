@@ -293,8 +293,8 @@ internal sealed class CliApplication(
         NextStepRenderer nextStepRenderer
     )
     {
-        var projectStateStore = new ProjectStateStore(fileSystem);
         var effectiveUserSettingsStore = userSettingsStore ?? new UserSettingsStore(fileSystem);
+        var projectStateStore = new ProjectStateStore(fileSystem, effectiveUserSettingsStore);
         var cliPreferenceService = new CliPreferenceService(
             fileSystem,
             projectStateStore,
@@ -540,6 +540,7 @@ internal sealed class CliApplication(
     private static void AddPackAuthoringCommand(
         RootCommand rootCommand,
         IFileSystem fileSystem,
+        CliPreferenceService cliPreferenceService,
         WorkspaceDirectoryResolver workspaceDirectoryResolver,
         NextStepAdvisor nextStepAdvisor,
         NextStepRenderer nextStepRenderer,
@@ -553,6 +554,7 @@ internal sealed class CliApplication(
             new PackAuthoringCommandHandler(
                 fileSystem,
                 new PackManifestStore(fileSystem),
+                cliPreferenceService,
                 workspaceDirectoryResolver,
                 nextStepAdvisor,
                 nextStepRenderer,
@@ -574,6 +576,7 @@ internal sealed class CliApplication(
         AddPackAuthoringCommand(
             rootCommand,
             fileSystem,
+            services.CliPreferenceService,
             services.WorkspaceDirectoryResolver,
             services.NextStepAdvisor,
             services.NextStepRenderer,

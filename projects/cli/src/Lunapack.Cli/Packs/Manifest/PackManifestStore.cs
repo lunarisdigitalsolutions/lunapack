@@ -1,5 +1,6 @@
 using System.IO.Abstractions;
 using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Application.Serialization;
 using Lunapack.Cli.Packs.Authoring;
 using YamlDotNet.Serialization;
@@ -32,11 +33,22 @@ internal sealed class PackManifestStore(IFileSystem fileSystem)
     public Task<ManifestOperationResult<PackManifest>> CreateAsync(
         string projectDirectory,
         PackManifest manifest
-    ) => WithWriteLockAsync(projectDirectory, () => CreateCoreAsync(projectDirectory, manifest));
+    ) => CreateAsync(projectDirectory, manifest, ResourceLimits.Default.PackManifestBytes);
+
+    public Task<ManifestOperationResult<PackManifest>> CreateAsync(
+        string projectDirectory,
+        PackManifest manifest,
+        long byteLimit
+    ) =>
+        WithWriteLockAsync(
+            projectDirectory,
+            () => CreateCoreAsync(projectDirectory, manifest, byteLimit)
+        );
 
     private Task<ManifestOperationResult<PackManifest>> CreateCoreAsync(
         string projectDirectory,
-        PackManifest manifest
+        PackManifest manifest,
+        long byteLimit
     )
     {
         var manifestPath = GetManifestPath(projectDirectory);
@@ -53,43 +65,58 @@ internal sealed class PackManifestStore(IFileSystem fileSystem)
             projectDirectory,
             PackManifestPathNormalizer.Normalize(manifest),
             null,
+            byteLimit,
             initialization: true
         );
     }
 
-    public Task<ManifestOperationResult<PackManifest>> LoadAsync(string projectDirectory)
+    public Task<ManifestOperationResult<PackManifest>> LoadAsync(string projectDirectory) =>
+        LoadAsync(projectDirectory, ResourceLimits.Default.PackManifestBytes);
+
+    public async Task<ManifestOperationResult<PackManifest>> LoadAsync(
+        string projectDirectory,
+        long byteLimit
+    )
     {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(byteLimit);
         var manifestPath = GetManifestPath(projectDirectory);
         if (!fileSystem.File.Exists(manifestPath))
         {
-            return Task.FromResult(
-                ManifestOperationResult<PackManifest>.Failure(
-                    $"Missing {FileName} in '{projectDirectory}'."
-                )
+            return ManifestOperationResult<PackManifest>.Failure(
+                $"Missing {FileName} in '{projectDirectory}'."
             );
         }
 
         try
         {
-            var contents = fileSystem.File.ReadAllText(manifestPath);
-            var manifest = _deserializer.Deserialize<PackManifest>(contents);
+            var read = await BoundedFileReader.ReadTextAsync(
+                fileSystem,
+                manifestPath,
+                byteLimit,
+                FileName
+            );
+            if (read.Value is not { } contents)
+            {
+                return ManifestOperationResult<PackManifest>.Failure(
+                    read.Error ?? $"Unable to read {FileName}.",
+                    read.ErrorKind
+                );
+            }
+
+            var manifest = _deserializer.Deserialize<PackManifest>(contents.Text);
             if (manifest is null)
             {
-                return Task.FromResult(
-                    ManifestOperationResult<PackManifest>.Failure(
-                        $"Invalid {FileName}: manifest is empty."
-                    )
+                return ManifestOperationResult<PackManifest>.Failure(
+                    $"Invalid {FileName}: manifest is empty."
                 );
             }
 
             var issues = ManifestModelValidator.Validate(manifest);
-            return Task.FromResult(
-                issues.Count == 0
-                    ? ManifestOperationResult<PackManifest>.Success(
-                        PackManifestPathNormalizer.Normalize(manifest)
-                    )
-                    : ManifestOperationResult<PackManifest>.Failure(FormatIssues(issues))
-            );
+            return issues.Count == 0
+                ? ManifestOperationResult<PackManifest>.Success(
+                    PackManifestPathNormalizer.Normalize(manifest)
+                )
+                : ManifestOperationResult<PackManifest>.Failure(FormatIssues(issues));
         }
         catch (Exception exception)
             when (exception
@@ -98,10 +125,8 @@ internal sealed class PackManifestStore(IFileSystem fileSystem)
                         or YamlDotNet.Core.YamlException
             )
         {
-            return Task.FromResult(
-                ManifestOperationResult<PackManifest>.Failure(
-                    $"Unable to read {FileName}: {exception.Message}"
-                )
+            return ManifestOperationResult<PackManifest>.Failure(
+                $"Unable to read {FileName}: {exception.Message}"
             );
         }
     }
@@ -109,17 +134,25 @@ internal sealed class PackManifestStore(IFileSystem fileSystem)
     public async Task<ManifestOperationResult<PackManifest>> UpdateAsync(
         string projectDirectory,
         Func<PackManifest, string?> mutation
+    ) => await UpdateAsync(projectDirectory, mutation, ResourceLimits.Default.PackManifestBytes);
+
+    public async Task<ManifestOperationResult<PackManifest>> UpdateAsync(
+        string projectDirectory,
+        Func<PackManifest, string?> mutation,
+        long byteLimit
     ) =>
         await WithWriteLockAsync(
             projectDirectory,
-            () => UpdateCoreAsync(projectDirectory, mutation)
+            () => UpdateCoreAsync(projectDirectory, mutation, byteLimit)
         );
 
     private async Task<ManifestOperationResult<PackManifest>> UpdateCoreAsync(
         string projectDirectory,
-        Func<PackManifest, string?> mutation
+        Func<PackManifest, string?> mutation,
+        long byteLimit
     )
     {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(byteLimit);
         var manifestPath = GetManifestPath(projectDirectory);
         if (!fileSystem.File.Exists(manifestPath))
         {
@@ -132,7 +165,21 @@ internal sealed class PackManifestStore(IFileSystem fileSystem)
         PackManifest manifest;
         try
         {
-            originalContents = fileSystem.File.ReadAllText(manifestPath);
+            var read = await BoundedFileReader.ReadTextAsync(
+                fileSystem,
+                manifestPath,
+                byteLimit,
+                FileName
+            );
+            if (read.Value is not { } contents)
+            {
+                return ManifestOperationResult<PackManifest>.Failure(
+                    read.Error ?? $"Unable to read {FileName}.",
+                    read.ErrorKind
+                );
+            }
+
+            originalContents = contents.Text;
             manifest =
                 _deserializer.Deserialize<PackManifest>(originalContents)
                 ?? throw new YamlDotNet.Core.YamlException("Manifest is empty.");
@@ -158,74 +205,68 @@ internal sealed class PackManifestStore(IFileSystem fileSystem)
         return await WriteAsync(
             projectDirectory,
             PackManifestPathNormalizer.Normalize(manifest),
-            originalContents
+            originalContents,
+            byteLimit
         );
     }
 
-    private Task<ManifestOperationResult<PackManifest>> WriteAsync(
+    private async Task<ManifestOperationResult<PackManifest>> WriteAsync(
         string projectDirectory,
         PackManifest manifest,
         string? expectedContents,
+        long byteLimit,
         bool initialization = false
     )
     {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(byteLimit);
         var issues = ManifestModelValidator.Validate(manifest);
         if (issues.Count > 0)
         {
-            return Task.FromResult(
-                ManifestOperationResult<PackManifest>.Failure(FormatIssues(issues))
-            );
+            return ManifestOperationResult<PackManifest>.Failure(FormatIssues(issues));
         }
 
         var manifestPath = GetManifestPath(projectDirectory);
         var temporaryPath = $"{manifestPath}.{Guid.NewGuid():N}.tmp";
         try
         {
-            fileSystem.Directory.CreateDirectory(projectDirectory);
-            var contents = initialization
-                ? _serializer.Serialize(
-                    new InitialPackManifest
-                    {
-                        Author = manifest.Author,
-                        Id = manifest.Id,
-                        License = manifest.License,
-                        Version = manifest.Version,
-                    }
-                )
-                : _serializer.Serialize(manifest);
-            fileSystem.File.WriteAllText(temporaryPath, contents);
-            var manifestChanged =
-                expectedContents is not null
-                && (
-                    !fileSystem.File.Exists(manifestPath)
-                    || !string.Equals(
-                        fileSystem.File.ReadAllText(manifestPath),
-                        expectedContents,
-                        StringComparison.Ordinal
-                    )
-                );
-            if (manifestChanged)
+            var serialized = Serialize(manifest, byteLimit, initialization);
+            if (serialized.Value is not { } contents)
             {
-                return Task.FromResult(
-                    ManifestOperationResult<PackManifest>.Failure(
-                        $"{FileName} changed while the command was running."
-                    )
+                return ManifestOperationResult<PackManifest>.Failure(
+                    serialized.Error!,
+                    serialized.ErrorKind
                 );
             }
 
+            if (expectedContents is not null)
+            {
+                var unchanged = await VerifyExpectedContentsAsync(
+                    manifestPath,
+                    expectedContents,
+                    byteLimit
+                );
+                if (!unchanged.IsSuccess)
+                {
+                    return ManifestOperationResult<PackManifest>.Failure(
+                        unchanged.Error!,
+                        unchanged.ErrorKind
+                    );
+                }
+            }
+
+            fileSystem.Directory.CreateDirectory(projectDirectory);
+            fileSystem.File.WriteAllText(temporaryPath, contents);
             fileSystem.File.Move(
                 temporaryPath,
                 manifestPath,
                 overwrite: expectedContents is not null
             );
-            return Task.FromResult(ManifestOperationResult<PackManifest>.Success(manifest));
+            return ManifestOperationResult<PackManifest>.Success(manifest);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            return Task.FromResult(
-                ManifestOperationResult<PackManifest>.Failure(
-                    $"Unable to write {FileName}: {exception.Message}"
-                )
+            return ManifestOperationResult<PackManifest>.Failure(
+                $"Unable to write {FileName}: {exception.Message}"
             );
         }
         finally
@@ -235,6 +276,61 @@ internal sealed class PackManifestStore(IFileSystem fileSystem)
                 fileSystem.File.Delete(temporaryPath);
             }
         }
+    }
+
+    private static ManifestOperationResult<string> Serialize(
+        PackManifest manifest,
+        long byteLimit,
+        bool initialization
+    )
+    {
+        var contents = initialization
+            ? _serializer.Serialize(
+                new InitialPackManifest
+                {
+                    Author = manifest.Author,
+                    Id = manifest.Id,
+                    License = manifest.License,
+                    Version = manifest.Version,
+                }
+            )
+            : _serializer.Serialize(manifest);
+        var serializedByteCount = System.Text.Encoding.UTF8.GetByteCount(contents);
+        return serializedByteCount > byteLimit
+            ? ManifestOperationResult<string>.Failure(
+                $"{FileName} is {serializedByteCount} bytes, exceeding its {byteLimit} byte limit.",
+                ManifestOperationErrorKind.ResourceLimitExceeded
+            )
+            : ManifestOperationResult<string>.Success(contents);
+    }
+
+    private async Task<ManifestOperationResult<bool>> VerifyExpectedContentsAsync(
+        string manifestPath,
+        string expectedContents,
+        long byteLimit
+    )
+    {
+        if (!fileSystem.File.Exists(manifestPath))
+        {
+            return ManifestOperationResult<bool>.Failure(
+                $"{FileName} changed while the command was running."
+            );
+        }
+
+        var current = await BoundedFileReader.ReadTextAsync(
+            fileSystem,
+            manifestPath,
+            byteLimit,
+            FileName
+        );
+        return
+            current.Value is { } currentContents
+            && string.Equals(currentContents.Text, expectedContents, StringComparison.Ordinal)
+            ? ManifestOperationResult<bool>.Success(true)
+            : ManifestOperationResult<bool>.Failure(
+                current.Error ?? $"{FileName} changed while the command was running.",
+                current.ErrorKind
+            );
     }
 
     private string GetManifestPath(string projectDirectory) =>

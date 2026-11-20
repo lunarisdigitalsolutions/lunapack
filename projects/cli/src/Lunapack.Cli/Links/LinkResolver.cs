@@ -1,6 +1,7 @@
 ﻿using System.IO.Abstractions;
 using System.Security.Cryptography;
 using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Packs.ManagedFiles;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources;
@@ -25,6 +26,7 @@ internal sealed class LinkResolver(
         ConfiguredSourceIdentity? lockedIdentity = null,
         ManagedFileTargetRemapping? targetRemapping = null,
         IReadOnlyDictionary<string, string>? retainedTargets = null,
+        ResourceLimits? resourceLimits = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -72,12 +74,14 @@ internal sealed class LinkResolver(
             source,
             link,
             lockedIdentity,
+            resourceLimits,
             cancellationToken
         );
         if (listingResult.Value is not { } listing)
         {
             return ManifestOperationResult<LinkResolution>.Failure(
-                listingResult.Error ?? $"Unable to read link source '{link.Source}'."
+                listingResult.Error ?? $"Unable to read link source '{link.Source}'.",
+                listingResult.ErrorKind
             );
         }
 
@@ -94,6 +98,7 @@ internal sealed class LinkResolver(
             targetRemapping,
             ManagedFileTargetRemapping.FromConfiguration(configuration.Remap),
             retainedTargets,
+            resourceLimits ?? ResourceLimits.Default,
             cancellationToken
         );
     }
@@ -109,6 +114,7 @@ internal sealed class LinkResolver(
         ManagedFileTargetRemapping? targetRemapping,
         ManagedFileTargetRemapping configuredRemapping,
         IReadOnlyDictionary<string, string>? retainedTargets,
+        ResourceLimits resourceLimits,
         CancellationToken cancellationToken
     )
     {
@@ -119,7 +125,7 @@ internal sealed class LinkResolver(
             );
         }
 
-        var selection = LinkSelectionService.Select(linkName, link, listing.Paths);
+        var selection = LinkSelectionService.Select(linkName, link, listing.Paths, resourceLimits);
         if (selection.Value is not { } selectedPaths)
         {
             return ManifestOperationResult<LinkResolution>.Failure(
@@ -151,6 +157,7 @@ internal sealed class LinkResolver(
             linkName,
             link,
             sourceName,
+            resourceLimits,
             cancellationToken
         );
     }
@@ -207,6 +214,7 @@ internal sealed class LinkResolver(
         string linkName,
         ProjectConfiguration.Link link,
         string sourceName,
+        ResourceLimits resourceLimits,
         CancellationToken cancellationToken
     )
     {
@@ -217,13 +225,15 @@ internal sealed class LinkResolver(
                 listing,
                 selectedPaths,
                 workspace,
+                resourceLimits,
                 cancellationToken
             );
             if (materialization.Value is not { } snapshotPaths)
             {
                 workspace.Dispose();
                 return ManifestOperationResult<LinkResolution>.Failure(
-                    materialization.Error ?? $"Unable to snapshot link '{linkName}'."
+                    materialization.Error ?? $"Unable to snapshot link '{linkName}'.",
+                    materialization.ErrorKind
                 );
             }
 
@@ -260,11 +270,12 @@ internal sealed class LinkResolver(
     )
     {
         var snapshotPath = snapshotPaths[fileMapping.SourcePath];
+        using var snapshot = fileSystem.File.OpenRead(snapshotPath);
         return new ResolvedLinkFile(
             fileMapping.SourcePath,
             fileMapping.DeclaredTargetPath,
             fileMapping.TargetPath,
-            Convert.ToHexString(SHA256.HashData(fileSystem.File.ReadAllBytes(snapshotPath))),
+            Convert.ToHexString(SHA256.HashData(snapshot)),
             snapshotPath
         );
     }

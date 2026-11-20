@@ -1,7 +1,12 @@
 using System.IO.Abstractions;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Preferences;
+using Lunapack.Cli.Application.Serialization;
 using Lunapack.Cli.Catalog;
+using Lunapack.Cli.Packs.Manifest;
 using Lunapack.Cli.Packs.Planning;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources;
@@ -14,21 +19,25 @@ internal sealed class GitPackMaterializer(
     IGitProcessRunner processRunner,
     CliConsole console,
     IOperationSnapshotSecurity? snapshotSecurity = null,
-    OciPackSource? ociPackSource = null
+    OciPackSource? ociPackSource = null,
+    PackManifestStore? packManifestStore = null
 )
 {
     private const int DefaultTimeoutSeconds = 300;
     private readonly IOperationSnapshotSecurity _snapshotSecurity =
         snapshotSecurity ?? new OperationSnapshotSecurity();
     private readonly OciPackSource? _ociPackSource = ociPackSource;
+    private readonly PackManifestStore _packManifestStore = packManifestStore ?? new(fileSystem);
 
     public async Task<ManifestOperationResult<GitPackMaterialization>> MaterializeAsync(
         string projectDirectory,
         ResolvedPackGraph graph,
         ProjectConfiguration configuration,
+        ResourceLimits? resourceLimits = null,
         CancellationToken cancellationToken = default
     )
     {
+        var effectiveResourceLimits = resourceLimits ?? ResourceLimits.Default;
         var workspace = fileSystem.Path.Combine(
             Path.GetTempPath(),
             "lunapack",
@@ -43,6 +52,7 @@ internal sealed class GitPackMaterializer(
                 graph,
                 configuration,
                 workspace,
+                effectiveResourceLimits,
                 cancellationToken
             );
         }
@@ -71,6 +81,7 @@ internal sealed class GitPackMaterializer(
         ResolvedPackGraph graph,
         ProjectConfiguration configuration,
         string workspace,
+        ResourceLimits resourceLimits,
         CancellationToken cancellationToken
     )
     {
@@ -84,13 +95,15 @@ internal sealed class GitPackMaterializer(
                 configuration,
                 workspace,
                 materializedPacks.Count,
+                resourceLimits,
                 cancellationToken
             );
             if (sourcePackResult.Value is not { } sourcePack)
             {
                 return Failure(
                     workspace,
-                    sourcePackResult.Error ?? "Unable to materialize Git pack."
+                    sourcePackResult.Error ?? "Unable to materialize Git pack.",
+                    sourcePackResult.ErrorKind
                 );
             }
 
@@ -99,10 +112,14 @@ internal sealed class GitPackMaterializer(
                 "snapshots",
                 materializedPacks.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)
             );
-            var snapshot = snapshotter.Snapshot(sourcePack, snapshotRoot);
+            var snapshot = snapshotter.Snapshot(sourcePack, snapshotRoot, resourceLimits);
             if (snapshot.Value is not { } snapshottedPack)
             {
-                return Failure(workspace, snapshot.Error ?? "Unable to snapshot resolved pack.");
+                return Failure(
+                    workspace,
+                    snapshot.Error ?? "Unable to snapshot resolved pack.",
+                    snapshot.ErrorKind
+                );
             }
 
             materializedPacks.Add(snapshottedPack);
@@ -124,6 +141,7 @@ internal sealed class GitPackMaterializer(
         ProjectConfiguration configuration,
         string workspace,
         int packIndex,
+        ResourceLimits resourceLimits,
         CancellationToken cancellationToken
     )
     {
@@ -147,6 +165,7 @@ internal sealed class GitPackMaterializer(
                 gitSource,
                 configuredSource,
                 gitWorkspace,
+                resourceLimits,
                 cancellationToken
             );
         }
@@ -160,6 +179,7 @@ internal sealed class GitPackMaterializer(
                 configuration,
                 workspace,
                 packIndex,
+                resourceLimits,
                 cancellationToken
             );
         }
@@ -174,6 +194,7 @@ internal sealed class GitPackMaterializer(
         ProjectConfiguration configuration,
         string workspace,
         int packIndex,
+        ResourceLimits resourceLimits,
         CancellationToken cancellationToken
     )
     {
@@ -215,13 +236,15 @@ internal sealed class GitPackMaterializer(
             ociWorkspace,
             provenance.ManifestDigest,
             provenance.ContentDigest,
-            cancellationToken
+            resourceLimits: resourceLimits,
+            cancellationToken: cancellationToken
         );
         if (release.Value is not { } materializedRelease)
         {
             return ManifestOperationResult<DiscoveredPack>.Failure(
                 release.Error
-                    ?? $"Unable to retrieve locked OCI pack '{pack.Manifest.Id}@{pack.Manifest.Version}'."
+                    ?? $"Unable to retrieve locked OCI pack '{pack.Manifest.Id}@{pack.Manifest.Version}'.",
+                release.ErrorKind
             );
         }
 
@@ -291,6 +314,7 @@ internal sealed class GitPackMaterializer(
         GitSourceProvenance gitSource,
         ProjectConfiguration.GitSource source,
         string workspace,
+        ResourceLimits resourceLimits,
         CancellationToken cancellationToken
     )
     {
@@ -332,13 +356,45 @@ internal sealed class GitPackMaterializer(
             }
         }
 
+        var packDirectory = GetPackDirectory(workspace, pack.RepositoryPath);
+        var loadedManifest = await _packManifestStore.LoadAsync(
+            packDirectory,
+            resourceLimits.PackManifestBytes
+        );
+        if (loadedManifest.Value is not { } checkedOutManifest)
+        {
+            return ManifestOperationResult<DiscoveredPack>.Failure(
+                loadedManifest.Error ?? "Unable to verify materialized Git pack manifest.",
+                loadedManifest.ErrorKind
+            );
+        }
+
+        if (!HaveEquivalentManifest(pack.Manifest, checkedOutManifest))
+        {
+            return ManifestOperationResult<DiscoveredPack>.Failure(
+                $"Materialized pack '{pack.Manifest.Id}@{pack.Manifest.Version}' does not match the manifest resolved from Git commit '{gitSource.ResolvedCommit}'.",
+                ManifestOperationErrorKind.SourceIntegrityMismatch
+            );
+        }
+
         return ManifestOperationResult<DiscoveredPack>.Success(
             pack with
             {
                 SourcePath = workspace,
-                PackDirectory = GetPackDirectory(workspace, pack.RepositoryPath),
+                PackDirectory = packDirectory,
             }
         );
+    }
+
+    private static bool HaveEquivalentManifest(PackManifest expected, PackManifest actual)
+    {
+        var expectedNode = JsonNode.Parse(
+            JsonSerializer.Serialize(expected, LunapackJsonContext.Default.PackManifest)
+        );
+        var actualNode = JsonNode.Parse(
+            JsonSerializer.Serialize(actual, LunapackJsonContext.Default.PackManifest)
+        );
+        return JsonNode.DeepEquals(expectedNode, actualNode);
     }
 
     private static ProjectConfiguration.GitSource? FindConfiguredSource(
@@ -368,11 +424,15 @@ internal sealed class GitPackMaterializer(
                 .. repositoryPath.Split('/', StringSplitOptions.RemoveEmptyEntries),
             ]);
 
-    private ManifestOperationResult<GitPackMaterialization> Failure(string workspace, string error)
+    private ManifestOperationResult<GitPackMaterialization> Failure(
+        string workspace,
+        string error,
+        ManifestOperationErrorKind errorKind = ManifestOperationErrorKind.General
+    )
     {
         PrepareForDelete(workspace);
 
-        return ManifestOperationResult<GitPackMaterialization>.Failure(error);
+        return ManifestOperationResult<GitPackMaterialization>.Failure(error, errorKind);
     }
 
     private void PrepareForDelete(string workspace)

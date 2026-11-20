@@ -1,6 +1,7 @@
 using System.IO.Abstractions.TestingHelpers;
 using System.Text;
 using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Links;
 using Lunapack.Cli.Packs.ManagedFiles;
 using Lunapack.Cli.Project;
@@ -54,6 +55,48 @@ public sealed class LinkResolverTests
         await Assert
             .That(file.Sha256)
             .IsEqualTo("C7D253870AB8DE3825E3A9B5EE603E21ABD0DFE62763E8E2FC1FC9F4684E8A19");
+    }
+
+    [Test]
+    public async Task ResolveAsync_WhenLocalSourceFileCountExceedsLimit_Fails()
+    {
+        var fileSystem = CreateFileSystem();
+
+        var resolution = await ResolveAsync(
+            fileSystem,
+            CreateLink(),
+            resourceLimits: ResourceLimits.Default with
+            {
+                FilesPerGraph = 1,
+            }
+        );
+
+        await Assert.That(resolution.IsSuccess).IsFalse();
+        await Assert
+            .That(resolution.ErrorKind)
+            .IsEqualTo(ManifestOperationErrorKind.ResourceLimitExceeded);
+        await Assert.That(resolution.Error).Contains("1 file and directory limit");
+    }
+
+    [Test]
+    public async Task ResolveAsync_WhenLocalSnapshotExceedsByteLimit_FailsBeforeSnapshot()
+    {
+        var fileSystem = CreateFileSystem();
+
+        var resolution = await ResolveAsync(
+            fileSystem,
+            CreateLink(),
+            resourceLimits: ResourceLimits.Default with
+            {
+                PackSnapshotBytes = 9,
+            }
+        );
+
+        await Assert.That(resolution.IsSuccess).IsFalse();
+        await Assert
+            .That(resolution.ErrorKind)
+            .IsEqualTo(ManifestOperationErrorKind.ResourceLimitExceeded);
+        await Assert.That(resolution.Error).Contains("9 byte limit");
     }
 
     [Test]
@@ -144,7 +187,7 @@ public sealed class LinkResolverTests
     }
 
     [Test]
-    public async Task ResolveAsync_WhenSourceContainsSymbolicLink_SkipsIt()
+    public async Task ResolveAsync_WhenSourceContainsSymbolicLink_Fails()
     {
         var fileSystem = CreateFileSystem();
         fileSystem.File.CreateSymbolicLink(
@@ -152,11 +195,10 @@ public sealed class LinkResolverTests
             fileSystem.Path.Combine(_projectDirectory, "secret.md")
         );
 
-        using var resolution = (await ResolveAsync(fileSystem, CreateLink())).RequireValue();
+        var resolution = await ResolveAsync(fileSystem, CreateLink());
 
-        await Assert
-            .That(resolution.Snapshot.Files.Select(file => file.SourcePath))
-            .IsEquivalentTo(["agents/CSharpExpert.agent.md", "agents/ai-team.agent.md"]);
+        await Assert.That(resolution.IsSuccess).IsFalse();
+        await Assert.That(resolution.Error).Contains("symbolic link or reparse point");
     }
 
     [Test]
@@ -248,7 +290,8 @@ public sealed class LinkResolverTests
         ProjectConfiguration.Link link,
         ProjectConfiguration? configuration = null,
         ManagedFileTargetRemapping? targetRemapping = null,
-        IReadOnlyDictionary<string, string>? retainedTargets = null
+        IReadOnlyDictionary<string, string>? retainedTargets = null,
+        ResourceLimits? resourceLimits = null
     )
     {
         var resolver = new LinkResolver(
@@ -262,7 +305,8 @@ public sealed class LinkResolverTests
             "agents",
             link,
             targetRemapping: targetRemapping,
-            retainedTargets: retainedTargets
+            retainedTargets: retainedTargets,
+            resourceLimits: resourceLimits
         );
     }
 

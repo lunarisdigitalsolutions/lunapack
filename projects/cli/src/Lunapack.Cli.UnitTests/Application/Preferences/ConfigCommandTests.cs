@@ -32,6 +32,32 @@ public sealed class ConfigCommandTests
     }
 
     [Test]
+    public async Task Set_WhenGlobalResourceLimitConfigured_ListShowsNumericValue()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        const string key = "resource-limits.pack-manifest-bytes";
+        const string value = "2097152";
+
+        var setExitCode = await workspace.Application.RunAsync(
+            ["config", "set", key, value],
+            workspace.Path
+        );
+        var listExitCode = await workspace.Application.RunAsync(
+            ["config", "list", "--global"],
+            workspace.Path
+        );
+        var settings = await workspace.UserSettingsStore.LoadAsync();
+
+        await Assert.That(setExitCode).IsEqualTo(0);
+        await Assert.That(listExitCode).IsEqualTo(0);
+        await Assert
+            .That(settings.RequireValue().Global.Preferences?.ResourceLimits?.PackManifestBytes)
+            .IsEqualTo(2097152);
+        await Assert.That(ansiConsole.Output).Contains($"{key}={value}");
+    }
+
+    [Test]
     public async Task Set_WhenProjectScopeSelected_UpdatesOnlyProjectConfiguration()
     {
         using var workspace = new TestWorkspace();
@@ -105,6 +131,22 @@ public sealed class ConfigCommandTests
         await Assert.That(invalidExitCode).IsEqualTo(1);
         await Assert.That(settings.RequireValue().Global.Preferences).IsNull();
         await Assert.That(settings.RequireValue().Projects).IsEmpty();
+    }
+
+    [Test]
+    public async Task Set_WhenProjectResourceLimitExceedsDefault_ReturnsFailureWithoutWriting()
+    {
+        using var workspace = new TestWorkspace();
+        await workspace.Application.RunAsync(["init"], workspace.Path);
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["config", "set", "resource-limits.pack-manifest-bytes", "1048577", "--project"],
+            workspace.Path
+        );
+        var state = await workspace.StateStore.LoadAsync(workspace.Path);
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(state.RequireValue().Configuration.Preferences?.ResourceLimits).IsNull();
     }
 
     [Test]

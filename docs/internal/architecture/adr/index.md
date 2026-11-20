@@ -72,7 +72,7 @@ Create a new architecture decision record from the [MADR-based template](templat
 | [ADR-0066](0066-organize-maintained-packs-by-family-and-role.md)                | Organize maintained packs by stable family, then role or concern.                       |
 | [ADR-0067](0067-own-and-package-the-cli-changelog.md)                           | Superseded by ADR-0068.                                                                 |
 | [ADR-0068](0068-publish-nuget-previews-from-main.md)                            | Unify stable and preview CLI releases in one artifact-backed pipeline.                  |
-| [ADR-0069](0069-revalidate-git-source-cache-entries.md)                         | Revalidate project-local Git cache entries before using derived pack metadata.          |
+| [ADR-0069](0069-revalidate-git-source-cache-entries.md)                         | Superseded by ADR-0091.                                                                 |
 | [ADR-0070][adr-0070]                                                            | Bind privileged workflows to trusted input provenance.                                  |
 | [ADR-0071][adr-0071]                                                            | Reject filesystem aliases at snapshot and project mutation boundaries.                  |
 | [ADR-0072][adr-0072]                                                            | Share parameter conditions across managed files and lifecycle hooks.                    |
@@ -93,6 +93,9 @@ Create a new architecture decision record from the [MADR-based template](templat
 | [ADR-0087][adr-0087]                                                            | Keep source-ignore state in a per-project sidecar for settings compatibility.           |
 | [ADR-0088][adr-0088]                                                            | Share changed-pack publishing behavior across registry workflow packs.                  |
 | [ADR-0089][adr-0089]                                                            | Separate direct-pack root eligibility from dependency resolution.                       |
+| [ADR-0090](0090-enforce-producer-side-pack-resource-budgets.md)                 | Enforce scoped resource limits at pack input and output producer boundaries.            |
+| [ADR-0091](0091-require-authoritative-git-manifests.md)                         | Require authoritative Git manifests for online lifecycle decisions.                     |
+| [ADR-0092](0092-reject-aliases-in-local-link-trees.md)                          | Reject filesystem aliases throughout local Luna Link source trees.                      |
 
 [adr-0070]: 0070-bind-privileged-workflows-to-trusted-provenance.md
 [adr-0071]: 0071-reject-filesystem-aliases-at-mutation-boundaries.md

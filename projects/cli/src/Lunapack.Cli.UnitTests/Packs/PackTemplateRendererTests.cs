@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.IO.Abstractions.TestingHelpers;
 using System.Text;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Packs;
 using Lunapack.Cli.Packs.ManagedFiles;
 
@@ -101,6 +102,111 @@ public sealed class PackTemplateRendererTests
         await Assert
             .That(Encoding.UTF8.GetString(result.RequireValue()))
             .IsEqualTo("{{ unknownVariable }}");
+    }
+
+    [Test]
+    public async Task Render_WhenInputMatchesEffectiveLimit_AcceptsBoundary()
+    {
+        const string content = "static content";
+        var fileSystem = CreateFileSystem(content);
+        var resourceLimits = ResourceLimits.Default with
+        {
+            PackDocumentBytes = Encoding.UTF8.GetByteCount(content),
+        };
+        var result = new PackTemplateRenderer(fileSystem).Render(
+            TemplatePath,
+            false,
+            CreateParameters("Lunaris Digital Solutions"),
+            resourceLimits
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue().Because(result.Error ?? string.Empty);
+        await Assert.That(Encoding.UTF8.GetString(result.RequireValue())).IsEqualTo(content);
+    }
+
+    [Test]
+    public async Task Render_WhenInputExceedsEffectiveLimit_RejectsWithLowerBound()
+    {
+        const string content = "static content";
+        var fileSystem = CreateFileSystem(content);
+        var resourceLimits = ResourceLimits.Default with
+        {
+            PackDocumentBytes = Encoding.UTF8.GetByteCount(content) - 1,
+        };
+        var result = new PackTemplateRenderer(fileSystem).Render(
+            TemplatePath,
+            false,
+            CreateParameters("Lunaris Digital Solutions"),
+            resourceLimits
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("Pack document");
+        await Assert.That(result.Error).Contains("byte limit");
+        await Assert.That(result.Error).Contains("at least");
+    }
+
+    [Test]
+    public async Task Render_WhenUtf8OutputMatchesPerFileLimit_AcceptsBoundary()
+    {
+        var fileSystem = CreateFileSystem("{{ companyName }}");
+        var resourceLimits = ResourceLimits.Default with { RenderedFileBytes = 3 };
+        var result = new PackTemplateRenderer(fileSystem).Render(
+            TemplatePath,
+            true,
+            CreateParameters("\u20ac"),
+            resourceLimits
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue().Because(result.Error ?? string.Empty);
+        await Assert.That(result.RequireValue().Length).IsEqualTo(3);
+    }
+
+    [Test]
+    public async Task Render_WhenUtf8OutputExceedsPerFileLimit_RejectsWhileWriting()
+    {
+        var fileSystem = CreateFileSystem("{{ companyName }}");
+        var resourceLimits = ResourceLimits.Default with { RenderedFileBytes = 2 };
+        var result = new PackTemplateRenderer(fileSystem).Render(
+            TemplatePath,
+            true,
+            CreateParameters("\u20ac"),
+            resourceLimits
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("2 byte file limit");
+        await Assert.That(result.Error).Contains("at least 3 bytes produced");
+    }
+
+    [Test]
+    public async Task Render_WhenSharedTotalLimitExceeds_RejectsSecondOutput()
+    {
+        var fileSystem = CreateFileSystem("1234");
+        fileSystem.AddFile("C:\\pack\\second.txt", new MockFileData("5678"));
+        var resourceLimits = ResourceLimits.Default with { RenderedTotalBytes = 7 };
+        var budget = new RenderedOutputBudget(resourceLimits);
+        var renderer = new PackTemplateRenderer(fileSystem);
+
+        var first = renderer.Render(
+            TemplatePath,
+            false,
+            CreateParameters("unused"),
+            resourceLimits,
+            budget
+        );
+        var second = renderer.Render(
+            "C:\\pack\\second.txt",
+            false,
+            CreateParameters("unused"),
+            resourceLimits,
+            budget
+        );
+
+        await Assert.That(first.IsSuccess).IsTrue();
+        await Assert.That(second.IsSuccess).IsFalse();
+        await Assert.That(second.Error).Contains("7 byte total limit");
+        await Assert.That(second.Error).Contains("at least 8 bytes produced");
     }
 
     [Test]

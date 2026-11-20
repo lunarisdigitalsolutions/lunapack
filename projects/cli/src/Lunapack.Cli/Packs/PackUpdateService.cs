@@ -171,7 +171,8 @@ internal sealed class PackUpdateService(
         return await packCatalog.BrowseForUpdatesAsync(
             projectDirectory,
             state.Configuration,
-            requestedPacks
+            requestedPacks,
+            state.EffectiveResourceLimits
         );
     }
 
@@ -261,7 +262,8 @@ internal sealed class PackUpdateService(
             var integrityError = await GetLockedOciIntegrityErrorAsync(
                 projectDirectory,
                 state,
-                update.CurrentPack
+                update.CurrentPack,
+                new CatalogManifestBudget(state.EffectiveResourceLimits)
             );
             if (integrityError is not null)
             {
@@ -573,7 +575,8 @@ internal sealed class PackUpdateService(
     private async Task<string?> GetLockedOciIntegrityErrorAsync(
         string projectDirectory,
         ProjectState state,
-        ProjectLockFile.ResolvedPack lockedPack
+        ProjectLockFile.ResolvedPack lockedPack,
+        CatalogManifestBudget manifestBudget
     )
     {
         if (lockedPack.OciSource is null)
@@ -584,7 +587,9 @@ internal sealed class PackUpdateService(
         var observed = await packCatalog.ResolveLockedOciTagAsync(
             projectDirectory,
             state.Configuration,
-            lockedPack
+            lockedPack,
+            state.EffectiveResourceLimits,
+            manifestBudget
         );
         if (!observed.IsSuccess)
         {
@@ -605,6 +610,7 @@ internal sealed class PackUpdateService(
         Dictionary<string, ProjectLockFile.ResolvedPack> currentPacks
     )
     {
+        var manifestBudget = new CatalogManifestBudget(state.EffectiveResourceLimits);
         foreach (var requestedRoot in state.Configuration.Packs)
         {
             if (
@@ -619,7 +625,8 @@ internal sealed class PackUpdateService(
             var integrityError = await GetLockedOciIntegrityErrorAsync(
                 projectDirectory,
                 state,
-                currentPack
+                currentPack,
+                manifestBudget
             );
             if (integrityError is not null)
             {

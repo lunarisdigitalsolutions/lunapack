@@ -28,6 +28,8 @@ internal sealed class OciDistributionRegistryClient(
         Uri registry,
         OciRegistryCredential? credential,
         string credentialPartition,
+        long maximumRecords,
+        long maximumBytes,
         CancellationToken cancellationToken
     ) =>
         ExecuteAsync(
@@ -52,6 +54,8 @@ internal sealed class OciDistributionRegistryClient(
                     catalogUri,
                     "repositories",
                     ["registry:catalog:*"],
+                    maximumRecords,
+                    maximumBytes,
                     token
                 );
             },
@@ -64,6 +68,8 @@ internal sealed class OciDistributionRegistryClient(
         string repository,
         OciRegistryCredential? credential,
         string credentialPartition,
+        long maximumRecords,
+        long maximumBytes,
         CancellationToken cancellationToken
     ) =>
         ExecuteAsync(
@@ -90,6 +96,8 @@ internal sealed class OciDistributionRegistryClient(
                     tagsUri,
                     "tags",
                     CreateRepositoryScopes(repository, ScopeAction.Pull),
+                    maximumRecords,
+                    maximumBytes,
                     token
                 );
             },
@@ -144,7 +152,7 @@ internal sealed class OciDistributionRegistryClient(
             {
                 if (descriptor.Size < 0 || descriptor.Size > maximumBytes)
                 {
-                    throw new OciRegistryContractException(
+                    throw new OciRegistryResourceLimitException(
                         "Registry blob exceeds the configured limit."
                     );
                 }
@@ -372,7 +380,7 @@ internal sealed class OciDistributionRegistryClient(
             {
                 if (descriptor.Size is < 0 or > MaximumMetadataBytes)
                 {
-                    throw new OciRegistryContractException(
+                    throw new OciRegistryResourceLimitException(
                         "Registry manifest metadata exceeds the configured limit."
                     );
                 }
@@ -451,10 +459,19 @@ internal sealed class OciDistributionRegistryClient(
         Uri firstPageUri,
         string propertyName,
         IReadOnlyList<string> requestedScopes,
+        long maximumRecords,
+        long maximumBytes,
         CancellationToken cancellationToken
     )
     {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumRecords);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumBytes);
+
         var values = new List<string>();
+        long observedBytes = 0;
+        long observedRecords = 0;
+        var pagesObserved = 0L;
+        var maximumPages = ((maximumRecords - 1) / RegistryPageSize) + 2;
         var visitedPages = new HashSet<string>(StringComparer.Ordinal) { firstPageUri.AbsoluteUri };
         var pageUri = firstPageUri;
         while (true)
@@ -465,15 +482,50 @@ internal sealed class OciDistributionRegistryClient(
                 cancellationToken
             );
             EnsureResponseStatus(response, HttpStatusCode.OK);
+            pagesObserved++;
 
             await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
             var content = await ReadBoundedAsync(stream, MaximumMetadataBytes, cancellationToken);
-            values.AddRange(ReadJsonStringList(content, propertyName));
+            var pageRecords = ReadJsonStringList(content, propertyName);
+            observedBytes = checked(observedBytes + content.LongLength);
+            observedRecords = checked(observedRecords + pageRecords.Count);
+            if (observedBytes > maximumBytes)
+            {
+                throw new OciRegistryResourceLimitException(
+                    $"Registry {propertyName} pagination exceeds its {maximumBytes} byte aggregate limit (at least {observedBytes} bytes observed)."
+                );
+            }
+
+            if (observedRecords > maximumRecords)
+            {
+                throw new OciRegistryResourceLimitException(
+                    $"Registry {propertyName} pagination exceeds its {maximumRecords} record limit (at least {observedRecords} records observed)."
+                );
+            }
+
+            var oversizedRecord = pageRecords.FirstOrDefault(record =>
+                Encoding.UTF8.GetByteCount(record) > MaximumMetadataBytes
+            );
+            if (oversizedRecord is not null)
+            {
+                throw new OciRegistryResourceLimitException(
+                    $"Registry {propertyName} pagination record exceeds its {MaximumMetadataBytes} byte limit."
+                );
+            }
+
+            values.AddRange(pageRecords);
 
             var nextPageUri = ParseNextPageUri(response, registryOrigin, pageUri);
             if (nextPageUri is null)
             {
                 return values;
+            }
+
+            if (pagesObserved >= maximumPages)
+            {
+                throw new OciRegistryResourceLimitException(
+                    $"Registry {propertyName} pagination exceeds its {maximumPages} page limit."
+                );
             }
 
             if (!visitedPages.Add(nextPageUri.AbsoluteUri))
@@ -516,7 +568,7 @@ internal sealed class OciDistributionRegistryClient(
         {
             if (contentLength is < 0 or > MaximumMetadataBytes)
             {
-                throw new OciRegistryContractException(
+                throw new OciRegistryResourceLimitException(
                     "Registry metadata exceeds the configured limit."
                 );
             }
@@ -946,6 +998,10 @@ internal sealed class OciDistributionRegistryClient(
                 $"{operationMessage} Registry hostname could not be resolved."
             );
         }
+        catch (OciRegistryResourceLimitException exception)
+        {
+            return Failure<T>(OciRegistryFailureKind.ResourceLimitExceeded, exception.Message);
+        }
         catch (OciRegistryContractException exception)
         {
             return Failure<T>(OciRegistryFailureKind.InvalidResponse, exception.Message);
@@ -993,7 +1049,7 @@ internal sealed class OciDistributionRegistryClient(
                 bytesWritten += count;
                 if (bytesWritten > maximumBytes)
                 {
-                    throw new OciRegistryContractException(
+                    throw new OciRegistryResourceLimitException(
                         "Registry blob exceeds the configured limit."
                     );
                 }
@@ -1073,6 +1129,8 @@ internal sealed class OciDistributionRegistryClient(
             OciRegistryFailureKind.InvalidResponse => "The registry response was invalid.",
             OciRegistryFailureKind.NotFound =>
                 "The requested repository or reference was not found.",
+            OciRegistryFailureKind.ResourceLimitExceeded =>
+                "The response exceeded a resource limit.",
             OciRegistryFailureKind.Timeout => "The registry request timed out.",
             OciRegistryFailureKind.Tls => "TLS verification failed.",
             OciRegistryFailureKind.Unavailable => "The registry is unavailable.",
@@ -1765,4 +1823,6 @@ internal sealed class OciDistributionRegistryClient(
     }
 
     private sealed class OciRegistryContractException(string message) : Exception(message);
+
+    private sealed class OciRegistryResourceLimitException(string message) : Exception(message);
 }

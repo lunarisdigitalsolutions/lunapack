@@ -2,16 +2,26 @@ using System.IO.Abstractions;
 using System.Security.Cryptography;
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Application.Paths;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Catalog;
 
 namespace Lunapack.Cli.Packs.Lifecycle;
 
-internal sealed record PackedHookFile(string RelativePath, string CanonicalPath, string Sha256)
+internal sealed record PackedHookFile(
+    string RelativePath,
+    string CanonicalPath,
+    string Sha256,
+    long ByteLimit
+)
 {
+    public PackedHookFile(string relativePath, string canonicalPath, string sha256)
+        : this(relativePath, canonicalPath, sha256, ResourceLimits.Default.PackDocumentBytes) { }
+
     public static ManifestOperationResult<PackedHookFile> Resolve(
         IFileSystem fileSystem,
         DiscoveredPack pack,
-        string? packRelativePath
+        string? packRelativePath,
+        ResourceLimits? resourceLimits = null
     )
     {
         if (string.IsNullOrEmpty(packRelativePath))
@@ -50,13 +60,21 @@ internal sealed record PackedHookFile(string RelativePath, string CanonicalPath,
             );
         }
 
-        return ManifestOperationResult<PackedHookFile>.Success(
-            new PackedHookFile(
-                relativePath,
-                canonicalPath,
-                ComputeSha256(fileSystem, canonicalPath)
-            )
+        var byteLimit = (resourceLimits ?? ResourceLimits.Default).PackDocumentBytes;
+        var digest = ComputeSha256(
+            fileSystem,
+            canonicalPath,
+            byteLimit,
+            $"Lifecycle hook file '{relativePath}'"
         );
+        return digest.Value is { } sha256
+            ? ManifestOperationResult<PackedHookFile>.Success(
+                new PackedHookFile(relativePath, canonicalPath, sha256, byteLimit)
+            )
+            : ManifestOperationResult<PackedHookFile>.Failure(
+                digest.Error ?? $"Unable to read lifecycle hook file '{relativePath}'.",
+                digest.ErrorKind
+            );
     }
 
     public ManifestOperationResult<bool> Verify(IFileSystem fileSystem)
@@ -68,30 +86,71 @@ internal sealed record PackedHookFile(string RelativePath, string CanonicalPath,
             );
         }
 
+        var digest = ComputeSha256(
+            fileSystem,
+            CanonicalPath,
+            ByteLimit,
+            $"Lifecycle hook file '{RelativePath}'"
+        );
+        if (digest.Value is not { } sha256)
+        {
+            return ManifestOperationResult<bool>.Failure(
+                digest.Error ?? $"Unable to verify lifecycle hook file '{RelativePath}'.",
+                digest.ErrorKind
+            );
+        }
+
+        return string.Equals(sha256, Sha256, StringComparison.Ordinal)
+            ? ManifestOperationResult<bool>.Success(true)
+            : ManifestOperationResult<bool>.Failure(
+                $"Packed lifecycle hook file '{RelativePath}' changed after authorization."
+            );
+    }
+
+    private static ManifestOperationResult<string> ComputeSha256(
+        IFileSystem fileSystem,
+        string path,
+        long byteLimit,
+        string inputName
+    )
+    {
         try
         {
-            return string.Equals(
-                ComputeSha256(fileSystem, CanonicalPath),
-                Sha256,
-                StringComparison.Ordinal
-            )
-                ? ManifestOperationResult<bool>.Success(true)
-                : ManifestOperationResult<bool>.Failure(
-                    $"Packed lifecycle hook file '{RelativePath}' changed after authorization."
-                );
+            using var stream = fileSystem.File.OpenRead(path);
+            using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+            var buffer = new byte[81_920];
+            long bytesRead = 0;
+            while (true)
+            {
+                var read = stream.Read(buffer, 0, buffer.Length);
+                if (read == 0)
+                {
+                    break;
+                }
+
+                var observedBytes = checked(bytesRead + read);
+                if (observedBytes > byteLimit)
+                {
+                    return ManifestOperationResult<string>.Failure(
+                        $"{inputName} exceeds its {byteLimit} byte limit (at least {observedBytes} bytes read).",
+                        ManifestOperationErrorKind.ResourceLimitExceeded
+                    );
+                }
+
+                hash.AppendData(buffer, 0, read);
+                bytesRead = observedBytes;
+            }
+
+            return ManifestOperationResult<string>.Success(
+                Convert.ToHexString(hash.GetHashAndReset())
+            );
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            return ManifestOperationResult<bool>.Failure(
-                $"Unable to verify packed lifecycle hook file '{RelativePath}': {exception.Message}"
+            return ManifestOperationResult<string>.Failure(
+                $"Unable to read {inputName}: {exception.Message}"
             );
         }
-    }
-
-    private static string ComputeSha256(IFileSystem fileSystem, string path)
-    {
-        using var stream = fileSystem.File.OpenRead(path);
-        return Convert.ToHexString(SHA256.HashData(stream));
     }
 
     private static bool IsWithinSnapshot(IFileSystem fileSystem, string snapshotRoot, string path)

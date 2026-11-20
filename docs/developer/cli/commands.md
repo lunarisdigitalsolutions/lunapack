@@ -97,11 +97,12 @@ suggestions until an argument-taking command or option is selected.
   only their schema-required properties, and adds `/.lunapack/` to the
   project-root `.gitignore` without replacing existing content.
 - `luna config set <key> <value>`, `luna config list`, and
-  `luna config remove <key>`: Manage Boolean CLI preferences. Each operation
-  accepts `--project` (`--local` alias), `--user-project`, or `--global`; scope
-  defaults to global. `remove` fails when the selected scope has no value for
-  that key. See [Configuration](configuration.md#cli-preferences) for supported
-  keys and precedence.
+  `luna config remove <key>`: Manage Boolean CLI preferences and typed resource
+  limits. Each operation accepts `--project` (`--local` alias),
+  `--user-project`, or `--global`; scope defaults to global. `remove` fails
+  when the selected scope has no value for that key. See
+  [Configuration](configuration.md#cli-preferences) for supported keys,
+  ceilings, and precedence.
 - `luna variables list`: Lists configured project variables in a table.
 - `luna variables set <name> <value>`: Sets a string project variable. Names
   must start with a letter or underscore and may contain letters, digits, and
@@ -175,6 +176,10 @@ project. Pack trust and pack-trust revocation require `--source` or `-s`. See
 `luna audit` operate on links as well as packs. See
 [Manage Luna Links](../manage-links.md) and the
 [Luna Links reference](links.md).
+
+Link source enumeration, selected content, and cumulative snapshot bytes use
+the project's effective resource limits. Luna streams local and Git link
+snapshots so a rejected file is not retained as an in-memory array.
 
 ## Catalog
 
@@ -274,10 +279,13 @@ adding content, viewing the manifest, or validating it.
 Luna reads the pack ID and version only from the root `pack.yml`, validates the
 complete authoring tree, and publishes one ZIP/config/manifest artifact. It
 does not run pack hooks or change project configuration or lock state. It
-rejects an existing version tag rather than overwriting it; successful output
-includes the registry reference and verified manifest digest. There are no
-`--id`, `--version`, or `--type` overrides. For GitHub Actions templates, see
-[Publish private packs from GitHub Actions](../advanced/publish-private-packs.md).
+uses the project's effective resource limits for manifest reads, authoring-tree
+enumeration, archive creation, and extracted validation. It rejects an
+existing version tag rather than overwriting it; successful output includes
+the registry reference and verified manifest digest. There are no `--id`,
+`--version`, or `--type` overrides. For GitHub Actions templates, see
+[Publish private packs from GitHub
+Actions](../advanced/publish-private-packs.md).
 
 ## Pack Lifecycle
 
