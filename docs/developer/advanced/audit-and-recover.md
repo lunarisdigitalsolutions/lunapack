@@ -91,6 +91,47 @@ The resolved-packs table does not assign a current/modified status to ordinary
 pack files. Their paths and recorded ownership remain visible; lifecycle
 commands apply each file's declared strategy when planning changes.
 
+## Gate CI on managed-file integrity
+
+Run strict mode when automation must fail for missing or modified managed
+content:
+
+```powershell
+luna audit --strict
+```
+
+Strict audit uses text output. `--format json` applies to report-only audit;
+combining it with `--strict` returns exit code `1` and a JSON failure envelope.
+
+Strict mode reads every pack and Luna Link target recorded in
+`lunapack-lock.yml`, computes its SHA-256 digest, and reports the owner, path,
+and `current`, `missing`, or `modified` status. Before opening a target, Luna
+normalizes it beneath the selected workspace and rejects symbolic links or
+reparse-point ancestors and targets. It does not follow audit paths outside the
+workspace, resolve a current source, or change project files or lock state.
+
+Add `--fail-fast` to stop after the first missing or modified target:
+
+```powershell
+luna audit --strict --fail-fast
+```
+
+`--fail-fast` requires `--strict`. Without `--strict`, audit keeps its existing
+report-only behavior and successful exit status for managed-content findings.
+
+Strict audit exit codes distinguish content violations from command failures:
+
+| Exit code | Meaning                                                     |
+| --------- | ----------------------------------------------------------- |
+| `0`       | Every recorded target could be read and matches its digest. |
+| `1`       | Command usage or project or target state could not be read. |
+| `2`       | One or more recorded targets were missing or had changed.   |
+
+Source-provenance drift and ownership conflicts do not by themselves change the
+strict integrity outcome. They remain informational audit statuses. Unsafe
+paths, malformed collection state, inaccessible targets, and filesystem aliases
+are operation errors and return `1`.
+
 ## Recover deliberately
 
 - For configuration drift, compare the source URL, ref, and base path with the

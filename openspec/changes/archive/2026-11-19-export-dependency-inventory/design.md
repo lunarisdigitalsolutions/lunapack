@@ -52,15 +52,15 @@ Require `--target`; default output to raw JSON on the invocation's output writer
 
 Before writing, reject a normalized output path that collides with `lunapack.yml`, `lunapack-lock.yml`, or any locked pack- or link-managed target. Compare paths using the filesystem's case-sensitivity rules. This preserves project state even when a consumer accidentally selects a protected path.
 
-Use source-generated `System.Text.Json` contracts or equivalent AOT-safe typed serializers. Keep any schema validator and pinned official schemas in test-only assets; the CLI runtime must not require network access or a schema package.
+Use source-generated `System.Text.Json` contracts or equivalent AOT-safe typed serializers. Exercise each emitted target with structural and semantic contract tests using the .NET test dependencies already approved by the repository. Do not add a schema-validation package or runtime network requirement solely for SBOM conformance checks.
 
 ### Compatibility and documentation
 
-The explicit target is the format-version compatibility boundary: `cyclonedx-1.6`, `cyclonedx-1.7`, `spdx-2.3`, and `spdx-3.0.1`. Validate every emitted target against its pinned official schema. Record the identity mapping and supported target contract in ADR-0093. Do not modify the lock format or require a lock migration.
+The explicit target is the format-version compatibility boundary: `cyclonedx-1.6`, `cyclonedx-1.7`, `spdx-2.3`, and `spdx-3.0.1`. Verify each adapter's required structures and semantics with focused tests, and review standards changes before updating a target. Record the identity mapping and supported target contract in ADR-0102. Do not modify the lock format or require a lock migration.
 
 ## Risks / Trade-offs
 
-- **[Schema drift]** A standard schema may change independently of this CLI → pin the exact official schema assets and validate all four targets in tests.
+- **[Schema drift]** A standard schema may change independently of this CLI → keep target versions explicit and maintain focused structural and semantic contract tests for each adapter.
 - **[Sensitive provenance]** Inventory files can disclose private repository URLs or internal local paths → document the included provenance and never emit credential material.
 - **[SPDX timestamps]** Required creation time makes SPDX output differ across invocations → include it in document-instance metadata and identities, while preserving stable inventory element identifiers.
 - **[Format-specific limits]** One standard may not support every LunaPack relationship or disclaimer natively → use schema-valid properties/references and keep the canonical inventory model complete.

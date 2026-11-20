@@ -342,9 +342,10 @@ public sealed class PackUpdatePlannerTests
     }
 
     [Test]
-    public async Task Plan_WhenManagedTargetRemoved_CreatesDeleteAction()
+    public async Task Plan_WhenManagedTargetRemovedAndUnchanged_CreatesDeleteAction()
     {
-        var planner = new PackUpdatePlanner(new MockFileSystem());
+        var fileSystem = CreateFileSystem((ProjectPath("target.txt"), "old content"));
+        var planner = new PackUpdatePlanner(fileSystem);
 
         var result = planner.Plan(
             _projectDirectory,
@@ -355,12 +356,270 @@ public sealed class PackUpdatePlannerTests
         var action = result.RequireValue().Actions.Single();
         await Assert.That(action).IsTypeOf<DeleteManagedFileUpdateAction>();
         await Assert.That(action.ResultingSha256).IsNull();
+        await Assert
+            .That(((DeleteManagedFileUpdateAction)action).PlannedTargetSha256)
+            .IsEqualTo(ComputeSha256("old content"));
+    }
+
+    [Test]
+    public async Task Plan_WhenObsoleteManagedTargetModified_PreservesAction()
+    {
+        var fileSystem = CreateFileSystem((ProjectPath("target.txt"), "user content"));
+        var planner = new PackUpdatePlanner(fileSystem);
+
+        var result = planner.Plan(
+            _projectDirectory,
+            CreateLockFile("example", "target.txt", "old content"),
+            new PackInstallationPlan([])
+        );
+
+        await Assert
+            .That(result.RequireValue().Actions.Single())
+            .IsTypeOf<PreserveManagedFileUpdateAction>();
+    }
+
+    [Test]
+    public async Task Plan_WhenModifiedRemovalForced_CreatesModifiedDeleteAction()
+    {
+        var fileSystem = CreateFileSystem((ProjectPath("target.txt"), "user content"));
+        var planner = new PackUpdatePlanner(fileSystem);
+
+        var result = planner.Plan(
+            _projectDirectory,
+            CreateLockFile("example", "target.txt", "old content"),
+            new PackInstallationPlan([]),
+            removeModified: true
+        );
+
+        var action = result.RequireValue().Actions.Single();
+        await Assert.That(action).IsTypeOf<DeleteManagedFileUpdateAction>();
+        var deleteAction = (DeleteManagedFileUpdateAction)action;
+        await Assert.That(deleteAction.WasModifiedAtPlanning).IsTrue();
+        await Assert
+            .That(deleteAction.PlannedTargetSha256)
+            .IsEqualTo(ComputeSha256("user content"));
+    }
+
+    [Test]
+    public async Task Plan_WhenObsoleteManagedTargetMissing_CreatesNoAction()
+    {
+        var planner = new PackUpdatePlanner(new MockFileSystem());
+
+        var result = planner.Plan(
+            _projectDirectory,
+            CreateLockFile("example", "target.txt", "old content"),
+            new PackInstallationPlan([])
+        );
+
+        await Assert.That(result.RequireValue().Actions).IsEmpty();
+    }
+
+    [Test]
+    public async Task Plan_WhenSharedObsoleteTargetModified_CreatesOnePreserveAction()
+    {
+        var fileSystem = CreateFileSystem((ProjectPath("shared.txt"), "user content"));
+        var lockFile = CreateSharedLockFile("first", "second", "old content");
+        var planner = new PackUpdatePlanner(fileSystem);
+
+        var result = planner.Plan(_projectDirectory, lockFile, new PackInstallationPlan([]));
+
+        await Assert.That(result.RequireValue().Actions).Count().IsEqualTo(1);
+        await Assert
+            .That(result.RequireValue().Actions.Single())
+            .IsTypeOf<PreserveManagedFileUpdateAction>();
+    }
+
+    [Test]
+    public async Task Plan_WhenSharedTargetRetainedByRemainingOwner_CreatesNoRemovalAction()
+    {
+        var fileSystem = CreateFileSystem((ProjectPath("shared.txt"), "old content"));
+        var lockFile = CreateSharedLockFile("first", "second", "old content");
+        var remainingFile = CreateManagedFile("second", "shared.txt", "old content");
+        var planner = new PackUpdatePlanner(fileSystem);
+
+        var result = planner.Plan(
+            _projectDirectory,
+            lockFile,
+            new PackInstallationPlan([remainingFile])
+        );
+
+        await Assert.That(result.RequireValue().Actions).IsEmpty();
+    }
+
+    [Test]
+    public async Task Plan_WhenPlannedTargetAliasesPreviousPath_DoesNotCreateRemoval()
+    {
+        var fileSystem = CreateFileSystem((ProjectPath("shared.txt"), "old content"));
+        var lockFile = CreateLockFile("first", "shared.txt", "old content");
+        var aliasedTarget = CreateManagedFile("second", "directory/../shared.txt", "new content");
+        var planner = new PackUpdatePlanner(fileSystem);
+
+        var result = planner.Plan(
+            _projectDirectory,
+            lockFile,
+            new PackInstallationPlan([aliasedTarget])
+        );
+
+        await Assert.That(result.RequireValue().Actions).Count().IsEqualTo(1);
+        await Assert
+            .That(result.RequireValue().Actions.Single())
+            .IsTypeOf<CopyManagedFileUpdateAction>();
+    }
+
+    [Test]
+    public async Task Plan_WhenPlannedTargetDiffersOnlyByCaseOnCaseInsensitiveHost_DoesNotCreateRemoval()
+    {
+        if (!OperatingSystem.IsWindows() && !OperatingSystem.IsMacOS())
+        {
+            Skip.Test("The default filesystem is not known to alias path case.");
+        }
+
+        var fileSystem = CreateFileSystem((ProjectPath("Shared.txt"), "old content"));
+        var lockFile = CreateLockFile("first", "Shared.txt", "old content");
+        var aliasedTarget = CreateManagedFile("second", "shared.txt", "new content");
+        var planner = new PackUpdatePlanner(fileSystem);
+
+        var result = planner.Plan(
+            _projectDirectory,
+            lockFile,
+            new PackInstallationPlan([aliasedTarget])
+        );
+
+        await Assert.That(result.RequireValue().Actions).Count().IsEqualTo(1);
+        await Assert
+            .That(result.RequireValue().Actions.Single())
+            .IsTypeOf<CopyManagedFileUpdateAction>();
+    }
+
+    [Test]
+    public async Task Plan_WhenSharedOwnersHaveInconsistentDigests_PreservesTarget()
+    {
+        var fileSystem = CreateFileSystem((ProjectPath("shared.txt"), "old content"));
+        var lockFile = CreateSharedLockFile("first", "second", "old content");
+        lockFile.Packs[1].ManagedFiles[0].Sha256 = ComputeSha256("other locked content");
+        var planner = new PackUpdatePlanner(fileSystem);
+
+        var result = planner.Plan(_projectDirectory, lockFile, new PackInstallationPlan([]));
+
+        await Assert
+            .That(result.RequireValue().Actions.Single())
+            .IsTypeOf<PreserveManagedFileUpdateAction>();
+    }
+
+    [Test]
+    public async Task Plan_WhenCommandRemapsOwnedTarget_KeepsCommandRemapping()
+    {
+        var fileSystem = CreateFileSystem((ProjectPath("target.txt"), "local change"));
+        var planner = new PackUpdatePlanner(fileSystem);
+        var managedFile = CreateManagedFile(
+            "example",
+            "docs/target.txt",
+            "new content",
+            declaredTarget: "target.txt"
+        );
+
+        var result = planner.Plan(
+            _projectDirectory,
+            CreateLockFile("example", "target.txt", "old content"),
+            new PackInstallationPlan([managedFile])
+            {
+                Remappings =
+                [
+                    new ManagedFileRemapping(
+                        "example",
+                        "target.txt",
+                        "docs/target.txt",
+                        ManagedFileRemappingOrigin.Command
+                    ),
+                ],
+            }
+        );
+
+        var plan = result.RequireValue();
+        await Assert.That(plan.Actions).Count().IsEqualTo(2);
+        await Assert
+            .That(plan.Actions)
+            .Contains(action => action is PreserveManagedFileUpdateAction);
+        await Assert
+            .That(plan.Remappings.Single().Origin)
+            .IsEqualTo(ManagedFileRemappingOrigin.Command);
+        await Assert.That(plan.Remappings.Single().EffectiveTarget).IsEqualTo("docs/target.txt");
+    }
+
+    [Test]
+    public async Task Plan_WhenCommandRemapsUnchangedSource_AppliesMergeToNewTarget()
+    {
+        var fileSystem = CreateFileSystem(
+            (ProjectPath("target.txt"), "source line\n"),
+            (ProjectPath("docs/target.txt"), "local line\n")
+        );
+        var managedFile = CreateManagedFile(
+            "example",
+            "docs/target.txt",
+            "source line\n",
+            new PackManifest.PackManagedFileStrategy { Type = "merge", Method = "lines" },
+            declaredTarget: "target.txt"
+        );
+        var planner = new PackUpdatePlanner(fileSystem);
+
+        var result = planner.Plan(
+            _projectDirectory,
+            CreateLockFile("example", "target.txt", "source line\n"),
+            new PackInstallationPlan([managedFile])
+            {
+                Remappings =
+                [
+                    new ManagedFileRemapping(
+                        "example",
+                        "target.txt",
+                        "docs/target.txt",
+                        ManagedFileRemappingOrigin.Command
+                    ),
+                ],
+            }
+        );
+
+        var mergeAction = result
+            .RequireValue()
+            .Actions.Single(action => action is MergeLinesManagedFileUpdateAction);
+        await Assert.That(ReadContents(mergeAction)).IsEqualTo("local line\nsource line\n");
+    }
+
+    [Test]
+    public async Task Plan_WhenOwnerUsesLockedEffectiveTarget_PreservesDifferentObsoleteTarget()
+    {
+        var fileSystem = CreateFileSystem(
+            (ProjectPath("locked.txt"), "retained source"),
+            (ProjectPath("new-config.txt"), "local change")
+        );
+        var retainedPack = CreateLockFile("retained", "locked.txt", "retained source")
+            .Packs.Single();
+        var removedPack = CreateLockFile("removed", "new-config.txt", "old source").Packs.Single();
+        var managedFile = CreateManagedFile(
+            "retained",
+            "new-config.txt",
+            "retained source",
+            declaredTarget: "locked.txt"
+        );
+        var planner = new PackUpdatePlanner(fileSystem);
+
+        var result = planner.Plan(
+            _projectDirectory,
+            new ProjectLockFile { SchemaVersion = 1, Packs = [retainedPack, removedPack] },
+            new PackInstallationPlan([managedFile])
+        );
+
+        await Assert
+            .That(result.RequireValue().Actions.Single())
+            .IsTypeOf<PreserveManagedFileUpdateAction>();
     }
 
     [Test]
     public async Task Plan_WhenManagedTargetIgnored_DoesNotCreateDeleteAction()
     {
-        var planner = new PackUpdatePlanner(new MockFileSystem());
+        var planner = new PackUpdatePlanner(
+            CreateFileSystem((ProjectPath("target.txt"), "old content"))
+        );
 
         var result = planner.Plan(
             _projectDirectory,
@@ -375,6 +634,28 @@ public sealed class PackUpdatePlannerTests
         );
 
         await Assert.That(result.RequireValue().Actions).IsEmpty();
+    }
+
+    [Test]
+    public async Task Plan_WhenObsoleteTargetAncestorIsReparsePoint_ReturnsFailure()
+    {
+        var fileSystem = new MockFileSystem();
+        var linkedDirectory = ProjectPath("linked");
+        fileSystem.Directory.CreateDirectory(linkedDirectory);
+        fileSystem.File.SetAttributes(
+            linkedDirectory,
+            FileAttributes.Directory | FileAttributes.ReparsePoint
+        );
+        var planner = new PackUpdatePlanner(fileSystem);
+
+        var result = planner.Plan(
+            _projectDirectory,
+            CreateLockFile("example", "linked/target.txt", "old content"),
+            new PackInstallationPlan([])
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("link or reparse point");
     }
 
     private static PlannedManagedFile CreateManagedFile(
@@ -488,6 +769,17 @@ public sealed class PackUpdatePlannerTests
                 },
             ],
         };
+
+    private static ProjectLockFile CreateSharedLockFile(
+        string firstPackId,
+        string secondPackId,
+        string contents
+    )
+    {
+        var first = CreateLockFile(firstPackId, "shared.txt", contents).Packs.Single();
+        var second = CreateLockFile(secondPackId, "shared.txt", contents).Packs.Single();
+        return new ProjectLockFile { SchemaVersion = 1, Packs = [first, second] };
+    }
 
     private static string ComputeSha256(string contents) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(contents)));

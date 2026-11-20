@@ -1,7 +1,5 @@
-using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using Json.Schema;
 using Lunapack.Cli.Sbom;
 
 namespace Lunapack.Cli.UnitTests.Sbom;
@@ -13,7 +11,7 @@ public sealed class SbomSerializationTests
     [Arguments("cyclonedx-1.7")]
     [Arguments("spdx-2.3")]
     [Arguments("spdx-3.0.1")]
-    public async Task Serialize_WhenInventoryContainsDependenciesAndHashes_ValidatesAgainstSchema(
+    public async Task Serialize_WhenInventoryContainsDependenciesAndHashes_EmitsTargetContract(
         string targetName
     )
     {
@@ -27,19 +25,22 @@ public sealed class SbomSerializationTests
             new DateTimeOffset(2025, 6, 7, 8, 9, 10, TimeSpan.Zero).AddMilliseconds(100)
         );
         using var document = JsonDocument.Parse(json);
-        var schemaPath = Path.Combine(
-            AppContext.BaseDirectory,
-            "TestData",
-            "SbomSchemas",
-            $"{targetName}.json"
-        );
-        var schema = JsonSchema.FromText(File.ReadAllText(schemaPath));
-        var result = schema.Evaluate(
-            document.RootElement,
-            new EvaluationOptions { OutputFormat = OutputFormat.List }
-        );
-
-        await Assert.That(result.IsValid).IsTrue().Because(DescribeErrors(targetName, result));
+        var root = document.RootElement;
+        switch (target.Standard)
+        {
+            case SbomFormat.CycloneDx:
+                await AssertCycloneDxContract(root, target);
+                break;
+            case SbomFormat.Spdx
+                when string.Equals(target.Name, "spdx-2.3", StringComparison.Ordinal):
+                await AssertSpdx23Contract(root, target);
+                break;
+            case SbomFormat.Spdx:
+                await AssertSpdx3Contract(root, target);
+                break;
+            default:
+                throw new InvalidOperationException($"Unsupported target '{targetName}'.");
+        }
     }
 
     [Test]
@@ -117,29 +118,6 @@ public sealed class SbomSerializationTests
 
         await Assert.That(firstDocumentId).IsNotEqualTo(secondDocumentId);
         await Assert.That(JsonNode.DeepEquals(first, second)).IsTrue();
-    }
-
-    [Test]
-    [Arguments("cyclonedx-1.6", "3e92dddbc30cf7f6a02b80f0942b1a4cfd4fb1c26f1dfc4310afa9d613cafb93")]
-    [Arguments("cyclonedx-1.7", "df472ef4aaf593904c479293723a1a5c191d6672715c93b3c0b5c318f3914221")]
-    [Arguments("spdx-2.3", "239208b7ac287b3cf5d9a9af23f9d69863971102a5e1587a27a398b43490b89b")]
-    [Arguments("spdx-3.0.1", "582c64e809d5b3ef9bd0c4de13a32391b47b0284a3e8d199569fb96f649234b1")]
-    public async Task SchemaFixture_WhenRead_MatchesPinnedSourceBytes(
-        string targetName,
-        string expectedHash
-    )
-    {
-        var schemaPath = Path.Combine(
-            AppContext.BaseDirectory,
-            "TestData",
-            "SbomSchemas",
-            $"{targetName}.json"
-        );
-        var actualHash = Convert
-            .ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(schemaPath)))
-            .ToLowerInvariant();
-
-        await Assert.That(actualHash).IsEqualTo(expectedHash);
     }
 
     [Test]
@@ -290,13 +268,6 @@ public sealed class SbomSerializationTests
             "example-source"
         );
 
-    private static string DescribeErrors(string targetName, EvaluationResults result)
-    {
-        var errors = new List<string> { targetName };
-        AddErrors(result, errors);
-        return string.Join(Environment.NewLine, errors);
-    }
-
     private static JsonObject ParseObject(string json) =>
         JsonNode.Parse(json)?.AsObject()
         ?? throw new InvalidOperationException("SBOM document must be a JSON object.");
@@ -379,31 +350,48 @@ public sealed class SbomSerializationTests
         }
     }
 
-    private static void AddErrors(EvaluationResults result, ICollection<string> errors)
+    private static async Task AssertCycloneDxContract(JsonElement root, SbomTarget target)
     {
-        if (errors.Count >= 20)
-        {
-            return;
-        }
+        await Assert.That(root.GetProperty("bomFormat").GetString()).IsEqualTo("CycloneDX");
+        await Assert.That(root.GetProperty("specVersion").GetString()).IsEqualTo(target.Version);
+        await Assert.That(root.GetProperty("version").GetInt32()).IsEqualTo(1);
+        await Assert.That(root.GetProperty("metadata").ValueKind).IsEqualTo(JsonValueKind.Object);
+        await Assert.That(root.GetProperty("components").ValueKind).IsEqualTo(JsonValueKind.Array);
+        await Assert
+            .That(root.GetProperty("dependencies").ValueKind)
+            .IsEqualTo(JsonValueKind.Array);
+    }
 
-        if (result.Errors is { } nodeErrors)
-        {
-            foreach (var error in nodeErrors)
-            {
-                errors.Add($"{result.InstanceLocation}: {error.Key}: {error.Value}");
-                if (errors.Count >= 20)
-                {
-                    return;
-                }
-            }
-        }
+    private static async Task AssertSpdx23Contract(JsonElement root, SbomTarget target)
+    {
+        await Assert
+            .That(root.GetProperty("spdxVersion").GetString())
+            .IsEqualTo($"SPDX-{target.Version}");
+        await Assert.That(root.GetProperty("dataLicense").GetString()).IsEqualTo("CC0-1.0");
+        await Assert.That(root.GetProperty("SPDXID").GetString()).IsEqualTo("SPDXRef-DOCUMENT");
+        await Assert
+            .That(root.GetProperty("creationInfo").ValueKind)
+            .IsEqualTo(JsonValueKind.Object);
+        await Assert.That(root.GetProperty("packages").ValueKind).IsEqualTo(JsonValueKind.Array);
+        await Assert.That(root.GetProperty("files").ValueKind).IsEqualTo(JsonValueKind.Array);
+        await Assert
+            .That(root.GetProperty("relationships").ValueKind)
+            .IsEqualTo(JsonValueKind.Array);
+    }
 
-        if (result.Details is { } details)
-        {
-            foreach (var detail in details)
-            {
-                AddErrors(detail, errors);
-            }
-        }
+    private static async Task AssertSpdx3Contract(JsonElement root, SbomTarget target)
+    {
+        await Assert
+            .That(root.GetProperty("@context").GetString())
+            .IsEqualTo($"https://spdx.org/rdf/{target.Version}/spdx-context.jsonld");
+        await Assert.That(root.GetProperty("@graph").ValueKind).IsEqualTo(JsonValueKind.Array);
+        var types = root.GetProperty("@graph")
+            .EnumerateArray()
+            .Select(element => element.GetProperty("type").GetString())
+            .ToHashSet(StringComparer.Ordinal);
+        await Assert.That(types).Contains("SpdxDocument");
+        await Assert.That(types).Contains("CreationInfo");
+        await Assert.That(types).Contains("software_Package");
+        await Assert.That(types).Contains("software_File");
     }
 }

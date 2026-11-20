@@ -1,6 +1,7 @@
 ﻿using System.Text.Json.Serialization;
 using Lunapack.Cli.Application.Diagnostics;
 using Lunapack.Cli.Links;
+using Lunapack.Cli.Packs.Lifecycle;
 using Lunapack.Cli.Packs.Manifest;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources.Git;
@@ -17,6 +18,7 @@ namespace Lunapack.Cli.Application.Serialization;
 [JsonSerializable(typeof(PackManifest))]
 [JsonSerializable(typeof(List<object>))]
 [JsonSerializable(typeof(GitSourceCacheEntry))]
+[JsonSerializable(typeof(LifecycleHookHistoryEntry))]
 [JsonSerializable(typeof(GitLinkCacheMetadata))]
 [JsonSerializable(typeof(OciPackArtifact.OciPackConfig))]
 [JsonSerializable(typeof(OciPackArtifact.OciPackImageManifest))]

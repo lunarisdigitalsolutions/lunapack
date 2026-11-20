@@ -14,6 +14,15 @@
         "resolved": "3.0.159",
         "contentHash": "VPNxfghpjFUAv6fLLVU6dNhqRrqFyAYb/CDPq+mA/KhAUv5I0ozpYi4UmvUfqPpmcVeDJiHYND486Epv149OcA=="
       },
+      "Spectre.Console.Testing": {
+        "type": "Direct",
+        "requested": "[0.54.0, )",
+        "resolved": "0.54.0",
+        "contentHash": "9QjSrRH+scy66ppmOLDiSno0Uh1ISJL18FqmTQDFNvK/oNI1DaI30cy2Uj6v0gxLZghtc/eKTwXtPpe0KKfHXw==",
+        "dependencies": {
+          "Spectre.Console": "0.54.0"
+        }
+      },
       "System.IO.Abstractions.TestingHelpers": {
         "type": "Direct",
         "requested": "[22.2.0, )",

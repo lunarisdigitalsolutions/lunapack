@@ -1,5 +1,4 @@
 using Lunapack.Cli.Application;
-using Spectre.Console;
 
 namespace Lunapack.Cli.Packs.Lifecycle;
 
@@ -7,21 +6,19 @@ internal sealed class ConsoleLifecycleHookConfirmer(CliConsole console) : ILifec
 {
     public bool Confirm(ResolvedLifecycleHookInvocation invocation)
     {
-        console.Info(string.Empty);
-        console.Accent(
-            $"Pack '{invocation.Invocation.Pack.Manifest.Id}' requests permission to run a lifecycle command."
-        );
-        console.Render(
-            new Markup(
-                $"[yellow]{Markup.Escape(LifecycleHookConfirmationFormatter.FormatCommand(invocation))}[/]\n"
-            )
-        );
+        var details = new List<string>
+        {
+            string.Empty,
+            $"Pack '{invocation.Invocation.Pack.Manifest.Id}' requests permission to run a lifecycle command.",
+            LifecycleHookConfirmationFormatter.FormatCommand(invocation),
+        };
         if (invocation.Invocation.Script.Description is { } description)
         {
-            console.Info(description);
+            details.Add(description);
         }
 
-        console.Info(string.Empty);
+        details.Add(string.Empty);
+        console.WriteDetails(details);
         var confirmed = console.IsInteractive && console.Confirm("Run this script?", false);
         if (!confirmed)
         {

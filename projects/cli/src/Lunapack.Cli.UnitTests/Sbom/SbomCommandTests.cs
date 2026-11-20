@@ -142,9 +142,14 @@ public sealed class SbomCommandTests
     public async Task Sbom_WhenOutputPathCrossesMockReparsePoint_RejectsAlias()
     {
         var fileSystem = new MockFileSystem();
-        const string projectDirectory = @"C:\project";
+        var projectDirectory = fileSystem.Path.GetFullPath(
+            fileSystem.Path.Combine("test-root", "project")
+        );
+        var profileDirectory = fileSystem.Path.GetFullPath(
+            fileSystem.Path.Combine("test-root", "profile")
+        );
         fileSystem.AddDirectory(projectDirectory);
-        var userSettings = new UserSettingsStore(fileSystem, @"C:\profile");
+        var userSettings = new UserSettingsStore(fileSystem, profileDirectory);
         var application = new CliApplication(
             fileSystem,
             TestConsole.CreateAnsiConsole(),

@@ -283,6 +283,41 @@ public sealed class ManifestSchemaTests
     }
 
     [Test]
+    public async Task Scenario_ProjectSchemaDeclaresLifecyclePolicy_UsesOptionalBoundedFields()
+    {
+        using var schema = JsonDocument.Parse(
+            File.ReadAllText(
+                Path.Combine(AppContext.BaseDirectory, "TestData", "lunapack.schema.json")
+            )
+        );
+        var definitions = schema.RootElement.GetProperty("definitions");
+        var projectTrust = definitions.GetProperty("projectTrust");
+        var policy = definitions.GetProperty("lifecycleHookPolicy");
+        var policyProperties = policy.GetProperty("properties");
+        var variableNames = policyProperties.GetProperty("allowedEnvironmentVariables");
+        var timeout = policyProperties.GetProperty("timeoutSeconds");
+
+        await Assert.That(projectTrust.TryGetProperty("required", out _)).IsFalse();
+        await Assert
+            .That(
+                projectTrust
+                    .GetProperty("properties")
+                    .GetProperty("scripts")
+                    .GetProperty("$ref")
+                    .GetString()
+            )
+            .IsEqualTo("#/definitions/lifecycleHookPolicy");
+        await Assert.That(policy.GetProperty("additionalProperties").GetBoolean()).IsFalse();
+        await Assert.That(variableNames.GetProperty("uniqueItems").GetBoolean()).IsTrue();
+        await Assert
+            .That(variableNames.GetProperty("items").GetProperty("minLength").GetInt32())
+            .IsEqualTo(1);
+        await Assert.That(timeout.GetProperty("type").GetString()).IsEqualTo("integer");
+        await Assert.That(timeout.GetProperty("minimum").GetInt32()).IsEqualTo(1);
+        await Assert.That(timeout.GetProperty("maximum").GetInt32()).IsEqualTo(1800);
+    }
+
+    [Test]
     public async Task ProjectSchema_WhenPreferencesDeclared_AllowsOnlyOptionalBooleanValues()
     {
         using var schema = JsonDocument.Parse(
@@ -293,6 +328,7 @@ public sealed class ManifestSchemaTests
         var root = schema.RootElement;
         var preferences = root.GetProperty("properties").GetProperty("preferences");
         var preferenceSchema = root.GetProperty("definitions").GetProperty("cliPreferences");
+        var gitPreferences = root.GetProperty("definitions").GetProperty("gitPreferences");
         var catalogPreferences = root.GetProperty("definitions").GetProperty("catalogPreferences");
         var nextStepPreferences = root.GetProperty("definitions")
             .GetProperty("nextStepPreferences");
@@ -308,6 +344,27 @@ public sealed class ManifestSchemaTests
         await Assert
             .That(preferenceSchema.GetProperty("additionalProperties").GetBoolean())
             .IsFalse();
+        await Assert
+            .That(
+                preferenceSchema
+                    .GetProperty("properties")
+                    .GetProperty("git")
+                    .GetProperty("$ref")
+                    .GetString()
+            )
+            .IsEqualTo("#/definitions/gitPreferences");
+        await Assert
+            .That(gitPreferences.GetProperty("additionalProperties").GetBoolean())
+            .IsFalse();
+        await Assert
+            .That(
+                gitPreferences
+                    .GetProperty("properties")
+                    .GetProperty("allowInsecureTransport")
+                    .GetProperty("type")
+                    .GetString()
+            )
+            .IsEqualTo("boolean");
         await Assert
             .That(catalogPreferences.GetProperty("additionalProperties").GetBoolean())
             .IsFalse();
@@ -381,6 +438,7 @@ public sealed class ManifestSchemaTests
         );
         var definitions = schema.RootElement.GetProperty("definitions");
         var expectedReference = "#/definitions/cliPreferences";
+        var gitPreferences = definitions.GetProperty("gitPreferences");
 
         await Assert
             .That(
@@ -410,6 +468,25 @@ public sealed class ManifestSchemaTests
                     .GetBoolean()
             )
             .IsFalse();
+        await Assert
+            .That(
+                definitions
+                    .GetProperty("cliPreferences")
+                    .GetProperty("properties")
+                    .GetProperty("git")
+                    .GetProperty("$ref")
+                    .GetString()
+            )
+            .IsEqualTo("#/definitions/gitPreferences");
+        await Assert
+            .That(
+                gitPreferences
+                    .GetProperty("properties")
+                    .GetProperty("allowInsecureTransport")
+                    .GetProperty("type")
+                    .GetString()
+            )
+            .IsEqualTo("boolean");
     }
 
     [Test]
@@ -1550,6 +1627,67 @@ public sealed class ManifestSchemaTests
                 new ProjectConfiguration.TrustedPack { Id = "example", Source = "local" },
                 new ProjectConfiguration.TrustedPack { Id = "example", Source = "local" },
             ],
+        };
+
+        var issues = ManifestModelValidator.Validate(configuration);
+
+        await Assert.That(issues).IsNotEmpty();
+    }
+
+    [Test]
+    [Arguments(1)]
+    [Arguments(1800)]
+    public async Task Scenario_LifecycleTimeoutIsAtBoundary_IsAccepted(int timeoutSeconds)
+    {
+        var configuration = CreateConfigurationWithSource();
+        configuration.Trust.Scripts = new LifecycleHookPolicy
+        {
+            AllowedEnvironmentVariables = ["CUSTOM_PATH"],
+            TimeoutSeconds = timeoutSeconds,
+        };
+
+        var issues = ManifestModelValidator.Validate(configuration);
+
+        await Assert.That(issues).IsEmpty();
+    }
+
+    [Test]
+    [Arguments(0)]
+    [Arguments(1801)]
+    public async Task Scenario_LifecycleTimeoutIsOutOfRange_IsRejected(int timeoutSeconds)
+    {
+        var configuration = CreateConfigurationWithSource();
+        configuration.Trust.Scripts = new LifecycleHookPolicy { TimeoutSeconds = timeoutSeconds };
+
+        var issues = ManifestModelValidator.Validate(configuration);
+
+        await Assert.That(issues).IsNotEmpty();
+    }
+
+    [Test]
+    [Arguments("")]
+    [Arguments("CUSTOM=VALUE")]
+    [Arguments("CUSTOM\0VALUE")]
+    public async Task Scenario_LifecycleVariableNameIsInvalid_IsRejected(string variableName)
+    {
+        var configuration = CreateConfigurationWithSource();
+        configuration.Trust.Scripts = new LifecycleHookPolicy
+        {
+            AllowedEnvironmentVariables = [variableName],
+        };
+
+        var issues = ManifestModelValidator.Validate(configuration);
+
+        await Assert.That(issues).IsNotEmpty();
+    }
+
+    [Test]
+    public async Task Scenario_LifecycleVariableNameIsDuplicated_IsRejected()
+    {
+        var configuration = CreateConfigurationWithSource();
+        configuration.Trust.Scripts = new LifecycleHookPolicy
+        {
+            AllowedEnvironmentVariables = ["CUSTOM_PATH", "CUSTOM_PATH"],
         };
 
         var issues = ManifestModelValidator.Validate(configuration);

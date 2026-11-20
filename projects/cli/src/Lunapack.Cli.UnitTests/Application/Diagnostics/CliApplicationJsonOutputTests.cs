@@ -37,6 +37,32 @@ public sealed class CliApplicationJsonOutputTests
     }
 
     [Test]
+    public async Task Scenario_StrictAuditJson_ReturnsUsageFailureEnvelope()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        await workspace.Application.RunAsync(["init"], workspace.Path);
+        var existingOutput = ansiConsole.Output;
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["audit", "--strict", "--format", "json"],
+            workspace.Path,
+            output,
+            error
+        );
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(error.ToString()).Contains("cannot be used with '--format json'");
+        using var document = JsonDocument.Parse(output.ToString());
+        await Assert
+            .That(document.RootElement.GetProperty("result").ValueKind)
+            .IsEqualTo(JsonValueKind.Null);
+        await Assert.That(ansiConsole.Output).IsEqualTo(existingOutput);
+    }
+
+    [Test]
     public async Task Scenario_AuditUnsupportedFormat_WritesOnlyErrorOutput()
     {
         var ansiConsole = new SpectreTestConsole();

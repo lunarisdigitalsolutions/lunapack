@@ -29,7 +29,7 @@ internal static partial class SourceIdentityNormalizer
         if (identity.Value is not { } repository)
         {
             return ManifestOperationResult<SourceFingerprint>.Failure(
-                identity.Error ?? $"Unable to normalize repository URL '{url}'."
+                identity.Error ?? "Unable to normalize the Git repository URL."
             );
         }
 
@@ -408,6 +408,20 @@ internal static partial class SourceIdentityNormalizer
             return ManifestOperationResult<string>.Failure("Repository URL is required.");
         }
 
+        if (trimmed.StartsWith('-'))
+        {
+            return ManifestOperationResult<string>.Failure(
+                "Git repository locations must not begin with '-'."
+            );
+        }
+
+        if (IsUncRepositoryPath(trimmed))
+        {
+            return ManifestOperationResult<string>.Failure(
+                "Git repository locations must not use UNC or file URL locations."
+            );
+        }
+
         if (trimmed[0] == '/')
         {
             return ManifestOperationResult<string>.Success(
@@ -419,15 +433,20 @@ internal static partial class SourceIdentityNormalizer
         if (parsed.Value is not { } location)
         {
             return ManifestOperationResult<string>.Failure(
-                parsed.Error ?? $"Repository URL '{url}' is not a supported Git URL."
+                parsed.Error ?? "Repository URL is not a supported Git URL."
             );
         }
 
+        var parsedUri = Uri.TryCreate(trimmed, UriKind.Absolute, out var uri) ? uri : null;
+        var isScpLike = ScpLikePattern().IsMatch(trimmed);
         var embedsCredentials =
-            location.UserInformation is { } credentials
+            location.UserInformation is not null
+            && !isScpLike
             && (
-                credentials.Contains(':', StringComparison.Ordinal)
-                || trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+                parsedUri is null
+                || !string.Equals(parsedUri.Scheme, "ssh", StringComparison.OrdinalIgnoreCase)
+                || Uri.UnescapeDataString(parsedUri.UserInfo)
+                    .Contains(':', StringComparison.Ordinal)
             );
         if (embedsCredentials)
         {
@@ -443,7 +462,7 @@ internal static partial class SourceIdentityNormalizer
         if (segments.Length == 0)
         {
             return ManifestOperationResult<string>.Failure(
-                $"Repository URL '{url}' does not identify a repository."
+                "Repository URL does not identify a repository."
             );
         }
 
@@ -451,7 +470,7 @@ internal static partial class SourceIdentityNormalizer
         if (segments[^1].Length == 0)
         {
             return ManifestOperationResult<string>.Failure(
-                $"Repository URL '{url}' does not identify a repository."
+                "Repository URL does not identify a repository."
             );
         }
 
@@ -464,11 +483,41 @@ internal static partial class SourceIdentityNormalizer
         return ManifestOperationResult<string>.Success($"{host}/{identityPath}");
     }
 
+    internal static bool IsLocalRepositoryPath(string? repositoryUrl)
+    {
+        var value = repositoryUrl?.Trim() ?? string.Empty;
+        if (value.Length == 0 || IsUncRepositoryPath(value))
+        {
+            return false;
+        }
+
+        return value[0] == '/'
+            || value.Length >= 3
+                && char.IsAsciiLetter(value[0])
+                && value[1] == ':'
+                && value[2] is '/' or '\\';
+    }
+
+    internal static bool IsUncRepositoryPath(string? repositoryUrl)
+    {
+        var value = repositoryUrl?.Trim() ?? string.Empty;
+        return value.Length >= 2 && IsDirectorySeparator(value[0]) && IsDirectorySeparator(value[1])
+            || value.StartsWith("file://", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsDirectorySeparator(char value) => value is '/' or '\\';
+
     private static ManifestOperationResult<RepositoryLocation> ParseLocation(string url)
     {
         var scpMatch = ScpLikePattern().Match(url);
         if (scpMatch.Success)
         {
+            if (scpMatch.Groups["path"].Value.StartsWith(':'))
+            {
+                return ManifestOperationResult<RepositoryLocation>.Failure(
+                    "Git remote-helper repository locations are not supported."
+                );
+            }
             return ManifestOperationResult<RepositoryLocation>.Success(
                 new RepositoryLocation(
                     scpMatch.Groups["user"].Success ? scpMatch.Groups["user"].Value : null,
@@ -481,14 +530,30 @@ internal static partial class SourceIdentityNormalizer
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || string.IsNullOrEmpty(uri.Host))
         {
             return ManifestOperationResult<RepositoryLocation>.Failure(
-                $"Repository URL '{url}' must be an absolute https, ssh, or scp-style Git URL."
+                "Repository URL must be an absolute HTTPS, SSH, or scp-style Git URL."
+            );
+        }
+
+        if (!string.IsNullOrEmpty(uri.Query) || !string.IsNullOrEmpty(uri.Fragment))
+        {
+            return ManifestOperationResult<RepositoryLocation>.Failure(
+                "Git repository URLs with queries or fragments are not supported."
+            );
+        }
+        if (
+            string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            && url.Contains('\\')
+        )
+        {
+            return ManifestOperationResult<RepositoryLocation>.Failure(
+                "Git HTTPS repository URLs must not contain backslashes."
             );
         }
 
         if (!_supportedSchemes.Contains(uri.Scheme))
         {
             return ManifestOperationResult<RepositoryLocation>.Failure(
-                $"Repository URL '{url}' uses unsupported scheme '{uri.Scheme}'."
+                $"Repository URL uses unsupported scheme '{uri.Scheme}'."
             );
         }
 
@@ -517,7 +582,7 @@ internal static partial class SourceIdentityNormalizer
         segment.EndsWith(".git", StringComparison.OrdinalIgnoreCase) ? segment[..^4] : segment;
 
     [GeneratedRegex(
-        @"^(?:(?<user>[^@/\\:]+)@)?(?<host>[A-Za-z0-9._-]+):(?!//)(?<path>.+)$",
+        @"^(?:(?<user>[A-Za-z0-9._+~-]+)@)?(?<host>(?:[A-Za-z0-9_][A-Za-z0-9._-]*|\[[A-Za-z0-9:.%_-]+\])):(?!//)(?<path>.+)$",
         RegexOptions.CultureInvariant,
         matchTimeoutMilliseconds: 1000
     )]

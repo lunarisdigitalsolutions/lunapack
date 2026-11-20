@@ -13,6 +13,7 @@ internal sealed class GitPackMaterializer(
     IFileSystem fileSystem,
     IGitProcessRunner processRunner,
     CliConsole console,
+    GitTransportPolicy transportPolicy,
     IOperationSnapshotSecurity? snapshotSecurity = null,
     OciPackSource? ociPackSource = null
 )
@@ -133,9 +134,23 @@ internal sealed class GitPackMaterializer(
             if (configuredSource is null)
             {
                 return ManifestOperationResult<DiscoveredPack>.Failure(
-                    $"Git source '{gitSource.Url}' is not configured for pack '{pack.Manifest.Id}'."
+                    $"The Git source is not configured for pack '{pack.Manifest.Id}'."
                 );
             }
+
+            var authorization = await transportPolicy.AuthorizeAsync(
+                projectDirectory,
+                configuredSource.Url,
+                configuredSource.Name
+            );
+            if (!authorization.IsSuccess)
+            {
+                return ManifestOperationResult<DiscoveredPack>.Failure(
+                    authorization.Error
+                        ?? $"Unable to authorize Git source '{configuredSource.Name}'."
+                );
+            }
+            var transportMode = authorization.Value;
 
             var gitWorkspace = fileSystem.Path.Combine(
                 workspace,
@@ -147,6 +162,7 @@ internal sealed class GitPackMaterializer(
                 gitSource,
                 configuredSource,
                 gitWorkspace,
+                transportMode,
                 cancellationToken
             );
         }
@@ -291,6 +307,7 @@ internal sealed class GitPackMaterializer(
         GitSourceProvenance gitSource,
         ProjectConfiguration.GitSource source,
         string workspace,
+        GitTransportMode transportMode,
         CancellationToken cancellationToken
     )
     {
@@ -298,36 +315,67 @@ internal sealed class GitPackMaterializer(
         fileSystem.Directory.CreateDirectory(workspace);
         var commands = new[]
         {
-            new[] { "init", "--quiet", workspace },
-            ["-C", workspace, "remote", "add", "origin", gitSource.Url],
-            [
-                "-C",
-                workspace,
-                "fetch",
-                "--depth=1",
-                "--filter=blob:none",
-                "origin",
-                gitSource.ResolvedCommit,
-            ],
-            ["-C", workspace, "sparse-checkout", "init", "--no-cone"],
-            [
-                "-C",
-                workspace,
-                "sparse-checkout",
-                "set",
-                "--no-cone",
-                "--",
-                CreateSparsePattern(pack.RepositoryPath),
-            ],
-            ["-C", workspace, "checkout", "--quiet", "--detach", "FETCH_HEAD"],
+            (new[] { "init", "--quiet", workspace }, GitTransportMode.SecureOnly, (string?)null),
+            (
+                ["-C", workspace, "remote", "add", "--", "origin", gitSource.Url],
+                GitTransportMode.SecureOnly,
+                null
+            ),
+            (
+                new[]
+                {
+                    "-C",
+                    workspace,
+                    "fetch",
+                    "--depth=1",
+                    "--filter=blob:none",
+                    "origin",
+                    gitSource.ResolvedCommit,
+                },
+                transportMode,
+                gitSource.Url
+            ),
+            (
+                ["-C", workspace, "sparse-checkout", "init", "--no-cone"],
+                GitTransportMode.SecureOnly,
+                null
+            ),
+            (
+                [
+                    "-C",
+                    workspace,
+                    "sparse-checkout",
+                    "set",
+                    "--no-cone",
+                    "--",
+                    CreateSparsePattern(pack.RepositoryPath),
+                ],
+                GitTransportMode.SecureOnly,
+                null
+            ),
+            (
+                new[] { "-C", workspace, "checkout", "--quiet", "--detach", "FETCH_HEAD" },
+                transportMode,
+                gitSource.Url
+            ),
         };
-        foreach (var command in commands)
+        foreach (var (command, commandTransportMode, repositoryUrl) in commands)
         {
-            var result = await processRunner.RunAsync(command, timeout, cancellationToken);
+            var result = await processRunner.RunAsync(
+                command,
+                timeout,
+                commandTransportMode,
+                repositoryUrl,
+                cancellationToken
+            );
             if (!result.IsSuccess)
             {
                 return ManifestOperationResult<DiscoveredPack>.Failure(
-                    result.Error ?? "Git pack materialization failed."
+                    GitSourceFailureFormatter.Format(
+                        source.Name,
+                        result.Error,
+                        "Git pack materialization failed."
+                    )
                 );
             }
         }

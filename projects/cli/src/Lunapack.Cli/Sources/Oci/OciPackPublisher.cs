@@ -68,6 +68,7 @@ internal sealed class OciPackPublisher(
 
             var snapshotDirectory = fileSystem.Path.Combine(workspace.Path, "pack");
             var validation = await ValidateArchiveAsync(
+                projectDirectory,
                 archivePath,
                 snapshotDirectory,
                 allowHiddenCharacters,
@@ -129,6 +130,7 @@ internal sealed class OciPackPublisher(
     }
 
     private async Task<ManifestOperationResult<PackManifest>> ValidateArchiveAsync(
+        string projectDirectory,
         string archivePath,
         string snapshotDirectory,
         bool allowHiddenCharacters,
@@ -181,6 +183,7 @@ internal sealed class OciPackPublisher(
         }
 
         var externalValidation = await authoringValidationService.ValidateExternalSourcesAsync(
+            projectDirectory,
             snapshotDirectory,
             manifest,
             allowHiddenCharacters

@@ -1,3 +1,4 @@
+using System.IO.Abstractions;
 using System.Security.Cryptography;
 using Lunapack.Cli.Application.Paths;
 using Lunapack.Cli.Packs.Planning;
@@ -101,12 +102,13 @@ internal static class ManagedRootInventory
 
     public static string? FindCrossRootCollision(
         IReadOnlyList<ManagedRoot> plannedRoots,
-        ProjectLockFile lockFile
+        ProjectLockFile lockFile,
+        IFileSystem fileSystem
     )
     {
         ArgumentNullException.ThrowIfNull(plannedRoots);
 
-        var ownership = CreateOwnershipMap(lockFile);
+        var ownership = CreateOwnershipMap(lockFile, fileSystem);
         foreach (var plannedRoot in plannedRoots)
         {
             foreach (var file in plannedRoot.Files)
@@ -125,10 +127,13 @@ internal static class ManagedRootInventory
     }
 
     public static Dictionary<string, List<ManagedRootOwner>> CreateOwnershipMap(
-        ProjectLockFile lockFile
+        ProjectLockFile lockFile,
+        IFileSystem fileSystem
     )
     {
-        var ownership = new Dictionary<string, List<ManagedRootOwner>>(StringComparer.Ordinal);
+        var ownership = new Dictionary<string, List<ManagedRootOwner>>(
+            ProjectPath.ProjectRelativePathComparer(fileSystem)
+        );
         foreach (var root in FromLockFile(lockFile))
         {
             foreach (var file in root.Files)

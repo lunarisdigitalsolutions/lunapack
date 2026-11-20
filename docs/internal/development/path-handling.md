@@ -11,6 +11,13 @@ LunaPack accepts `/` and `\` in supported path input. Configuration,
 every operating system. Path identity comparisons use this slash-only form and
 use ordinal comparison.
 
+For absolute project identities persisted in user sidecars, canonicalization
+also resolves links and Windows aliases to the filesystem's final physical
+path. The serialized key uses that path's actual spelling and ordinal lookup
+then remains stable. Readers normalize legacy keys that point to an existing
+directory back to the final physical path in memory, while refusing duplicate
+physical identities.
+
 Do not add ad hoc separator replacement. `ProjectPath` in the CLI project owns
 the conversion contract.
 
@@ -52,6 +59,10 @@ normalization and inspects each existing path component below the workspace.
 Symbolic links, junctions, and other reparse points abort the operation. Shared
 transactions validate every action before the first mutation; direct move,
 uninstall, rollback, and state-restoration paths apply the same boundary.
+Read-only managed-file audit uses `ProjectFileReader` for the same project-root
+confinement and existing-alias checks before and after opening a target for
+hashing. Unsafe, inaccessible, or aliased targets are operation errors rather
+than content-integrity violations.
 
 Managed writes create a unique sibling file and move it over the destination.
 This gives a replaced hard-linked target a new file identity, preserving content

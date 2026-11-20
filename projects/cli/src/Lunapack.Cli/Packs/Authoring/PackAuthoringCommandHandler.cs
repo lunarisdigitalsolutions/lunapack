@@ -19,6 +19,7 @@ internal sealed class PackAuthoringCommandHandler(
     NextStepRenderer nextStepRenderer,
     CliConsole console,
     GitRefResolver? gitRefResolver,
+    GitTransportPolicy transportPolicy,
     PackAuthoringValidationService validationService
 )
 {
@@ -1210,6 +1211,7 @@ internal sealed class PackAuthoringCommandHandler(
 
             var externalValidation = await validationService.ValidateExternalSourcesAsync(
                 workspace,
+                workspace,
                 manifest,
                 parseResult.GetValue(allowHiddenCharactersOption)
             );
@@ -1608,7 +1610,10 @@ internal sealed class PackAuthoringCommandHandler(
             manifestOption,
         };
         command.SetAction(async parseResult =>
-            await AddPackSourceAsync(
+        {
+            var workspace = ResolveWorkspace(parseResult, projectDirectory, workspaceOption);
+            return await AddPackSourceAsync(
+                workspace,
                 ResolveManifestDirectory(
                     parseResult,
                     projectDirectory,
@@ -1621,8 +1626,8 @@ internal sealed class PackAuthoringCommandHandler(
                 parseResult.GetValue(refOption),
                 parseResult.GetValue(pathOption),
                 parseResult.GetValue(descriptionOption)
-            )
-        );
+            );
+        });
         return command;
     }
 
@@ -1641,6 +1646,7 @@ internal sealed class PackAuthoringCommandHandler(
     }
 
     private async Task<int> AddPackSourceAsync(
+        string projectDirectory,
         string manifestDirectory,
         string variant,
         string? alias,
@@ -1688,7 +1694,25 @@ internal sealed class PackAuthoringCommandHandler(
             return console.Fail(fingerprint.Error);
         }
 
-        var canonicalRef = await CanonicalizePackSourceRefAsync(repositoryUrl, gitRef);
+        var authorization = await transportPolicy.AuthorizeAsync(
+            projectDirectory,
+            repositoryUrl,
+            alias
+        );
+        if (!authorization.IsSuccess)
+        {
+            return console.Fail(
+                authorization.Error ?? $"Unable to authorize pack source '{alias}'."
+            );
+        }
+        var transportMode = authorization.Value;
+
+        var canonicalRef = await CanonicalizePackSourceRefAsync(
+            repositoryUrl,
+            gitRef,
+            transportMode,
+            alias
+        );
         if (canonicalRef.Value is not { } resolvedRef)
         {
             return console.Fail(canonicalRef.Error);
@@ -1735,7 +1759,9 @@ internal sealed class PackAuthoringCommandHandler(
 
     private async Task<ManifestOperationResult<string>> CanonicalizePackSourceRefAsync(
         string repositoryUrl,
-        string gitRef
+        string gitRef,
+        GitTransportMode transportMode,
+        string sourceName
     )
     {
         if (gitRefResolver is null)
@@ -1747,7 +1773,9 @@ internal sealed class PackAuthoringCommandHandler(
             repositoryUrl,
             gitRef,
             timeout: null,
-            CancellationToken.None
+            CancellationToken.None,
+            transportMode,
+            sourceName
         );
         return canonicalRef.Value is { } resolved
             ? ManifestOperationResult<string>.Success(resolved.CanonicalRef)

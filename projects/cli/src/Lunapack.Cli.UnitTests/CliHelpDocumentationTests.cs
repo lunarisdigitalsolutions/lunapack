@@ -116,7 +116,8 @@ public sealed class CliHelpDocumentationTests
             ]
         ),
         new("mv", "<source> <target>", ["--save-remap"]),
-        new("audit", null, ["--format"]),
+        new("audit", null, ["--strict", "--fail-fast", "--format"]),
+        new("hooks history", null, ["--limit"]),
     ];
 
     [Test]
@@ -160,6 +161,26 @@ public sealed class CliHelpDocumentationTests
         await Assert.That(documentation).DoesNotContain("luna pack add script");
         await Assert.That(documentation).DoesNotContain("luna pack rm script");
         await Assert.That(documentation).DoesNotContain("luna pack scripts");
+    }
+
+    [Test]
+    public async Task Scenario_LifecycleCommandsRequestHelp_DescribeRuntimeGuardrails()
+    {
+        foreach (var command in new[] { "install", "uninstall", "update" })
+        {
+            using var workspace = new TestWorkspace(ansiConsole: new SpectreTestConsole());
+            await using var output = new StringWriter();
+
+            var exitCode = await workspace.Application.RunAsync(
+                [command, "--help"],
+                workspace.Path,
+                output
+            );
+
+            await Assert.That(exitCode).IsEqualTo(0);
+            await Assert.That(output.ToString()).Contains("inherited environment names");
+            await Assert.That(output.ToString()).Contains("per-hook timeouts");
+        }
     }
 
     [Test]

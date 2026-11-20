@@ -85,4 +85,27 @@ public sealed class CliConsoleTests
 
         await Assert.That(ansiConsole.Output).IsEmpty();
     }
+
+    [Test]
+    public async Task Write_WhenMessageContainsTerminalControls_UsesVisibleEscapes()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        var console = new CliConsole(ansiConsole, CliLogLevel.Info);
+        const string unsafeText =
+            "before\u001b[2J\u0007\r\n\u2028\u2029\u202e\u200f\U0001F600\U000E0001after";
+
+        console.Info(unsafeText);
+        console.Warning(unsafeText);
+
+        await Assert.That(ansiConsole.Output).DoesNotContain("\u001b");
+        await Assert.That(ansiConsole.Output).DoesNotContain("\u0007");
+        await Assert.That(ansiConsole.Output).DoesNotContain("\r");
+        await Assert.That(ansiConsole.Output).DoesNotContain("\u2028");
+        await Assert.That(ansiConsole.Output).DoesNotContain("\u202e");
+        await Assert.That(ansiConsole.Output).Contains("u001b");
+        await Assert.That(ansiConsole.Output).Contains("u202e");
+        await Assert.That(ansiConsole.Output).Contains("\U0001F600");
+        await Assert.That(ansiConsole.Output).Contains("U000e0001");
+        await Assert.That(ansiConsole.Output).DoesNotContain("\U000E0001");
+    }
 }

@@ -56,6 +56,12 @@ internal sealed class CliPreferenceService(
                     userProject?.NextSteps?.Enabled,
                     global?.NextSteps?.Enabled,
                     defaultValue: true
+                ),
+                ResolveValue(
+                    local?.Git?.AllowInsecureTransport,
+                    userProject?.Git?.AllowInsecureTransport,
+                    global?.Git?.AllowInsecureTransport,
+                    defaultValue: false
                 )
             )
         );
@@ -286,9 +292,19 @@ internal sealed class CliPreferenceService(
                     ? new NextStepPreferences { Enabled = enabled }
                     : null,
             },
+            PreferenceKey.GitAllowInsecureTransport => updated with
+            {
+                Git = value is { } allowInsecureTransport
+                    ? new GitPreferences { AllowInsecureTransport = allowInsecureTransport }
+                    : null,
+            },
             _ => throw new ArgumentOutOfRangeException(nameof(key), key, null),
         };
-        return updated.Discover is null && updated.Search is null && updated.NextSteps is null
+        return
+            updated.Discover is null
+            && updated.Git is null
+            && updated.Search is null
+            && updated.NextSteps is null
             ? null
             : updated;
     }
@@ -302,6 +318,7 @@ internal sealed class CliPreferenceService(
     {
         var values = new List<KeyValuePair<string, bool>>();
         AddValue(values, "discover.only-composites", preferences?.Discover?.OnlyComposites);
+        AddValue(values, "git.allow-insecure-transport", preferences?.Git?.AllowInsecureTransport);
         AddValue(values, "next-steps.enabled", preferences?.NextSteps?.Enabled);
         AddValue(values, "search.only-composites", preferences?.Search?.OnlyComposites);
         return values;
@@ -321,6 +338,7 @@ internal sealed class CliPreferenceService(
             PreferenceKey.DiscoverOnlyComposites => preferences?.Discover?.OnlyComposites,
             PreferenceKey.SearchOnlyComposites => preferences?.Search?.OnlyComposites,
             PreferenceKey.NextStepsEnabled => preferences?.NextSteps?.Enabled,
+            PreferenceKey.GitAllowInsecureTransport => preferences?.Git?.AllowInsecureTransport,
             _ => throw new ArgumentOutOfRangeException(nameof(key), key, null),
         };
 
@@ -338,6 +356,7 @@ internal sealed class CliPreferenceService(
             "discover.only-composites" => PreferenceKey.DiscoverOnlyComposites,
             "search.only-composites" => PreferenceKey.SearchOnlyComposites,
             "next-steps.enabled" => PreferenceKey.NextStepsEnabled,
+            "git.allow-insecure-transport" => PreferenceKey.GitAllowInsecureTransport,
             _ => (PreferenceKey)(-1),
         };
         return Enum.IsDefined(preferenceKey);
@@ -349,6 +368,7 @@ internal sealed class CliPreferenceService(
             PreferenceKey.DiscoverOnlyComposites => "discover.only-composites",
             PreferenceKey.SearchOnlyComposites => "search.only-composites",
             PreferenceKey.NextStepsEnabled => "next-steps.enabled",
+            PreferenceKey.GitAllowInsecureTransport => "git.allow-insecure-transport",
             _ => throw new ArgumentOutOfRangeException(nameof(key), key, null),
         };
 
@@ -364,11 +384,13 @@ internal sealed class CliPreferenceService(
         DiscoverOnlyComposites,
         SearchOnlyComposites,
         NextStepsEnabled,
+        GitAllowInsecureTransport,
     }
 
     internal sealed record EffectivePreferences(
         bool DiscoverOnlyComposites,
         bool SearchOnlyComposites,
-        bool NextStepsEnabled
+        bool NextStepsEnabled,
+        bool AllowInsecureGitTransport
     );
 }

@@ -1,10 +1,15 @@
+using System.ComponentModel;
 using System.IO.Abstractions;
+using System.Runtime.InteropServices;
 using Lunapack.Cli.Application.CommandExecution;
 
 namespace Lunapack.Cli.Application.Paths;
 
 internal static class CanonicalProjectPath
 {
+    private const uint CreateFileOpenExisting = 3;
+    private const uint CreateFileFlagBackupSemantics = 0x02000000;
+
     public static ManifestOperationResult<string> Resolve(
         IFileSystem fileSystem,
         string projectDirectory
@@ -20,7 +25,11 @@ internal static class CanonicalProjectPath
                 );
             }
 
-            var physicalPath = ResolveLinks(fileSystem, fullPath);
+            var linkedPath = ResolveLinks(fileSystem, fullPath);
+            var physicalPath =
+                OperatingSystem.IsWindows() && fileSystem is FileSystem
+                    ? ResolveWindowsFinalPath(linkedPath)
+                    : linkedPath;
             return ManifestOperationResult<string>.Success(
                 ProjectPath.Normalize(fileSystem.Path.TrimEndingDirectorySeparator(physicalPath))
             );
@@ -31,6 +40,7 @@ internal static class CanonicalProjectPath
                         or UnauthorizedAccessException
                         or ArgumentException
                         or NotSupportedException
+                        or Win32Exception
             )
         {
             return ManifestOperationResult<string>.Failure(
@@ -69,4 +79,56 @@ internal static class CanonicalProjectPath
 
     private static bool IsReparsePoint(IFileSystem fileSystem, string path) =>
         fileSystem.File.GetAttributes(path).HasFlag(FileAttributes.ReparsePoint);
+
+    private static string ResolveWindowsFinalPath(string path)
+    {
+        using var handle = CanonicalProjectPathNativeMethods.CreateFile(
+            path,
+            desiredAccess: 0,
+            shareMode: FileShare.ReadWrite | FileShare.Delete,
+            securityAttributes: nint.Zero,
+            creationDisposition: CreateFileOpenExisting,
+            flagsAndAttributes: CreateFileFlagBackupSemantics,
+            templateFile: nint.Zero
+        );
+        var capacity = 512;
+        while (true)
+        {
+            var buffer = new char[capacity];
+            var length = CanonicalProjectPathNativeMethods.GetFinalPathNameByHandle(
+                handle,
+                buffer,
+                (uint)buffer.Length,
+                0
+            );
+            if (length == 0)
+            {
+                throw new Win32Exception(
+                    Marshal.GetLastWin32Error(),
+                    $"Unable to resolve the final path for '{path}'."
+                );
+            }
+
+            if (length < buffer.Length)
+            {
+                return StripWindowsNamespacePrefix(new string(buffer, 0, (int)length));
+            }
+
+            capacity = checked((int)length + 1);
+        }
+    }
+
+    private static string StripWindowsNamespacePrefix(string path)
+    {
+        const string ExtendedPathPrefix = @"\\?\";
+        const string ExtendedUncPrefix = @"\\?\UNC\";
+        if (path.StartsWith(ExtendedUncPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return @"\\" + path[ExtendedUncPrefix.Length..];
+        }
+
+        return path.StartsWith(ExtendedPathPrefix, StringComparison.OrdinalIgnoreCase)
+            ? path[ExtendedPathPrefix.Length..]
+            : path;
+    }
 }

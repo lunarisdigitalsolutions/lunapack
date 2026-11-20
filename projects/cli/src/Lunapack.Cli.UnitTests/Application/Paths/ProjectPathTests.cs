@@ -31,6 +31,7 @@ public sealed class ProjectPathTests
 
     [Test]
     [Arguments("")]
+    [Arguments("C:outside/file.md")]
     [Arguments(@"C:\outside\file.md")]
     [Arguments(@"..\outside\file.md")]
     [Arguments(@"..\workspace-copy\file.md")]

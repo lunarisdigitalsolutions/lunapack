@@ -7,8 +7,38 @@ pack-package, documentation, CI, build, test, and release-process changes.
 
 Update this section before creating a release tag.
 
+### Git Sources
+
+- Git operations now reject `http://` and `git://` sources by default. The
+  scope-wide `git.allow-insecure-transport` preference provides a warned
+  opt-in; opted-in HTTP operations skip Git credential helpers. Secure HTTPS
+  operations require certificate verification and a direct final URL because
+  redirects are disabled. Git URLs containing queries or fragments and
+  checkout smudge filters are rejected; option-like repository locations are
+  rejected before Git runs.
+
+### Lifecycle Hooks
+
+- Authorized scripts now warn with names of inherited environment variables
+  outside the effective allow-list. Warnings do not filter the child
+  environment. Each script hook now has a 300-second default timeout, with
+  optional project and user policy from 1 through 1,800 seconds; the shortest
+  configured timeout applies. Timeouts terminate the process tree and fail the
+  lifecycle operation, separately from caller cancellation.
+
 ### Added
 
+- `luna audit --strict` now verifies every pack- and link-managed target against
+  its locked SHA-256 digest. It returns `2` for missing or modified targets,
+  while invalid usage or unreadable state returns `1`; `--fail-fast` stops after
+  the first integrity violation. Strict reads remain inside the selected
+  workspace and reject symbolic-link or reparse-point paths. Strict audit uses
+  text output; combining `--strict` with `--format json` returns exit code `1`
+  with a JSON failure envelope.
+- `luna doctor` reports project-relevant Git, credential-store, state, and
+  profile/cache problems with remediation. Its default checks are offline;
+  `--network` enables bounded, noninteractive checks for configured Git and OCI
+  sources.
 - Install, update, local pack validation, and OCI publication now screen
   pack-managed UTF-8 text for hidden Unicode. Bidi controls and U+200B block
   before side effects unless `--allow-hidden-characters` is supplied; other
@@ -25,11 +55,24 @@ Update this section before creating a release tag.
   results include stable finding codes and severity counts.
 - `luna sbom` exports lock-derived dependency inventories as CycloneDX 1.6/1.7
   or SPDX 2.3/3.0.1 JSON, with optional safe project-relative file output.
+- Luna records bounded per-user lifecycle script attempt history and adds
+  `luna hooks history` for read-only inspection of recent commands, authorization
+  sources, durations, and outcomes. History persistence failures warn without
+  changing script results or rollback behavior.
 
 ### Fixed
 
+- Lifecycle consent always displays the pack ID, resolved command and arguments,
+  and optional description even when informational output is suppressed.
+- Canceling noninteractive lifecycle hooks no longer waits for detached
+  descendants that retain output handles. Unread output may be discarded.
+- Pack and link updates now preserve locally modified managed targets removed
+  from their next selection and warn that the files are no longer managed.
+  Pack updates support explicit deletion with `--remove-modified`.
 - Git links now fetch selected files missing from cached content using the
   resolved commit.
+- Luna resolves Git from trusted absolute `PATH` entries instead of a
+  same-directory executable, and rejects credential-bearing HTTP Git URLs.
 
 ## Version 1.6.0 - 2026-11-17
 

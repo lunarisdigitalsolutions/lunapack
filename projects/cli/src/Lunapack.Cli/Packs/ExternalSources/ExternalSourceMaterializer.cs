@@ -11,6 +11,7 @@ internal sealed class ExternalSourceMaterializer(
     IFileSystem fileSystem,
     IGitProcessRunner processRunner,
     GitRefResolver gitRefResolver,
+    GitTransportPolicy transportPolicy,
     IOperationSnapshotSecurity? snapshotSecurity = null
 )
 {
@@ -19,6 +20,7 @@ internal sealed class ExternalSourceMaterializer(
         snapshotSecurity ?? new OperationSnapshotSecurity();
 
     public async Task<ManifestOperationResult<ExternalSourceMaterialization>> MaterializeAsync(
+        string projectDirectory,
         ExternalSourceRequirementPlan plan,
         CancellationToken cancellationToken = default
     )
@@ -38,6 +40,7 @@ internal sealed class ExternalSourceMaterializer(
             foreach (var group in plan.Groups)
             {
                 var materializedGroup = await MaterializeGroupAsync(
+                    projectDirectory,
                     group,
                     workspace,
                     materialized,
@@ -101,16 +104,31 @@ internal sealed class ExternalSourceMaterializer(
         );
 
     private async Task<ManifestOperationResult<MaterializedGroup>> MaterializeGroupAsync(
+        string projectDirectory,
         ExternalSourceRequirementGroup group,
         string workspace,
         IDictionary<string, MaterializedRoot> materialized,
         CancellationToken cancellationToken
     )
     {
+        var authorization = await transportPolicy.AuthorizeAsync(
+            projectDirectory,
+            group.Source.Url,
+            group.WorkspaceSourceName
+        );
+        if (!authorization.IsSuccess)
+        {
+            return ManifestOperationResult<MaterializedGroup>.Failure(
+                authorization.Error ?? $"Unable to authorize source '{group.WorkspaceSourceName}'."
+            );
+        }
+        var transportMode = authorization.Value;
+
         var resolution = await gitRefResolver.ResolveAsync(
             group.Source,
             cachedDefaultBranch: null,
-            cancellationToken
+            cancellationToken,
+            transportMode
         );
         if (resolution.Value is not { } resolved)
         {
@@ -130,6 +148,7 @@ internal sealed class ExternalSourceMaterializer(
                 group,
                 resolved.ResolvedCommit,
                 gitWorkspace,
+                transportMode,
                 cancellationToken
             );
             if (result.Value is not { } createdRoot)
@@ -152,37 +171,22 @@ internal sealed class ExternalSourceMaterializer(
         ExternalSourceRequirementGroup group,
         string resolvedCommit,
         string workspace,
+        GitTransportMode transportMode,
         CancellationToken cancellationToken
     )
     {
         var timeout = TimeSpan.FromSeconds(group.Source.TimeoutSeconds ?? DefaultTimeoutSeconds);
-        fileSystem.Directory.CreateDirectory(workspace);
-        var commands = new[]
+        var preparationError = await PrepareWorkspaceAsync(
+            group,
+            resolvedCommit,
+            workspace,
+            timeout,
+            transportMode,
+            cancellationToken
+        );
+        if (preparationError is not null)
         {
-            new[] { "init", "--quiet", workspace },
-            ["-C", workspace, "remote", "add", "origin", group.Source.Url],
-            ["-C", workspace, "fetch", "--depth=1", "--filter=blob:none", "origin", resolvedCommit],
-            ["-C", workspace, "sparse-checkout", "init", "--no-cone"],
-            [
-                "-C",
-                workspace,
-                "sparse-checkout",
-                "set",
-                "--no-cone",
-                "--",
-                CreateSparsePattern(group.Source.Path),
-            ],
-            ["-C", workspace, "checkout", "--quiet", "--detach", "FETCH_HEAD"],
-        };
-        foreach (var command in commands)
-        {
-            var result = await processRunner.RunAsync(command, timeout, cancellationToken);
-            if (!result.IsSuccess)
-            {
-                return ManifestOperationResult<MaterializedRoot>.Failure(
-                    result.Error ?? "External source Git materialization failed."
-                );
-            }
+            return ManifestOperationResult<MaterializedRoot>.Failure(preparationError);
         }
 
         var root = GetContentRoot(workspace, group.Source.Path);
@@ -199,6 +203,84 @@ internal sealed class ExternalSourceMaterializer(
             : ManifestOperationResult<MaterializedRoot>.Failure(
                 containment.Error ?? "External source contains an unsafe symbolic link."
             );
+    }
+
+    private async Task<string?> PrepareWorkspaceAsync(
+        ExternalSourceRequirementGroup group,
+        string resolvedCommit,
+        string workspace,
+        TimeSpan timeout,
+        GitTransportMode transportMode,
+        CancellationToken cancellationToken
+    )
+    {
+        fileSystem.Directory.CreateDirectory(workspace);
+        var commands = new[]
+        {
+            (new[] { "init", "--quiet", workspace }, GitTransportMode.SecureOnly, (string?)null),
+            (
+                ["-C", workspace, "remote", "add", "--", "origin", group.Source.Url],
+                GitTransportMode.SecureOnly,
+                null
+            ),
+            (
+                new[]
+                {
+                    "-C",
+                    workspace,
+                    "fetch",
+                    "--depth=1",
+                    "--filter=blob:none",
+                    "origin",
+                    resolvedCommit,
+                },
+                transportMode,
+                group.Source.Url
+            ),
+            (
+                ["-C", workspace, "sparse-checkout", "init", "--no-cone"],
+                GitTransportMode.SecureOnly,
+                null
+            ),
+            (
+                [
+                    "-C",
+                    workspace,
+                    "sparse-checkout",
+                    "set",
+                    "--no-cone",
+                    "--",
+                    CreateSparsePattern(group.Source.Path),
+                ],
+                GitTransportMode.SecureOnly,
+                null
+            ),
+            (
+                new[] { "-C", workspace, "checkout", "--quiet", "--detach", "FETCH_HEAD" },
+                transportMode,
+                group.Source.Url
+            ),
+        };
+        foreach (var (command, commandTransportMode, repositoryUrl) in commands)
+        {
+            var result = await processRunner.RunAsync(
+                command,
+                timeout,
+                commandTransportMode,
+                repositoryUrl,
+                cancellationToken
+            );
+            if (!result.IsSuccess)
+            {
+                return GitSourceFailureFormatter.Format(
+                    group.WorkspaceSourceName,
+                    result.Error,
+                    "External source Git materialization failed."
+                );
+            }
+        }
+
+        return null;
     }
 
     private ManifestOperationResult<bool> ValidatePhysicalContainment(string root)

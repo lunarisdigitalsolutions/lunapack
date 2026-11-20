@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.IO.Abstractions.TestingHelpers;
+using Lunapack.Cli.Doctor;
 using Lunapack.Cli.Project;
 using SpectreTestConsole = Spectre.Console.Testing.TestConsole;
 
@@ -7,6 +8,57 @@ namespace Lunapack.Cli.UnitTests;
 
 public sealed class CliApplicationTests
 {
+    [Test]
+    public async Task Doctor_WhenNetworkOptionIsUsed_ForwardsSelectedWorkspace()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        var doctor = new RecordingDoctorService();
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole, doctorService: doctor);
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["doctor", "--network", "--workspace", "nested"],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(doctor.CheckNetwork).IsTrue();
+        await Assert
+            .That(doctor.ProjectDirectory)
+            .IsEqualTo(Path.Combine(workspace.Path, "nested"));
+        await Assert.That(ansiConsole.Output).Contains("[PASS] Environment");
+    }
+
+    [Test]
+    public async Task Doctor_WhenAResultIsBlocking_ReturnsNonZero()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        var doctor = new RecordingDoctorService(hasFailure: true);
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole, doctorService: doctor);
+
+        var exitCode = await workspace.Application.RunAsync(["doctor"], workspace.Path);
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(ansiConsole.Output).Contains("[FAIL] Environment");
+    }
+
+    [Test]
+    public async Task Doctor_WhenDiagnosticContainsControls_SanitizesOutput()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        var doctor = new RecordingDoctorService(
+            name: "unsafe\rname",
+            message: "first\n\u001b]0;secret\u0007"
+        );
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole, doctorService: doctor);
+
+        var exitCode = await workspace.Application.RunAsync(["doctor"], workspace.Path);
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(ansiConsole.Output).DoesNotContain("\u001b");
+        await Assert.That(ansiConsole.Output).Contains(@"\u000D");
+        await Assert.That(ansiConsole.Output).Contains(@"\u001B");
+    }
+
     [Test]
     public async Task Complete_WhenCommandLineIsPartial_ReturnsContextualSuggestions()
     {
@@ -1332,5 +1384,35 @@ public sealed class CliApplicationTests
         );
 
         await Assert.That(exitCode).IsEqualTo(1);
+    }
+
+    private sealed class RecordingDoctorService(
+        bool hasFailure = false,
+        string name = "Environment",
+        string message = "Checked."
+    ) : IDoctorService
+    {
+        public bool CheckNetwork { get; private set; }
+
+        public string? ProjectDirectory { get; private set; }
+
+        public Task<DoctorReport> InspectAsync(
+            string projectDirectory,
+            bool checkNetwork,
+            CancellationToken cancellationToken = default
+        )
+        {
+            ProjectDirectory = projectDirectory;
+            CheckNetwork = checkNetwork;
+            return Task.FromResult(
+                new DoctorReport([
+                    new DoctorCheckResult(
+                        name,
+                        hasFailure ? DoctorCheckStatus.Fail : DoctorCheckStatus.Pass,
+                        message
+                    ),
+                ])
+            );
+        }
     }
 }

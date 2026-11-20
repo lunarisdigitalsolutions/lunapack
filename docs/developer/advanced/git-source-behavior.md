@@ -80,25 +80,77 @@ Fetch depth, partial-clone filtering, sparse-checkout patterns, detached
 checkout, cache naming, and temporary roots are fixed. Source URL, `ref`,
 repository `path`, and `timeoutSeconds` are consumer-controlled.
 
+Before checkout, Luna resolves the effective Git `filter` attribute for every
+path in the selected commit and rejects any value that would run a smudge
+process. This includes nested attributes, inherited attribute files, attribute
+macros, and Git LFS. Store pack files as regular Git blobs; Luna does not follow
+external smudge endpoints during materialization. This check uses a temporary
+Git index and does not replace the index used for the actual checkout.
+
+## Require secure transport
+
+Luna rejects Git network operations that use `http://` or `git://` by default,
+before connecting to the remote. HTTPS, SSH, scp-style, and local repositories
+remain available. Git configuration that rewrites a secure source to `http`
+or `git` is blocked as well.
+
+To keep using a legacy plaintext source, set
+`git.allow-insecure-transport` to `true` with `luna config`. For example:
+
+```powershell
+luna config set git.allow-insecure-transport true --global
+```
+
+Use `--project` or `--user-project` for a narrower scope. Project settings
+override user-project settings, which override global settings; an explicit
+`false` blocks plaintext transports even when a broader scope enables them.
+The value applies to all insecure Git sources in its effective scope, not one
+source. Luna warns once for each opted-in insecure source used during a CLI
+operation. Prefer switching the source to HTTPS or SSH, then remove the
+preference or set it to `false`.
+
+Luna resolves Git `url.*.insteadOf` rules without contacting the remote, then
+applies its HTTPS policy to the resulting URL. It requires certificate
+verification and disables redirects for every secure HTTPS operation, including
+an HTTPS-to-HTTPS rewrite. `GIT_SSL_NO_VERIFY` and URL-specific
+`http.sslVerify=false` cannot disable verification. If inherited Git
+configuration would override the enforced redirect or certificate setting, Luna
+fails before network access.
+
+A remote that redirects, including to another HTTPS URL, will fail; configure
+its final HTTPS URL instead. This prevents an HTTPS source from redirecting to
+plaintext HTTP.
+
 ## Authenticate through Git
 
 Luna starts the `git` executable directly. It does not add authorization
 headers, implement login or token refresh, choose a credential helper, or keep a
 separate credential store. Git selects authentication from the source URL and
 available user or process configuration, including HTTPS credential helpers,
-SSH configuration and agents, and environment-based Git settings.
+SSH configuration and agents, and environment-based Git settings. For an
+opted-in `http://` source, Luna disables configured Git credential helpers.
+This does not remove credentials embedded in a URL or credentials supplied by
+`http.extraHeader` or proxy configuration. Do not use plaintext HTTP for private
+repositories.
 
 A full Git source can use an HTTPS, SSH, scp-style, or absolute local repository
-URL. GitHub shorthand is converted to an HTTPS URL, so it follows HTTPS rather
-than SSH authentication. Test access with the same operating-system user and
-environment that will invoke Luna. Unattended jobs must configure
-noninteractive Git authentication before running Luna.
+URL without a query or fragment. UNC paths and hosted `file://` locations are
+not supported. GitHub shorthand is converted to an HTTPS URL, so it follows
+HTTPS rather than SSH authentication. Test access with the same
+operating-system user and environment that will invoke Luna. Unattended jobs
+must configure noninteractive Git authentication before running Luna.
 
-Luna captures bounded Git standard output and error output and reports Git
-failures. Those diagnostics can contain private URLs, usernames, paths, or
-credential-helper messages. Never put secrets in source URLs, manifests,
-command arguments, or committed project state, and redact diagnostics before
-sharing them.
+Repository locations cannot begin with `-` or contain leading or trailing
+whitespace. HTTPS locations cannot contain raw backslashes. Luna validates
+scp-style user and host syntax before running Git so a source cannot be
+interpreted as a Git command option. Git remote-helper syntax, such as
+`ext::command`, is not supported.
+
+Luna captures bounded Git output and reports curated guidance for failed
+commands instead of echoing raw Git errors. Git configuration and external
+process tracing can still expose credentials. Avoid secrets in source URLs,
+manifests, command arguments, or committed project state, and redact captured
+logs before sharing them.
 
 See [Add a pack source](../sources.md) for setup,
 [Automation](../automation.md) for CI isolation, and the

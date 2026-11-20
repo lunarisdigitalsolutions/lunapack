@@ -7,6 +7,8 @@ using Lunapack.Cli.Packs.Manifest;
 using Lunapack.Cli.Packs.Planning;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources.Git;
+using Lunapack.Cli.Trust;
+using Lunapack.Cli.UnitTests.TestSupport;
 
 namespace Lunapack.Cli.UnitTests.Packs.ExternalSources;
 
@@ -545,7 +547,18 @@ public sealed class ExternalPackLifecycleTests
     {
         var console = configuredConsole ?? TestConsole.Create();
         var refResolver = new GitRefResolver(runner);
-        var packCatalog = new PackCatalog(workspace.FileSystem, console, runner);
+        var transportPolicy = TestGitTransportPolicy.Create(
+            workspace.FileSystem,
+            workspace.UserSettingsStore,
+            console
+        );
+        var packCatalog = new PackCatalog(
+            workspace.FileSystem,
+            console,
+            runner,
+            workspace.UserSettingsStore,
+            transportPolicy: transportPolicy
+        );
         return new PackLifecycleService(
             workspace.FileSystem,
             new CompositePackGraphResolver(packCatalog),
@@ -557,20 +570,28 @@ public sealed class ExternalPackLifecycleTests
             new PackUpdateTransaction(workspace.FileSystem, console),
             stateStore,
             console,
+            transportPolicy,
             configuredGitPackMaterializer: new GitPackMaterializer(
                 workspace.FileSystem,
                 runner,
-                TestConsole.Create()
+                console,
+                transportPolicy
             ),
             configuredExternalSourceRequirementPlanner: new ExternalSourceRequirementPlanner(
-                refResolver
+                refResolver,
+                transportPolicy
             ),
             configuredExternalSourceMaterializer: new ExternalSourceMaterializer(
                 workspace.FileSystem,
                 runner,
-                refResolver
+                refResolver,
+                transportPolicy
             ),
-            configuredExternalSourceConsentCoordinator: consentCoordinator
+            configuredExternalSourceConsentCoordinator: consentCoordinator,
+            configuredHookPolicyStore: new LifecycleHookPolicyStore(
+                workspace.FileSystem,
+                workspace.UserSettingsStore.SettingsDirectory
+            )
         );
     }
 

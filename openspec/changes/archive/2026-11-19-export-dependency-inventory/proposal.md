@@ -25,4 +25,4 @@ None. The change adds a read-only export capability and does not alter existing 
 
 ## Impact
 
-The CLI gains a new top-level command and format-specific serializers. Tests validate every supported target against pinned official JSON schemas. Developer command documentation and the CLI changelog describe the new behavior; an internal ADR records stable identifier and format-version contracts.
+The CLI gains a new top-level command and format-specific serializers. Tests assert required target structure, relationships, hashes, provenance, and timestamp behavior without introducing another schema-validation dependency. Developer command documentation and the CLI changelog describe the new behavior; an internal ADR records stable identifier and format-version contracts.

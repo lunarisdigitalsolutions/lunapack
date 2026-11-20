@@ -14,6 +14,7 @@ using Lunapack.Cli.Sources;
 using Lunapack.Cli.Sources.Git;
 using Lunapack.Cli.Sources.Oci;
 using Lunapack.Cli.Trust;
+using Lunapack.Cli.UnitTests.TestSupport;
 
 namespace Lunapack.Cli.UnitTests.Sources.Oci;
 
@@ -568,13 +569,15 @@ public sealed class OciPackPublisherTests
     {
         var gitRunner = new StubGitProcessRunner();
         var gitRefResolver = new GitRefResolver(gitRunner);
+        var transportPolicy = TestGitTransportPolicy.Create(fileSystem);
         var authoringValidationService = new PackAuthoringValidationService(
             fileSystem,
-            new ExternalSourceRequirementPlanner(gitRefResolver),
+            new ExternalSourceRequirementPlanner(gitRefResolver, transportPolicy),
             new ExternalSourceMaterializer(
                 fileSystem,
                 gitRunner,
                 gitRefResolver,
+                transportPolicy,
                 new NoOpOperationSnapshotSecurity()
             ),
             new PackInstallationPlanner(fileSystem, new PackTemplateRenderer(fileSystem)),
@@ -674,7 +677,9 @@ public sealed class OciPackPublisherTests
             new PackUpdatePlanner(fileSystem),
             new PackUpdateTransaction(fileSystem, console),
             stateStore,
-            console
+            console,
+            TestGitTransportPolicy.Create(fileSystem),
+            new LifecycleHookPolicyStore(fileSystem, @"C:\profile\.lunapack")
         );
 
     private static OciSourceCredentialCoordinator CreateCoordinator(

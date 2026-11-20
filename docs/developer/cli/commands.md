@@ -91,6 +91,43 @@ suggestions even when the shell strips trailing whitespace or reports a cursor
 position beyond the rendered command line. Command containers return no value
 suggestions until an argument-taking command or option is selected.
 
+## Diagnose The Environment
+
+`luna doctor` checks the selected workspace without repairing or initializing
+it. Each result is `PASS`, `FAIL`, or `INFO` and includes remediation when an
+action can resolve the problem. The default checks are local: Git availability,
+native credential-store support, project and lock state, user settings,
+source-ignore state, and existing profile/cache directories. Luna never creates
+missing profile or cache directories during these checks. It may create and
+immediately remove one unique empty probe file in each existing profile/cache
+directory to verify write access.
+
+Use `luna doctor --network` to opt in to configured Git and OCI source checks.
+Local and locally ignored sources are not contacted. Each source has a
+five-second budget, and the complete network phase stops after 20 seconds.
+Git probes use an isolated command configuration with no terminal or
+credential-helper prompt, inherited header, or unqualified SSH helper. If a
+pack is already locked to an OCI source, the probe checks that configured
+repository; otherwise it checks the registry endpoint. OCI probes never
+prompt, save, or remove credentials and do not follow redirects. Windows can
+safely read an existing source-bound registry credential for the probe. On
+macOS and Linux, Luna does not open the native credential store for doctor;
+anonymous access and an existing noninteractive Azure identity remain
+available.
+
+The command exits non-zero only when a reported failure blocks an operation
+configured for the selected project. An unavailable prerequisite that no
+configured operation needs is informational. Authentication that was
+deliberately not attempted, such as a private Git HTTPS source requiring a
+credential helper, is also informational rather than a false blocking failure.
+Project configuration, lock state, user settings, source-ignore state, and
+credentials remain unchanged.
+
+```powershell
+luna doctor
+luna doctor --network --workspace ../another-project
+```
+
 ## Project And Sources
 
 - `luna init`: Creates version-1 `lunapack.yml` and `lunapack-lock.yml` with
@@ -296,11 +333,21 @@ includes the registry reference and verified manifest digest. There are no
   managed files below a directory and updates lock ownership. If files were
   moved manually, it can rebind ownership when only the targets exist.
   `--save-remap` also records the move as a reusable project mapping.
-- `luna audit [--format text|json]`: Reports resolved packs, dependencies,
+- `luna audit [--strict] [--fail-fast] [--format text|json]`: Reports resolved packs, dependencies,
   external alias mappings, fingerprints, refs, commits, source and target
   paths, ownership, digests, and drift or local-modification status. It also
   reports hidden Unicode in existing managed targets without changing files or
-  state.
+  state. `--strict` instead reports the locked integrity status for every pack- and link-managed
+  target. It returns `0` when every target matches, `2` for one or more missing
+  or modified targets, and `1` for invalid usage or unreadable project or target
+  state, including unsafe or filesystem-aliased lock paths. `--fail-fast`
+  requires `--strict` and stops after the first integrity violation. Without
+  `--strict`, findings remain report-only.
+  `--format json` applies to report-only audit. Combining it with `--strict`
+  returns exit code `1` and a JSON failure envelope.
+- `luna hooks history [--limit <count>]`: Shows recent local lifecycle script
+  attempts newest first. It is read-only, displays 20 entries by default, and
+  accepts limits from 1 through 100.
 
 ## Machine-readable command output
 
@@ -362,7 +409,7 @@ configured update source and locked OCI release check completes. `--offline`
 sets it to false.
 
 Within schema version 1, added fields and finding codes are compatible.
-Renaming or removing a field or code, or changing its type or meaning, requires
+renaming or removing a field or code, or changing its type or meaning, requires
 a new schema version. Do not parse human-readable `message` wording as a stable
 identifier, and do not infer process success from a finding's severity: exit
 behavior remains command-specific.
@@ -426,8 +473,8 @@ Dry runs group release selection, external sources, managed-file changes, and
 lifecycle work into labeled sections with ASCII action prefixes. Lifecycle
 script rows identify whether policy, `--scripts`, persisted trust, or interactive
 confirmation determines consent. Already locked source identities are not
-repeated as lifecycle actions. Successful installs and updates list each
-created, copied, replaced, merged, skipped, or deleted managed file by default.
+repeated as lifecycle actions. Successful installs and updates list each created, copied, replaced, merged,
+skipped, preserved, or deleted managed file by default.
 When the selected pack ID and version are available from multiple configured
 sources, install and update output identifies the selected source name and type.
 Pass `--no-file-change-output` to either command to suppress that success output;
@@ -453,8 +500,8 @@ effective target.
 `update` accepts `--dry-run` (`-D`), repeatable `--parameter`,
 `--prompt-parameters`, `--skip-parameters`, `--no-variables` (`-nv`), repeatable
 `--skip-variable` (`-sv`), repeatable `--remap-directory` and `--remap-file`,
-and `--save-remap`; update-all also accepts `--prompt` (`-p`). Unlike install,
-update reserves `-p` for update selection, so parameter values require the long
+`--save-remap`, and `--remove-modified`; update-all also accepts `--prompt`
+(`-p`). Unlike install, update reserves `-p` for update selection, so parameter values require the long
 `--parameter` form. Install and
 update dry runs prompt for every configurable parameter on an active graph path
 before planning. Add `--skip-parameters` to a dry run for noninteractive
@@ -503,14 +550,36 @@ relocate matching managed targets during that update. `--save-remap` persists
 provided mappings on that installed root and requires at least one remapping.
 Update keeps the installed destination and ownership, so `--destination` and
 `--adopt-existing` remain install-only.
+When an updated graph no longer declares a managed target, unchanged targets
+are deleted and modified targets are preserved by default, warned about, and
+removed from lock ownership. `--remove-modified` explicitly deletes those
+modified obsolete targets. It never overrides a strategy for a target still
+declared by the new graph, and named link updates reject the option. Dry runs
+label both preservation and forced deletion. Luna aborts the transaction if a
+target changes after planning.
 Both install and update accept `--accept-sources` for conflict-free proposed
 source additions. `install`, `update`, and `uninstall` accept
 `--scripts <prompt|run|skip>`; `prompt` is the default and requires effective
 trust or interactive consent for each script hook. Interactive consent defaults
-to no. Use `--skip-instructions` to suppress instruction loading and display
+to no. Authorized scripts report inherited environment variable names outside
+the configured allow-list and run with a per-hook timeout. Use
+`--skip-instructions` to suppress instruction loading and display
 without changing script consent behavior. Uninstall also accepts repeatable
 `--parameter` (`-p`), `--no-variables` (`-nv`), and repeatable
 `--skip-variable` (`-sv`) inputs.
+`--dry-run` and `--remove-modified` are pack-update options. Named link updates
+reject either option before changing files or state.
+
+Lifecycle history is stored per user in
+`~/.lunapack/lifecycle-hook-history.jsonl` with at most 100 entries. It records
+script start failures, cancellations, exits, authorization provenance, and
+sanitized arguments, but not instructions, skipped hooks, project paths,
+environment values, or output. `luna hooks history` never creates or changes
+the file. Delete it manually to clear history. Missing history is empty;
+unreadable or corrupt history returns a failure. See
+[Use lifecycle hooks](../lifecycle-hooks.md#inspect-local-script-history) for
+recorded fields and best-effort redaction limitations.
+
 Repeat `--parameter <name>=<value>` for each selected value of a multi-select
 enum. Repeated scalar names and duplicate or unknown selections are rejected.
 Interactive sessions show one prepared instruction step at a time and wait for
