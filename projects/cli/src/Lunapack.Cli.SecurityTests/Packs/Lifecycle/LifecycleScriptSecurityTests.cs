@@ -73,6 +73,41 @@ public sealed class LifecycleScriptSecurityTests
     }
 
     [Test]
+    public Task Confirm_WhenMinimumLogLevelIsWarning_StillShowsConsentDetails() =>
+        AssertConsentDetailsAsync(CliLogLevel.Warning);
+
+    [Test]
+    public Task Confirm_WhenMinimumLogLevelIsError_StillShowsConsentDetails() =>
+        AssertConsentDetailsAsync(CliLogLevel.Error);
+
+    private static async Task AssertConsentDetailsAsync(CliLogLevel minimumLevel)
+    {
+        const string commandArgument = "--required";
+        const string description = "Review this lifecycle hook.";
+        var invocation = CreateInvocation([commandArgument], description);
+        var output = new StringWriter();
+        var ansiConsole = AnsiConsole.Create(
+            new AnsiConsoleSettings
+            {
+                Ansi = AnsiSupport.No,
+                ColorSystem = ColorSystemSupport.NoColors,
+                Interactive = InteractionSupport.No,
+                Out = new AnsiConsoleOutput(output),
+            }
+        );
+
+        new ConsoleLifecycleHookConfirmer(new CliConsole(ansiConsole, minimumLevel)).Confirm(
+            invocation
+        );
+        var rendered = output.ToString();
+
+        await Assert.That(rendered).Contains("example");
+        await Assert.That(rendered).Contains("executable");
+        await Assert.That(rendered).Contains(commandArgument);
+        await Assert.That(rendered).Contains(description);
+    }
+
+    [Test]
     public async Task LoadAsync_WhenHistoryFileIsSymbolicLink_RejectsAliasedPath()
     {
         var root = Path.Combine(Path.GetTempPath(), $"lunapack-history-{Guid.NewGuid():N}");

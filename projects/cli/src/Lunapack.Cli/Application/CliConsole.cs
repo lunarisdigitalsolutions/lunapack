@@ -67,12 +67,16 @@ internal sealed class CliConsole(
         bool defaultValue = true
     )
     {
+        WriteDetails(details);
+        return Confirm(prompt, defaultValue);
+    }
+
+    public void WriteDetails(IEnumerable<string> details)
+    {
         foreach (var detail in details)
         {
             ansiConsole.WriteLine(Sanitize(detail));
         }
-
-        return Confirm(prompt, defaultValue);
     }
 
     public bool WaitForContinue()

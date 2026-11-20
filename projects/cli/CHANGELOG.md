@@ -34,6 +34,10 @@ Update this section before creating a release tag.
 
 ### Fixed
 
+- Lifecycle consent always displays the pack ID, resolved command and arguments,
+  and optional description even when informational output is suppressed.
+- Canceling noninteractive lifecycle hooks no longer waits for detached
+  descendants that retain output handles. Unread output may be discarded.
 - Pack and link updates now preserve locally modified managed targets removed
   from their next selection and warn that the files are no longer managed.
   Pack updates support explicit deletion with `--remove-modified`.

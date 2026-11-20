@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO.Abstractions;
 using Lunapack.Cli.Application;
 using Lunapack.Cli.Catalog;
@@ -63,6 +64,75 @@ public sealed class LifecycleHookExecutorTests
         await Assert.That(result.Error).Contains("canceled");
         await Assert.That(entry.Outcome).IsEqualTo("canceled");
         await Assert.That(entry.ExitCode).IsNotNull();
+    }
+
+    [Test]
+    public async Task ExecuteAsync_WhenCanceledAndDetachedDescendantRetainsOutput_ReturnsPromptly()
+    {
+        const string pythonExecutable = "/usr/bin/python3";
+        if (!OperatingSystem.IsLinux() || !File.Exists(pythonExecutable))
+        {
+            Skip.Test("This regression test requires Linux and /usr/bin/python3.");
+        }
+
+        using var workspace = new TestWorkspace();
+        var scriptPath = Path.Combine(workspace.Path, "detached-output.py");
+        var readyPath = scriptPath + ".ready";
+        await File.WriteAllTextAsync(
+            scriptPath,
+            """
+            import os
+            import pathlib
+            import time
+
+            first_child = os.fork()
+            if first_child == 0:
+                os.setsid()
+                second_child = os.fork()
+                if second_child > 0:
+                    os._exit(0)
+                pathlib.Path(__file__ + ".ready").write_text("ready")
+                print("detached child output", flush=True)
+                time.sleep(4)
+                os._exit(0)
+
+            os.waitpid(first_child, 0)
+            time.sleep(30)
+            """
+        );
+        using var cancellation = new CancellationTokenSource();
+        var execution = CreateExecutor()
+            .ExecuteAsync(
+                workspace.Path,
+                CreateInvocationWithExecutable(pythonExecutable, scriptPath),
+                cancellation.Token
+            );
+        var setup = Stopwatch.StartNew();
+        while (
+            !File.Exists(readyPath)
+            && !execution.IsCompleted
+            && setup.Elapsed < TimeSpan.FromSeconds(5)
+        )
+        {
+            await Task.Delay(10);
+        }
+
+        if (!File.Exists(readyPath))
+        {
+            cancellation.Cancel();
+            await execution;
+            await Assert.That(File.Exists(readyPath)).IsTrue();
+            return;
+        }
+
+        var canceled = Stopwatch.StartNew();
+        cancellation.Cancel();
+        var result = await execution;
+        canceled.Stop();
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("canceled");
+        await Assert.That(canceled.Elapsed < TimeSpan.FromSeconds(3)).IsTrue();
     }
 
     [Test]

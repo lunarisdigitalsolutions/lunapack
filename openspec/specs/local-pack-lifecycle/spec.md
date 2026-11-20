@@ -1311,6 +1311,21 @@ LunaPack SHALL start each authorized command as the declared executable with its
 - **WHEN** the declared executable cannot be started
 - **THEN** LunaPack reports the hook and pack ID and returns a non-success result
 
+### Requirement: Complete canceled lifecycle hooks without waiting for detached output handles
+
+When cancellation stops a lifecycle hook, LunaPack SHALL cancel and close
+redirected output readers after stopping the process tree. Output already
+captured SHALL remain eligible for normal CLI rendering. LunaPack SHALL NOT wait
+for detached descendants that retain inherited redirected output handles.
+
+#### Scenario: Cancel while a detached descendant retains output
+
+- **WHEN** a lifecycle hook is canceled after a detached descendant inherits a
+  redirected output handle
+- **THEN** LunaPack stops the hook process tree, closes redirected readers,
+  records the canceled outcome, and completes without waiting for the
+  descendant to exit
+
 ### Requirement: Apply transient lifecycle suppression
 
 Every resolved transient pack SHALL participate in lifecycle planning and execute the same install or update hooks as a directly requested pack unless its incoming composite references suppress those lifecycle types. Suppression SHALL be expressed by lifecycle type, not script name. When the same transient pack is reachable through multiple references, LunaPack SHALL suppress the union of every incoming `disabledHooks` collection. Suppression on a transient reference SHALL not suppress hooks when that pack is also a directly requested root.
@@ -1651,6 +1666,19 @@ sidecar.
 
 - **WHEN** a user removes the history sidecar and runs `luna hooks history`
 - **THEN** Luna reports an empty history without recreating the sidecar
+
+### Requirement: Show complete lifecycle consent details
+
+Before requesting script authorization, LunaPack SHALL display the pack ID,
+resolved command and arguments, and optional script description, regardless of
+the minimum log level.
+
+#### Scenario: Keep consent details visible with restricted logging
+
+- **WHEN** a lifecycle script requests consent while the minimum log level is
+  warning or error
+- **THEN** LunaPack displays the pack ID, resolved command and arguments, and
+  optional description before confirmation
 
 ### Requirement: Render lifecycle commands and history safely
 

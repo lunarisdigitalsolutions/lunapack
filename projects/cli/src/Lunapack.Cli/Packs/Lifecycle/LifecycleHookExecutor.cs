@@ -67,11 +67,12 @@ internal sealed class LifecycleHookExecutor(
             return startFailure;
         }
 
+        using var outputReadCancellation = new CancellationTokenSource();
         var standardOutput = process.StartInfo.RedirectStandardOutput
-            ? ReadBoundedAsync(process.StandardOutput)
+            ? ReadBoundedAsync(process.StandardOutput, outputReadCancellation.Token)
             : Task.FromResult(string.Empty);
         var standardError = process.StartInfo.RedirectStandardError
-            ? ReadBoundedAsync(process.StandardError)
+            ? ReadBoundedAsync(process.StandardError, outputReadCancellation.Token)
             : Task.FromResult(string.Empty);
         try
         {
@@ -83,6 +84,7 @@ internal sealed class LifecycleHookExecutor(
                 process,
                 standardOutput,
                 standardError,
+                outputReadCancellation,
                 projectDirectory,
                 invocation,
                 timestamp,
@@ -144,6 +146,7 @@ internal sealed class LifecycleHookExecutor(
         Process process,
         Task<string> standardOutput,
         Task<string> standardError,
+        CancellationTokenSource outputReadCancellation,
         string projectDirectory,
         ResolvedLifecycleHookInvocation invocation,
         DateTimeOffset timestamp,
@@ -151,6 +154,8 @@ internal sealed class LifecycleHookExecutor(
     )
     {
         await StopAsync(process);
+        outputReadCancellation.Cancel();
+        CloseRedirectedOutput(process);
         await WriteOutputAsync(standardOutput, standardError);
         return await CompleteAttemptAsync(
             projectDirectory,
@@ -262,19 +267,52 @@ internal sealed class LifecycleHookExecutor(
         WriteOutput(await standardError, isError: true);
     }
 
-    private static async Task<string> ReadBoundedAsync(StreamReader reader)
+    private static async Task<string> ReadBoundedAsync(
+        StreamReader reader,
+        CancellationToken cancellationToken
+    )
     {
         var buffer = new char[4096];
         var output = new StringBuilder(MaximumOutputCharacters);
         while (true)
         {
-            var read = await reader.ReadAsync(buffer.AsMemory());
+            int read;
+            try
+            {
+                read = await reader.ReadAsync(buffer.AsMemory(), cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return output.ToString();
+            }
+            catch (IOException) when (cancellationToken.IsCancellationRequested)
+            {
+                return output.ToString();
+            }
+            catch (ObjectDisposedException) when (cancellationToken.IsCancellationRequested)
+            {
+                return output.ToString();
+            }
+
             if (read == 0)
             {
                 return output.ToString();
             }
 
             output.Append(buffer, 0, Math.Min(read, MaximumOutputCharacters - output.Length));
+        }
+    }
+
+    private static void CloseRedirectedOutput(Process process)
+    {
+        if (process.StartInfo.RedirectStandardOutput)
+        {
+            process.StandardOutput.Dispose();
+        }
+
+        if (process.StartInfo.RedirectStandardError)
+        {
+            process.StandardError.Dispose();
         }
     }
 
