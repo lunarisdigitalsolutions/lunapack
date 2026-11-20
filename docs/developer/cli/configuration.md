@@ -86,15 +86,18 @@ for the policy fields, defaults, and precedence.
 Use `luna config` to set, list, or remove Boolean preferences. Supported keys
 are:
 
-| Key                        | Built-in default | Effect                                           |
-| -------------------------- | ---------------- | ------------------------------------------------ |
-| `discover.only-composites` | `false`          | Show only composite packs in `luna discover`.    |
-| `search.only-composites`   | `false`          | Show only composite packs in `luna search`.      |
-| `next-steps.enabled`       | `true`           | Show contextual next-step and recovery guidance. |
+| Key                            | Built-in default | Effect                                           |
+| ------------------------------ | ---------------- | ------------------------------------------------ |
+| `discover.only-composites`     | `false`          | Show only composite packs in `luna discover`.    |
+| `git.allow-insecure-transport` | `false`          | Allow `http://` and `git://` Git sources.        |
+| `search.only-composites`       | `false`          | Show only composite packs in `luna search`.      |
+| `next-steps.enabled`           | `true`           | Show contextual next-step and recovery guidance. |
 
 ```powershell
 luna config set discover.only-composites true --project
 luna config set next-steps.enabled false --user-project
+luna config set git.allow-insecure-transport true --global
+luna config set git.allow-insecure-transport false --project
 luna config list --global
 luna config remove discover.only-composites --project
 ```
@@ -106,6 +109,8 @@ values go in `lunapack.yml`:
 preferences:
   discover:
     onlyComposites: true
+  git:
+    allowInsecureTransport: true
   nextSteps:
     enabled: false
 ```
@@ -126,7 +131,12 @@ scope has no value for that key.
 
 For each key, Luna selects the first configured value from project-local,
 user-project, and global settings, then uses the built-in default. An explicit
-`false` overrides less-specific `true` values. `--only-composites` enables the
-composite filter for one discover or search invocation; it does not disable a
-filter already enabled by settings. `--suppress-next-steps` always suppresses
-guidance for the current invocation.
+`false` overrides less-specific `true` values. `git.allow-insecure-transport`
+applies to every `http://` and `git://` Git source in its selected scope; it is
+not a per-source allowlist. Prefer HTTPS or SSH. See
+[Git source behavior](../advanced/git-source-behavior.md#require-secure-transport)
+for transport warnings, credential limits, and redirect behavior.
+
+`--only-composites` enables the composite filter for one discover or search
+invocation; it does not disable a filter already enabled by settings.
+`--suppress-next-steps` always suppresses guidance for the current invocation.

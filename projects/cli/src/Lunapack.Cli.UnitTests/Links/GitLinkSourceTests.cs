@@ -5,6 +5,7 @@ using Lunapack.Cli.Links;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources;
 using Lunapack.Cli.Sources.Git;
+using Lunapack.Cli.UnitTests.TestSupport;
 
 namespace Lunapack.Cli.UnitTests.Links;
 
@@ -161,7 +162,8 @@ public sealed class GitLinkSourceTests
             fileSystem,
             runner,
             new GitRefResolver(runner),
-            cache
+            cache,
+            TestGitTransportPolicy.Create(fileSystem)
         );
 
         using var listing = (
@@ -200,7 +202,8 @@ public sealed class GitLinkSourceTests
             fileSystem,
             runner,
             new GitRefResolver(runner),
-            cache
+            cache,
+            TestGitTransportPolicy.Create(fileSystem)
         );
         using var listing = (
             await provider.ListAsync(
@@ -226,6 +229,32 @@ public sealed class GitLinkSourceTests
             .That(Encoding.UTF8.GetString(workspace.Read(snapshots["agents/a.md"])))
             .IsEqualTo("agent");
         await Assert.That(runner.Invocations.Count).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task MaterializeAsync_WhenBlobIsMissing_PassesSourceUrlToLazyCheckout()
+    {
+        var fileSystem = new MockFileSystem();
+        var runner = new ScriptedGitProcessRunner();
+        var provider = CreateProvider(fileSystem, runner);
+        var source = CreateSource();
+        using var listing = (
+            await provider.ListAsync("/project", source, CreateLink(), null, CancellationToken.None)
+        ).RequireValue();
+        using var workspace = LinkOperationWorkspace.Create(fileSystem);
+
+        await provider.MaterializeAsync(
+            listing,
+            ["agents/a.md"],
+            workspace,
+            CancellationToken.None
+        );
+        var checkout = runner.Calls.Single(call =>
+            call.Arguments.Contains("checkout", StringComparer.Ordinal)
+        );
+
+        await Assert.That(checkout.RepositoryUrl).IsEqualTo(source.Url);
+        await Assert.That(checkout.TransportMode).IsEqualTo(GitTransportMode.SecureOnly);
     }
 
     [Test]
@@ -407,7 +436,8 @@ public sealed class GitLinkSourceTests
             fileSystem,
             runner,
             new GitRefResolver(runner),
-            new GitLinkCache(fileSystem, "/cache/sources")
+            new GitLinkCache(fileSystem, "/cache/sources"),
+            TestGitTransportPolicy.Create(fileSystem)
         );
 
     private static ProjectConfiguration.GitSource CreateSource() =>
@@ -429,6 +459,8 @@ public sealed class GitLinkSourceTests
 
     private sealed class ScriptedGitProcessRunner : IGitProcessRunner
     {
+        public List<GitInvocation> Calls { get; } = [];
+
         public List<CancellationToken> CancellationTokens { get; } = [];
 
         public bool FetchSucceeds { get; init; } = true;
@@ -442,6 +474,24 @@ public sealed class GitLinkSourceTests
         public string TreeOutput { get; init; } = $"100644 blob {AgentBlobId}\tagents/a.md";
 
         public Task<ManifestOperationResult<GitProcessOutput>> RunAsync(
+            IReadOnlyList<string> arguments,
+            TimeSpan timeout,
+            CancellationToken cancellationToken
+        ) => ExecuteAsync(arguments, timeout, cancellationToken);
+
+        public Task<ManifestOperationResult<GitProcessOutput>> RunAsync(
+            IReadOnlyList<string> arguments,
+            TimeSpan timeout,
+            GitTransportMode transportMode,
+            string? repositoryUrl,
+            CancellationToken cancellationToken
+        )
+        {
+            Calls.Add(new GitInvocation(arguments, transportMode, repositoryUrl));
+            return ExecuteAsync(arguments, timeout, cancellationToken);
+        }
+
+        private Task<ManifestOperationResult<GitProcessOutput>> ExecuteAsync(
             IReadOnlyList<string> arguments,
             TimeSpan timeout,
             CancellationToken cancellationToken
@@ -481,4 +531,10 @@ public sealed class GitLinkSourceTests
             );
         }
     }
+
+    private sealed record GitInvocation(
+        IReadOnlyList<string> Arguments,
+        GitTransportMode TransportMode,
+        string? RepositoryUrl
+    );
 }

@@ -16,7 +16,8 @@ internal sealed class GitPackDiscovery(
     IGitProcessRunner processRunner,
     GitRefResolver refResolver,
     GitSourceCache cache,
-    CliConsole console
+    CliConsole console,
+    GitTransportPolicy transportPolicy
 )
 {
     private const int DefaultTimeoutSeconds = 300;
@@ -46,12 +47,26 @@ internal sealed class GitPackDiscovery(
             );
         }
 
+        var authorization = await transportPolicy.AuthorizeAsync(
+            projectDirectory,
+            source.Url,
+            source.Name
+        );
+        if (!authorization.IsSuccess)
+        {
+            return ManifestOperationResult<IReadOnlyList<CatalogPack>>.Failure(
+                authorization.Error ?? $"Unable to authorize Git source '{source.Name}'."
+            );
+        }
+        var transportMode = authorization.Value;
+
         var loadedCache = cache.Load(projectDirectory, source);
         var cachedEntry = loadedCache.Value;
         var resolution = await refResolver.ResolveAsync(
             source,
             cachedEntry?.DefaultBranch,
-            cancellationToken
+            cancellationToken,
+            transportMode
         );
         if (resolution.Value is not { } resolvedSource)
         {
@@ -77,6 +92,7 @@ internal sealed class GitPackDiscovery(
         var discovered = await DiscoverAsync(
             source,
             resolvedSource.ResolvedCommit,
+            transportMode,
             cancellationToken
         );
         if (discovered.Value is not { } packs)
@@ -120,6 +136,7 @@ internal sealed class GitPackDiscovery(
     private async Task<ManifestOperationResult<List<GitCachedPack>>> DiscoverAsync(
         ProjectConfiguration.GitSource source,
         string resolvedCommit,
+        GitTransportMode transportMode,
         CancellationToken cancellationToken
     )
     {
@@ -138,6 +155,7 @@ internal sealed class GitPackDiscovery(
                 resolvedCommit,
                 workspace,
                 timeout,
+                transportMode,
                 cancellationToken
             );
             if (preparationFailure is not null)
@@ -150,12 +168,23 @@ internal sealed class GitPackDiscovery(
                 resolvedCommit,
                 workspace,
                 timeout,
+                transportMode,
                 cancellationToken
             );
             if (listed.Value is not { } paths)
             {
                 return ManifestOperationResult<List<GitCachedPack>>.Failure(
-                    listed.Error ?? "Unable to list Git repository paths."
+                    GitSourceFailureFormatter.Format(
+                        source.Name,
+                        listed.Error,
+                        "Unable to list Git repository paths."
+                    )
+                );
+            }
+            if (paths.StandardOutputTruncated)
+            {
+                return ManifestOperationResult<List<GitCachedPack>>.Failure(
+                    "Git repository path output was truncated; discovery cannot continue safely."
                 );
             }
 
@@ -166,9 +195,10 @@ internal sealed class GitPackDiscovery(
                 workspace,
                 timeout,
                 repositoryPaths,
+                transportMode,
                 cancellationToken
             );
-            return ManifestOperationResult<List<GitCachedPack>>.Success(packs);
+            return packs;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
@@ -185,23 +215,51 @@ internal sealed class GitPackDiscovery(
         string resolvedCommit,
         string workspace,
         TimeSpan timeout,
+        GitTransportMode transportMode,
         CancellationToken cancellationToken
     )
     {
         fileSystem.Directory.CreateDirectory(workspace);
         var commands = new[]
         {
-            new[] { "init", "--quiet", workspace },
-            ["-C", workspace, "remote", "add", "origin", source.Url],
-            ["-C", workspace, "fetch", "--depth=1", "--filter=blob:none", "origin", resolvedCommit],
+            (new[] { "init", "--quiet", workspace }, GitTransportMode.SecureOnly, (string?)null),
+            (
+                ["-C", workspace, "remote", "add", "--", "origin", source.Url],
+                GitTransportMode.SecureOnly,
+                null
+            ),
+            (
+                new[]
+                {
+                    "-C",
+                    workspace,
+                    "fetch",
+                    "--depth=1",
+                    "--filter=blob:none",
+                    "origin",
+                    resolvedCommit,
+                },
+                transportMode,
+                source.Url
+            ),
         };
-        foreach (var command in commands)
+        foreach (var (command, commandTransportMode, repositoryUrl) in commands)
         {
-            var result = await processRunner.RunAsync(command, timeout, cancellationToken);
+            var result = await processRunner.RunAsync(
+                command,
+                timeout,
+                commandTransportMode,
+                repositoryUrl,
+                cancellationToken
+            );
             if (!result.IsSuccess)
             {
                 return ManifestOperationResult<List<GitCachedPack>>.Failure(
-                    result.Error ?? "Unable to prepare the Git discovery workspace."
+                    GitSourceFailureFormatter.Format(
+                        source.Name,
+                        result.Error,
+                        "Unable to prepare the Git discovery workspace."
+                    )
                 );
             }
         }
@@ -214,6 +272,7 @@ internal sealed class GitPackDiscovery(
         string resolvedCommit,
         string workspace,
         TimeSpan timeout,
+        GitTransportMode transportMode,
         CancellationToken cancellationToken
     ) =>
         processRunner.RunAsync(
@@ -228,6 +287,8 @@ internal sealed class GitPackDiscovery(
                 source.Path ?? ".",
             ],
             timeout,
+            transportMode,
+            source.Url,
             cancellationToken
         );
 
@@ -237,12 +298,13 @@ internal sealed class GitPackDiscovery(
             StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
         );
 
-    private async Task<List<GitCachedPack>> DiscoverPacksAsync(
+    private async Task<ManifestOperationResult<List<GitCachedPack>>> DiscoverPacksAsync(
         ProjectConfiguration.GitSource source,
         string resolvedCommit,
         string workspace,
         TimeSpan timeout,
         IReadOnlyList<string> repositoryPaths,
+        GitTransportMode transportMode,
         CancellationToken cancellationToken
     )
     {
@@ -252,11 +314,25 @@ internal sealed class GitPackDiscovery(
             var manifestResult = await processRunner.RunAsync(
                 ["-C", workspace, "show", $"{resolvedCommit}:{path}"],
                 timeout,
+                transportMode,
+                source.Url,
                 cancellationToken
             );
             if (manifestResult.Value is not { } manifestOutput)
             {
-                continue;
+                return ManifestOperationResult<List<GitCachedPack>>.Failure(
+                    GitSourceFailureFormatter.Format(
+                        source.Name,
+                        manifestResult.Error,
+                        $"Unable to read Git source manifest '{path}' from '{source.Name}'."
+                    )
+                );
+            }
+            if (manifestOutput.StandardOutputTruncated)
+            {
+                return ManifestOperationResult<List<GitCachedPack>>.Failure(
+                    $"Git source manifest '{path}' was truncated."
+                );
             }
 
             var manifest = await TryParseAsync(
@@ -266,7 +342,7 @@ internal sealed class GitPackDiscovery(
             if (manifest is null)
             {
                 _console.Debug(
-                    $"Ignoring invalid pack manifest '{path}' from Git source '{source.Url}'."
+                    $"Ignoring invalid pack manifest '{path}' from Git source '{source.Name}'."
                 );
             }
             else
@@ -275,7 +351,7 @@ internal sealed class GitPackDiscovery(
             }
         }
 
-        return packs;
+        return ManifestOperationResult<List<GitCachedPack>>.Success(packs);
     }
 
     private static List<CatalogPack> CreateCatalog(

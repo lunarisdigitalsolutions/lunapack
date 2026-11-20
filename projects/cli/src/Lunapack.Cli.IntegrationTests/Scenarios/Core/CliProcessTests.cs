@@ -690,7 +690,10 @@ public sealed class CliProcessTests
 
         var uninstall = await CliProcess.InvokeAsync(workspace.Path, "uninstall", "example");
 
-        await Assert.That(uninstall.ExitCode).IsEqualTo(0);
+        await Assert
+            .That(uninstall.ExitCode)
+            .IsEqualTo(0)
+            .Because($"stdout: {uninstall.StandardOutput}\nstderr: {uninstall.StandardError}");
         await Assert.That(File.Exists(Path.Combine(workspace.Path, ".pack"))).IsFalse();
     }
 

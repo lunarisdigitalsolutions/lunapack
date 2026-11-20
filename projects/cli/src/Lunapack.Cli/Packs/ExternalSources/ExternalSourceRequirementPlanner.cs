@@ -10,9 +10,13 @@ using Lunapack.Cli.Sources.Git;
 
 namespace Lunapack.Cli.Packs.ExternalSources;
 
-internal sealed class ExternalSourceRequirementPlanner(GitRefResolver gitRefResolver)
+internal sealed class ExternalSourceRequirementPlanner(
+    GitRefResolver gitRefResolver,
+    GitTransportPolicy transportPolicy
+)
 {
     public async Task<ManifestOperationResult<ExternalSourceRequirementPlan>> PlanAsync(
+        string projectDirectory,
         ResolvedPackGraph graph,
         ProjectConfiguration configuration,
         ResolvedPackParameters parameters,
@@ -21,6 +25,7 @@ internal sealed class ExternalSourceRequirementPlanner(GitRefResolver gitRefReso
     )
     {
         var collected = await CollectAsync(
+            projectDirectory,
             graph,
             configuration,
             parameters,
@@ -115,6 +120,7 @@ internal sealed class ExternalSourceRequirementPlanner(GitRefResolver gitRefReso
     private async Task<
         ManifestOperationResult<Dictionary<string, RequirementGroupBuilder>>
     > CollectAsync(
+        string projectDirectory,
         ResolvedPackGraph graph,
         ProjectConfiguration configuration,
         ResolvedPackParameters parameters,
@@ -126,6 +132,7 @@ internal sealed class ExternalSourceRequirementPlanner(GitRefResolver gitRefReso
         foreach (var pack in graph.Packs)
         {
             var collected = await CollectPackAsync(
+                projectDirectory,
                 pack,
                 configuration,
                 parameters,
@@ -145,6 +152,7 @@ internal sealed class ExternalSourceRequirementPlanner(GitRefResolver gitRefReso
     }
 
     private async Task<ManifestOperationResult<bool>> CollectPackAsync(
+        string projectDirectory,
         DiscoveredPack pack,
         ProjectConfiguration configuration,
         ResolvedPackParameters parameters,
@@ -165,6 +173,7 @@ internal sealed class ExternalSourceRequirementPlanner(GitRefResolver gitRefReso
             }
 
             var collected = await CollectAliasAsync(
+                projectDirectory,
                 pack,
                 configuration,
                 alias,
@@ -184,6 +193,7 @@ internal sealed class ExternalSourceRequirementPlanner(GitRefResolver gitRefReso
     }
 
     private async Task<ManifestOperationResult<bool>> CollectAliasAsync(
+        string projectDirectory,
         DiscoveredPack pack,
         ProjectConfiguration configuration,
         string alias,
@@ -223,11 +233,26 @@ internal sealed class ExternalSourceRequirementPlanner(GitRefResolver gitRefReso
             );
         }
 
+        var authorization = await transportPolicy.AuthorizeAsync(
+            projectDirectory,
+            declaration.Url,
+            alias
+        );
+        if (!authorization.IsSuccess)
+        {
+            return ManifestOperationResult<bool>.Failure(
+                authorization.Error ?? $"Unable to authorize external source '{alias}'."
+            );
+        }
+        var transportMode = authorization.Value;
+
         var canonical = await gitRefResolver.ResolveCanonicalRefAsync(
             declaration.Url,
             declaration.Ref,
             timeout: null,
-            cancellationToken
+            cancellationToken,
+            transportMode,
+            alias
         );
         if (canonical.Value is not { } canonicalRef)
         {

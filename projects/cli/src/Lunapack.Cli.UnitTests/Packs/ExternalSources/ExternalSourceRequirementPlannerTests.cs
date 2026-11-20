@@ -1,3 +1,4 @@
+using System.IO.Abstractions.TestingHelpers;
 using Lunapack.Cli.Catalog;
 using Lunapack.Cli.Packs;
 using Lunapack.Cli.Packs.ExternalSources;
@@ -5,11 +6,14 @@ using Lunapack.Cli.Packs.Manifest;
 using Lunapack.Cli.Packs.Planning;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources.Git;
+using Lunapack.Cli.UnitTests.TestSupport;
 
 namespace Lunapack.Cli.UnitTests.Packs.ExternalSources;
 
 public sealed class ExternalSourceRequirementPlannerTests
 {
+    private const string ProjectDirectory = "/project";
+
     [Test]
     public async Task PlanAsync_WhenTransitiveRequirementsEquivalent_GroupsAndUsesRootAlias()
     {
@@ -22,7 +26,7 @@ public sealed class ExternalSourceRequirementPlannerTests
         );
 
         var result = await CreatePlanner()
-            .PlanAsync(graph, new ProjectConfiguration(), EmptyParameters());
+            .PlanAsync(ProjectDirectory, graph, new ProjectConfiguration(), EmptyParameters());
 
         await Assert.That(result.Value?.Groups.Count).IsEqualTo(1);
         await Assert
@@ -49,7 +53,8 @@ public sealed class ExternalSourceRequirementPlannerTests
             ],
         };
 
-        var result = await CreatePlanner().PlanAsync(graph, configuration, EmptyParameters());
+        var result = await CreatePlanner()
+            .PlanAsync(ProjectDirectory, graph, configuration, EmptyParameters());
 
         await Assert.That(result.Value?.Proposed).IsEmpty();
         await Assert
@@ -69,7 +74,7 @@ public sealed class ExternalSourceRequirementPlannerTests
         );
 
         var result = await CreatePlanner()
-            .PlanAsync(graph, new ProjectConfiguration(), EmptyParameters());
+            .PlanAsync(ProjectDirectory, graph, new ProjectConfiguration(), EmptyParameters());
 
         await Assert.That(result.Value?.Groups.Count).IsEqualTo(2);
         await Assert
@@ -104,7 +109,12 @@ public sealed class ExternalSourceRequirementPlannerTests
         );
 
         var result = await CreatePlanner()
-            .PlanAsync(new ResolvedPackGraph([pack]), new ProjectConfiguration(), parameters);
+            .PlanAsync(
+                ProjectDirectory,
+                new ResolvedPackGraph([pack]),
+                new ProjectConfiguration(),
+                parameters
+            );
 
         await Assert.That(result.Value?.Groups.Count).IsEqualTo(1);
         await Assert.That(result.Value?.Mappings.Single().Alias).IsEqualTo("used");
@@ -148,7 +158,12 @@ public sealed class ExternalSourceRequirementPlannerTests
         ).Select(parameters);
 
         var result = await CreatePlanner()
-            .PlanAsync(graph.RequireValue(), new ProjectConfiguration(), parameters);
+            .PlanAsync(
+                ProjectDirectory,
+                graph.RequireValue(),
+                new ProjectConfiguration(),
+                parameters
+            );
 
         await Assert.That(result.IsSuccess).IsTrue();
         await Assert.That(result.RequireValue().Groups).IsEmpty();
@@ -164,6 +179,7 @@ public sealed class ExternalSourceRequirementPlannerTests
 
         var result = await CreatePlanner()
             .PlanAsync(
+                ProjectDirectory,
                 new ResolvedPackGraph([CreatePack("root", "upstream")]),
                 configuration,
                 EmptyParameters()
@@ -173,7 +189,10 @@ public sealed class ExternalSourceRequirementPlannerTests
     }
 
     private static ExternalSourceRequirementPlanner CreatePlanner() =>
-        new(new GitRefResolver(new StubGitProcessRunner()));
+        new(
+            new GitRefResolver(new StubGitProcessRunner()),
+            TestGitTransportPolicy.Create(new MockFileSystem())
+        );
 
     private static ResolvedPackParameters EmptyParameters() =>
         new(

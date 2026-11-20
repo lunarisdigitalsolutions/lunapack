@@ -291,6 +291,7 @@ internal sealed class CliApplication(
             services.NextStepAdvisor,
             services.NextStepRenderer,
             console,
+            services.GitTransportPolicy,
             services.GitRefResolver
         );
         AddCatalogCommands(
@@ -487,15 +488,13 @@ internal sealed class CliApplication(
         NextStepRenderer nextStepRenderer
     )
     {
-        var projectStateStore = new ProjectStateStore(fileSystem);
-        var effectiveUserSettingsStore = userSettingsStore ?? new UserSettingsStore(fileSystem);
+        var preferences = CreatePreferenceServices(console);
+        var projectStateStore = preferences.ProjectStateStore;
+        var effectiveUserSettingsStore = preferences.UserSettingsStore;
         var lifecycleHookHistoryStore = CreateLifecycleHookHistoryStore(effectiveUserSettingsStore);
-        var cliPreferenceService = new CliPreferenceService(
-            fileSystem,
-            projectStateStore,
-            effectiveUserSettingsStore
-        );
-        var sourceIgnoreService = CreateSourceIgnoreService(effectiveUserSettingsStore);
+        var cliPreferenceService = preferences.CliPreferenceService;
+        var gitTransportPolicy = preferences.GitTransportPolicy;
+        var sourceIgnoreService = preferences.SourceIgnoreService;
         var workspaceDirectoryResolver = new WorkspaceDirectoryResolver(fileSystem);
         var effectiveGitProcessRunner = gitProcessRunner ?? new GitProcessRunner();
         var gitRefResolver = new GitRefResolver(effectiveGitProcessRunner);
@@ -505,7 +504,8 @@ internal sealed class CliApplication(
             effectiveGitProcessRunner,
             effectiveUserSettingsStore,
             ociPackSource,
-            sourceIgnoreService
+            sourceIgnoreService,
+            gitTransportPolicy
         );
         var packValidationService = CreatePackValidationService(
             projectStateStore,
@@ -521,6 +521,7 @@ internal sealed class CliApplication(
             console,
             effectiveGitProcessRunner,
             gitRefResolver,
+            gitTransportPolicy,
             ociPackSource,
             sourceIgnoreService,
             lifecycleHookHistoryStore
@@ -531,6 +532,7 @@ internal sealed class CliApplication(
             ociPackSource,
             effectiveGitProcessRunner,
             gitRefResolver,
+            gitTransportPolicy,
             console,
             sourceIgnoreService
         );
@@ -538,7 +540,8 @@ internal sealed class CliApplication(
             fileSystem,
             projectStateStore,
             console,
-            sourceIgnoreService
+            sourceIgnoreService,
+            gitTransportPolicy
         );
         return new CommandServices(
             packCatalog,
@@ -559,18 +562,33 @@ internal sealed class CliApplication(
             nextStepRenderer,
             CreateWorkflowPrerequisiteGuard(nextStepAdvisor, nextStepRenderer, console),
             CreateTrustService(projectStateStore, effectiveUserSettingsStore, console),
+            gitTransportPolicy,
             gitRefResolver,
             effectiveGitProcessRunner
+        );
+    }
+
+    private PreferenceServices CreatePreferenceServices(CliConsole console)
+    {
+        var projectStateStore = new ProjectStateStore(fileSystem);
+        var effectiveUserSettingsStore = userSettingsStore ?? new UserSettingsStore(fileSystem);
+        var cliPreferenceService = new CliPreferenceService(
+            fileSystem,
+            projectStateStore,
+            effectiveUserSettingsStore
+        );
+        return new PreferenceServices(
+            projectStateStore,
+            effectiveUserSettingsStore,
+            cliPreferenceService,
+            new GitTransportPolicy(cliPreferenceService, console),
+            new ConfiguredSourceIgnoreService(fileSystem, effectiveUserSettingsStore)
         );
     }
 
     private LifecycleHookHistoryStore CreateLifecycleHookHistoryStore(
         UserSettingsStore userSettingsStore
     ) => new(fileSystem, userSettingsStore.SettingsDirectory);
-
-    private ConfiguredSourceIgnoreService CreateSourceIgnoreService(
-        UserSettingsStore userSettingsStore
-    ) => new(fileSystem, userSettingsStore);
 
     private static WorkflowPrerequisiteGuard CreateWorkflowPrerequisiteGuard(
         NextStepAdvisor nextStepAdvisor,
@@ -583,7 +601,8 @@ internal sealed class CliApplication(
         IGitProcessRunner gitProcessRunner,
         UserSettingsStore settingsStore,
         OciPackSource ociPackSource,
-        ConfiguredSourceIgnoreService sourceIgnoreService
+        ConfiguredSourceIgnoreService sourceIgnoreService,
+        GitTransportPolicy transportPolicy
     ) =>
         new(
             fileSystem,
@@ -591,7 +610,8 @@ internal sealed class CliApplication(
             gitProcessRunner,
             settingsStore,
             ociPackSource,
-            sourceIgnoreService
+            sourceIgnoreService,
+            transportPolicy: transportPolicy
         );
 
     private PackValidationService CreatePackValidationService(
@@ -609,12 +629,18 @@ internal sealed class CliApplication(
     private PackAuthoringValidationService CreatePackAuthoringValidationService(
         IGitProcessRunner gitProcessRunner,
         GitRefResolver gitRefResolver,
+        GitTransportPolicy transportPolicy,
         CliConsole console
     ) =>
         new(
             fileSystem,
-            new ExternalSourceRequirementPlanner(gitRefResolver),
-            new ExternalSourceMaterializer(fileSystem, gitProcessRunner, gitRefResolver),
+            new ExternalSourceRequirementPlanner(gitRefResolver, transportPolicy),
+            new ExternalSourceMaterializer(
+                fileSystem,
+                gitProcessRunner,
+                gitRefResolver,
+                transportPolicy
+            ),
             new PackInstallationPlanner(fileSystem, new PackTemplateRenderer(fileSystem)),
             console
         );
@@ -651,6 +677,7 @@ internal sealed class CliApplication(
         OciPackSource ociPackSource,
         IGitProcessRunner gitProcessRunner,
         GitRefResolver gitRefResolver,
+        GitTransportPolicy transportPolicy,
         CliConsole console,
         ConfiguredSourceIgnoreService sourceIgnoreService
     )
@@ -658,6 +685,7 @@ internal sealed class CliApplication(
         var authoringValidationService = CreatePackAuthoringValidationService(
             gitProcessRunner,
             gitRefResolver,
+            transportPolicy,
             console
         );
         var packPublishingService = CreatePackPublishingService(
@@ -753,6 +781,7 @@ internal sealed class CliApplication(
         NextStepAdvisor nextStepAdvisor,
         NextStepRenderer nextStepRenderer,
         GitRefResolver gitRefResolver,
+        GitTransportPolicy transportPolicy,
         PackAuthoringValidationService authoringValidationService,
         string projectDirectory,
         Option<string?> workspaceOption,
@@ -767,6 +796,7 @@ internal sealed class CliApplication(
                 nextStepRenderer,
                 console,
                 gitRefResolver,
+                transportPolicy,
                 authoringValidationService
             ).CreateCommand(projectDirectory, workspaceOption)
         );
@@ -793,6 +823,7 @@ internal sealed class CliApplication(
             services.NextStepAdvisor,
             services.NextStepRenderer,
             services.GitRefResolver,
+            services.GitTransportPolicy,
             services.PackAuthoringValidationService,
             projectDirectory,
             workspaceOption,
@@ -865,6 +896,7 @@ internal sealed class CliApplication(
         CliConsole console,
         IGitProcessRunner gitProcessRunner,
         GitRefResolver gitRefResolver,
+        GitTransportPolicy transportPolicy,
         OciPackSource ociPackSource,
         ConfiguredSourceIgnoreService sourceIgnoreService,
         LifecycleHookHistoryStore lifecycleHookHistoryStore
@@ -878,11 +910,13 @@ internal sealed class CliApplication(
             new PackUpdateTransaction(fileSystem, console),
             projectStateStore,
             console,
+            transportPolicy,
             new LifecycleHookPolicyStore(fileSystem, userSettingsStore.SettingsDirectory),
             new GitPackMaterializer(
                 fileSystem,
                 gitProcessRunner,
                 console,
+                transportPolicy,
                 ociPackSource: ociPackSource
             ),
             configuredHookAuthorizer: new LifecycleHookAuthorizer(
@@ -897,12 +931,14 @@ internal sealed class CliApplication(
                 lifecycleHookHistoryStore
             ),
             configuredExternalSourceRequirementPlanner: new ExternalSourceRequirementPlanner(
-                gitRefResolver
+                gitRefResolver,
+                transportPolicy
             ),
             configuredExternalSourceMaterializer: new ExternalSourceMaterializer(
                 fileSystem,
                 gitProcessRunner,
-                gitRefResolver
+                gitRefResolver,
+                transportPolicy
             ),
             configuredExternalSourceConsentCoordinator: new ExternalSourceConsentCoordinator(
                 console.IsInteractive
@@ -947,6 +983,7 @@ internal sealed class CliApplication(
         NextStepAdvisor nextStepAdvisor,
         NextStepRenderer nextStepRenderer,
         CliConsole console,
+        GitTransportPolicy transportPolicy,
         GitRefResolver gitRefResolver
     )
     {
@@ -968,6 +1005,7 @@ internal sealed class CliApplication(
                 nextStepAdvisor,
                 nextStepRenderer,
                 console,
+                transportPolicy,
                 gitRefResolver,
                 completionProvider,
                 userSettingsStore
@@ -1125,7 +1163,8 @@ internal sealed class CliApplication(
         IFileSystem fileSystem,
         ProjectStateStore projectStateStore,
         CliConsole console,
-        ConfiguredSourceIgnoreService sourceIgnoreService
+        ConfiguredSourceIgnoreService sourceIgnoreService,
+        GitTransportPolicy transportPolicy
     )
     {
         var gitProcessRunner = new GitProcessRunner();
@@ -1138,7 +1177,8 @@ internal sealed class CliApplication(
                     fileSystem,
                     gitProcessRunner,
                     new GitRefResolver(gitProcessRunner),
-                    new GitLinkCache(fileSystem, LinkSourceCacheRoot.Resolve(fileSystem))
+                    new GitLinkCache(fileSystem, LinkSourceCacheRoot.Resolve(fileSystem)),
+                    transportPolicy
                 ),
             ],
             sourceIgnoreService
@@ -1178,6 +1218,14 @@ internal sealed class CliApplication(
             );
     }
 
+    private sealed record PreferenceServices(
+        ProjectStateStore ProjectStateStore,
+        UserSettingsStore UserSettingsStore,
+        CliPreferenceService CliPreferenceService,
+        GitTransportPolicy GitTransportPolicy,
+        ConfiguredSourceIgnoreService SourceIgnoreService
+    );
+
     private sealed record LifecycleServices(
         PackLifecycleService PackLifecycleService,
         PackUpdateService PackUpdateService,
@@ -1203,6 +1251,7 @@ internal sealed class CliApplication(
         NextStepRenderer NextStepRenderer,
         WorkflowPrerequisiteGuard PrerequisiteGuard,
         TrustService TrustService,
+        GitTransportPolicy GitTransportPolicy,
         GitRefResolver GitRefResolver,
         IGitProcessRunner GitProcessRunner
     ) : IDisposable

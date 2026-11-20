@@ -9,6 +9,7 @@ using Lunapack.Cli.Packs.Planning;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources;
 using Lunapack.Cli.Trust;
+using Lunapack.Cli.UnitTests.TestSupport;
 using SpectreTestConsole = Spectre.Console.Testing.TestConsole;
 
 namespace Lunapack.Cli.UnitTests.Packs;
@@ -2855,6 +2856,7 @@ public sealed class PackLifecycleTests
             new PackUpdateTransaction(workspace.FileSystem, console),
             projectStateStore ?? workspace.StateStore,
             console,
+            TestGitTransportPolicy.Create(workspace.FileSystem, workspace.UserSettingsStore),
             new LifecycleHookPolicyStore(
                 workspace.FileSystem,
                 workspace.UserSettingsStore.SettingsDirectory

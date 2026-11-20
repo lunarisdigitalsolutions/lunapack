@@ -58,6 +58,8 @@ internal sealed class DoctorRemoteSourceProbe(
                 "HEAD",
             ],
             TimeSpan.FromSeconds(DoctorService.NetworkSourceTimeoutSeconds),
+            GitTransportMode.SecureOnly,
+            source.Url,
             cancellationToken
         );
         if (command.IsSuccess)

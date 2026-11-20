@@ -21,6 +21,7 @@ internal sealed class PackAuthoringValidationService(
 )
 {
     public async Task<ManifestOperationResult<bool>> ValidateExternalSourcesAsync(
+        string projectDirectory,
         string packDirectory,
         PackManifest manifest,
         bool allowHiddenCharacters = false
@@ -42,6 +43,7 @@ internal sealed class PackAuthoringValidationService(
         }
 
         var requirements = await requirementPlanner.PlanAsync(
+            projectDirectory,
             graph,
             configuration,
             resolvedParameters
@@ -61,7 +63,7 @@ internal sealed class PackAuthoringValidationService(
             );
         }
 
-        var materialization = await materializer.MaterializeAsync(sourcePlan);
+        var materialization = await materializer.MaterializeAsync(projectDirectory, sourcePlan);
         if (materialization.Value is not { } externalSources)
         {
             return ManifestOperationResult<bool>.Failure(

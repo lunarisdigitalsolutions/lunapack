@@ -328,6 +328,7 @@ public sealed class ManifestSchemaTests
         var root = schema.RootElement;
         var preferences = root.GetProperty("properties").GetProperty("preferences");
         var preferenceSchema = root.GetProperty("definitions").GetProperty("cliPreferences");
+        var gitPreferences = root.GetProperty("definitions").GetProperty("gitPreferences");
         var catalogPreferences = root.GetProperty("definitions").GetProperty("catalogPreferences");
         var nextStepPreferences = root.GetProperty("definitions")
             .GetProperty("nextStepPreferences");
@@ -343,6 +344,27 @@ public sealed class ManifestSchemaTests
         await Assert
             .That(preferenceSchema.GetProperty("additionalProperties").GetBoolean())
             .IsFalse();
+        await Assert
+            .That(
+                preferenceSchema
+                    .GetProperty("properties")
+                    .GetProperty("git")
+                    .GetProperty("$ref")
+                    .GetString()
+            )
+            .IsEqualTo("#/definitions/gitPreferences");
+        await Assert
+            .That(gitPreferences.GetProperty("additionalProperties").GetBoolean())
+            .IsFalse();
+        await Assert
+            .That(
+                gitPreferences
+                    .GetProperty("properties")
+                    .GetProperty("allowInsecureTransport")
+                    .GetProperty("type")
+                    .GetString()
+            )
+            .IsEqualTo("boolean");
         await Assert
             .That(catalogPreferences.GetProperty("additionalProperties").GetBoolean())
             .IsFalse();
@@ -416,6 +438,7 @@ public sealed class ManifestSchemaTests
         );
         var definitions = schema.RootElement.GetProperty("definitions");
         var expectedReference = "#/definitions/cliPreferences";
+        var gitPreferences = definitions.GetProperty("gitPreferences");
 
         await Assert
             .That(
@@ -445,6 +468,25 @@ public sealed class ManifestSchemaTests
                     .GetBoolean()
             )
             .IsFalse();
+        await Assert
+            .That(
+                definitions
+                    .GetProperty("cliPreferences")
+                    .GetProperty("properties")
+                    .GetProperty("git")
+                    .GetProperty("$ref")
+                    .GetString()
+            )
+            .IsEqualTo("#/definitions/gitPreferences");
+        await Assert
+            .That(
+                gitPreferences
+                    .GetProperty("properties")
+                    .GetProperty("allowInsecureTransport")
+                    .GetProperty("type")
+                    .GetString()
+            )
+            .IsEqualTo("boolean");
     }
 
     [Test]

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
 using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Application.Serialization;
 using Lunapack.Cli.Catalog;
 using Lunapack.Cli.Packs.Manifest;
@@ -9,6 +10,7 @@ using Lunapack.Cli.Packs.Planning;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources;
 using Lunapack.Cli.Sources.Git;
+using Lunapack.Cli.UnitTests.TestSupport;
 
 namespace Lunapack.Cli.UnitTests.Sources.Git;
 
@@ -33,6 +35,104 @@ public sealed class GitSourceTransportTests
         await Assert.That(cacheIdentity.Url).IsEqualTo(identity.Url);
         await Assert.That(cacheIdentity.Ref).IsEqualTo(identity.Ref);
         await Assert.That(cacheIdentity.Path).IsEqualTo(identity.Path);
+    }
+
+    [Test]
+    public async Task Identity_WhenRepositoryStartsWithOption_RejectsLocation()
+    {
+        var result = SourceIdentityNormalizer.NormalizeRepository(
+            "--upload-pack=sh -c 'sentinel'@example.test:organization/packs.git"
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("must not begin");
+    }
+
+    [Test]
+    public async Task Identity_WhenRepositoryContainsQuery_RejectsLocation()
+    {
+        var result = SourceIdentityNormalizer.NormalizeRepository(
+            "https://example.test/packs.git?token=sentinel"
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("queries or fragments");
+        await Assert.That(result.Error).DoesNotContain("sentinel");
+    }
+
+    [Test]
+    public async Task Identity_WhenScpUrlUsesSshAliasCharacters_PreservesRepository()
+    {
+        var result = SourceIdentityNormalizer.NormalizeRepository(
+            "deploy+team@_work-alias.example.:repo.git"
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert.That(result.Value).IsEqualTo("_work-alias.example./repo");
+    }
+
+    [Test]
+    [Arguments("git@alias-:repo.git", "alias-/repo")]
+    [Arguments("git@alias_:repo.git", "alias_/repo")]
+    public async Task Identity_WhenScpAliasHasSafeTrailingCharacter_PreservesRepository(
+        string repositoryUrl,
+        string expectedIdentity
+    )
+    {
+        var result = SourceIdentityNormalizer.NormalizeRepository(repositoryUrl);
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert.That(result.Value).IsEqualTo(expectedIdentity);
+    }
+
+    [Test]
+    public async Task Identity_WhenInvalidUrlContainsCredentials_DoesNotEchoUrl()
+    {
+        var result = SourceIdentityNormalizer.NormalizeRepository(
+            "https://user:sentinel@example.test"
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).DoesNotContain("sentinel");
+        await Assert.That(result.Error).DoesNotContain("example.test");
+    }
+
+    [Test]
+    public async Task Identity_WhenHttpsRepositoryContainsBackslash_RejectsLocation()
+    {
+        var result = SourceIdentityNormalizer.NormalizeRepository(
+            @"https://example.test/packs\archive.git"
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("must not contain backslashes");
+    }
+
+    [Test]
+    public async Task Identity_WhenRepositoryUsesRemoteHelper_RejectsLocation()
+    {
+        var result = SourceIdentityNormalizer.NormalizeRepository("ext::sentinel-command");
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("remote-helper");
+        await Assert.That(result.Error).DoesNotContain("sentinel");
+    }
+
+    [Test]
+    [Arguments("//attacker.example/share/repository.git")]
+    [Arguments(@"\\attacker.example\share\repository.git")]
+    [Arguments(@"/\attacker.example\share\repository.git")]
+    [Arguments(@"\/attacker.example/share/repository.git")]
+    [Arguments("file://attacker.example/share/repository.git")]
+    public async Task Identity_WhenRepositoryUsesHostedFilePath_RejectsLocation(
+        string repositoryUrl
+    )
+    {
+        var result = SourceIdentityNormalizer.NormalizeRepository(repositoryUrl);
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("UNC");
+        await Assert.That(result.Error).DoesNotContain("attacker.example");
     }
 
     [Test]
@@ -334,7 +434,8 @@ public sealed class GitSourceTransportTests
             processRunner,
             new GitRefResolver(processRunner),
             new GitSourceCache(fileSystem),
-            TestConsole.Create()
+            TestConsole.Create(),
+            TestGitTransportPolicy.Create(fileSystem)
         );
 
         var result = await discovery.BrowseAsync(
@@ -360,7 +461,8 @@ public sealed class GitSourceTransportTests
             processRunner,
             new GitRefResolver(processRunner),
             new GitSourceCache(fileSystem),
-            TestConsole.Create()
+            TestConsole.Create(),
+            TestGitTransportPolicy.Create(fileSystem)
         );
         using var cancellation = new CancellationTokenSource();
 
@@ -405,6 +507,7 @@ public sealed class GitSourceTransportTests
             fileSystem,
             processRunner,
             TestConsole.Create(),
+            TestGitTransportPolicy.Create(fileSystem),
             new NoOpOperationSnapshotSecurity()
         );
 
@@ -421,6 +524,15 @@ public sealed class GitSourceTransportTests
                 )
             )
             .IsTrue();
+        await Assert
+            .That(
+                processRunner
+                    .Calls.Single(call =>
+                        call.Arguments.Contains("checkout", StringComparer.Ordinal)
+                    )
+                    .RepositoryUrl
+            )
+            .IsEqualTo(source.Url);
         await Assert
             .That(
                 processRunner.Arguments.Any(arguments =>
@@ -442,7 +554,8 @@ public sealed class GitSourceTransportTests
             processRunner,
             new GitRefResolver(processRunner),
             new GitSourceCache(fileSystem),
-            TestConsole.Create()
+            TestConsole.Create(),
+            TestGitTransportPolicy.Create(fileSystem)
         );
 
         var result = await discovery.BrowseAsync(@"C:\project", CreateSource(), 0);
@@ -451,6 +564,42 @@ public sealed class GitSourceTransportTests
         var defaultValue = result.RequireValue().Single().Manifest.Parameters["enabled"].Default;
         await Assert.That(defaultValue).IsTypeOf<bool>();
         await Assert.That((bool)defaultValue!).IsTrue();
+    }
+
+    [Test]
+    public async Task Discovery_WhenHttpIsEnabled_PropagatesTransportToLazyBlobRead()
+    {
+        using var workspace = new TestWorkspace();
+        var preferences = new CliPreferenceService(
+            workspace.FileSystem,
+            workspace.StateStore,
+            workspace.UserSettingsStore
+        );
+        await preferences.SetAsync(
+            workspace.Path,
+            "git.allow-insecure-transport",
+            "true",
+            CliPreferenceService.Scope.Global
+        );
+        var processRunner = new ParameterManifestGitProcessRunner();
+        var discovery = new GitPackDiscovery(
+            workspace.FileSystem,
+            processRunner,
+            new GitRefResolver(processRunner),
+            new GitSourceCache(workspace.FileSystem),
+            TestConsole.Create(),
+            TestGitTransportPolicy.Create(workspace.FileSystem, workspace.UserSettingsStore)
+        );
+        var source = CreateSource() with { Url = "http://example.test/packs.git" };
+
+        var result = await discovery.BrowseAsync(workspace.Path, source, 0);
+        var show = processRunner.Calls.Single(call =>
+            call.Arguments.Contains("show", StringComparer.Ordinal)
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue().Because(result.Error ?? string.Empty);
+        await Assert.That(show.TransportMode).IsEqualTo(GitTransportMode.AllowHttp);
+        await Assert.That(show.RepositoryUrl).IsEqualTo(source.Url);
     }
 
     [Test]
@@ -476,7 +625,13 @@ public sealed class GitSourceTransportTests
         await Assert.That(result.RequireValue().DefaultBranch).IsEqualTo("main");
         await Assert
             .That(processRunner.Arguments)
-            .IsEquivalentTo(["ls-remote", "--exit-code", "https://example.test/packs.git", "main"]);
+            .IsEquivalentTo([
+                "ls-remote",
+                "--exit-code",
+                "--",
+                "https://example.test/packs.git",
+                "main",
+            ]);
     }
 
     [Test]
@@ -497,6 +652,83 @@ public sealed class GitSourceTransportTests
 
         await Assert.That(result.RequireValue().ResolvedCommit).IsEqualTo(Commit);
         await Assert.That(result.RequireValue().DefaultBranch).IsEqualTo("main");
+    }
+
+    [Test]
+    public async Task RefResolver_WhenGitAuthenticationFails_IdentifiesSourceAndIgnoreCommand()
+    {
+        var resolver = new GitRefResolver(
+            new FakeGitProcessRunner(
+                ManifestOperationResult<GitProcessOutput>.Failure(
+                    "Git exited with code 128: Git authentication failed."
+                )
+            )
+        );
+
+        var result = await resolver.ResolveAsync(
+            CreateSource() with
+            {
+                Name = "engineering",
+                Ref = "main",
+            },
+            null,
+            default
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("Git source 'engineering'");
+        await Assert.That(result.Error).Contains("luna sources ignore engineering");
+    }
+
+    [Test]
+    public async Task RefResolver_WhenGitOutputIsTruncated_FailsWithoutParsing()
+    {
+        var resolver = new GitRefResolver(
+            new FakeGitProcessRunner(
+                ManifestOperationResult<GitProcessOutput>.Success(
+                    new GitProcessOutput(
+                        $"{Commit}\trefs/heads/main\n",
+                        string.Empty,
+                        StandardOutputTruncated: true
+                    )
+                )
+            )
+        );
+
+        var result = await resolver.ResolveAsync(
+            CreateSource() with
+            {
+                Ref = "main",
+            },
+            null,
+            default
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("truncated");
+    }
+
+    [Test]
+    public async Task RefResolver_WhenRepositoryLooksLikeGitOption_DoesNotRunGit()
+    {
+        var processRunner = new FakeGitProcessRunner(
+            ManifestOperationResult<GitProcessOutput>.Success(
+                new GitProcessOutput("unexpected", string.Empty)
+            )
+        );
+        var resolver = new GitRefResolver(processRunner);
+
+        var result = await resolver.ResolveAsync(
+            CreateSource() with
+            {
+                Url = "--upload-pack=sh -c 'sentinel'@example.test:packs.git",
+            },
+            null,
+            default
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(processRunner.Arguments).IsEmpty();
     }
 
     private const string Commit = "0123456789abcdef0123456789abcdef01234567";
@@ -567,10 +799,28 @@ public sealed class GitSourceTransportTests
 
     private sealed class ParameterManifestGitProcessRunner : IGitProcessRunner
     {
+        public List<GitProcessCall> Calls { get; } = [];
+
         public Task<ManifestOperationResult<GitProcessOutput>> RunAsync(
             IReadOnlyList<string> arguments,
             TimeSpan timeout,
             CancellationToken cancellationToken
+        ) => ExecuteAsync(arguments);
+
+        public Task<ManifestOperationResult<GitProcessOutput>> RunAsync(
+            IReadOnlyList<string> arguments,
+            TimeSpan timeout,
+            GitTransportMode transportMode,
+            string? repositoryUrl,
+            CancellationToken cancellationToken
+        )
+        {
+            Calls.Add(new GitProcessCall(arguments, transportMode, repositoryUrl));
+            return ExecuteAsync(arguments);
+        }
+
+        private static Task<ManifestOperationResult<GitProcessOutput>> ExecuteAsync(
+            IReadOnlyList<string> arguments
         )
         {
             var output =
@@ -588,14 +838,39 @@ public sealed class GitSourceTransportTests
         }
     }
 
+    private sealed record GitProcessCall(
+        IReadOnlyList<string> Arguments,
+        GitTransportMode TransportMode,
+        string? RepositoryUrl
+    );
+
     private sealed class CapturingGitProcessRunner(MockFileSystem fileSystem) : IGitProcessRunner
     {
         public List<IReadOnlyList<string>> Arguments { get; } = [];
+
+        public List<GitProcessCall> Calls { get; } = [];
 
         public Task<ManifestOperationResult<GitProcessOutput>> RunAsync(
             IReadOnlyList<string> arguments,
             TimeSpan timeout,
             CancellationToken cancellationToken
+        ) => ExecuteAsync(arguments, fileSystem);
+
+        public Task<ManifestOperationResult<GitProcessOutput>> RunAsync(
+            IReadOnlyList<string> arguments,
+            TimeSpan timeout,
+            GitTransportMode transportMode,
+            string? repositoryUrl,
+            CancellationToken cancellationToken
+        )
+        {
+            Calls.Add(new GitProcessCall(arguments, transportMode, repositoryUrl));
+            return ExecuteAsync(arguments, fileSystem);
+        }
+
+        private Task<ManifestOperationResult<GitProcessOutput>> ExecuteAsync(
+            IReadOnlyList<string> arguments,
+            MockFileSystem fileSystem
         )
         {
             Arguments.Add(arguments);

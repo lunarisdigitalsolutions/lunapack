@@ -1,6 +1,7 @@
 using System.IO.Abstractions;
 using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Packs.Manifest;
 using Lunapack.Cli.Packs.Planning;
 using Lunapack.Cli.Project;
@@ -38,23 +39,36 @@ internal sealed class PackCatalog : IDisposable
         UserSettingsStore? userSettingsStore = null,
         OciPackSource? ociPackSource = null,
         ConfiguredSourceIgnoreService? configuredSourceIgnoreService = null,
-        IOperationSnapshotSecurity? operationSnapshotSecurity = null
+        IOperationSnapshotSecurity? operationSnapshotSecurity = null,
+        GitTransportPolicy? transportPolicy = null
     )
     {
         _fileSystem = fileSystem;
         _console = console;
         _operationSnapshotSecurity = operationSnapshotSecurity ?? new OperationSnapshotSecurity();
+        var effectiveUserSettingsStore = userSettingsStore ?? new UserSettingsStore(fileSystem);
         _sourceIgnoreService =
             configuredSourceIgnoreService
             ?? new ConfiguredSourceIgnoreService(fileSystem, userSettingsStore);
 
         var effectiveProcessRunner = processRunner ?? new GitProcessRunner();
+        var effectiveTransportPolicy =
+            transportPolicy
+            ?? new GitTransportPolicy(
+                new CliPreferenceService(
+                    fileSystem,
+                    new ProjectStateStore(fileSystem),
+                    effectiveUserSettingsStore
+                ),
+                console
+            );
         _gitPackDiscovery = new GitPackDiscovery(
             fileSystem,
             effectiveProcessRunner,
             new GitRefResolver(effectiveProcessRunner),
             new GitSourceCache(fileSystem),
-            console
+            console,
+            effectiveTransportPolicy
         );
         _localPackDiscovery = new LocalPackDiscovery(fileSystem, console);
         _ownsOciPackSource = ociPackSource is null;

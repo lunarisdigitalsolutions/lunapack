@@ -18,6 +18,76 @@ public sealed class CliPreferenceServiceTests
         await Assert.That(preferences.DiscoverOnlyComposites).IsFalse();
         await Assert.That(preferences.SearchOnlyComposites).IsFalse();
         await Assert.That(preferences.NextStepsEnabled).IsTrue();
+        await Assert.That(preferences.AllowInsecureGitTransport).IsFalse();
+    }
+
+    [Test]
+    public async Task Resolve_WhenInsecureTransportIsConfiguredAtMultipleScopes_UsesSpecificValue()
+    {
+        using var workspace = new TestWorkspace();
+        await workspace.Application.RunAsync(["init"], workspace.Path);
+        var service = CreatePreferenceService(workspace);
+        const string key = "git.allow-insecure-transport";
+
+        var global = await service.SetAsync(
+            workspace.Path,
+            key,
+            "true",
+            CliPreferenceService.Scope.Global
+        );
+        var userProject = await service.SetAsync(
+            workspace.Path,
+            key,
+            "true",
+            CliPreferenceService.Scope.UserProject
+        );
+        var local = await service.SetAsync(
+            workspace.Path,
+            key,
+            "false",
+            CliPreferenceService.Scope.Local
+        );
+        var localResolved = await service.ResolveAsync(workspace.Path);
+        var localRemoved = await service.RemoveAsync(
+            workspace.Path,
+            key,
+            CliPreferenceService.Scope.Local
+        );
+        var userProjectResolved = await service.ResolveAsync(workspace.Path);
+        var userProjectFalse = await service.SetAsync(
+            workspace.Path,
+            key,
+            "false",
+            CliPreferenceService.Scope.UserProject
+        );
+        var userProjectResolvedFalse = await service.ResolveAsync(workspace.Path);
+        var userProjectRemoved = await service.RemoveAsync(
+            workspace.Path,
+            key,
+            CliPreferenceService.Scope.UserProject
+        );
+        var globalResolved = await service.ResolveAsync(workspace.Path);
+        var globalRemoved = await service.RemoveAsync(
+            workspace.Path,
+            key,
+            CliPreferenceService.Scope.Global
+        );
+        var defaultResolved = await service.ResolveAsync(workspace.Path);
+
+        await Assert.That(global.IsSuccess).IsTrue();
+        await Assert.That(userProject.IsSuccess).IsTrue();
+        await Assert.That(local.IsSuccess).IsTrue();
+        await Assert.That(localResolved.RequireValue().AllowInsecureGitTransport).IsFalse();
+        await Assert.That(localRemoved.IsSuccess).IsTrue();
+        await Assert.That(userProjectResolved.RequireValue().AllowInsecureGitTransport).IsTrue();
+        await Assert.That(userProjectFalse.IsSuccess).IsTrue();
+        await Assert
+            .That(userProjectResolvedFalse.RequireValue().AllowInsecureGitTransport)
+            .IsFalse();
+        await Assert.That(userProjectRemoved.IsSuccess).IsTrue();
+        await Assert.That(globalResolved.RequireValue().AllowInsecureGitTransport).IsTrue();
+        await Assert.That(globalRemoved.IsSuccess).IsTrue();
+        await Assert.That(defaultResolved.RequireValue().AllowInsecureGitTransport).IsFalse();
     }
 
     [Test]
