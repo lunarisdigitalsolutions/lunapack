@@ -489,15 +489,13 @@ internal sealed class CliApplication(
     {
         var projectStateStore = new ProjectStateStore(fileSystem);
         var effectiveUserSettingsStore = userSettingsStore ?? new UserSettingsStore(fileSystem);
+        var lifecycleHookHistoryStore = CreateLifecycleHookHistoryStore(effectiveUserSettingsStore);
         var cliPreferenceService = new CliPreferenceService(
             fileSystem,
             projectStateStore,
             effectiveUserSettingsStore
         );
-        var sourceIgnoreService = new ConfiguredSourceIgnoreService(
-            fileSystem,
-            effectiveUserSettingsStore
-        );
+        var sourceIgnoreService = CreateSourceIgnoreService(effectiveUserSettingsStore);
         var workspaceDirectoryResolver = new WorkspaceDirectoryResolver(fileSystem);
         var effectiveGitProcessRunner = gitProcessRunner ?? new GitProcessRunner();
         var gitRefResolver = new GitRefResolver(effectiveGitProcessRunner);
@@ -524,7 +522,8 @@ internal sealed class CliApplication(
             effectiveGitProcessRunner,
             gitRefResolver,
             ociPackSource,
-            sourceIgnoreService
+            sourceIgnoreService,
+            lifecycleHookHistoryStore
         );
         var packPublishingServices = CreatePackPublishingServices(
             projectStateStore,
@@ -546,6 +545,7 @@ internal sealed class CliApplication(
             ociPackSource,
             projectStateStore,
             effectiveUserSettingsStore,
+            lifecycleHookHistoryStore,
             cliPreferenceService,
             workspaceDirectoryResolver,
             new CatalogService(packCatalog, projectStateStore),
@@ -563,6 +563,14 @@ internal sealed class CliApplication(
             effectiveGitProcessRunner
         );
     }
+
+    private LifecycleHookHistoryStore CreateLifecycleHookHistoryStore(
+        UserSettingsStore userSettingsStore
+    ) => new(fileSystem, userSettingsStore.SettingsDirectory);
+
+    private ConfiguredSourceIgnoreService CreateSourceIgnoreService(
+        UserSettingsStore userSettingsStore
+    ) => new(fileSystem, userSettingsStore);
 
     private static WorkflowPrerequisiteGuard CreateWorkflowPrerequisiteGuard(
         NextStepAdvisor nextStepAdvisor,
@@ -772,6 +780,12 @@ internal sealed class CliApplication(
         CliConsole console
     )
     {
+        rootCommand.Add(
+            new LifecycleHookHistoryCommandHandler(
+                services.LifecycleHookHistoryStore,
+                console
+            ).CreateCommand()
+        );
         AddPackAuthoringCommand(
             rootCommand,
             fileSystem,
@@ -852,7 +866,8 @@ internal sealed class CliApplication(
         IGitProcessRunner gitProcessRunner,
         GitRefResolver gitRefResolver,
         OciPackSource ociPackSource,
-        ConfiguredSourceIgnoreService sourceIgnoreService
+        ConfiguredSourceIgnoreService sourceIgnoreService,
+        LifecycleHookHistoryStore lifecycleHookHistoryStore
     )
     {
         var packLifecycleService = new PackLifecycleService(
@@ -874,6 +889,11 @@ internal sealed class CliApplication(
                 new TrustPolicy(fileSystem),
                 new LifecycleCommandResolver(fileSystem),
                 new ConsoleLifecycleHookConfirmer(console)
+            ),
+            configuredHookExecutor: new LifecycleHookExecutor(
+                fileSystem,
+                console,
+                lifecycleHookHistoryStore
             ),
             configuredExternalSourceRequirementPlanner: new ExternalSourceRequirementPlanner(
                 gitRefResolver
@@ -1168,6 +1188,7 @@ internal sealed class CliApplication(
         OciPackSource OciPackSource,
         ProjectStateStore ProjectStateStore,
         UserSettingsStore UserSettingsStore,
+        LifecycleHookHistoryStore LifecycleHookHistoryStore,
         CliPreferenceService CliPreferenceService,
         WorkspaceDirectoryResolver WorkspaceDirectoryResolver,
         CatalogService CatalogService,

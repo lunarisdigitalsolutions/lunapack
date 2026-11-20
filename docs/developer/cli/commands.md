@@ -338,6 +338,9 @@ includes the registry reference and verified manifest digest. There are no
   paths, ownership, digests, and drift or local-modification status. It also
   reports hidden Unicode in existing managed targets without changing files or
   state.
+- `luna hooks history [--limit <count>]`: Shows recent local lifecycle script
+  attempts newest first. It is read-only, displays 20 entries by default, and
+  accepts limits from 1 through 100.
 
 ## Machine-readable command output
 
@@ -399,7 +402,7 @@ configured update source and locked OCI release check completes. `--offline`
 sets it to false.
 
 Within schema version 1, added fields and finding codes are compatible.
-Renaming or removing a field or code, or changing its type or meaning, requires
+renaming or removing a field or code, or changing its type or meaning, requires
 a new schema version. Do not parse human-readable `message` wording as a stable
 identifier, and do not infer process success from a finding's severity: exit
 behavior remains command-specific.
@@ -508,6 +511,17 @@ without changing script consent behavior. Uninstall also accepts repeatable
 `--skip-variable` (`-sv`) inputs.
 `--dry-run` and `--remove-modified` are pack-update options. Named link updates
 reject either option before changing files or state.
+
+Lifecycle history is stored per user in
+`~/.lunapack/lifecycle-hook-history.jsonl` with at most 100 entries. It records
+script start failures, cancellations, exits, authorization provenance, and
+sanitized arguments, but not instructions, skipped hooks, project paths,
+environment values, or output. `luna hooks history` never creates or changes
+the file. Delete it manually to clear history. Missing history is empty;
+unreadable or corrupt history returns a failure. See
+[Use lifecycle hooks](../lifecycle-hooks.md#inspect-local-script-history) for
+recorded fields and best-effort redaction limitations.
+
 Repeat `--parameter <name>=<value>` for each selected value of a multi-select
 enum. Repeated scalar names and duplicate or unknown selections are rejected.
 Interactive sessions show one prepared instruction step at a time and wait for

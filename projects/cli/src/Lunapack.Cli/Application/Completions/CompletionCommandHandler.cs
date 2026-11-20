@@ -98,7 +98,8 @@ internal sealed class CompletionCommandHandler(
 
                 var scriptInstaller = scriptInstallerResolver.Resolve(selectedShell);
                 var plan = scriptInstaller.CreatePlan(script);
-                console.Info($"Completion script:\n{plan.Script}");
+                console.Info("Completion script:");
+                console.InfoLines(plan.Script);
                 console.Info($"Destination: {plan.DestinationPath}");
                 if (!console.Confirm("Append this script?", defaultValue: false))
                 {
