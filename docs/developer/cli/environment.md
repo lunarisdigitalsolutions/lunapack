@@ -16,7 +16,8 @@ credential, and cleanup behavior.
 
 Doctor does not create missing profile or cache directories. For an existing
 directory, its writability check creates one unpredictably named file with
-create-new semantics, keeps exclusive access to it, and uses delete-on-close.
+create-new semantics, keeps exclusive access while writing and flushing it,
+then explicitly removes it after disposal.
 No project file is a probe target. A linked or reparse-point directory is
 rejected rather than followed.
 

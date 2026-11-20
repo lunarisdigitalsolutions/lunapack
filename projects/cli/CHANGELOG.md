@@ -74,6 +74,10 @@ Update this section before creating a release tag.
 
 ### Fixed
 
+- Lifecycle scripts now complete reliably on macOS by tracking hook descendants
+  through process relationships instead of a platform-native process queue.
+- `luna doctor` now removes temporary writability probes explicitly after the
+  probe handle closes on macOS and other Unix hosts.
 - Lifecycle consent always displays the pack ID, resolved command and arguments,
   and optional description even when informational output is suppressed.
 - Canceling noninteractive lifecycle hooks no longer waits for detached

@@ -8,6 +8,28 @@ Running `luna` without a subcommand first displays root command help, then
 summarizes configured sources and installed root packs and recommends the next
 commands for the current workspace stage.
 
+## Command pages
+
+| Page                                   | Commands                                                         |
+| -------------------------------------- | ---------------------------------------------------------------- |
+| [Initialize](commands/init.md)         | `luna init`                                                      |
+| [Configuration](commands/config.md)    | `luna config`                                                    |
+| [Doctor](commands/doctor.md)           | `luna doctor`                                                    |
+| [Sources](commands/sources.md)         | `luna sources`                                                   |
+| [Trust](commands/trust.md)             | `luna trust`                                                     |
+| [Variables](commands/variables.md)     | `luna variables`                                                 |
+| [Remaps](commands/remap.md)            | `luna remap`                                                     |
+| [Catalog](commands/catalog.md)         | `luna discover`, `luna search`, `luna validate`, `luna inspect`  |
+| [Pack authoring](commands/pack.md)     | `luna pack`                                                      |
+| [Publish](commands/publish.md)         | `luna publish`                                                   |
+| [Lifecycle](commands/lifecycle.md)     | `luna install`, `luna uninstall`, `luna update`, `luna outdated` |
+| [Move](commands/mv.md)                 | `luna mv`                                                        |
+| [Links](commands/links.md)             | `luna links`                                                     |
+| [Audit](commands/audit.md)             | `luna audit`                                                     |
+| [SBOM](commands/sbom.md)               | `luna sbom`                                                      |
+| [Hook history](commands/hooks.md)      | `luna hooks history`                                             |
+| [Completions](commands/completions.md) | `luna completions`                                               |
+
 ## Global Options
 
 | Option                          | Default           | Behavior                                                   |
@@ -430,12 +452,12 @@ envelope above.
 
 `luna sbom` requires one of these targets:
 
-| Target          | Document format       |
-| --------------- | --------------------- |
-| `cyclonedx-1.6` | CycloneDX 1.6 JSON    |
-| `cyclonedx-1.7` | CycloneDX 1.7 JSON    |
-| `spdx-2.3`      | SPDX 2.3 JSON         |
-| `spdx-3.0.1`    | SPDX 3.0.1 JSON-LD    |
+| Target          | Document format    |
+| --------------- | ------------------ |
+| `cyclonedx-1.6` | CycloneDX 1.6 JSON |
+| `cyclonedx-1.7` | CycloneDX 1.7 JSON |
+| `spdx-2.3`      | SPDX 2.3 JSON      |
+| `spdx-3.0.1`    | SPDX 3.0.1 JSON-LD |
 
 ```powershell
 luna sbom --target cyclonedx-1.7 > inventory.json

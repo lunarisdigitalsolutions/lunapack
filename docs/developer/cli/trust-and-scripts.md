@@ -48,6 +48,18 @@ In noninteractive sessions, LunaPack captures bounded hook output. Hooks used in
 automation must not require input; configure the underlying command's
 noninteractive or accept-defaults option instead.
 
+## Process termination
+
+Timeout and cancellation stop the hook process tree. Windows uses an isolated
+job object. Linux uses a child-subreaper process and process-group containment.
+macOS tracks hook session and process relationships and terminates descendants
+through process groups and descendant process IDs.
+
+A hook is not considered complete until its root process and active descendants
+have exited or been terminated. A script that exits but leaves a detached
+child continues to run the hook until the child stops or the timeout/cancellation
+policy ends the tree.
+
 When cancellation stops a hook's process tree, LunaPack closes redirected
 readers instead of waiting for detached descendants that retain output handles.
 Output already captured is emitted; unread output may be discarded.
