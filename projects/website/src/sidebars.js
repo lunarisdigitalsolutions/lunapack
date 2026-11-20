@@ -100,19 +100,73 @@ const sidebars = {
           items: [
             'cli/index',
             'cli/overview',
-            'cli/commands',
-            'cli/configuration',
-            'cli/links',
-            'cli/manifests',
-            'cli/trust-and-scripts'
+            {
+              type: 'category',
+              label: 'Commands',
+              items: [
+                'cli/commands',
+                {
+                  type: 'category',
+                  label: 'Setup',
+                  items: [
+                    'cli/commands/init',
+                    'cli/commands/config',
+                    'cli/commands/doctor',
+                    'cli/commands/completions'
+                  ]
+                },
+                {
+                  type: 'category',
+                  label: 'Sources, trust, and project state',
+                  items: [
+                    'cli/commands/sources',
+                    'cli/commands/trust',
+                    'cli/commands/variables',
+                    'cli/commands/remap',
+                    'cli/commands/links'
+                  ]
+                },
+                {
+                  type: 'category',
+                  label: 'Catalog and lifecycle',
+                  items: [
+                    'cli/commands/catalog',
+                    'cli/commands/pack',
+                    'cli/commands/publish',
+                    'cli/commands/lifecycle',
+                    'cli/commands/mv'
+                  ]
+                },
+                {
+                  type: 'category',
+                  label: 'Diagnostics',
+                  items: [
+                    'cli/commands/audit',
+                    'cli/commands/sbom',
+                    'cli/commands/hooks'
+                  ]
+                }
+              ]
+            },
+            {
+              type: 'category',
+              label: 'Configuration and state',
+              items: [
+                'cli/configuration-reference',
+                'cli/configuration',
+                'cli/manifests',
+                'cli/lock-file',
+                'cli/links',
+                'cli/trust-and-scripts',
+                'cli/environment'
+              ]
+            }
           ]
         },
         {
           type: 'category',
           label: 'Files and schemas',
           items: [
-            'cli/environment',
-            'cli/lock-file',
             'packs/reference/manifest',
             'packs/reference/catalog-layout',
             'packs/reference/project-documents'

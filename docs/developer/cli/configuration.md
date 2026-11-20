@@ -1,5 +1,8 @@
 # Configuration
 
+Use [Configuration reference](configuration-reference.md) for the exhaustive
+property, preference, scope, and resource-limit lookup table.
+
 Project state consists of portable configuration in `lunapack.yml` and generated
 resolved state in `lunapack-lock.yml`. Both documents use `schemaVersion: 1` and
 are created together by `luna init`.
