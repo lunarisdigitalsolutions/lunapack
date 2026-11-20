@@ -8,6 +8,8 @@ internal interface IOciRegistryClient
         Uri registry,
         OciRegistryCredential? credential,
         string credentialPartition,
+        long maximumRecords,
+        long maximumBytes,
         CancellationToken cancellationToken
     );
 
@@ -16,6 +18,8 @@ internal interface IOciRegistryClient
         string repository,
         OciRegistryCredential? credential,
         string credentialPartition,
+        long maximumRecords,
+        long maximumBytes,
         CancellationToken cancellationToken
     );
 

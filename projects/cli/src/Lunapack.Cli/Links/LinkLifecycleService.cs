@@ -161,6 +161,7 @@ internal sealed class LinkLifecycleService(
                 definition,
                 lockedLink.SourceIdentity,
                 retainedTargets: GetRetainedLinkTargets(lockedLink),
+                resourceLimits: state.EffectiveResourceLimits,
                 cancellationToken: cancellationToken
             );
             if (resolution.Value is not { } resolved)
@@ -298,6 +299,7 @@ internal sealed class LinkLifecycleService(
             retainedTargets: useLockedIdentity && lockedLink is not null
                 ? GetRetainedLinkTargets(lockedLink)
                 : null,
+            state.EffectiveResourceLimits,
             cancellationToken
         );
         if (resolution.Value is not { } resolved)

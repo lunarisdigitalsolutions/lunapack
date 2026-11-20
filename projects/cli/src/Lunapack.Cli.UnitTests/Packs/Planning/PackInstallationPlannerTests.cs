@@ -1,4 +1,6 @@
 using System.IO.Abstractions.TestingHelpers;
+using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Catalog;
 using Lunapack.Cli.Packs;
 using Lunapack.Cli.Packs.ManagedFiles;
@@ -802,6 +804,146 @@ public sealed class PackInstallationPlannerTests
         );
 
         await Assert.That(result.RequireValue().ManagedFiles).IsEmpty();
+    }
+
+    [Test]
+    public async Task Plan_WhenDirectoryMatchesPerPackFileLimit_AcceptsBoundaryAndRejectsOneMore()
+    {
+        var fileSystem = CreateFileSystem(
+            (PacksPath("one", "content", "first.txt"), "first"),
+            (PacksPath("one", "content", "second.txt"), "second")
+        );
+        var planner = CreatePlanner(fileSystem);
+        var pack = CreateSelectorPack(CreateSelectorManagedFile("directory"));
+
+        var exact = planner.Plan(
+            _projectDirectory,
+            new ResolvedPackGraph([pack]),
+            new ProjectLockFile { SchemaVersion = 1 },
+            new ProjectConfiguration { SchemaVersion = 1 },
+            new PackInstallationRequest(new PackReference("one", null), null, false),
+            _emptyParameters,
+            resourceLimits: ResourceLimits.Default with
+            {
+                FilesPerPack = 2,
+            }
+        );
+        var overLimit = planner.Plan(
+            _projectDirectory,
+            new ResolvedPackGraph([pack]),
+            new ProjectLockFile { SchemaVersion = 1 },
+            new ProjectConfiguration { SchemaVersion = 1 },
+            new PackInstallationRequest(new PackReference("one", null), null, false),
+            _emptyParameters,
+            resourceLimits: ResourceLimits.Default with
+            {
+                FilesPerPack = 1,
+            }
+        );
+
+        await Assert.That(exact.IsSuccess).IsTrue().Because(exact.Error ?? string.Empty);
+        await Assert.That(exact.RequireValue().ManagedFiles.Count).IsEqualTo(2);
+        await Assert.That(overLimit.IsSuccess).IsFalse();
+        await Assert
+            .That(overLimit.ErrorKind)
+            .IsEqualTo(ManifestOperationErrorKind.ResourceLimitExceeded);
+        await Assert.That(overLimit.Error).Contains("1 file limit");
+        await Assert.That(overLimit.Error).Contains("at least 2 files selected");
+    }
+
+    [Test]
+    public async Task Plan_WhenGraphExceedsSelectedFileLimit_RejectsSharedGraph()
+    {
+        var fileSystem = CreateFileSystem(
+            (PacksPath("one", "source.txt"), "one"),
+            (PacksPath("two", "source.txt"), "two")
+        );
+        var planner = CreatePlanner(fileSystem);
+        var graph = new ResolvedPackGraph([
+            CreatePack("one", PacksPath("one"), "one.txt"),
+            CreatePack("two", PacksPath("two"), "two.txt"),
+        ]);
+
+        var exact = planner.Plan(
+            _projectDirectory,
+            graph,
+            new ProjectLockFile { SchemaVersion = 1 },
+            new ProjectConfiguration { SchemaVersion = 1 },
+            new PackInstallationRequest(new PackReference("one", null), null, false),
+            _emptyParameters,
+            resourceLimits: ResourceLimits.Default with
+            {
+                FilesPerGraph = 2,
+            }
+        );
+        var overLimit = planner.Plan(
+            _projectDirectory,
+            graph,
+            new ProjectLockFile { SchemaVersion = 1 },
+            new ProjectConfiguration { SchemaVersion = 1 },
+            new PackInstallationRequest(new PackReference("one", null), null, false),
+            _emptyParameters,
+            resourceLimits: ResourceLimits.Default with
+            {
+                FilesPerGraph = 1,
+            }
+        );
+
+        await Assert.That(exact.IsSuccess).IsTrue().Because(exact.Error ?? string.Empty);
+        await Assert.That(overLimit.IsSuccess).IsFalse();
+        await Assert
+            .That(overLimit.ErrorKind)
+            .IsEqualTo(ManifestOperationErrorKind.ResourceLimitExceeded);
+        await Assert.That(overLimit.Error).Contains("1 file limit");
+        await Assert.That(overLimit.Error).Contains("at least 2 files selected");
+    }
+
+    [Test]
+    public async Task Plan_WhenRenderedTotalExceedsLimit_RejectsBeforeReturningPlan()
+    {
+        var fileSystem = CreateFileSystem(
+            (PacksPath("one", "first.txt"), "1234"),
+            (PacksPath("one", "second.txt"), "5678")
+        );
+        var planner = CreatePlanner(fileSystem);
+        var pack = CreateSelectorPack(
+            new PackManifest.PackManagedFile { Source = "first.txt", Target = "first.txt" },
+            new PackManifest.PackManagedFile { Source = "second.txt", Target = "second.txt" }
+        );
+
+        var exact = planner.Plan(
+            _projectDirectory,
+            new ResolvedPackGraph([pack]),
+            new ProjectLockFile { SchemaVersion = 1 },
+            new ProjectConfiguration { SchemaVersion = 1 },
+            new PackInstallationRequest(new PackReference("one", null), null, false),
+            _emptyParameters,
+            resourceLimits: ResourceLimits.Default with
+            {
+                RenderedTotalBytes = 8,
+            }
+        );
+        var overLimit = planner.Plan(
+            _projectDirectory,
+            new ResolvedPackGraph([pack]),
+            new ProjectLockFile { SchemaVersion = 1 },
+            new ProjectConfiguration { SchemaVersion = 1 },
+            new PackInstallationRequest(new PackReference("one", null), null, false),
+            _emptyParameters,
+            resourceLimits: ResourceLimits.Default with
+            {
+                RenderedTotalBytes = 7,
+            }
+        );
+
+        await Assert.That(exact.IsSuccess).IsTrue().Because(exact.Error ?? string.Empty);
+        await Assert.That(exact.RequireValue().RenderedOutputBytes).IsEqualTo(8);
+        await Assert.That(overLimit.IsSuccess).IsFalse();
+        await Assert
+            .That(overLimit.ErrorKind)
+            .IsEqualTo(ManifestOperationErrorKind.ResourceLimitExceeded);
+        await Assert.That(overLimit.Error).Contains("7 byte total limit");
+        await Assert.That(overLimit.Error).Contains("at least 8 bytes produced");
     }
 
     private static DiscoveredPack CreatePack(

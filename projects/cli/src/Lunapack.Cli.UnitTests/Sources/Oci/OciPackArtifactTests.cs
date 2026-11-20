@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Packs.Manifest;
 using Lunapack.Cli.Sources.Oci;
 
@@ -134,6 +135,31 @@ public sealed class OciPackArtifactTests
     }
 
     [Test]
+    public async Task Scenario_ReadManifest_UsesConfiguredContentDescriptorLimit()
+    {
+        var manifestBytes = CreateManifestBytes();
+        var manifest = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(manifestBytes)!;
+        var layer = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+            manifest["layers"][0].GetRawText()
+        )!;
+        const long contentSize = 600L * 1024 * 1024;
+        layer["size"] = JsonSerializer.SerializeToElement(contentSize);
+        using var changedLayer = JsonDocument.Parse(JsonSerializer.Serialize(new[] { layer }));
+        manifest["layers"] = changedLayer.RootElement.Clone();
+        var changedManifest = JsonSerializer.SerializeToUtf8Bytes(manifest);
+
+        var exact = OciPackArtifact.ReadManifest(changedManifest, contentSize);
+        var overLimit = OciPackArtifact.ReadManifest(changedManifest, contentSize - 1);
+
+        await Assert.That(exact.IsSuccess).IsTrue().Because(exact.Error ?? string.Empty);
+        await Assert.That(overLimit.IsSuccess).IsFalse();
+        await Assert
+            .That(overLimit.ErrorKind)
+            .IsEqualTo(ManifestOperationErrorKind.ResourceLimitExceeded);
+        await Assert.That(overLimit.Error).Contains($"at least {contentSize} bytes declared");
+    }
+
+    [Test]
     public async Task Scenario_ReadManifest_RejectsOversizedContentDescriptor()
     {
         var manifestBytes = CreateManifestBytes();
@@ -176,6 +202,27 @@ public sealed class OciPackArtifactTests
             var result = OciPackArtifact.CreateManifest(pack, config, content);
             await Assert.That(result.IsSuccess).IsFalse();
         }
+    }
+
+    [Test]
+    public async Task Scenario_CreateManifest_RaisedContentLimit_AcceptsLargerDescriptor()
+    {
+        var pack = CreatePack();
+        var (_, configDescriptor) = OciPackArtifact.CreateConfig(pack);
+        var contentDescriptor = new OciRegistryDescriptor(
+            OciPackMediaTypes.ContentZip,
+            OciPackArtifact.ComputeDigest("zip"u8),
+            512L * 1024 * 1024 + 1
+        );
+
+        var result = OciPackArtifact.CreateManifest(
+            pack,
+            configDescriptor,
+            contentDescriptor,
+            maximumContentBytes: 1024L * 1024 * 1024
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue();
     }
 
     [Test]

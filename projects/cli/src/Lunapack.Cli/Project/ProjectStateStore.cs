@@ -2,15 +2,20 @@ using System.IO.Abstractions;
 using System.Text;
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Application.Paths;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Application.Serialization;
 using Lunapack.Cli.Packs.Manifest;
 using Lunapack.Cli.Sources;
+using Lunapack.Cli.Trust;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
 namespace Lunapack.Cli.Project;
 
-internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateStore
+internal sealed class ProjectStateStore(
+    IFileSystem fileSystem,
+    UserSettingsStore? userSettingsStore = null
+) : IProjectStateStore
 {
     public const string ConfigurationFileName = "lunapack.yml";
 
@@ -38,41 +43,79 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
 
     public async Task<ManifestOperationResult<ProjectState>> LoadAsync(string projectDirectory)
     {
+        var userPreferences = await LoadUserResourceLimitPreferencesAsync(projectDirectory);
+        if (userPreferences.Value is not { } userResourcePreferences)
+        {
+            return ManifestOperationResult<ProjectState>.Failure(userPreferences.Error!);
+        }
+
+        var userLimits = ResourceLimits.Resolve(
+            local: null,
+            userResourcePreferences.UserProject,
+            userResourcePreferences.Global
+        );
         var configuration = await LoadDocumentAsync<ProjectConfiguration>(
             projectDirectory,
             ConfigurationFileName,
-            ManifestModelValidator.Validate
+            ManifestModelValidator.Validate,
+            Math.Min(userLimits.ProjectManifestBytes, ResourceLimits.ProjectSettingsBootstrapBytes)
         );
-        if (configuration.Value is not { } loadedConfiguration)
+        if (configuration.Value is not { } configurationDocument)
         {
             return ManifestOperationResult<ProjectState>.Failure(
                 configuration.Error ?? "Unable to load project configuration."
             );
         }
 
-        var lockFile = await LoadDocumentAsync<ProjectLockFile>(
-            projectDirectory,
-            LockFileName,
-            ManifestModelValidator.Validate
+        var loadedConfiguration = configurationDocument.Document;
+        var resourceLimits = ResourceLimits.Resolve(
+            loadedConfiguration.Preferences?.ResourceLimits,
+            userResourcePreferences.UserProject,
+            userResourcePreferences.Global
         );
-        if (lockFile.Value is not { } loadedLockFile)
+        if (configurationDocument.ByteCount > resourceLimits.ProjectManifestBytes)
         {
             return ManifestOperationResult<ProjectState>.Failure(
-                lockFile.Error ?? "Unable to load project lock file."
+                $"{ConfigurationFileName} exceeds its effective limit ({configurationDocument.ByteCount} bytes read, limit {resourceLimits.ProjectManifestBytes} bytes)."
             );
         }
 
-        var normalizedState = NormalizeState(
-            new ProjectState { Configuration = loadedConfiguration, LockFile = loadedLockFile }
+        var lockFile = await LoadDocumentAsync<ProjectLockFile>(
+            projectDirectory,
+            LockFileName,
+            ManifestModelValidator.Validate,
+            resourceLimits.LockFileBytes,
+            contents => LockFileYamlResourceValidator.Validate(contents, resourceLimits)
         );
-        var validationError = ValidateState(
+        if (lockFile.Value is not { } lockFileDocument)
+        {
+            return ManifestOperationResult<ProjectState>.Failure(
+                lockFile.Error ?? "Unable to load project lock file.",
+                lockFile.ErrorKind
+            );
+        }
+
+        var loadedLockFile = lockFileDocument.Document;
+        var normalizedState = NormalizeState(
+            new ProjectState
+            {
+                Configuration = loadedConfiguration,
+                LockFile = loadedLockFile,
+                EffectiveResourceLimits = resourceLimits,
+            }
+        );
+        var validation = ValidateState(
             normalizedState.Configuration,
             normalizedState.LockFile,
+            normalizedState.EffectiveResourceLimits,
             allowUnconfiguredLockSources: true
         );
-        if (validationError is not null)
+        if (!validation.IsSuccess)
         {
-            return ManifestOperationResult<ProjectState>.Failure(validationError);
+            return ManifestOperationResult<ProjectState>.Failure(
+                validation.Error!,
+                validation.ErrorKind
+            );
         }
 
         return ManifestOperationResult<ProjectState>.Success(normalizedState);
@@ -99,22 +142,25 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
             return ManifestOperationResult<bool>.Failure("Project state already exists.");
         }
 
+        var initialization = await PrepareInitializationAsync(
+            projectDirectory,
+            configuration,
+            lockFile
+        );
+        if (initialization.Value is not { } serialized)
+        {
+            return ManifestOperationResult<bool>.Failure(
+                initialization.Error!,
+                initialization.ErrorKind
+            );
+        }
+
         var temporaryConfigurationPath = CreateTemporaryPath(configurationPath);
         var temporaryLockFilePath = CreateTemporaryPath(lockFilePath);
         try
         {
-            _fileSystem.File.WriteAllText(
-                temporaryConfigurationPath,
-                _serializer.Serialize(
-                    new InitialProjectConfiguration { SchemaVersion = configuration.SchemaVersion }
-                )
-            );
-            _fileSystem.File.WriteAllText(
-                temporaryLockFilePath,
-                _serializer.Serialize(
-                    new InitialProjectLockFile { SchemaVersion = lockFile.SchemaVersion }
-                )
-            );
+            _fileSystem.File.WriteAllText(temporaryConfigurationPath, serialized.Configuration);
+            _fileSystem.File.WriteAllText(temporaryLockFilePath, serialized.LockFile);
             _fileSystem.File.Move(temporaryConfigurationPath, configurationPath);
             _fileSystem.File.Move(temporaryLockFilePath, lockFilePath);
             return ManifestOperationResult<bool>.Success(true);
@@ -142,10 +188,86 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
         }
     }
 
+    private async Task<ManifestOperationResult<SerializedProjectState>> PrepareInitializationAsync(
+        string projectDirectory,
+        ProjectConfiguration configuration,
+        ProjectLockFile lockFile
+    )
+    {
+        var resourceLimitsResult = await ResolveSaveResourceLimitsAsync(
+            projectDirectory,
+            new ProjectState { Configuration = configuration, LockFile = lockFile }
+        );
+        if (resourceLimitsResult.Value is not { } resourceLimits)
+        {
+            return ManifestOperationResult<SerializedProjectState>.Failure(
+                resourceLimitsResult.Error!,
+                resourceLimitsResult.ErrorKind
+            );
+        }
+
+        var serializedConfiguration = SerializeBounded(
+            new InitialProjectConfiguration { SchemaVersion = configuration.SchemaVersion },
+            resourceLimits.ProjectManifestBytes,
+            ConfigurationFileName
+        );
+        if (serializedConfiguration.Value is not { } configurationContents)
+        {
+            return ManifestOperationResult<SerializedProjectState>.Failure(
+                serializedConfiguration.Error!,
+                serializedConfiguration.ErrorKind
+            );
+        }
+
+        var serializedLockFile = SerializeBounded(
+            new InitialProjectLockFile { SchemaVersion = lockFile.SchemaVersion },
+            resourceLimits.LockFileBytes,
+            LockFileName
+        );
+        return serializedLockFile.Value is { } lockFileContents
+            ? ManifestOperationResult<SerializedProjectState>.Success(
+                new SerializedProjectState(configurationContents, lockFileContents)
+            )
+            : ManifestOperationResult<SerializedProjectState>.Failure(
+                serializedLockFile.Error!,
+                serializedLockFile.ErrorKind
+            );
+    }
+
     public async Task<ManifestOperationResult<bool>> SaveAsync(
         string projectDirectory,
         ProjectState state
     ) => await SaveAsync(projectDirectory, state, allowUnconfiguredLockSources: false);
+
+    public async Task<ManifestOperationResult<bool>> ValidateForSaveAsync(
+        string projectDirectory,
+        ProjectState state
+    )
+    {
+        var prepared = await PrepareForSaveAsync(
+            projectDirectory,
+            state,
+            allowUnconfiguredLockSources: false
+        );
+        return prepared.IsSuccess
+            ? ManifestOperationResult<bool>.Success(true)
+            : ManifestOperationResult<bool>.Failure(prepared.Error!, prepared.ErrorKind);
+    }
+
+    public async Task<ManifestOperationResult<bool>> ValidateForSaveAllowingUnavailableSourcesAsync(
+        string projectDirectory,
+        ProjectState state
+    )
+    {
+        var prepared = await PrepareForSaveAsync(
+            projectDirectory,
+            state,
+            allowUnconfiguredLockSources: true
+        );
+        return prepared.IsSuccess
+            ? ManifestOperationResult<bool>.Success(true)
+            : ManifestOperationResult<bool>.Failure(prepared.Error!, prepared.ErrorKind);
+    }
 
     public async Task<ManifestOperationResult<bool>> SaveAllowingUnavailableSourcesAsync(
         string projectDirectory,
@@ -158,13 +280,139 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
         bool allowUnconfiguredLockSources
     )
     {
-        var normalizedState = NormalizeState(state);
-        var lockFileIssues = await ValidateAsync(
-            normalizedState.LockFile,
-            ManifestModelValidator.Validate
+        var prepared = await PrepareForSaveAsync(
+            projectDirectory,
+            state,
+            allowUnconfiguredLockSources
         );
+        if (prepared.Value is not { } preparedState)
+        {
+            return ManifestOperationResult<bool>.Failure(prepared.Error!, prepared.ErrorKind);
+        }
+
+        var configurationPath = GetDocumentPath(projectDirectory, ConfigurationFileName);
+        var lockFilePath = GetDocumentPath(projectDirectory, LockFileName);
+        var snapshotsResult = await CreateSnapshotsAsync(
+            configurationPath,
+            lockFilePath,
+            preparedState.State.EffectiveResourceLimits
+        );
+        if (snapshotsResult.Value is not { } snapshots)
+        {
+            return ManifestOperationResult<bool>.Failure(
+                snapshotsResult.Error!,
+                snapshotsResult.ErrorKind
+            );
+        }
+
+        var temporaryConfigurationPath = CreateTemporaryPath(configurationPath);
+        var temporaryLockFilePath = CreateTemporaryPath(lockFilePath);
+
+        try
+        {
+            _fileSystem.File.WriteAllText(
+                temporaryConfigurationPath,
+                preparedState.Contents.Configuration
+            );
+            _fileSystem.File.WriteAllText(temporaryLockFilePath, preparedState.Contents.LockFile);
+
+            _fileSystem.File.Move(temporaryConfigurationPath, configurationPath, overwrite: true);
+            _fileSystem.File.Move(temporaryLockFilePath, lockFilePath, overwrite: true);
+
+            return ManifestOperationResult<bool>.Success(true);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            RestoreSnapshots(projectDirectory, snapshots);
+            return ManifestOperationResult<bool>.Failure(
+                $"Unable to write project state: {exception.Message}"
+            );
+        }
+        finally
+        {
+            DeleteTemporaryFile(temporaryConfigurationPath);
+            DeleteTemporaryFile(temporaryLockFilePath);
+        }
+    }
+
+    private async Task<ManifestOperationResult<PreparedProjectState>> PrepareForSaveAsync(
+        string projectDirectory,
+        ProjectState state,
+        bool allowUnconfiguredLockSources
+    )
+    {
+        var normalizedState = NormalizeState(state);
+        var resourceLimits = await ResolveSaveResourceLimitsAsync(
+            projectDirectory,
+            normalizedState
+        );
+        if (resourceLimits.Value is not { } effectiveResourceLimits)
+        {
+            return ManifestOperationResult<PreparedProjectState>.Failure(
+                resourceLimits.Error!,
+                resourceLimits.ErrorKind
+            );
+        }
+
+        normalizedState = normalizedState with
+        {
+            EffectiveResourceLimits = effectiveResourceLimits,
+        };
+        var validation = await ValidateStateForSaveAsync(
+            normalizedState,
+            allowUnconfiguredLockSources
+        );
+        if (!validation.IsSuccess)
+        {
+            return ManifestOperationResult<PreparedProjectState>.Failure(
+                validation.Error!,
+                validation.ErrorKind
+            );
+        }
+
+        var serialized = SerializeState(normalizedState);
+        return serialized.Value is { } contents
+            ? ManifestOperationResult<PreparedProjectState>.Success(
+                new PreparedProjectState(normalizedState, contents)
+            )
+            : ManifestOperationResult<PreparedProjectState>.Failure(
+                serialized.Error!,
+                serialized.ErrorKind
+            );
+    }
+
+    private async Task<ManifestOperationResult<ResourceLimits>> ResolveSaveResourceLimitsAsync(
+        string projectDirectory,
+        ProjectState state
+    )
+    {
+        var local = state.Configuration.Preferences?.ResourceLimits;
+        if (userSettingsStore is null)
+        {
+            return ManifestOperationResult<ResourceLimits>.Success(
+                ResourceLimits.Resolve(local, state.EffectiveResourceLimits)
+            );
+        }
+
+        var preferences = await LoadUserResourceLimitPreferencesAsync(projectDirectory);
+        return preferences.Value is { } userPreferences
+            ? ManifestOperationResult<ResourceLimits>.Success(
+                ResourceLimits.Resolve(local, userPreferences.UserProject, userPreferences.Global)
+            )
+            : ManifestOperationResult<ResourceLimits>.Failure(
+                preferences.Error!,
+                preferences.ErrorKind
+            );
+    }
+
+    private static async Task<ManifestOperationResult<bool>> ValidateStateForSaveAsync(
+        ProjectState state,
+        bool allowUnconfiguredLockSources
+    )
+    {
+        var lockFileIssues = await ValidateAsync(state.LockFile, ManifestModelValidator.Validate);
         var configurationIssues = await ValidateAsync(
-            normalizedState.Configuration,
+            state.Configuration,
             ManifestModelValidator.Validate
         );
         if (lockFileIssues.Count > 0 || configurationIssues.Count > 0)
@@ -188,55 +436,181 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
         }
 
         var validationError = ValidateState(
-            normalizedState.Configuration,
-            normalizedState.LockFile,
+            state.Configuration,
+            state.LockFile,
+            state.EffectiveResourceLimits,
             allowUnconfiguredLockSources
         );
-        if (validationError is not null)
+        return validationError;
+    }
+
+    private static ManifestOperationResult<SerializedProjectState> SerializeState(
+        ProjectState state
+    )
+    {
+        var serializedConfiguration = SerializeBounded(
+            state.Configuration,
+            state.EffectiveResourceLimits.ProjectManifestBytes,
+            ConfigurationFileName
+        );
+        if (serializedConfiguration.Value is not { } configuration)
         {
-            return ManifestOperationResult<bool>.Failure(validationError);
+            return ManifestOperationResult<SerializedProjectState>.Failure(
+                serializedConfiguration.Error!,
+                serializedConfiguration.ErrorKind
+            );
         }
 
-        var configurationPath = GetDocumentPath(projectDirectory, ConfigurationFileName);
-        var lockFilePath = GetDocumentPath(projectDirectory, LockFileName);
-        var snapshots = new[] { CreateSnapshot(configurationPath), CreateSnapshot(lockFilePath) };
-        var temporaryConfigurationPath = CreateTemporaryPath(configurationPath);
-        var temporaryLockFilePath = CreateTemporaryPath(lockFilePath);
+        var serializedLockFile = SerializeBounded(
+            state.LockFile,
+            state.EffectiveResourceLimits.LockFileBytes,
+            LockFileName
+        );
+        if (serializedLockFile.Value is not { } lockFile)
+        {
+            return ManifestOperationResult<SerializedProjectState>.Failure(
+                serializedLockFile.Error!,
+                serializedLockFile.ErrorKind
+            );
+        }
 
+        var validated = ValidateSerializedSizes(
+            configuration,
+            lockFile,
+            state.EffectiveResourceLimits
+        );
+        if (!validated.IsSuccess)
+        {
+            return ManifestOperationResult<SerializedProjectState>.Failure(
+                validated.Error!,
+                validated.ErrorKind
+            );
+        }
+
+        return ManifestOperationResult<SerializedProjectState>.Success(
+            new SerializedProjectState(configuration, lockFile)
+        );
+    }
+
+    private static ManifestOperationResult<string> SerializeBounded(
+        object value,
+        long byteLimit,
+        string inputName
+    )
+    {
+        using var writer = new BoundedTextWriter(byteLimit, inputName);
         try
         {
-            _fileSystem.File.WriteAllText(
-                temporaryConfigurationPath,
-                _serializer.Serialize(normalizedState.Configuration)
-            );
-            _fileSystem.File.WriteAllText(
-                temporaryLockFilePath,
-                _serializer.Serialize(normalizedState.LockFile)
-            );
-
-            _fileSystem.File.Move(temporaryConfigurationPath, configurationPath, overwrite: true);
-            _fileSystem.File.Move(temporaryLockFilePath, lockFilePath, overwrite: true);
-
-            return ManifestOperationResult<bool>.Success(true);
+            _serializer.Serialize(writer, value);
+            return ManifestOperationResult<string>.Success(writer.ToString());
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        catch (BoundedTextWriteException exception)
         {
-            RestoreSnapshots(projectDirectory, snapshots);
-            return ManifestOperationResult<bool>.Failure(
-                $"Unable to write project state: {exception.Message}"
+            return ManifestOperationResult<string>.Failure(
+                exception.Message,
+                ManifestOperationErrorKind.ResourceLimitExceeded
             );
-        }
-        finally
-        {
-            DeleteTemporaryFile(temporaryConfigurationPath);
-            DeleteTemporaryFile(temporaryLockFilePath);
         }
     }
 
-    private DocumentSnapshot CreateSnapshot(string path) =>
-        _fileSystem.File.Exists(path)
-            ? new DocumentSnapshot(path, _fileSystem.File.ReadAllText(path))
-            : new DocumentSnapshot(path, null);
+    private static ManifestOperationResult<bool> ValidateSerializedSizes(
+        string configuration,
+        string lockFile,
+        ResourceLimits resourceLimits
+    )
+    {
+        var configurationByteCount = Encoding.UTF8.GetByteCount(configuration);
+        if (configurationByteCount > resourceLimits.ProjectManifestBytes)
+        {
+            return ManifestOperationResult<bool>.Failure(
+                $"{ConfigurationFileName} serialized content exceeds its {resourceLimits.ProjectManifestBytes} byte limit ({configurationByteCount} bytes).",
+                ManifestOperationErrorKind.ResourceLimitExceeded
+            );
+        }
+
+        var lockFileByteCount = Encoding.UTF8.GetByteCount(lockFile);
+        return lockFileByteCount > resourceLimits.LockFileBytes
+            ? ManifestOperationResult<bool>.Failure(
+                $"{LockFileName} serialized content exceeds its {resourceLimits.LockFileBytes} byte limit ({lockFileByteCount} bytes).",
+                ManifestOperationErrorKind.ResourceLimitExceeded
+            )
+            : ManifestOperationResult<bool>.Success(true);
+    }
+
+    private async Task<
+        ManifestOperationResult<IReadOnlyList<DocumentSnapshot>>
+    > CreateSnapshotsAsync(
+        string configurationPath,
+        string lockFilePath,
+        ResourceLimits resourceLimits
+    )
+    {
+        var configurationSnapshot = await CreateSnapshotAsync(
+            configurationPath,
+            ConfigurationFileName,
+            resourceLimits.ProjectManifestBytes
+        );
+        if (configurationSnapshot.Value is not { } configurationContentsSnapshot)
+        {
+            return ManifestOperationResult<IReadOnlyList<DocumentSnapshot>>.Failure(
+                configurationSnapshot.Error!,
+                configurationSnapshot.ErrorKind
+            );
+        }
+
+        var lockFileSnapshot = await CreateSnapshotAsync(
+            lockFilePath,
+            LockFileName,
+            resourceLimits.LockFileBytes
+        );
+        if (lockFileSnapshot.Value is not { } lockFileContentsSnapshot)
+        {
+            return ManifestOperationResult<IReadOnlyList<DocumentSnapshot>>.Failure(
+                lockFileSnapshot.Error!,
+                lockFileSnapshot.ErrorKind
+            );
+        }
+
+        return ManifestOperationResult<IReadOnlyList<DocumentSnapshot>>.Success([
+            configurationContentsSnapshot,
+            lockFileContentsSnapshot,
+        ]);
+    }
+
+    private async Task<ManifestOperationResult<DocumentSnapshot>> CreateSnapshotAsync(
+        string path,
+        string fileName,
+        long byteLimit
+    )
+    {
+        if (!_fileSystem.File.Exists(path))
+        {
+            return ManifestOperationResult<DocumentSnapshot>.Success(
+                new DocumentSnapshot(path, null)
+            );
+        }
+
+        try
+        {
+            var read = await BoundedFileReader.ReadTextAsync(
+                _fileSystem,
+                path,
+                byteLimit,
+                fileName
+            );
+            return read.Value is { } contents
+                ? ManifestOperationResult<DocumentSnapshot>.Success(
+                    new DocumentSnapshot(path, contents.Text)
+                )
+                : ManifestOperationResult<DocumentSnapshot>.Failure(read.Error!, read.ErrorKind);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return ManifestOperationResult<DocumentSnapshot>.Failure(
+                $"Unable to read {fileName} before writing project state: {exception.Message}"
+            );
+        }
+    }
 
     private static string CreateTemporaryPath(string documentPath) =>
         $"{documentPath}.{Guid.NewGuid():N}.tmp";
@@ -252,34 +626,69 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
     private string GetDocumentPath(string projectDirectory, string fileName) =>
         _fileSystem.Path.Combine(projectDirectory, fileName);
 
-    private async Task<ManifestOperationResult<TDocument>> LoadDocumentAsync<TDocument>(
+    private async Task<
+        ManifestOperationResult<LoadedDocument<TDocument>>
+    > LoadDocumentAsync<TDocument>(
         string projectDirectory,
         string fileName,
-        Func<TDocument, IReadOnlyList<string>> validate
+        Func<TDocument, IReadOnlyList<string>> validate,
+        long byteLimit,
+        Func<string, ManifestOperationResult<bool>>? preDeserialize = null
     )
         where TDocument : class
     {
         var documentPath = GetDocumentPath(projectDirectory, fileName);
         if (!_fileSystem.File.Exists(documentPath))
         {
-            return ManifestOperationResult<TDocument>.Failure(
+            return ManifestOperationResult<LoadedDocument<TDocument>>.Failure(
                 $"Missing {fileName} in '{projectDirectory}'."
             );
         }
 
         try
         {
-            var document = _deserializer.Deserialize<TDocument>(
-                _fileSystem.File.ReadAllText(documentPath)
+            var read = await BoundedFileReader.ReadTextAsync(
+                _fileSystem,
+                documentPath,
+                byteLimit,
+                fileName
             );
+            if (read.Value is not { } contents)
+            {
+                return ManifestOperationResult<LoadedDocument<TDocument>>.Failure(read.Error!);
+            }
+
+            var unknownResourceLimit =
+                typeof(TDocument) == typeof(ProjectConfiguration)
+                    ? ResourceLimitYamlValidator.ValidateProject(contents.Text)
+                    : null;
+            if (unknownResourceLimit is not null)
+            {
+                return ManifestOperationResult<LoadedDocument<TDocument>>.Failure(
+                    $"Invalid {fileName} in '{projectDirectory}': {unknownResourceLimit}"
+                );
+            }
+
+            var preflight = preDeserialize?.Invoke(contents.Text);
+            if (preflight is { IsSuccess: false })
+            {
+                return ManifestOperationResult<LoadedDocument<TDocument>>.Failure(
+                    preflight.Error!,
+                    preflight.ErrorKind
+                );
+            }
+
+            var document = _deserializer.Deserialize<TDocument>(contents.Text);
             if (document is null || !await IsValidAsync(document, validate))
             {
-                return ManifestOperationResult<TDocument>.Failure(
+                return ManifestOperationResult<LoadedDocument<TDocument>>.Failure(
                     $"Invalid {fileName} in '{projectDirectory}'."
                 );
             }
 
-            return ManifestOperationResult<TDocument>.Success(document);
+            return ManifestOperationResult<LoadedDocument<TDocument>>.Success(
+                new LoadedDocument<TDocument>(document, contents.ByteCount)
+            );
         }
         catch (Exception exception)
             when (exception
@@ -288,10 +697,42 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
                         or YamlDotNet.Core.YamlException
             )
         {
-            return ManifestOperationResult<TDocument>.Failure(
+            return ManifestOperationResult<LoadedDocument<TDocument>>.Failure(
                 $"Unable to read {fileName} in '{projectDirectory}': {exception.Message}"
             );
         }
+    }
+
+    private async Task<
+        ManifestOperationResult<UserResourceLimitPreferences>
+    > LoadUserResourceLimitPreferencesAsync(string projectDirectory)
+    {
+        if (userSettingsStore is null)
+        {
+            return ManifestOperationResult<UserResourceLimitPreferences>.Success(
+                new UserResourceLimitPreferences(null, null)
+            );
+        }
+
+        var settings = await userSettingsStore.LoadAsync();
+        if (settings.Value is not { } userSettings)
+        {
+            return ManifestOperationResult<UserResourceLimitPreferences>.Failure(settings.Error!);
+        }
+
+        var projectKey = userSettingsStore.GetProjectKey(projectDirectory);
+        if (projectKey.Value is not { } key)
+        {
+            return ManifestOperationResult<UserResourceLimitPreferences>.Failure(projectKey.Error!);
+        }
+
+        userSettings.Projects.TryGetValue(key, out var projectSettings);
+        return ManifestOperationResult<UserResourceLimitPreferences>.Success(
+            new UserResourceLimitPreferences(
+                userSettings.Global.Preferences?.ResourceLimits,
+                projectSettings?.Preferences?.ResourceLimits
+            )
+        );
     }
 
     private static async Task<bool> IsValidAsync<TDocument>(
@@ -314,9 +755,10 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
         IReadOnlyList<string> issues
     ) => $"{documentName} validation failed: {string.Join("; ", issues)}";
 
-    private static string? ValidateState(
+    private static ManifestOperationResult<bool> ValidateState(
         ProjectConfiguration configuration,
         ProjectLockFile lockFile,
+        ResourceLimits resourceLimits,
         bool allowUnconfiguredLockSources = false
     )
     {
@@ -331,7 +773,7 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
         );
         if (validationError is not null)
         {
-            return validationError;
+            return ManifestOperationResult<bool>.Failure(validationError);
         }
 
         var linkValidationError = ValidateLinks(
@@ -341,10 +783,10 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
         );
         if (linkValidationError is not null)
         {
-            return linkValidationError;
+            return ManifestOperationResult<bool>.Failure(linkValidationError);
         }
 
-        return ValidateRequestedRoots(configuration, resolvedPacksById);
+        return ValidateRequestedRoots(configuration, lockFile, resolvedPacksById, resourceLimits);
     }
 
     private static string? ValidateLinks(
@@ -400,6 +842,7 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
         {
             Configuration = NormalizeConfiguration(state.Configuration),
             LockFile = NormalizeLockFile(state.LockFile),
+            EffectiveResourceLimits = state.EffectiveResourceLimits,
         };
 
     private static ProjectConfiguration NormalizeConfiguration(
@@ -619,24 +1062,53 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
             && ConfiguredSourceIdentity.Create(source) == identity
         );
 
-    private static string? ValidateRequestedRoots(
+    private static ManifestOperationResult<bool> ValidateRequestedRoots(
+        ProjectConfiguration configuration,
+        ProjectLockFile lockFile,
+        Dictionary<string, ProjectLockFile.ResolvedPack> resolvedPacksById,
+        ResourceLimits resourceLimits
+    )
+    {
+        if (resolvedPacksById.Count > resourceLimits.DependencyNodes)
+        {
+            return ManifestOperationResult<bool>.Failure(
+                $"Lock file contains at least {resolvedPacksById.Count} unique packs, exceeding its {resourceLimits.DependencyNodes} node limit.",
+                ManifestOperationErrorKind.ResourceLimitExceeded
+            );
+        }
+
+        var roots = ValidateRequestedRootDeclarations(configuration, resolvedPacksById);
+        if (roots.Value is not { } requestedRoots)
+        {
+            return ManifestOperationResult<bool>.Failure(roots.Error!, roots.ErrorKind);
+        }
+
+        var graph = BuildLockGraph(resolvedPacksById, lockFile.Links, resourceLimits);
+        return graph.Value is { } lockGraph
+            ? ValidateLockGraph(resolvedPacksById, requestedRoots, lockGraph, resourceLimits)
+            : ManifestOperationResult<bool>.Failure(graph.Error!, graph.ErrorKind);
+    }
+
+    private static ManifestOperationResult<HashSet<string>> ValidateRequestedRootDeclarations(
         ProjectConfiguration configuration,
         Dictionary<string, ProjectLockFile.ResolvedPack> resolvedPacksById
     )
     {
         var requestedRoots = new HashSet<string>(StringComparer.Ordinal);
-        var reachablePacks = new HashSet<string>(StringComparer.Ordinal);
-        var visitingPacks = new HashSet<string>(StringComparer.Ordinal);
         foreach (var requestedPack in configuration.Packs)
         {
             if (!requestedRoots.Add(requestedPack.Id))
             {
-                return $"Project configuration contains duplicate requested pack '{requestedPack.Id}'.";
+                return ManifestOperationResult<HashSet<string>>.Failure(
+                    $"Project configuration contains duplicate requested pack '{requestedPack.Id}'."
+                );
             }
 
             if (!resolvedPacksById.TryGetValue(requestedPack.Id, out var resolvedPack))
             {
-                return $"Lock file does not contain requested pack '{requestedPack.Id}'.";
+                return ManifestOperationResult<HashSet<string>>.Failure(
+                    $"Lock file does not contain requested pack '{requestedPack.Id}'."
+                );
             }
 
             var hasMismatchedVersion =
@@ -648,7 +1120,9 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
                 );
             if (hasMismatchedVersion)
             {
-                return $"Lock file version for '{requestedPack.Id}' does not match the requested version.";
+                return ManifestOperationResult<HashSet<string>>.Failure(
+                    $"Lock file version for '{requestedPack.Id}' does not match the requested version."
+                );
             }
 
             var hasMismatchedDestination = !string.Equals(
@@ -658,70 +1132,209 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
             );
             if (hasMismatchedDestination)
             {
-                return $"Lock file destination for '{requestedPack.Id}' does not match the requested destination.";
-            }
-
-            var validationError = ValidateReachablePack(
-                resolvedPack,
-                resolvedPacksById,
-                reachablePacks,
-                visitingPacks
-            );
-            if (validationError is not null)
-            {
-                return validationError;
+                return ManifestOperationResult<HashSet<string>>.Failure(
+                    $"Lock file destination for '{requestedPack.Id}' does not match the requested destination."
+                );
             }
         }
 
-        return reachablePacks.Count == resolvedPacksById.Count
-            ? null
-            : "Lock file contains packs that are unreachable from requested packs.";
+        return ManifestOperationResult<HashSet<string>>.Success(requestedRoots);
     }
 
-    private static string? ValidateReachablePack(
-        ProjectLockFile.ResolvedPack pack,
+    private static ManifestOperationResult<LockGraph> BuildLockGraph(
         Dictionary<string, ProjectLockFile.ResolvedPack> resolvedPacksById,
-        ISet<string> reachablePacks,
-        ISet<string> visitingPacks
+        IReadOnlyDictionary<string, ProjectLockFile.ResolvedLink> links,
+        ResourceLimits resourceLimits
     )
     {
-        if (reachablePacks.Contains(pack.Id))
+        var fileCounts = ValidateLockFileCounts(resolvedPacksById.Values, links, resourceLimits);
+        if (!fileCounts.IsSuccess)
         {
-            return null;
-        }
-
-        if (!visitingPacks.Add(pack.Id))
-        {
-            return $"Lock file contains a dependency cycle at '{pack.Id}@{pack.Version}'.";
-        }
-
-        foreach (var reference in pack.Packs)
-        {
-            if (!resolvedPacksById.TryGetValue(reference.Id, out var dependency))
-            {
-                return $"Lock file reference '{reference.Id}@{reference.Version}' is unavailable.";
-            }
-
-            if (!string.Equals(reference.Version, dependency.Version, StringComparison.Ordinal))
-            {
-                return $"Lock file reference '{reference.Id}' has a conflicting version.";
-            }
-
-            var validationError = ValidateReachablePack(
-                dependency,
-                resolvedPacksById,
-                reachablePacks,
-                visitingPacks
+            return ManifestOperationResult<LockGraph>.Failure(
+                fileCounts.Error!,
+                fileCounts.ErrorKind
             );
-            if (validationError is not null)
+        }
+
+        var dependencies = resolvedPacksById.Keys.ToDictionary(
+            id => id,
+            _ => new List<string>(),
+            StringComparer.Ordinal
+        );
+        var indegree = resolvedPacksById.Keys.ToDictionary(
+            id => id,
+            _ => 0L,
+            StringComparer.Ordinal
+        );
+        long traversedReferences = 0;
+        foreach (var pack in resolvedPacksById.Values)
+        {
+            if (
+                pack.OciSource?.ContentSize is { } contentSize
+                && contentSize > resourceLimits.OciDownloadBytes
+            )
             {
-                return validationError;
+                return ManifestOperationResult<LockGraph>.Failure(
+                    $"Lock file OCI pack '{pack.Id}' declares at least {contentSize} content bytes, exceeding its {resourceLimits.OciDownloadBytes} byte download limit.",
+                    ManifestOperationErrorKind.ResourceLimitExceeded
+                );
+            }
+
+            foreach (var reference in pack.Packs)
+            {
+                traversedReferences++;
+                if (traversedReferences > resourceLimits.DependencyReferences)
+                {
+                    return ManifestOperationResult<LockGraph>.Failure(
+                        $"Lock file graph traversed at least {traversedReferences} references, exceeding its {resourceLimits.DependencyReferences} reference limit.",
+                        ManifestOperationErrorKind.ResourceLimitExceeded
+                    );
+                }
+
+                if (!resolvedPacksById.TryGetValue(reference.Id, out var dependency))
+                {
+                    return ManifestOperationResult<LockGraph>.Failure(
+                        $"Lock file reference '{reference.Id}@{reference.Version}' is unavailable."
+                    );
+                }
+
+                if (!string.Equals(reference.Version, dependency.Version, StringComparison.Ordinal))
+                {
+                    return ManifestOperationResult<LockGraph>.Failure(
+                        $"Lock file reference '{reference.Id}' has a conflicting version."
+                    );
+                }
+
+                dependencies[pack.Id].Add(dependency.Id);
+                indegree[dependency.Id]++;
             }
         }
 
-        visitingPacks.Remove(pack.Id);
-        reachablePacks.Add(pack.Id);
-        return null;
+        return ManifestOperationResult<LockGraph>.Success(new LockGraph(dependencies, indegree));
+    }
+
+    private static ManifestOperationResult<bool> ValidateLockFileCounts(
+        IEnumerable<ProjectLockFile.ResolvedPack> packs,
+        IReadOnlyDictionary<string, ProjectLockFile.ResolvedLink> links,
+        ResourceLimits resourceLimits
+    )
+    {
+        long graphFiles = 0;
+        foreach (var pack in packs)
+        {
+            if (pack.ManagedFiles.Count > resourceLimits.FilesPerPack)
+            {
+                return ManifestOperationResult<bool>.Failure(
+                    $"Lock file pack '{pack.Id}' contains at least {pack.ManagedFiles.Count} managed files, exceeding its {resourceLimits.FilesPerPack} file limit.",
+                    ManifestOperationErrorKind.ResourceLimitExceeded
+                );
+            }
+
+            graphFiles += pack.ManagedFiles.Count;
+            if (graphFiles > resourceLimits.FilesPerGraph)
+            {
+                return ManifestOperationResult<bool>.Failure(
+                    $"Lock file graph contains at least {graphFiles} managed files, exceeding its {resourceLimits.FilesPerGraph} file limit.",
+                    ManifestOperationErrorKind.ResourceLimitExceeded
+                );
+            }
+        }
+
+        foreach (var (linkName, link) in links)
+        {
+            if (link.Files.Count > resourceLimits.FilesPerPack)
+            {
+                return ManifestOperationResult<bool>.Failure(
+                    $"Lock file link '{linkName}' contains at least {link.Files.Count} files, exceeding its {resourceLimits.FilesPerPack} file limit.",
+                    ManifestOperationErrorKind.ResourceLimitExceeded
+                );
+            }
+
+            graphFiles = checked(graphFiles + link.Files.Count);
+            if (graphFiles > resourceLimits.FilesPerGraph)
+            {
+                return ManifestOperationResult<bool>.Failure(
+                    $"Lock file graph contains at least {graphFiles} managed and linked files, exceeding its {resourceLimits.FilesPerGraph} file limit.",
+                    ManifestOperationErrorKind.ResourceLimitExceeded
+                );
+            }
+        }
+
+        return ManifestOperationResult<bool>.Success(true);
+    }
+
+    private static ManifestOperationResult<bool> ValidateLockGraph(
+        Dictionary<string, ProjectLockFile.ResolvedPack> resolvedPacksById,
+        HashSet<string> requestedRoots,
+        LockGraph graph,
+        ResourceLimits resourceLimits
+    )
+    {
+        var indegree = graph.Indegree.ToDictionary(
+            pair => pair.Key,
+            pair => pair.Value,
+            StringComparer.Ordinal
+        );
+        var queue = new Queue<string>(
+            indegree.Where(pair => pair.Value == 0).Select(pair => pair.Key)
+        );
+        var topologicalOrder = new List<string>();
+        while (queue.TryDequeue(out var packId))
+        {
+            topologicalOrder.Add(packId);
+            foreach (var dependencyId in graph.Dependencies[packId])
+            {
+                indegree[dependencyId]--;
+                if (indegree[dependencyId] == 0)
+                {
+                    queue.Enqueue(dependencyId);
+                }
+            }
+        }
+
+        if (topologicalOrder.Count != resolvedPacksById.Count)
+        {
+            var cyclePackId = indegree.First(pair => pair.Value > 0).Key;
+            var cyclePack = resolvedPacksById[cyclePackId];
+            return ManifestOperationResult<bool>.Failure(
+                $"Lock file contains a dependency cycle at '{cyclePackId}@{cyclePack.Version}'."
+            );
+        }
+
+        var depths = requestedRoots.ToDictionary(id => id, _ => 0L, StringComparer.Ordinal);
+        foreach (var packId in topologicalOrder)
+        {
+            if (!depths.TryGetValue(packId, out var depth))
+            {
+                continue;
+            }
+
+            foreach (var dependencyId in graph.Dependencies[packId])
+            {
+                var observedDepth = checked(depth + 1);
+                if (observedDepth > resourceLimits.DependencyDepth)
+                {
+                    return ManifestOperationResult<bool>.Failure(
+                        $"Lock file graph reference '{packId}' to '{dependencyId}' exceeds its {resourceLimits.DependencyDepth} edge-depth limit (at least {observedDepth} edges observed).",
+                        ManifestOperationErrorKind.ResourceLimitExceeded
+                    );
+                }
+
+                if (
+                    !depths.TryGetValue(dependencyId, out var existingDepth)
+                    || observedDepth > existingDepth
+                )
+                {
+                    depths[dependencyId] = observedDepth;
+                }
+            }
+        }
+
+        return depths.Count == resolvedPacksById.Count
+            ? ManifestOperationResult<bool>.Success(true)
+            : ManifestOperationResult<bool>.Failure(
+                "Lock file contains packs that are unreachable from requested packs."
+            );
     }
 
     private void RestoreSnapshots(
@@ -756,4 +1369,64 @@ internal sealed class ProjectStateStore(IFileSystem fileSystem) : IProjectStateS
     }
 
     private sealed record DocumentSnapshot(string Path, string? Content);
+
+    private sealed record SerializedProjectState(string Configuration, string LockFile);
+
+    private sealed record PreparedProjectState(ProjectState State, SerializedProjectState Contents);
+
+    private sealed record LockGraph(
+        Dictionary<string, List<string>> Dependencies,
+        Dictionary<string, long> Indegree
+    );
+
+    private sealed record LoadedDocument<TDocument>(TDocument Document, long ByteCount)
+        where TDocument : class;
+
+    private sealed record UserResourceLimitPreferences(
+        ResourceLimitPreferences? Global,
+        ResourceLimitPreferences? UserProject
+    );
+
+    private sealed class BoundedTextWriter(long byteLimit, string inputName) : TextWriter
+    {
+        private static readonly UTF8Encoding _utf8 = new(
+            encoderShouldEmitUTF8Identifier: false,
+            throwOnInvalidBytes: true
+        );
+        private readonly StringBuilder _contents = new();
+        private long _byteCount;
+
+        public override Encoding Encoding => _utf8;
+
+        public override void Write(char value) => Write(value.ToString().AsSpan());
+
+        public override void Write(char[] buffer, int index, int count) =>
+            Write(buffer.AsSpan(index, count));
+
+        public override void Write(string? value)
+        {
+            if (value is not null)
+            {
+                Write(value.AsSpan());
+            }
+        }
+
+        public override void Write(ReadOnlySpan<char> buffer)
+        {
+            var observedBytes = checked(_byteCount + _utf8.GetByteCount(buffer));
+            if (observedBytes > byteLimit)
+            {
+                throw new BoundedTextWriteException(
+                    $"{inputName} serialized content exceeds its {byteLimit} byte limit (at least {observedBytes} bytes produced)."
+                );
+            }
+
+            _contents.Append(buffer);
+            _byteCount = observedBytes;
+        }
+
+        public override string ToString() => _contents.ToString();
+    }
+
+    private sealed class BoundedTextWriteException(string message) : Exception(message);
 }

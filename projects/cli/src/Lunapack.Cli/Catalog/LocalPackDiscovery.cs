@@ -1,7 +1,9 @@
 using System.IO.Abstractions;
 using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Application.Serialization;
+using Lunapack.Cli.Packs;
 using Lunapack.Cli.Packs.Authoring;
 using Lunapack.Cli.Packs.Manifest;
 using Lunapack.Cli.Sources;
@@ -29,38 +31,51 @@ internal sealed class LocalPackDiscovery(IFileSystem fileSystem, CliConsole cons
         string sourcePath,
         int sourceOrder,
         string sourceName,
-        ConfiguredSourceIdentity sourceIdentity
+        ConfiguredSourceIdentity sourceIdentity,
+        ResourceLimits? resourceLimits = null
     )
     {
-        List<string> manifestPaths;
-        try
-        {
-            manifestPaths =
-            [
-                .. _fileSystem
-                    .Directory.EnumerateFiles(sourcePath, "pack.yml", SearchOption.AllDirectories)
-                    .OrderBy(path => path, StringComparer.Ordinal),
-            ];
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        var effectiveResourceLimits = resourceLimits ?? ResourceLimits.Default;
+        var manifests = EnumerateManifestPaths(sourcePath, effectiveResourceLimits.FilesPerGraph);
+        if (manifests.Value is not { } manifestPaths)
         {
             return ManifestOperationResult<IReadOnlyList<CatalogPack>>.Failure(
-                $"Unable to enumerate pack source '{sourcePath}': {exception.Message}"
+                manifests.Error ?? "Unable to enumerate pack source.",
+                manifests.ErrorKind
             );
         }
 
         var packs = new List<CatalogPack>(manifestPaths.Count);
+        var manifestBudget = new CatalogManifestBudget(effectiveResourceLimits);
         foreach (var manifestPath in manifestPaths)
         {
-            var pack = await TryDiscoverPackAsync(
+            var discovered = await TryDiscoverPackAsync(
                 sourcePath,
                 sourceOrder,
                 sourceName,
                 sourceIdentity,
-                manifestPath
+                manifestPath,
+                effectiveResourceLimits
             );
-            if (pack is not null)
+            if (discovered.ErrorKind == ManifestOperationErrorKind.ResourceLimitExceeded)
             {
+                return ManifestOperationResult<IReadOnlyList<CatalogPack>>.Failure(
+                    discovered.Error ?? "Local pack manifest exceeds its configured byte limit.",
+                    discovered.ErrorKind
+                );
+            }
+
+            if (discovered.Value is { } pack)
+            {
+                var observed = manifestBudget.Observe(pack);
+                if (!observed.IsSuccess)
+                {
+                    return ManifestOperationResult<IReadOnlyList<CatalogPack>>.Failure(
+                        observed.Error!,
+                        observed.ErrorKind
+                    );
+                }
+
                 packs.Add(pack);
             }
         }
@@ -70,9 +85,13 @@ internal sealed class LocalPackDiscovery(IFileSystem fileSystem, CliConsole cons
 
     public async Task<
         ManifestOperationResult<IReadOnlyList<LocalPackValidationResult>>
-    > ValidateAsync(string sourcePath)
+    > ValidateAsync(string sourcePath, ResourceLimits? resourceLimits = null)
     {
-        var manifestPaths = EnumerateManifestPaths(sourcePath);
+        var effectiveResourceLimits = resourceLimits ?? ResourceLimits.Default;
+        var manifestPaths = EnumerateManifestPaths(
+            sourcePath,
+            effectiveResourceLimits.FilesPerGraph
+        );
         if (manifestPaths.Value is not { } paths)
         {
             return ManifestOperationResult<IReadOnlyList<LocalPackValidationResult>>.Failure(
@@ -81,23 +100,51 @@ internal sealed class LocalPackDiscovery(IFileSystem fileSystem, CliConsole cons
         }
 
         var results = new List<LocalPackValidationResult>(paths.Count);
+        var manifestBudget = new CatalogManifestBudget(effectiveResourceLimits);
         foreach (var manifestPath in paths)
         {
-            results.Add(await ValidateManifestAsync(manifestPath));
+            var validation = await ValidateManifestAsync(manifestPath, effectiveResourceLimits);
+            if (validation.Value is not { } result)
+            {
+                return ManifestOperationResult<IReadOnlyList<LocalPackValidationResult>>.Failure(
+                    validation.Error ?? "Unable to validate local pack manifest.",
+                    validation.ErrorKind
+                );
+            }
+
+            var observed = manifestBudget.Observe(result.ManifestByteCount);
+            if (!observed.IsSuccess)
+            {
+                return ManifestOperationResult<IReadOnlyList<LocalPackValidationResult>>.Failure(
+                    observed.Error!,
+                    observed.ErrorKind
+                );
+            }
+
+            results.Add(result);
         }
 
         return ManifestOperationResult<IReadOnlyList<LocalPackValidationResult>>.Success(results);
     }
 
-    private async Task<CatalogPack?> TryDiscoverPackAsync(
+    private async Task<ManifestOperationResult<CatalogPack?>> TryDiscoverPackAsync(
         string sourcePath,
         int sourceOrder,
         string sourceName,
         ConfiguredSourceIdentity sourceIdentity,
-        string manifestPath
+        string manifestPath,
+        ResourceLimits resourceLimits
     )
     {
-        var validation = await ValidateManifestAsync(manifestPath);
+        var validationResult = await ValidateManifestAsync(manifestPath, resourceLimits);
+        if (validationResult.Value is not { } validation)
+        {
+            return ManifestOperationResult<CatalogPack?>.Failure(
+                validationResult.Error ?? "Unable to validate local pack manifest.",
+                validationResult.ErrorKind
+            );
+        }
+
         if (
             !validation.IsValid
             || validation.Manifest is not { } pack
@@ -107,32 +154,56 @@ internal sealed class LocalPackDiscovery(IFileSystem fileSystem, CliConsole cons
             _console.Debug(
                 $"Ignoring invalid pack manifest '{manifestPath}': {string.Join(" ", validation.Issues)}"
             );
-            return null;
+            return ManifestOperationResult<CatalogPack?>.Success(null);
         }
 
         var packDirectory = _fileSystem.Path.GetDirectoryName(manifestPath);
-        return packDirectory is null
-            ? null
-            : new CatalogPack(
-                sourcePath,
-                packDirectory,
-                sourceOrder,
-                pack,
-                version,
-                sourceName,
-                sourceIdentity
-            );
+        return ManifestOperationResult<CatalogPack?>.Success(
+            packDirectory is null
+                ? null
+                : new CatalogPack(
+                    sourcePath,
+                    packDirectory,
+                    sourceOrder,
+                    pack,
+                    version,
+                    sourceName,
+                    sourceIdentity,
+                    ManifestByteCount: validation.ManifestByteCount
+                )
+        );
     }
 
-    private ManifestOperationResult<List<string>> EnumerateManifestPaths(string sourcePath)
+    private ManifestOperationResult<List<string>> EnumerateManifestPaths(
+        string sourcePath,
+        long manifestLimit
+    )
     {
         try
         {
-            return ManifestOperationResult<List<string>>.Success([
-                .. _fileSystem
-                    .Directory.EnumerateFiles(sourcePath, "pack.yml", SearchOption.AllDirectories)
-                    .OrderBy(path => path, StringComparer.Ordinal),
-            ]);
+            var manifestPaths = new List<string>();
+            foreach (
+                var manifestPath in _fileSystem.Directory.EnumerateFiles(
+                    sourcePath,
+                    "pack.yml",
+                    SearchOption.AllDirectories
+                )
+            )
+            {
+                var observedPaths = manifestPaths.Count + 1;
+                if (observedPaths > manifestLimit)
+                {
+                    return ManifestOperationResult<List<string>>.Failure(
+                        $"Pack source '{sourcePath}' manifest enumeration exceeds its {manifestLimit} record limit (at least {observedPaths} pack manifests observed).",
+                        ManifestOperationErrorKind.ResourceLimitExceeded
+                    );
+                }
+
+                manifestPaths.Add(manifestPath);
+            }
+
+            manifestPaths.Sort(StringComparer.Ordinal);
+            return ManifestOperationResult<List<string>>.Success(manifestPaths);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
@@ -142,19 +213,32 @@ internal sealed class LocalPackDiscovery(IFileSystem fileSystem, CliConsole cons
         }
     }
 
-    private async Task<LocalPackValidationResult> ValidateManifestAsync(string manifestPath)
+    private async Task<ManifestOperationResult<LocalPackValidationResult>> ValidateManifestAsync(
+        string manifestPath,
+        ResourceLimits resourceLimits
+    )
     {
         try
         {
-            var manifest = _deserializer.Deserialize<PackManifest>(
-                _fileSystem.File.ReadAllText(manifestPath)
+            var read = await BoundedFileReader.ReadTextAsync(
+                _fileSystem,
+                manifestPath,
+                resourceLimits.PackManifestBytes,
+                "pack.yml"
             );
+            if (read.Value is not { } contents)
+            {
+                return ManifestOperationResult<LocalPackValidationResult>.Failure(
+                    read.Error ?? "Unable to read pack.yml.",
+                    read.ErrorKind
+                );
+            }
+
+            var manifest = _deserializer.Deserialize<PackManifest>(contents.Text);
             if (manifest is null)
             {
-                return new LocalPackValidationResult(
-                    manifestPath,
-                    null,
-                    ["Pack manifest is empty."]
+                return ManifestOperationResult<LocalPackValidationResult>.Success(
+                    new LocalPackValidationResult(manifestPath, null, ["Pack manifest is empty."])
                 );
             }
 
@@ -163,21 +247,36 @@ internal sealed class LocalPackDiscovery(IFileSystem fileSystem, CliConsole cons
             var packDirectory = _fileSystem.Path.GetDirectoryName(manifestPath);
             if (packDirectory is null)
             {
-                return new LocalPackValidationResult(
-                    manifestPath,
-                    manifest,
-                    ["Pack manifest directory is unavailable."]
+                return ManifestOperationResult<LocalPackValidationResult>.Success(
+                    new LocalPackValidationResult(
+                        manifestPath,
+                        manifest,
+                        ["Pack manifest directory is unavailable."]
+                    )
                 );
             }
 
-            var sourceFiles = _fileSystem
-                .Directory.EnumerateFiles(packDirectory, "*", SearchOption.AllDirectories)
-                .Select(path => _fileSystem.Path.GetRelativePath(packDirectory, path))
-                .ToList();
-            return new LocalPackValidationResult(
-                manifestPath,
-                manifest,
-                await PackManifestValidator.ValidateAsync(manifest, sourceFiles)
+            var enumeratedFiles = PackSnapshotFileEnumerator.Enumerate(
+                _fileSystem,
+                packDirectory,
+                manifest.Id,
+                resourceLimits
+            );
+            if (enumeratedFiles.Value is not { } sourceFiles)
+            {
+                return ManifestOperationResult<LocalPackValidationResult>.Failure(
+                    enumeratedFiles.Error ?? "Unable to enumerate pack snapshot.",
+                    enumeratedFiles.ErrorKind
+                );
+            }
+
+            return ManifestOperationResult<LocalPackValidationResult>.Success(
+                new LocalPackValidationResult(
+                    manifestPath,
+                    manifest,
+                    await PackManifestValidator.ValidateAsync(manifest, sourceFiles),
+                    contents.ByteCount
+                )
             );
         }
         catch (Exception exception)
@@ -187,7 +286,9 @@ internal sealed class LocalPackDiscovery(IFileSystem fileSystem, CliConsole cons
                         or YamlDotNet.Core.YamlException
             )
         {
-            return new LocalPackValidationResult(manifestPath, null, [exception.Message]);
+            return ManifestOperationResult<LocalPackValidationResult>.Success(
+                new LocalPackValidationResult(manifestPath, null, [exception.Message])
+            );
         }
     }
 }

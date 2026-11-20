@@ -36,7 +36,11 @@ internal sealed class CatalogService(PackCatalog packCatalog, ProjectStateStore 
             );
         }
 
-        return await packCatalog.BrowseAsync(projectDirectory, state.Configuration);
+        return await packCatalog.BrowseAsync(
+            projectDirectory,
+            state.Configuration,
+            state.EffectiveResourceLimits
+        );
     }
 
     public async Task<ManifestOperationResult<IReadOnlyList<CatalogPack>>> LoadCachedAsync(
@@ -45,7 +49,11 @@ internal sealed class CatalogService(PackCatalog packCatalog, ProjectStateStore 
     {
         var loadedState = await projectStateStore.LoadAsync(projectDirectory);
         return loadedState.Value is { } state
-            ? await packCatalog.BrowseCachedAsync(projectDirectory, state.Configuration)
+            ? await packCatalog.BrowseCachedAsync(
+                projectDirectory,
+                state.Configuration,
+                state.EffectiveResourceLimits
+            )
             : ManifestOperationResult<IReadOnlyList<CatalogPack>>.Success([]);
     }
 }

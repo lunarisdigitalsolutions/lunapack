@@ -1,6 +1,8 @@
 using System.IO.Abstractions;
+using System.Text;
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Application.Paths;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Application.Serialization;
 using Lunapack.Cli.Packs.Manifest;
 using YamlDotNet.Serialization;
@@ -53,32 +55,54 @@ internal sealed class UserSettingsStore
     public ManifestOperationResult<string> GetProjectKey(string projectDirectory) =>
         CanonicalProjectPath.Resolve(_fileSystem, projectDirectory);
 
-    public Task<ManifestOperationResult<UserSettings>> LoadAsync()
+    public async Task<ManifestOperationResult<UserSettings>> LoadAsync()
     {
         try
         {
             var pathError = _sidecarFile.ValidateExistingPaths();
             if (pathError is not null)
             {
-                return Result(ManifestOperationResult<UserSettings>.Failure(pathError));
+                return ManifestOperationResult<UserSettings>.Failure(pathError);
             }
 
             if (!_sidecarFile.Exists())
             {
-                return Result(ManifestOperationResult<UserSettings>.Success(new UserSettings()));
+                return ManifestOperationResult<UserSettings>.Success(new UserSettings());
             }
 
-            var settings = _deserializer.Deserialize<UserSettings>(_sidecarFile.ReadAllText());
-            if (settings is null || !IsValidForLoad(settings))
+            var read = await BoundedFileReader.ReadTextAsync(
+                _fileSystem,
+                SettingsPath,
+                ResourceLimits.UserSettingsBootstrapBytes,
+                "User settings"
+            );
+            if (read.Value is not { } contents)
             {
-                return Result(
-                    ManifestOperationResult<UserSettings>.Failure(
-                        $"Invalid user settings in '{SettingsPath}'."
-                    )
+                return ManifestOperationResult<UserSettings>.Failure(
+                    read.Error ?? "Unable to read user settings.",
+                    read.ErrorKind
                 );
             }
 
-            return Result(ManifestOperationResult<UserSettings>.Success(Normalize(settings)));
+            var unknownResourceLimit = ResourceLimitYamlValidator.ValidateUserSettings(
+                contents.Text
+            );
+            if (unknownResourceLimit is not null)
+            {
+                return ManifestOperationResult<UserSettings>.Failure(
+                    $"Invalid user settings in '{SettingsPath}': {unknownResourceLimit}"
+                );
+            }
+
+            var settings = _deserializer.Deserialize<UserSettings>(contents.Text);
+            if (settings is null || !IsValidForLoad(settings))
+            {
+                return ManifestOperationResult<UserSettings>.Failure(
+                    $"Invalid user settings in '{SettingsPath}'."
+                );
+            }
+
+            return ManifestOperationResult<UserSettings>.Success(Normalize(settings));
         }
         catch (Exception exception)
             when (exception
@@ -87,10 +111,8 @@ internal sealed class UserSettingsStore
                         or YamlDotNet.Core.YamlException
             )
         {
-            return Result(
-                ManifestOperationResult<UserSettings>.Failure(
-                    $"Unable to read user settings: {exception.Message}"
-                )
+            return ManifestOperationResult<UserSettings>.Failure(
+                $"Unable to read user settings: {exception.Message}"
             );
         }
     }
@@ -104,6 +126,16 @@ internal sealed class UserSettingsStore
             );
         }
 
+        var serialized = _serializer.Serialize(Normalize(settings));
+        var serializedByteCount = Encoding.UTF8.GetByteCount(serialized);
+        if (serializedByteCount > ResourceLimits.UserSettingsBootstrapBytes)
+        {
+            return Result(
+                ManifestOperationResult<bool>.Failure(
+                    $"User settings would exceed the {ResourceLimits.UserSettingsBootstrapBytes} byte bootstrap limit ({serializedByteCount} bytes)."
+                )
+            );
+        }
         try
         {
             var pathError = _sidecarFile.ValidateExistingPaths();

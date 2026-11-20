@@ -1,6 +1,7 @@
 using System.IO.Abstractions;
 using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Application.Serialization;
 using Lunapack.Cli.Catalog;
 using Lunapack.Cli.Packs.Manifest;
@@ -21,6 +22,8 @@ internal sealed class GitPackDiscovery(
 )
 {
     private const int DefaultTimeoutSeconds = 300;
+    private const long MaximumEnumerationOutputBytes = 64L * 1024 * 1024;
+    private const long MaximumEnumerationRecordBytes = 1L * 1024 * 1024;
 
     private static readonly IDeserializer _deserializer = new StaticDeserializerBuilder(
         new LunapackYamlContext()
@@ -33,13 +36,23 @@ internal sealed class GitPackDiscovery(
 
     private readonly CliConsole _console = console;
 
+    public Task<ManifestOperationResult<IReadOnlyList<CatalogPack>>> BrowseAsync(
+        string projectDirectory,
+        ProjectConfiguration.GitSource source,
+        int sourceOrder,
+        CancellationToken cancellationToken
+    ) =>
+        BrowseAsync(projectDirectory, source, sourceOrder, resourceLimits: null, cancellationToken);
+
     public async Task<ManifestOperationResult<IReadOnlyList<CatalogPack>>> BrowseAsync(
         string projectDirectory,
         ProjectConfiguration.GitSource source,
         int sourceOrder,
+        ResourceLimits? resourceLimits = null,
         CancellationToken cancellationToken = default
     )
     {
+        var effectiveResourceLimits = resourceLimits ?? ResourceLimits.Default;
         if (!IsSafeRepositoryPath(source.Path))
         {
             return ManifestOperationResult<IReadOnlyList<CatalogPack>>.Failure(
@@ -60,11 +73,9 @@ internal sealed class GitPackDiscovery(
         }
         var transportMode = authorization.Value;
 
-        var loadedCache = cache.Load(projectDirectory, source);
-        var cachedEntry = loadedCache.Value;
         var resolution = await refResolver.ResolveAsync(
             source,
-            cachedEntry?.DefaultBranch,
+            cachedDefaultBranch: null,
             cancellationToken,
             transportMode
         );
@@ -75,23 +86,10 @@ internal sealed class GitPackDiscovery(
             );
         }
 
-        if (
-            cachedEntry is { } entry
-            && string.Equals(
-                entry.ResolvedCommit,
-                resolvedSource.ResolvedCommit,
-                StringComparison.Ordinal
-            )
-        )
-        {
-            return ManifestOperationResult<IReadOnlyList<CatalogPack>>.Success(
-                CreateCatalog(source, sourceOrder, resolvedSource.ResolvedCommit, entry.Packs)
-            );
-        }
-
         var discovered = await DiscoverAsync(
             source,
             resolvedSource.ResolvedCommit,
+            effectiveResourceLimits,
             transportMode,
             cancellationToken
         );
@@ -109,7 +107,18 @@ internal sealed class GitPackDiscovery(
             DefaultBranch = resolvedSource.DefaultBranch,
             Packs = packs,
         };
-        var saved = cache.Save(projectDirectory, newEntry);
+        var currentEntry = cache.Load(projectDirectory, source, effectiveResourceLimits);
+        if (
+            currentEntry.Value is { } cachedEntry
+            && GitSourceCache.AreEquivalent(cachedEntry, newEntry)
+        )
+        {
+            return ManifestOperationResult<IReadOnlyList<CatalogPack>>.Success(
+                CreateCatalog(source, sourceOrder, resolvedSource.ResolvedCommit, packs)
+            );
+        }
+
+        var saved = cache.Save(projectDirectory, newEntry, effectiveResourceLimits);
         return saved.IsSuccess
             ? ManifestOperationResult<IReadOnlyList<CatalogPack>>.Success(
                 CreateCatalog(source, sourceOrder, resolvedSource.ResolvedCommit, packs)
@@ -119,13 +128,53 @@ internal sealed class GitPackDiscovery(
             );
     }
 
+    public async Task<ManifestOperationResult<IReadOnlyList<CatalogPack>>> BrowseCommitAsync(
+        ProjectConfiguration.GitSource source,
+        int sourceOrder,
+        string resolvedCommit,
+        ResourceLimits? resourceLimits = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (!IsSafeRepositoryPath(source.Path))
+        {
+            return ManifestOperationResult<IReadOnlyList<CatalogPack>>.Failure(
+                "Git source paths must be repository-relative and must not contain '..'."
+            );
+        }
+
+        if (!GitRefResolver.IsCommit(resolvedCommit))
+        {
+            return ManifestOperationResult<IReadOnlyList<CatalogPack>>.Failure(
+                $"Git commit '{resolvedCommit}' is not a full commit identity."
+            );
+        }
+
+        var discovered = await DiscoverAsync(
+            source,
+            resolvedCommit,
+            resourceLimits ?? ResourceLimits.Default,
+            GitTransportMode.SecureOnly,
+            cancellationToken
+        );
+        return discovered.Value is { } packs
+            ? ManifestOperationResult<IReadOnlyList<CatalogPack>>.Success(
+                CreateCatalog(source, sourceOrder, resolvedCommit, packs)
+            )
+            : ManifestOperationResult<IReadOnlyList<CatalogPack>>.Failure(
+                discovered.Error ?? "Unable to discover locked Git packs.",
+                discovered.ErrorKind
+            );
+    }
+
     public ManifestOperationResult<IReadOnlyList<CatalogPack>> BrowseCached(
         string projectDirectory,
         ProjectConfiguration.GitSource source,
-        int sourceOrder
+        int sourceOrder,
+        ResourceLimits? resourceLimits = null
     )
     {
-        var loadedCache = cache.Load(projectDirectory, source);
+        var loadedCache = cache.Load(projectDirectory, source, resourceLimits);
         return loadedCache.Value is { } entry
             ? ManifestOperationResult<IReadOnlyList<CatalogPack>>.Success(
                 CreateCatalog(source, sourceOrder, entry.ResolvedCommit, entry.Packs)
@@ -136,6 +185,7 @@ internal sealed class GitPackDiscovery(
     private async Task<ManifestOperationResult<List<GitCachedPack>>> DiscoverAsync(
         ProjectConfiguration.GitSource source,
         string resolvedCommit,
+        ResourceLimits resourceLimits,
         GitTransportMode transportMode,
         CancellationToken cancellationToken
     )
@@ -168,6 +218,7 @@ internal sealed class GitPackDiscovery(
                 resolvedCommit,
                 workspace,
                 timeout,
+                resourceLimits,
                 transportMode,
                 cancellationToken
             );
@@ -195,6 +246,7 @@ internal sealed class GitPackDiscovery(
                 workspace,
                 timeout,
                 repositoryPaths,
+                resourceLimits,
                 transportMode,
                 cancellationToken
             );
@@ -272,21 +324,28 @@ internal sealed class GitPackDiscovery(
         string resolvedCommit,
         string workspace,
         TimeSpan timeout,
+        ResourceLimits resourceLimits,
         GitTransportMode transportMode,
         CancellationToken cancellationToken
     ) =>
-        processRunner.RunAsync(
+        processRunner.RunBoundedRecordsAsync(
             [
                 "-C",
                 workspace,
                 "ls-tree",
                 "-r",
+                "-z",
                 "--name-only",
                 resolvedCommit,
                 "--",
                 source.Path ?? ".",
             ],
             timeout,
+            resourceLimits.FilesPerGraph,
+            "Git pack manifest enumeration",
+            0,
+            MaximumEnumerationOutputBytes,
+            MaximumEnumerationRecordBytes,
             transportMode,
             source.Url,
             cancellationToken
@@ -294,7 +353,7 @@ internal sealed class GitPackDiscovery(
 
     private static string[] ParseRepositoryPaths(GitProcessOutput paths) =>
         paths.StandardOutput.Split(
-            '\n',
+            '\0',
             StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
         );
 
@@ -304,16 +363,20 @@ internal sealed class GitPackDiscovery(
         string workspace,
         TimeSpan timeout,
         IReadOnlyList<string> repositoryPaths,
+        ResourceLimits resourceLimits,
         GitTransportMode transportMode,
         CancellationToken cancellationToken
     )
     {
         var packs = new List<GitCachedPack>();
+        long catalogManifestBytes = 0;
         foreach (var path in repositoryPaths.Where(IsManifestPath))
         {
-            var manifestResult = await processRunner.RunAsync(
+            var manifestResult = await processRunner.RunBoundedAsync(
                 ["-C", workspace, "show", $"{resolvedCommit}:{path}"],
                 timeout,
+                resourceLimits.PackManifestBytes,
+                "Git pack manifest",
                 transportMode,
                 source.Url,
                 cancellationToken
@@ -331,7 +394,8 @@ internal sealed class GitPackDiscovery(
             if (manifestOutput.StandardOutputTruncated)
             {
                 return ManifestOperationResult<List<GitCachedPack>>.Failure(
-                    $"Git source manifest '{path}' was truncated."
+                    $"Git source manifest '{path}' was truncated.",
+                    ManifestOperationErrorKind.ResourceLimitExceeded
                 );
             }
 
@@ -347,6 +411,14 @@ internal sealed class GitPackDiscovery(
             }
             else
             {
+                catalogManifestBytes = checked(catalogManifestBytes + manifest.ManifestByteCount);
+                if (catalogManifestBytes > CatalogManifestBudget.MaximumManifestBytes)
+                {
+                    return ManifestOperationResult<List<GitCachedPack>>.Failure(
+                        $"Git pack catalog manifest content exceeds its {CatalogManifestBudget.MaximumManifestBytes} byte limit (at least {catalogManifestBytes} bytes observed).",
+                        ManifestOperationErrorKind.ResourceLimitExceeded
+                    );
+                }
                 packs.Add(manifest with { PackPath = GetPackPath(path) });
             }
         }
@@ -385,7 +457,8 @@ internal sealed class GitPackDiscovery(
                         Path = source.Path,
                         ResolvedCommit = resolvedCommit,
                     },
-                    pack.PackPath
+                    pack.PackPath,
+                    ManifestByteCount: pack.ManifestByteCount
                 );
             }),
         ];
@@ -411,6 +484,7 @@ internal sealed class GitPackDiscovery(
                     Id = manifest.Id,
                     Version = manifest.Version,
                     Manifest = manifest,
+                    ManifestByteCount = System.Text.Encoding.UTF8.GetByteCount(contents),
                     PackPath = string.Empty,
                 }
                 : null;

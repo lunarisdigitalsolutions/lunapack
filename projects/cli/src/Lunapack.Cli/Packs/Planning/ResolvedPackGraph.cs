@@ -36,14 +36,31 @@ internal sealed record ResolvedPackGraph(
             return ManifestOperationResult<CompositePackTargetResolution?>.Success(null);
         }
 
-        var packsById = Packs.ToDictionary(
-            candidate => candidate.Manifest.Id,
-            StringComparer.Ordinal
-        );
+        var distances = CalculateReferenceDistancesTo(pack.Manifest.Id);
         var candidates = new List<CompositePackTargetResolution>();
-        foreach (var root in Packs.Where(IsRoot))
+        foreach (var parent in Packs)
         {
-            FindCompositeTargets(root, pack, declaredTarget, packsById, [], candidates);
+            foreach (var reference in parent.Manifest.Packs.Where(IsActive))
+            {
+                if (!distances.TryGetValue(reference.Id, out var dependencyDistance))
+                {
+                    continue;
+                }
+
+                var effectiveTarget = ManagedFileTargetRemapping
+                    .FromManifest(reference.Remap)
+                    .TryResolve(declaredTarget);
+                if (effectiveTarget is not null)
+                {
+                    candidates.Add(
+                        new CompositePackTargetResolution(
+                            effectiveTarget,
+                            parent.Manifest.Id,
+                            dependencyDistance + 1
+                        )
+                    );
+                }
+            }
         }
 
         if (candidates.Count == 0)
@@ -64,6 +81,49 @@ internal sealed record ResolvedPackGraph(
             : ManifestOperationResult<CompositePackTargetResolution?>.Failure(
                 $"Pack '{pack.Manifest.Id}' target '{declaredTarget}' has conflicting composite remaps at the same reference depth."
             );
+    }
+
+    private Dictionary<string, int> CalculateReferenceDistancesTo(string targetPackId)
+    {
+        var parentsByPackId = Packs.ToDictionary(
+            pack => pack.Manifest.Id,
+            _ => new List<string>(),
+            StringComparer.Ordinal
+        );
+        foreach (var parent in Packs)
+        {
+            foreach (var reference in parent.Manifest.Packs.Where(IsActive))
+            {
+                if (parentsByPackId.TryGetValue(reference.Id, out var parents))
+                {
+                    parents.Add(parent.Manifest.Id);
+                }
+            }
+        }
+
+        if (!parentsByPackId.ContainsKey(targetPackId))
+        {
+            return new Dictionary<string, int>(StringComparer.Ordinal);
+        }
+
+        var distances = new Dictionary<string, int>(StringComparer.Ordinal) { [targetPackId] = 0 };
+        var queue = new Queue<string>();
+        queue.Enqueue(targetPackId);
+        while (queue.TryDequeue(out var packId))
+        {
+            foreach (var parentId in parentsByPackId[packId])
+            {
+                if (distances.ContainsKey(parentId))
+                {
+                    continue;
+                }
+
+                distances[parentId] = distances[packId] + 1;
+                queue.Enqueue(parentId);
+            }
+        }
+
+        return distances;
     }
 
     public ManifestOperationResult<ResolvedPackGraph> Select(ResolvedPackParameters parameters)
@@ -97,57 +157,6 @@ internal sealed record ResolvedPackGraph(
             RootPackIds is null
             && string.Equals(pack.Manifest.Id, Packs[^1].Manifest.Id, StringComparison.Ordinal)
         );
-
-    private void FindCompositeTargets(
-        DiscoveredPack current,
-        DiscoveredPack targetPack,
-        string declaredTarget,
-        IReadOnlyDictionary<string, DiscoveredPack> packsById,
-        IReadOnlyList<CompositeReferenceLayer> path,
-        ICollection<CompositePackTargetResolution> candidates
-    )
-    {
-        if (string.Equals(current.Manifest.Id, targetPack.Manifest.Id, StringComparison.Ordinal))
-        {
-            for (var index = path.Count - 1; index >= 0; index--)
-            {
-                var layer = path[index];
-                var effectiveTarget = ManagedFileTargetRemapping
-                    .FromManifest(layer.Reference.Remap)
-                    .TryResolve(declaredTarget);
-                if (effectiveTarget is not null)
-                {
-                    candidates.Add(
-                        new CompositePackTargetResolution(
-                            effectiveTarget,
-                            layer.ParentPackId,
-                            path.Count - index
-                        )
-                    );
-                    break;
-                }
-            }
-
-            return;
-        }
-
-        foreach (var reference in current.Manifest.Packs.Where(IsActive))
-        {
-            if (!packsById.TryGetValue(reference.Id, out var dependency))
-            {
-                continue;
-            }
-
-            FindCompositeTargets(
-                dependency,
-                targetPack,
-                declaredTarget,
-                packsById,
-                [.. path, new CompositeReferenceLayer(current.Manifest.Id, reference)],
-                candidates
-            );
-        }
-    }
 
     private bool IsActive(PackManifest.PackReference reference) =>
         ActiveReferences is null || ActiveReferences.Contains(reference);
@@ -213,9 +222,4 @@ internal sealed record ResolvedPackGraph(
                 condition.Error ?? "Unable to evaluate pack reference condition."
             );
     }
-
-    private sealed record CompositeReferenceLayer(
-        string ParentPackId,
-        PackManifest.PackReference Reference
-    );
 }

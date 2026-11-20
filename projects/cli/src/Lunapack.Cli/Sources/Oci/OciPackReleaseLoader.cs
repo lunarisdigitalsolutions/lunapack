@@ -1,5 +1,6 @@
 using System.IO.Abstractions;
 using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Packs.Manifest;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources;
@@ -23,9 +24,11 @@ internal sealed class OciPackReleaseLoader(
         string workspace,
         string? expectedManifestDigest = null,
         string? expectedContentDigest = null,
+        ResourceLimits? resourceLimits = null,
         CancellationToken cancellationToken = default
     )
     {
+        var effectiveResourceLimits = resourceLimits ?? ResourceLimits.Default;
         var context = CreateContext(projectDirectory, source);
         if (context.Value is not { } releaseContext)
         {
@@ -42,6 +45,7 @@ internal sealed class OciPackReleaseLoader(
             expectedManifestDigest,
             expectedContentDigest,
             releaseContext,
+            effectiveResourceLimits,
             cancellationToken
         );
         if (artifact.Value is not { } fetchedArtifact)
@@ -49,7 +53,8 @@ internal sealed class OciPackReleaseLoader(
             return artifact.IsSuccess
                 ? ManifestOperationResult<OciPackRelease?>.Success(null)
                 : Failure<OciPackRelease?>(
-                    artifact.Error ?? $"Unable to fetch OCI release '{repository}:{tag}'."
+                    artifact.Error ?? $"Unable to fetch OCI release '{repository}:{tag}'.",
+                    artifact.ErrorKind
                 );
         }
 
@@ -62,6 +67,7 @@ internal sealed class OciPackReleaseLoader(
             workspace,
             releaseContext,
             fetchedArtifact,
+            effectiveResourceLimits,
             cancellationToken
         );
     }
@@ -101,6 +107,7 @@ internal sealed class OciPackReleaseLoader(
         string? expectedManifestDigest,
         string? expectedContentDigest,
         ReleaseContext context,
+        ResourceLimits resourceLimits,
         CancellationToken cancellationToken
     )
     {
@@ -128,9 +135,7 @@ internal sealed class OciPackReleaseLoader(
                     manifestResult.Failure,
                     "Unable to fetch OCI manifest."
                 ),
-                manifestResult.Failure?.Kind == OciRegistryFailureKind.NotFound
-                    ? ManifestOperationErrorKind.PackNotFound
-                    : ManifestOperationErrorKind.General
+                GetManifestFetchErrorKind(manifestResult.Failure)
             );
         }
 
@@ -153,11 +158,15 @@ internal sealed class OciPackReleaseLoader(
             return ManifestOperationResult<RemoteOciArtifact?>.Success(null);
         }
 
-        var artifact = OciPackArtifact.ReadManifest(fetchedManifest.Content);
+        var artifact = OciPackArtifact.ReadManifest(
+            fetchedManifest.Content,
+            resourceLimits.OciDownloadBytes
+        );
         if (artifact.Value is not { } metadata)
         {
             return ManifestOperationResult<RemoteOciArtifact?>.Failure(
-                $"OCI source '{source.Name}' returned an invalid LunaPack manifest: {artifact.Error}"
+                $"OCI source '{source.Name}' returned an invalid LunaPack manifest: {artifact.Error}",
+                artifact.ErrorKind
             );
         }
 
@@ -189,6 +198,7 @@ internal sealed class OciPackReleaseLoader(
         string workspace,
         ReleaseContext context,
         RemoteOciArtifact artifact,
+        ResourceLimits resourceLimits,
         CancellationToken cancellationToken
     )
     {
@@ -204,7 +214,8 @@ internal sealed class OciPackReleaseLoader(
         if (configResult.Value is not { } config)
         {
             return Failure<OciPackRelease?>(
-                configResult.Error ?? $"OCI source '{source.Name}' has invalid pack metadata."
+                configResult.Error ?? $"OCI source '{source.Name}' has invalid pack metadata.",
+                configResult.ErrorKind
             );
         }
 
@@ -230,13 +241,15 @@ internal sealed class OciPackReleaseLoader(
             packDirectory,
             context,
             config,
+            resourceLimits,
             cancellationToken
         );
         if (extraction.Value is not { } manifest)
         {
             return Failure<OciPackRelease?>(
                 extraction.Error
-                    ?? $"OCI source '{source.Name}' pack '{config.Id}@{config.Version}' is invalid."
+                    ?? $"OCI source '{source.Name}' pack '{config.Id}@{config.Version}' is invalid.",
+                extraction.ErrorKind
             );
         }
 
@@ -260,7 +273,12 @@ internal sealed class OciPackReleaseLoader(
                     ManifestDigest = artifact.Manifest.Descriptor.Digest,
                     ContentDigest = artifact.Metadata.Content.Digest,
                     ContentSize = artifact.Metadata.Content.Size,
-                }
+                },
+                fileSystem
+                    .FileInfo.New(
+                        fileSystem.Path.Combine(packDirectory, PackManifestStore.FileName)
+                    )
+                    .Length
             )
         );
     }
@@ -274,6 +292,7 @@ internal sealed class OciPackReleaseLoader(
         string packDirectory,
         ReleaseContext context,
         OciPackArtifact.OciPackConfig config,
+        ResourceLimits resourceLimits,
         CancellationToken cancellationToken
     )
     {
@@ -286,16 +305,24 @@ internal sealed class OciPackReleaseLoader(
             context.PartitionId,
             contentDescriptor,
             archivePath,
+            resourceLimits,
             cancellationToken
         );
         if (!archiveResult.IsSuccess)
         {
             return ManifestOperationResult<PackManifest>.Failure(
-                archiveResult.Error ?? $"OCI source '{source.Name}' pack content is unavailable."
+                archiveResult.Error ?? $"OCI source '{source.Name}' pack content is unavailable.",
+                archiveResult.ErrorKind
             );
         }
 
-        return await ExtractAndValidateAsync(archivePath, packDirectory, config, cancellationToken);
+        return await ExtractAndValidateAsync(
+            archivePath,
+            packDirectory,
+            config,
+            resourceLimits,
+            cancellationToken
+        );
     }
 
     private async Task<ManifestOperationResult<OciPackArtifact.OciPackConfig>> FetchConfigAsync(
@@ -338,7 +365,10 @@ internal sealed class OciPackReleaseLoader(
                     repository,
                     transfer.Failure,
                     "Unable to fetch pack metadata."
-                )
+                ),
+                transfer.Failure?.Kind == OciRegistryFailureKind.ResourceLimitExceeded
+                    ? ManifestOperationErrorKind.ResourceLimitExceeded
+                    : ManifestOperationErrorKind.General
             );
         }
 
@@ -363,9 +393,18 @@ internal sealed class OciPackReleaseLoader(
         string credentialPartition,
         OciRegistryDescriptor descriptor,
         string archivePath,
+        ResourceLimits resourceLimits,
         CancellationToken cancellationToken
     )
     {
+        if (descriptor.Size > resourceLimits.OciDownloadBytes)
+        {
+            return ManifestOperationResult<bool>.Failure(
+                $"OCI pack archive download exceeds its {resourceLimits.OciDownloadBytes} byte limit (at least {descriptor.Size} bytes declared).",
+                ManifestOperationErrorKind.ResourceLimitExceeded
+            );
+        }
+
         await using var archiveFile = fileSystem.File.Open(
             archivePath,
             FileMode.Create,
@@ -384,7 +423,7 @@ internal sealed class OciPackReleaseLoader(
                     repository,
                     descriptor,
                     archiveFile,
-                    OciPackArchive.MaximumArchiveBytes,
+                    resourceLimits.OciDownloadBytes,
                     credential,
                     credentialPartition,
                     cancellationToken
@@ -401,7 +440,10 @@ internal sealed class OciPackReleaseLoader(
                     repository,
                     transfer.Failure,
                     "Unable to fetch OCI ZIP content."
-                )
+                ),
+                transfer.Failure?.Kind == OciRegistryFailureKind.ResourceLimitExceeded
+                    ? ManifestOperationErrorKind.ResourceLimitExceeded
+                    : ManifestOperationErrorKind.General
             );
         }
 
@@ -416,6 +458,7 @@ internal sealed class OciPackReleaseLoader(
         string archivePath,
         string packDirectory,
         OciPackArtifact.OciPackConfig config,
+        ResourceLimits resourceLimits,
         CancellationToken cancellationToken
     )
     {
@@ -424,20 +467,26 @@ internal sealed class OciPackReleaseLoader(
             fileSystem,
             archive,
             packDirectory,
-            cancellationToken
+            cancellationToken,
+            OciPackArchive.Limits.From(resourceLimits)
         );
         if (extraction.Value is not { } files)
         {
             return ManifestOperationResult<PackManifest>.Failure(
-                extraction.Error ?? "OCI ZIP archive could not be extracted safely."
+                extraction.Error ?? "OCI ZIP archive could not be extracted safely.",
+                extraction.ErrorKind
             );
         }
 
-        var loaded = await packManifestStore.LoadAsync(packDirectory);
+        var loaded = await packManifestStore.LoadAsync(
+            packDirectory,
+            resourceLimits.PackManifestBytes
+        );
         if (loaded.Value is not { } manifest)
         {
             return ManifestOperationResult<PackManifest>.Failure(
-                loaded.Error ?? "OCI root pack.yml is invalid."
+                loaded.Error ?? "OCI root pack.yml is invalid.",
+                loaded.ErrorKind
             );
         }
 
@@ -463,6 +512,17 @@ internal sealed class OciPackReleaseLoader(
         OciRegistryFailure? failure,
         string fallback
     ) => $"OCI source '{source.Name}' repository '{repository}': {failure?.Message ?? fallback}";
+
+    private static ManifestOperationErrorKind GetManifestFetchErrorKind(
+        OciRegistryFailure? failure
+    ) =>
+        failure?.Kind switch
+        {
+            OciRegistryFailureKind.NotFound => ManifestOperationErrorKind.PackNotFound,
+            OciRegistryFailureKind.ResourceLimitExceeded =>
+                ManifestOperationErrorKind.ResourceLimitExceeded,
+            _ => ManifestOperationErrorKind.General,
+        };
 
     private static ManifestOperationResult<T> Failure<T>(
         string message,

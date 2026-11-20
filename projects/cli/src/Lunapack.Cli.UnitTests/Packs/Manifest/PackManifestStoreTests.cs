@@ -79,6 +79,35 @@ public sealed class PackManifestStoreTests
     }
 
     [Test]
+    public async Task Load_WhenManifestMatchesByteLimit_AcceptsInput()
+    {
+        using var workspace = new TestWorkspace();
+        const string contents = "id: example\nversion: 1.0.0\nauthor: Example\nlicense: MIT\n";
+        File.WriteAllText(Path.Combine(workspace.Path, PackManifestStore.FileName), contents);
+        var store = new PackManifestStore(workspace.FileSystem);
+
+        var result = await store.LoadAsync(workspace.Path, contents.Length);
+
+        await Assert.That(result.IsSuccess).IsTrue().Because(result.Error ?? string.Empty);
+    }
+
+    [Test]
+    public async Task Load_WhenManifestExceedsByteLimit_RejectsBeforeParsing()
+    {
+        using var workspace = new TestWorkspace();
+        const string contents = "id: example\nversion: 1.0.0\n#";
+        File.WriteAllText(Path.Combine(workspace.Path, PackManifestStore.FileName), contents);
+        var store = new PackManifestStore(workspace.FileSystem);
+
+        var result = await store.LoadAsync(workspace.Path, contents.Length - 1);
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("pack.yml");
+        await Assert.That(result.Error).Contains($"{contents.Length - 1} byte limit");
+        await Assert.That(result.Error).Contains("at least");
+    }
+
+    [Test]
     public async Task Load_WhenDirectInstallableIsNotBoolean_ReturnsFailure()
     {
         using var workspace = new TestWorkspace();
@@ -174,6 +203,30 @@ public sealed class PackManifestStoreTests
         );
 
         await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(File.ReadAllText(path)).IsEqualTo(original);
+    }
+
+    [Test]
+    public async Task Update_WhenManifestExceedsByteLimit_PreservesOriginalBytes()
+    {
+        using var workspace = new TestWorkspace();
+        var path = Path.Combine(workspace.Path, PackManifestStore.FileName);
+        const string original = "id: example\nversion: 1.0.0\n#";
+        File.WriteAllText(path, original);
+        var store = new PackManifestStore(workspace.FileSystem);
+
+        var result = await store.UpdateAsync(
+            workspace.Path,
+            manifest =>
+            {
+                manifest.Description = "Updated";
+                return null;
+            },
+            original.Length - 1
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("at least");
         await Assert.That(File.ReadAllText(path)).IsEqualTo(original);
     }
 

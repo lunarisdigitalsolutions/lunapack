@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.IO.Abstractions.TestingHelpers;
 using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Catalog;
 using Lunapack.Cli.Packs;
 using Lunapack.Cli.Packs.Instructions;
@@ -84,6 +85,36 @@ public sealed class InstructionPreparerTests
     }
 
     [Test]
+    public async Task Prepare_WhenDocumentMatchesEffectiveLimit_AcceptsBoundary()
+    {
+        const string content = "## Setup\nConfigure";
+        var (fileSystem, pack) = CreatePack(content);
+        var resourceLimits = ResourceLimits.Default with
+        {
+            PackDocumentBytes = System.Text.Encoding.UTF8.GetByteCount(content),
+        };
+
+        var result = Prepare(fileSystem, pack, templating: false, resourceLimits: resourceLimits);
+
+        await Assert.That(result.IsSuccess).IsTrue().Because(result.Error ?? string.Empty);
+    }
+
+    [Test]
+    public async Task Prepare_WhenDocumentExceedsEffectiveLimit_RejectsWithLowerBound()
+    {
+        const string content = "## Setup\nConfigure";
+        var (fileSystem, pack) = CreatePack(content);
+        var resourceLimits = ResourceLimits.Default with { PackDocumentBytes = 1 };
+
+        var result = Prepare(fileSystem, pack, templating: false, resourceLimits: resourceLimits);
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("Lifecycle hook file");
+        await Assert.That(result.Error).Contains("byte limit");
+        await Assert.That(result.Error).Contains("at least");
+    }
+
+    [Test]
     public async Task Prepare_WhenFileTraversesOutsidePack_ReturnsFailure()
     {
         var (fileSystem, pack) = CreatePack("Setup");
@@ -127,7 +158,8 @@ public sealed class InstructionPreparerTests
         MockFileSystem fileSystem,
         DiscoveredPack pack,
         bool templating,
-        string file = "instructions/setup.md"
+        string file = "instructions/setup.md",
+        ResourceLimits? resourceLimits = null
     ) =>
         new InstructionPreparer(fileSystem).Prepare(
             pack,
@@ -137,7 +169,8 @@ public sealed class InstructionPreparerTests
                 File = file,
                 Templating = templating,
             },
-            CreateParameters()
+            CreateParameters(),
+            resourceLimits
         );
 
     private static (MockFileSystem FileSystem, DiscoveredPack Pack) CreatePack(string content) =>

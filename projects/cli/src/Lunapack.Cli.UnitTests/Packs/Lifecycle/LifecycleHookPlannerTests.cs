@@ -1,5 +1,6 @@
 using System.IO.Abstractions;
 using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Catalog;
 using Lunapack.Cli.Packs;
 using Lunapack.Cli.Packs.Lifecycle;
@@ -383,6 +384,68 @@ public sealed class LifecycleHookPlannerTests
 
         await Assert.That(result.IsSuccess).IsTrue();
         await Assert.That(result.RequireValue().Single().IsScript).IsTrue();
+    }
+
+    [Test]
+    public async Task Plan_WhenPreAndPostRenderedTotalExceedsLimit_RejectsSecondPhase()
+    {
+        using var workspace = new TestWorkspace();
+        var pack = CreatePack(
+            workspace.Path,
+            "example",
+            new PackManifest.PackHooks
+            {
+                PreInstall =
+                [
+                    new PackManifest.PackHook
+                    {
+                        Type = "instruction",
+                        File = "instructions/pre.md",
+                    },
+                ],
+                PostInstall =
+                [
+                    new PackManifest.PackHook
+                    {
+                        Type = "instruction",
+                        File = "instructions/post.md",
+                    },
+                ],
+            }
+        );
+        AddInstructionFiles(pack, "pre.md", "post.md");
+        var entry = CreateEntry(PackLifecyclePlan.ChangeKind.Install, pack);
+        var plan = new PackLifecyclePlan([entry], [entry], [entry]);
+        var parameters = new ResolvedPackParameters(
+            new Dictionary<string, PackParameterDefinition>(StringComparer.Ordinal),
+            new Dictionary<string, ResolvedPackParameterValue>(StringComparer.Ordinal)
+        );
+        var totalBytes =
+            new FileInfo(Path.Combine(pack.PackDirectory, "instructions", "pre.md")).Length
+            + new FileInfo(Path.Combine(pack.PackDirectory, "instructions", "post.md")).Length;
+        var resourceLimits = ResourceLimits.Default with { RenderedTotalBytes = totalBytes - 1 };
+        var outputBudget = new RenderedOutputBudget(resourceLimits);
+        var planner = new LifecycleHookPlanner(new FileSystem());
+
+        var pre = planner.PlanPreMutation(
+            plan,
+            parameters,
+            resourceLimits: resourceLimits,
+            outputBudget: outputBudget
+        );
+        var post = planner.PlanPostMutation(
+            plan,
+            parameters,
+            resourceLimits: resourceLimits,
+            outputBudget: outputBudget
+        );
+
+        await Assert.That(pre.IsSuccess).IsTrue().Because(pre.Error ?? string.Empty);
+        await Assert.That(post.IsSuccess).IsFalse();
+        await Assert
+            .That(post.ErrorKind)
+            .IsEqualTo(ManifestOperationErrorKind.ResourceLimitExceeded);
+        await Assert.That(post.Error).Contains($"at least {totalBytes} bytes produced");
     }
 
     private static ManifestOperationResult<IReadOnlyList<LifecycleHookInvocation>> Plan(

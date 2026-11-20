@@ -136,6 +136,18 @@ internal sealed class PackUpdateService(
             );
     }
 
+    private Task<string?> GetNamedIntegrityErrorAsync(
+        string projectDirectory,
+        ProjectState state,
+        NamedPackUpdate update
+    ) =>
+        GetLockedOciIntegrityErrorAsync(
+            projectDirectory,
+            state,
+            update.CurrentPack,
+            new CatalogManifestBudget(state.EffectiveResourceLimits)
+        );
+
     private async Task<
         ManifestOperationResult<IReadOnlyList<CatalogPack>>
     > BrowseUpdateCatalogAsync(
@@ -178,7 +190,8 @@ internal sealed class PackUpdateService(
         return await packCatalog.BrowseForUpdatesAsync(
             projectDirectory,
             state.Configuration,
-            requestedPacks
+            requestedPacks,
+            state.EffectiveResourceLimits
         );
     }
 
@@ -266,11 +279,7 @@ internal sealed class PackUpdateService(
             && update.SelectedPack.SourceIdentity == update.CurrentPack.SourceIdentity
         )
         {
-            var integrityError = await GetLockedOciIntegrityErrorAsync(
-                projectDirectory,
-                state,
-                update.CurrentPack
-            );
+            var integrityError = await GetNamedIntegrityErrorAsync(projectDirectory, state, update);
             if (integrityError is not null)
             {
                 return UpdateResult.Failure(integrityError);
@@ -588,7 +597,8 @@ internal sealed class PackUpdateService(
     private async Task<string?> GetLockedOciIntegrityErrorAsync(
         string projectDirectory,
         ProjectState state,
-        ProjectLockFile.ResolvedPack lockedPack
+        ProjectLockFile.ResolvedPack lockedPack,
+        CatalogManifestBudget manifestBudget
     )
     {
         if (lockedPack.OciSource is null)
@@ -599,7 +609,9 @@ internal sealed class PackUpdateService(
         var observed = await packCatalog.ResolveLockedOciTagAsync(
             projectDirectory,
             state.Configuration,
-            lockedPack
+            lockedPack,
+            state.EffectiveResourceLimits,
+            manifestBudget
         );
         if (!observed.IsSuccess)
         {
@@ -620,6 +632,7 @@ internal sealed class PackUpdateService(
         Dictionary<string, ProjectLockFile.ResolvedPack> currentPacks
     )
     {
+        var manifestBudget = new CatalogManifestBudget(state.EffectiveResourceLimits);
         foreach (var requestedRoot in state.Configuration.Packs)
         {
             if (
@@ -634,7 +647,8 @@ internal sealed class PackUpdateService(
             var integrityError = await GetLockedOciIntegrityErrorAsync(
                 projectDirectory,
                 state,
-                currentPack
+                currentPack,
+                manifestBudget
             );
             if (integrityError is not null)
             {

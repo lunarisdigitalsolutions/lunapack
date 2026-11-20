@@ -1,6 +1,7 @@
 using System.IO.Abstractions;
 using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Catalog;
 using Lunapack.Cli.Packs.Authoring;
 using Lunapack.Cli.Packs.Manifest;
@@ -72,14 +73,24 @@ internal sealed class OciPackSource : IDisposable
         string projectDirectory,
         ProjectConfiguration.OciSource source,
         int sourceOrder,
+        ResourceLimits? resourceLimits = null,
         CancellationToken cancellationToken = default
-    ) => _discovery.BrowseAsync(projectDirectory, source, sourceOrder, cancellationToken);
+    ) =>
+        _discovery.BrowseAsync(
+            projectDirectory,
+            source,
+            sourceOrder,
+            resourceLimits,
+            requireComplete: false,
+            cancellationToken
+        );
 
     public Task<ManifestOperationResult<IReadOnlyList<CatalogPack>>> BrowseForUpdatesAsync(
         string projectDirectory,
         ProjectConfiguration.OciSource source,
         int sourceOrder,
         IReadOnlyDictionary<string, string?> requestedPacks,
+        ResourceLimits? resourceLimits = null,
         bool requireComplete = false,
         CancellationToken cancellationToken = default
     ) =>
@@ -88,6 +99,7 @@ internal sealed class OciPackSource : IDisposable
             source,
             sourceOrder,
             requestedPacks,
+            resourceLimits,
             requireComplete,
             cancellationToken
         );
@@ -102,6 +114,7 @@ internal sealed class OciPackSource : IDisposable
         int sourceOrder,
         string packId,
         string? requestedVersion,
+        ResourceLimits? resourceLimits = null,
         CancellationToken cancellationToken = default
     ) =>
         _discovery.ResolveCandidatesAsync(
@@ -110,6 +123,7 @@ internal sealed class OciPackSource : IDisposable
             sourceOrder,
             packId,
             requestedVersion,
+            resourceLimits,
             cancellationToken
         );
 
@@ -122,6 +136,7 @@ internal sealed class OciPackSource : IDisposable
         string workspace,
         string? expectedManifestDigest = null,
         string? expectedContentDigest = null,
+        ResourceLimits? resourceLimits = null,
         CancellationToken cancellationToken = default
     ) =>
         _releaseLoader.FetchAsync(
@@ -133,6 +148,7 @@ internal sealed class OciPackSource : IDisposable
             workspace,
             expectedManifestDigest,
             expectedContentDigest,
+            resourceLimits,
             cancellationToken
         );
 

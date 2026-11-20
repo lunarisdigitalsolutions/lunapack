@@ -497,7 +497,13 @@ public sealed class GitSourceTransportTests
             new DiscoveredPack(
                 "source",
                 "packs/example",
-                new PackManifest { Id = "example", Version = "1.0.0" },
+                new PackManifest
+                {
+                    Id = "example",
+                    Version = "1.0.0",
+                    Author = "Example",
+                    License = "MIT",
+                },
                 provenance,
                 "packs/example"
             ),
@@ -880,7 +886,7 @@ public sealed class GitSourceTransportTests
                 fileSystem.AddDirectory(packDirectory);
                 fileSystem.AddFile(
                     fileSystem.Path.Combine(packDirectory, "pack.yml"),
-                    "id: example\nversion: 1.0.0\n"
+                    "id: example\nversion: 1.0.0\nauthor: Example\nlicense: MIT\n"
                 );
             }
             return Task.FromResult(

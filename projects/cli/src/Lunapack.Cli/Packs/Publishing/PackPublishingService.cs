@@ -71,6 +71,7 @@ internal sealed class PackPublishingService(
             projectDirectory,
             packDirectory,
             source,
+            state.EffectiveResourceLimits,
             allowHiddenCharacters,
             cancellationToken
         );

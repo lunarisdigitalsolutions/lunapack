@@ -184,6 +184,51 @@ public sealed class PackAuthoringCommandTests
     }
 
     [Test]
+    public async Task Validate_WhenProjectPackManifestLimitIsLower_UsesEffectiveLimit()
+    {
+        var console = new SpectreTestConsole();
+        using var workspace = new TestWorkspace(ansiConsole: console);
+        await workspace.Application.RunAsync(["init"], workspace.Path);
+        await workspace.Application.RunAsync(
+            ["config", "set", "resource-limits.pack-manifest-bytes", "128", "--project"],
+            workspace.Path
+        );
+        File.WriteAllText(
+            Path.Combine(workspace.Path, PackManifestStore.FileName),
+            "id: example\nversion: 1.0.0\nauthor: Example\ndescription: "
+                + new string('x', 128)
+                + "\nlicense: MIT\n"
+        );
+
+        var exitCode = await workspace.Application.RunAsync(["pack", "validate"], workspace.Path);
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(console.Output).Contains("128 byte limit");
+    }
+
+    [Test]
+    public async Task Validate_WhenGlobalPackManifestLimitIsRaised_UsesEffectiveLimit()
+    {
+        var console = new SpectreTestConsole();
+        using var workspace = new TestWorkspace(ansiConsole: console);
+        await workspace.Application.RunAsync(
+            ["config", "set", "resource-limits.pack-manifest-bytes", "2097152", "--global"],
+            workspace.Path
+        );
+        File.WriteAllText(
+            Path.Combine(workspace.Path, PackManifestStore.FileName),
+            "id: example\nversion: 1.0.0\nauthor: Example\nlicense: MIT\n#"
+                + new string('x', 1024 * 1024)
+                + "\n"
+        );
+
+        var exitCode = await workspace.Application.RunAsync(["pack", "validate"], workspace.Path);
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(console.Output).Contains("Manifest valid.");
+    }
+
+    [Test]
     public async Task Init_WhenManifestExists_PreservesOriginalBytes()
     {
         using var workspace = new TestWorkspace();

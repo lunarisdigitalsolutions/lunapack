@@ -77,9 +77,11 @@ internal static class OciPackArtifact
         OciRegistryDescriptor configDescriptor,
         OciRegistryDescriptor contentDescriptor,
         string? source = null,
-        string? revision = null
+        string? revision = null,
+        long maximumContentBytes = MaximumContentBytes
     )
     {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumContentBytes);
         if (
             !string.Equals(
                 configDescriptor.MediaType,
@@ -94,7 +96,8 @@ internal static class OciPackArtifact
             || !IsValidDigest(configDescriptor.Digest)
             || !IsValidDigest(contentDescriptor.Digest)
             || configDescriptor.Size is < 0 or > MaximumMetadataBytes
-            || contentDescriptor.Size is < 0 or > MaximumContentBytes
+            || contentDescriptor.Size < 0
+            || contentDescriptor.Size > maximumContentBytes
         )
         {
             return ManifestOperationResult<(byte[], OciRegistryDescriptor)>.Failure(
@@ -155,7 +158,10 @@ internal static class OciPackArtifact
         );
     }
 
-    public static ManifestOperationResult<OciPackArtifactMetadata> ReadManifest(byte[] content)
+    public static ManifestOperationResult<OciPackArtifactMetadata> ReadManifest(
+        byte[] content,
+        long? maximumContentBytes = null
+    )
     {
         if (content.Length > MaximumMetadataBytes)
         {
@@ -185,7 +191,7 @@ internal static class OciPackArtifact
         }
 
         return parsedManifest.Value is { } parsed
-            ? ValidateManifest(parsed)
+            ? ValidateManifest(parsed, maximumContentBytes ?? MaximumContentBytes)
             : ManifestOperationResult<OciPackArtifactMetadata>.Failure(
                 parsedManifest.Error ?? "OCI pack manifest metadata is invalid."
             );
@@ -306,7 +312,8 @@ internal static class OciPackArtifact
         && value.AsSpan(7).IndexOfAnyExcept(_hexCharacters) < 0;
 
     private static ManifestOperationResult<OciPackArtifactMetadata> ValidateManifest(
-        OciPackImageManifest manifest
+        OciPackImageManifest manifest,
+        long maximumContentBytes
     )
     {
         if (
@@ -345,11 +352,19 @@ internal static class OciPackArtifact
             || !IsValidDigest(config.Digest)
             || !IsValidDigest(layer.Digest)
             || config.Size is < 0 or > MaximumMetadataBytes
-            || layer.Size is < 0 or > MaximumContentBytes
+            || layer.Size < 0
         )
         {
             return ManifestOperationResult<OciPackArtifactMetadata>.Failure(
                 "OCI manifest contains an unsupported or invalid LunaPack descriptor."
+            );
+        }
+
+        if (layer.Size > maximumContentBytes)
+        {
+            return ManifestOperationResult<OciPackArtifactMetadata>.Failure(
+                $"OCI pack content descriptor exceeds its {maximumContentBytes} byte limit (at least {layer.Size} bytes declared).",
+                ManifestOperationErrorKind.ResourceLimitExceeded
             );
         }
 

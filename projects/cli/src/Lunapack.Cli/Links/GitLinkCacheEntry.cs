@@ -5,4 +5,6 @@ internal sealed record GitLinkCacheEntry
     public required string BlobId { get; init; }
 
     public required string Path { get; init; }
+
+    public long? Size { get; init; }
 }

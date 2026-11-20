@@ -1,4 +1,5 @@
 using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources;
 
@@ -13,13 +14,15 @@ internal interface ILinkSourceProvider
         ProjectConfiguration.Source source,
         ProjectConfiguration.Link link,
         ConfiguredSourceIdentity? lockedIdentity,
-        CancellationToken cancellationToken
+        ResourceLimits? resourceLimits = null,
+        CancellationToken cancellationToken = default
     );
 
     Task<ManifestOperationResult<IReadOnlyDictionary<string, string>>> MaterializeAsync(
         LinkSourceListing listing,
         IReadOnlyList<string> selectedPaths,
         LinkOperationWorkspace workspace,
-        CancellationToken cancellationToken
+        ResourceLimits? resourceLimits = null,
+        CancellationToken cancellationToken = default
     );
 }

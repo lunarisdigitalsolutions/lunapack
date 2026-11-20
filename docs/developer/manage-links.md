@@ -53,6 +53,11 @@ Use `--flatten` only when selected file names are unique. Luna rejects empty
 selections, prefix mismatches, path traversal, duplicate targets, and targets
 owned by another pack or link before writing files.
 
+For local sources, any symbolic link, junction, or reparse point in the
+configured source tree stops link resolution. Remove the alias or select a Git
+source instead; Luna does not silently omit an alias and return a partial local
+selection.
+
 ## Inspect and update
 
 ```powershell

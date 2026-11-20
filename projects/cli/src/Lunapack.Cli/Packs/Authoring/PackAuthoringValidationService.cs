@@ -2,6 +2,7 @@
 using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Application.Paths;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Catalog;
 using Lunapack.Cli.Packs.ContentScreening;
 using Lunapack.Cli.Packs.ExternalSources;
@@ -24,6 +25,7 @@ internal sealed class PackAuthoringValidationService(
         string projectDirectory,
         string packDirectory,
         PackManifest manifest,
+        ResourceLimits? resourceLimits = null,
         bool allowHiddenCharacters = false
     )
     {
@@ -63,7 +65,12 @@ internal sealed class PackAuthoringValidationService(
             );
         }
 
-        var materialization = await materializer.MaterializeAsync(projectDirectory, sourcePlan);
+        var limits = resourceLimits ?? ResourceLimits.Default;
+        var materialization = await materializer.MaterializeAsync(
+            projectDirectory,
+            sourcePlan,
+            limits
+        );
         if (materialization.Value is not { } externalSources)
         {
             return ManifestOperationResult<bool>.Failure(
@@ -80,7 +87,8 @@ internal sealed class PackAuthoringValidationService(
                 approvedPlan.CandidateConfiguration,
                 request,
                 resolvedParameters,
-                externalSources.Roots
+                externalSources.Roots,
+                limits
             );
             if (planned.Value is not { } installationPlan)
             {

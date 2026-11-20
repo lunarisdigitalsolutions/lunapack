@@ -108,23 +108,34 @@ internal sealed class PackCatalog : IDisposable
 
     public Task<ManifestOperationResult<IReadOnlyList<CatalogPack>>> BrowseAsync(
         string projectDirectory,
-        ProjectConfiguration configuration
-    ) => BrowseAsync(projectDirectory, configuration, requestedPacks: null);
+        ProjectConfiguration configuration,
+        ResourceLimits? resourceLimits = null
+    ) => BrowseAsync(projectDirectory, configuration, requestedPacks: null, resourceLimits);
 
     public Task<ManifestOperationResult<IReadOnlyList<CatalogPack>>> BrowseForUpdatesAsync(
         string projectDirectory,
         ProjectConfiguration configuration,
         IReadOnlyDictionary<string, string?> requestedPacks,
+        ResourceLimits? resourceLimits = null,
         bool requireComplete = false
-    ) => BrowseAsync(projectDirectory, configuration, requestedPacks, requireComplete);
+    ) =>
+        BrowseAsync(
+            projectDirectory,
+            configuration,
+            requestedPacks,
+            resourceLimits,
+            requireComplete
+        );
 
     private async Task<ManifestOperationResult<IReadOnlyList<CatalogPack>>> BrowseAsync(
         string projectDirectory,
         ProjectConfiguration configuration,
         IReadOnlyDictionary<string, string?>? requestedPacks,
+        ResourceLimits? resourceLimits = null,
         bool requireComplete = false
     )
     {
+        var effectiveResourceLimits = resourceLimits ?? ResourceLimits.Default;
         _console.Debug($"Browsing {configuration.Sources.Count} configured pack sources");
         var ignoreContextResult = await _sourceIgnoreService.LoadAsync(projectDirectory);
         if (ignoreContextResult.Value is not { } ignoreContext)
@@ -139,6 +150,7 @@ internal sealed class PackCatalog : IDisposable
             configuration,
             ignoreContext,
             requestedPacks,
+            effectiveResourceLimits,
             requireComplete
         );
     }
@@ -150,10 +162,12 @@ internal sealed class PackCatalog : IDisposable
         ProjectConfiguration configuration,
         ConfiguredSourceIgnoreService.SourceIgnoreContext ignoreContext,
         IReadOnlyDictionary<string, string?>? requestedPacks,
+        ResourceLimits resourceLimits,
         bool requireComplete
     )
     {
         var catalog = new List<CatalogPack>();
+        var manifestBudget = new CatalogManifestBudget(resourceLimits);
         var activeSourceCount = 0;
         var successfulSourceCount = 0;
         var failedSources = new List<string>();
@@ -180,21 +194,58 @@ internal sealed class PackCatalog : IDisposable
                 source,
                 sourceOrder,
                 requestedPacks,
+                resourceLimits,
                 requireComplete
             );
             if (sourceCatalog.Value is not { } sourcePacks)
             {
                 var error = sourceCatalog.Error ?? "Source returned no catalog.";
+                if (sourceCatalog.ErrorKind == ManifestOperationErrorKind.ResourceLimitExceeded)
+                {
+                    return ManifestOperationResult<IReadOnlyList<CatalogPack>>.Failure(
+                        error,
+                        sourceCatalog.ErrorKind
+                    );
+                }
+
                 failedSources.Add($"{source.Name}: {error}");
                 _console.Warning($"Skipping unavailable pack source '{source.Name}': {error}");
                 continue;
             }
 
             successfulSourceCount++;
+            var budget = manifestBudget.Observe(sourcePacks);
+            if (!budget.IsSuccess)
+            {
+                return ManifestOperationResult<IReadOnlyList<CatalogPack>>.Failure(
+                    budget.Error!,
+                    budget.ErrorKind
+                );
+            }
+
             catalog.AddRange(sourcePacks);
         }
 
-        if (activeSourceCount == 0 && configuration.Sources.Count > 0)
+        return CompleteConfiguredCatalog(
+            catalog,
+            configuration.Sources.Count,
+            activeSourceCount,
+            successfulSourceCount,
+            failedSources,
+            requireComplete
+        );
+    }
+
+    private ManifestOperationResult<IReadOnlyList<CatalogPack>> CompleteConfiguredCatalog(
+        List<CatalogPack> catalog,
+        int configuredSourceCount,
+        int activeSourceCount,
+        int successfulSourceCount,
+        List<string> failedSources,
+        bool requireComplete
+    )
+    {
+        if (activeSourceCount == 0 && configuredSourceCount > 0)
         {
             _console.Info("All configured pack sources are ignored locally.");
         }
@@ -225,9 +276,11 @@ internal sealed class PackCatalog : IDisposable
 
     public async Task<ManifestOperationResult<IReadOnlyList<CatalogPack>>> BrowseCachedAsync(
         string projectDirectory,
-        ProjectConfiguration configuration
+        ProjectConfiguration configuration,
+        ResourceLimits? resourceLimits = null
     )
     {
+        var effectiveResourceLimits = resourceLimits ?? ResourceLimits.Default;
         var ignoreContextResult = await _sourceIgnoreService.LoadAsync(projectDirectory);
         if (ignoreContextResult.Value is not { } ignoreContext)
         {
@@ -236,7 +289,12 @@ internal sealed class PackCatalog : IDisposable
             );
         }
 
-        return await BrowseCachedSourcesAsync(projectDirectory, configuration, ignoreContext);
+        return await BrowseCachedSourcesAsync(
+            projectDirectory,
+            configuration,
+            ignoreContext,
+            effectiveResourceLimits
+        );
     }
 
     private async Task<
@@ -244,10 +302,12 @@ internal sealed class PackCatalog : IDisposable
     > BrowseCachedSourcesAsync(
         string projectDirectory,
         ProjectConfiguration configuration,
-        ConfiguredSourceIgnoreService.SourceIgnoreContext ignoreContext
+        ConfiguredSourceIgnoreService.SourceIgnoreContext ignoreContext,
+        ResourceLimits resourceLimits
     )
     {
         var catalog = new List<CatalogPack>();
+        var manifestBudget = new CatalogManifestBudget(resourceLimits);
         var activeSourceCount = 0;
         var uncheckedOciSources = new List<string>();
         for (var sourceOrder = 0; sourceOrder < configuration.Sources.Count; sourceOrder++)
@@ -271,10 +331,20 @@ internal sealed class PackCatalog : IDisposable
             var sourceCatalog = await BrowseCachedSourceAsync(
                 projectDirectory,
                 source,
-                sourceOrder
+                sourceOrder,
+                resourceLimits
             );
             if (sourceCatalog.Value is { } sourcePacks)
             {
+                var budget = manifestBudget.Observe(sourcePacks);
+                if (!budget.IsSuccess)
+                {
+                    return ManifestOperationResult<IReadOnlyList<CatalogPack>>.Failure(
+                        budget.Error!,
+                        budget.ErrorKind
+                    );
+                }
+
                 catalog.AddRange(sourcePacks);
             }
             else if (!sourceCatalog.IsSuccess)
@@ -288,32 +358,54 @@ internal sealed class PackCatalog : IDisposable
                     continue;
                 }
 
+                if (sourceCatalog.ErrorKind == ManifestOperationErrorKind.ResourceLimitExceeded)
+                {
+                    return ManifestOperationResult<IReadOnlyList<CatalogPack>>.Failure(
+                        sourceCatalog.Error
+                            ?? "A cached pack manifest exceeds its configured byte limit.",
+                        sourceCatalog.ErrorKind
+                    );
+                }
+
                 return ManifestOperationResult<IReadOnlyList<CatalogPack>>.Failure(
                     sourceCatalog.Error ?? "Unable to browse cached pack sources."
                 );
             }
         }
 
-        if (activeSourceCount == 0 && configuration.Sources.Count > 0)
+        return CompleteCachedCatalog(
+            catalog,
+            uncheckedOciSources,
+            activeSourceCount,
+            configuration.Sources.Count
+        );
+    }
+
+    private ManifestOperationResult<IReadOnlyList<CatalogPack>> CompleteCachedCatalog(
+        List<CatalogPack> catalog,
+        List<string> uncheckedOciSources,
+        int activeSourceCount,
+        int configuredSourceCount
+    )
+    {
+        if (activeSourceCount == 0 && configuredSourceCount > 0)
         {
             _console.Info("All configured pack sources are ignored locally.");
         }
 
-        if (catalog.Count == 0 && uncheckedOciSources.Count > 0)
-        {
-            return ManifestOperationResult<IReadOnlyList<CatalogPack>>.Failure(
+        return catalog.Count == 0 && uncheckedOciSources.Count > 0
+            ? ManifestOperationResult<IReadOnlyList<CatalogPack>>.Failure(
                 string.Join(Environment.NewLine, uncheckedOciSources)
-            );
-        }
-
-        return ManifestOperationResult<IReadOnlyList<CatalogPack>>.Success(catalog);
+            )
+            : ManifestOperationResult<IReadOnlyList<CatalogPack>>.Success(catalog);
     }
 
     private Task<ManifestOperationResult<IReadOnlyList<CatalogPack>>> BrowseSourceAsync(
         string projectDirectory,
         ProjectConfiguration.Source source,
         int sourceOrder,
-        IReadOnlyDictionary<string, string?>? requestedPacks = null,
+        IReadOnlyDictionary<string, string?>? requestedPacks,
+        ResourceLimits resourceLimits,
         bool requireComplete = false
     ) =>
         source switch
@@ -322,21 +414,29 @@ internal sealed class PackCatalog : IDisposable
                 _fileSystem.Path.GetFullPath(localSource.Path, projectDirectory),
                 sourceOrder,
                 localSource.Name,
-                ConfiguredSourceIdentity.Create(localSource)
+                ConfiguredSourceIdentity.Create(localSource),
+                resourceLimits
             ),
             ProjectConfiguration.GitSource gitSource => _gitPackDiscovery.BrowseAsync(
                 projectDirectory,
                 gitSource,
-                sourceOrder
+                sourceOrder,
+                resourceLimits: resourceLimits
             ),
             ProjectConfiguration.OciSource ociSource => requestedPacks is null
-                ? _ociPackSource.BrowseAsync(projectDirectory, ociSource, sourceOrder)
+                ? _ociPackSource.BrowseAsync(
+                    projectDirectory,
+                    ociSource,
+                    sourceOrder,
+                    resourceLimits: resourceLimits
+                )
                 : _ociPackSource.BrowseForUpdatesAsync(
                     projectDirectory,
                     ociSource,
                     sourceOrder,
                     requestedPacks,
-                    requireComplete
+                    resourceLimits: resourceLimits,
+                    requireComplete: requireComplete
                 ),
             _ => Task.FromResult(
                 ManifestOperationResult<IReadOnlyList<CatalogPack>>.Failure(
@@ -348,7 +448,8 @@ internal sealed class PackCatalog : IDisposable
     private Task<ManifestOperationResult<IReadOnlyList<CatalogPack>>> BrowseCachedSourceAsync(
         string projectDirectory,
         ProjectConfiguration.Source source,
-        int sourceOrder
+        int sourceOrder,
+        ResourceLimits resourceLimits
     ) =>
         source switch
         {
@@ -356,10 +457,16 @@ internal sealed class PackCatalog : IDisposable
                 _fileSystem.Path.GetFullPath(localSource.Path, projectDirectory),
                 sourceOrder,
                 localSource.Name,
-                ConfiguredSourceIdentity.Create(localSource)
+                ConfiguredSourceIdentity.Create(localSource),
+                resourceLimits
             ),
             ProjectConfiguration.GitSource gitSource => Task.FromResult(
-                _gitPackDiscovery.BrowseCached(projectDirectory, gitSource, sourceOrder)
+                _gitPackDiscovery.BrowseCached(
+                    projectDirectory,
+                    gitSource,
+                    sourceOrder,
+                    resourceLimits
+                )
             ),
             ProjectConfiguration.OciSource ociSource => Task.FromResult(
                 OciPackSource.BrowseCached(ociSource)
@@ -456,28 +563,36 @@ internal sealed class PackCatalog : IDisposable
         string projectDirectory,
         ProjectConfiguration configuration,
         string packId,
-        string? requestedVersion
+        string? requestedVersion,
+        ResourceLimits? resourceLimits = null,
+        CatalogManifestBudget? workBudget = null
     ) =>
         ResolveFromConfiguredSourcesAsync(
             projectDirectory,
             configuration,
             packId,
             requestedVersion,
-            ResolutionEligibility.AllCatalogReleases
+            ResolutionEligibility.AllCatalogReleases,
+            resourceLimits ?? ResourceLimits.Default,
+            workBudget
         );
 
     public Task<ManifestOperationResult<DiscoveredPack>> ResolveDirectlyInstallableAsync(
         string projectDirectory,
         ProjectConfiguration configuration,
         string packId,
-        string? requestedVersion
+        string? requestedVersion,
+        ResourceLimits? resourceLimits = null,
+        CatalogManifestBudget? workBudget = null
     ) =>
         ResolveFromConfiguredSourcesAsync(
             projectDirectory,
             configuration,
             packId,
             requestedVersion,
-            ResolutionEligibility.DirectlyInstallable
+            ResolutionEligibility.DirectlyInstallable,
+            resourceLimits ?? ResourceLimits.Default,
+            workBudget
         );
 
     private async Task<ManifestOperationResult<DiscoveredPack>> ResolveFromConfiguredSourcesAsync(
@@ -485,19 +600,24 @@ internal sealed class PackCatalog : IDisposable
         ProjectConfiguration configuration,
         string packId,
         string? requestedVersion,
-        ResolutionEligibility eligibility
+        ResolutionEligibility eligibility,
+        ResourceLimits resourceLimits,
+        CatalogManifestBudget? workBudget
     )
     {
         var discovered = await DiscoverResolutionCandidatesAsync(
             projectDirectory,
             configuration,
             packId,
-            requestedVersion
+            requestedVersion,
+            resourceLimits,
+            workBudget
         );
         if (discovered.Value is not { } candidates)
         {
             return ManifestOperationResult<DiscoveredPack>.Failure(
-                discovered.Error ?? "Unable to browse pack sources."
+                discovered.Error ?? "Unable to browse pack sources.",
+                discovered.ErrorKind
             );
         }
 
@@ -563,9 +683,12 @@ internal sealed class PackCatalog : IDisposable
         string projectDirectory,
         ProjectConfiguration configuration,
         ProjectLockFile.ResolvedPack lockedPack,
+        ResourceLimits? resourceLimits = null,
+        CatalogManifestBudget? workBudget = null,
         CancellationToken cancellationToken = default
     )
     {
+        var effectiveResourceLimits = resourceLimits ?? ResourceLimits.Default;
         var sourceResult = await ResolveLockedOciSourceAsync(
             projectDirectory,
             configuration,
@@ -597,6 +720,7 @@ internal sealed class PackCatalog : IDisposable
                 workspace.Path,
                 lockedSource.Provenance.ManifestDigest,
                 lockedSource.Provenance.ContentDigest,
+                effectiveResourceLimits,
                 cancellationToken
             );
             if (release.Value is not { } lockedRelease)
@@ -605,6 +729,17 @@ internal sealed class PackCatalog : IDisposable
                     release.Error
                         ?? $"Locked OCI release '{lockedPack.Id}@{lockedPack.Version}' is unavailable.",
                     release.ErrorKind
+                );
+            }
+
+            var observed = (
+                workBudget ?? new CatalogManifestBudget(effectiveResourceLimits)
+            ).Observe(lockedRelease.ManifestByteCount);
+            if (!observed.IsSuccess)
+            {
+                return ManifestOperationResult<DiscoveredPack>.Failure(
+                    observed.Error!,
+                    observed.ErrorKind
                 );
             }
 
@@ -625,14 +760,40 @@ internal sealed class PackCatalog : IDisposable
     public async Task<ManifestOperationResult<DiscoveredPack>> ResolveLockedAsync(
         string projectDirectory,
         ProjectConfiguration configuration,
-        ProjectLockFile.ResolvedPack lockedPack
+        ProjectLockFile.ResolvedPack lockedPack,
+        ResourceLimits? resourceLimits = null,
+        CatalogManifestBudget? workBudget = null
     )
     {
+        var effectiveResourceLimits = resourceLimits ?? ResourceLimits.Default;
         if (lockedPack.OciSource is not null)
         {
-            return await ResolveLockedOciAsync(projectDirectory, configuration, lockedPack);
+            return await ResolveLockedOciAsync(
+                projectDirectory,
+                configuration,
+                lockedPack,
+                resourceLimits: effectiveResourceLimits,
+                workBudget: workBudget
+            );
         }
 
+        return await ResolveLockedConfiguredSourceAsync(
+            projectDirectory,
+            configuration,
+            lockedPack,
+            effectiveResourceLimits,
+            workBudget
+        );
+    }
+
+    private async Task<ManifestOperationResult<DiscoveredPack>> ResolveLockedConfiguredSourceAsync(
+        string projectDirectory,
+        ProjectConfiguration configuration,
+        ProjectLockFile.ResolvedPack lockedPack,
+        ResourceLimits resourceLimits,
+        CatalogManifestBudget? workBudget
+    )
+    {
         if (lockedPack.SourceIdentity is not { } sourceIdentity)
         {
             return ManifestOperationResult<DiscoveredPack>.Failure(
@@ -676,12 +837,30 @@ internal sealed class PackCatalog : IDisposable
         var sourceOrder = configuration.Sources.FindIndex(candidate =>
             ConfiguredSourceIdentity.Create(candidate) == sourceIdentity
         );
-        var sourceCatalog = await BrowseSourceAsync(projectDirectory, source, sourceOrder);
+        var sourceCatalog = await BrowseLockedSourceAsync(
+            projectDirectory,
+            source,
+            sourceOrder,
+            lockedPack,
+            resourceLimits
+        );
+
         if (sourceCatalog.Value is not { } candidates)
         {
             return ManifestOperationResult<DiscoveredPack>.Failure(
                 $"Locked pack '{lockedPack.Id}@{lockedPack.Version}' cannot be read from source '{source.Name}': {sourceCatalog.Error ?? "source unavailable"}.",
                 sourceCatalog.ErrorKind
+            );
+        }
+
+        var observed = (workBudget ?? new CatalogManifestBudget(resourceLimits)).Observe(
+            candidates
+        );
+        if (!observed.IsSuccess)
+        {
+            return ManifestOperationResult<DiscoveredPack>.Failure(
+                observed.Error!,
+                observed.ErrorKind
             );
         }
 
@@ -694,13 +873,58 @@ internal sealed class PackCatalog : IDisposable
             );
     }
 
+    private async Task<ManifestOperationResult<IReadOnlyList<CatalogPack>>> BrowseLockedSourceAsync(
+        string projectDirectory,
+        ProjectConfiguration.Source source,
+        int sourceOrder,
+        ProjectLockFile.ResolvedPack lockedPack,
+        ResourceLimits resourceLimits
+    )
+    {
+        if (
+            source is not ProjectConfiguration.GitSource gitSource
+            || lockedPack.GitSource is not { } gitProvenance
+        )
+        {
+            return await BrowseSourceAsync(
+                projectDirectory,
+                source,
+                sourceOrder,
+                requestedPacks: null,
+                resourceLimits
+            );
+        }
+
+        if (
+            !string.Equals(gitSource.Url, gitProvenance.Url, StringComparison.Ordinal)
+            || !string.Equals(gitSource.Ref, gitProvenance.Ref, StringComparison.Ordinal)
+            || !string.Equals(gitSource.Path, gitProvenance.Path, StringComparison.Ordinal)
+        )
+        {
+            return ManifestOperationResult<IReadOnlyList<CatalogPack>>.Failure(
+                $"Locked pack '{lockedPack.Id}@{lockedPack.Version}' Git provenance does not match its configured source.",
+                ManifestOperationErrorKind.SourceIntegrityMismatch
+            );
+        }
+
+        return await _gitPackDiscovery.BrowseCommitAsync(
+            gitSource,
+            sourceOrder,
+            gitProvenance.ResolvedCommit,
+            resourceLimits
+        );
+    }
+
     public async Task<ManifestOperationResult<CatalogPack?>> ResolveLockedOciTagAsync(
         string projectDirectory,
         ProjectConfiguration configuration,
         ProjectLockFile.ResolvedPack lockedPack,
+        ResourceLimits? resourceLimits = null,
+        CatalogManifestBudget? workBudget = null,
         CancellationToken cancellationToken = default
     )
     {
+        var effectiveResourceLimits = resourceLimits ?? ResourceLimits.Default;
         var sourceResult = await ResolveLockedOciSourceAsync(
             projectDirectory,
             configuration,
@@ -729,6 +953,7 @@ internal sealed class PackCatalog : IDisposable
             sourceOrder,
             lockedPack.Id,
             lockedPack.Version,
+            effectiveResourceLimits,
             cancellationToken
         );
         if (candidates.Value is not { } resolvedCandidates)
@@ -737,6 +962,17 @@ internal sealed class PackCatalog : IDisposable
                 candidates.Error
                     ?? $"Unable to check OCI release '{lockedPack.Id}@{lockedPack.Version}'.",
                 candidates.ErrorKind
+            );
+        }
+
+        var observed = (workBudget ?? new CatalogManifestBudget(effectiveResourceLimits)).Observe(
+            resolvedCandidates
+        );
+        if (!observed.IsSuccess)
+        {
+            return ManifestOperationResult<CatalogPack?>.Failure(
+                observed.Error!,
+                observed.ErrorKind
             );
         }
 
@@ -832,7 +1068,9 @@ internal sealed class PackCatalog : IDisposable
         string projectDirectory,
         ProjectConfiguration configuration,
         string packId,
-        string? requestedVersion
+        string? requestedVersion,
+        ResourceLimits resourceLimits,
+        CatalogManifestBudget? workBudget = null
     )
     {
         var ignoreContextResult = await _sourceIgnoreService.LoadAsync(projectDirectory);
@@ -844,6 +1082,7 @@ internal sealed class PackCatalog : IDisposable
         }
 
         var packs = new List<CatalogPack>();
+        var manifestBudget = workBudget ?? new CatalogManifestBudget(resourceLimits);
         var failures = new List<string>();
         for (var sourceOrder = 0; sourceOrder < configuration.Sources.Count; sourceOrder++)
         {
@@ -862,39 +1101,38 @@ internal sealed class PackCatalog : IDisposable
                 continue;
             }
 
-            var sourcePacks = source switch
-            {
-                ProjectConfiguration.LocalSource localSource =>
-                    await _localPackDiscovery.BrowseAsync(
-                        _fileSystem.Path.GetFullPath(localSource.Path, projectDirectory),
-                        sourceOrder,
-                        localSource.Name,
-                        ConfiguredSourceIdentity.Create(localSource)
-                    ),
-                ProjectConfiguration.GitSource gitSource => await _gitPackDiscovery.BrowseAsync(
-                    projectDirectory,
-                    gitSource,
-                    sourceOrder
-                ),
-                ProjectConfiguration.OciSource ociSource =>
-                    await _ociPackSource.ResolveCandidatesAsync(
-                        projectDirectory,
-                        ociSource,
-                        sourceOrder,
-                        packId,
-                        requestedVersion
-                    ),
-                _ => ManifestOperationResult<IReadOnlyList<CatalogPack>>.Failure(
-                    "Pack source type is unsupported."
-                ),
-            };
+            var sourcePacks = await DiscoverSourceResolutionCandidatesAsync(
+                projectDirectory,
+                source,
+                sourceOrder,
+                packId,
+                requestedVersion,
+                resourceLimits
+            );
             if (sourcePacks.Value is { } candidates)
             {
+                var budget = manifestBudget.Observe(candidates);
+                if (!budget.IsSuccess)
+                {
+                    return ManifestOperationResult<ResolutionCandidates>.Failure(
+                        budget.Error!,
+                        budget.ErrorKind
+                    );
+                }
+
                 packs.AddRange(candidates);
             }
             else
             {
                 var error = sourcePacks.Error ?? "Source returned no resolution candidates.";
+                if (sourcePacks.ErrorKind == ManifestOperationErrorKind.ResourceLimitExceeded)
+                {
+                    return ManifestOperationResult<ResolutionCandidates>.Failure(
+                        error,
+                        sourcePacks.ErrorKind
+                    );
+                }
+
                 failures.Add($"{source.Name}: {error}");
                 _console.Warning($"Skipping unavailable pack source '{source.Name}': {error}");
             }
@@ -903,6 +1141,46 @@ internal sealed class PackCatalog : IDisposable
         return ManifestOperationResult<ResolutionCandidates>.Success(
             new ResolutionCandidates(packs, failures)
         );
+    }
+
+    private async Task<
+        ManifestOperationResult<IReadOnlyList<CatalogPack>>
+    > DiscoverSourceResolutionCandidatesAsync(
+        string projectDirectory,
+        ProjectConfiguration.Source source,
+        int sourceOrder,
+        string packId,
+        string? requestedVersion,
+        ResourceLimits resourceLimits
+    )
+    {
+        return source switch
+        {
+            ProjectConfiguration.LocalSource localSource => await _localPackDiscovery.BrowseAsync(
+                _fileSystem.Path.GetFullPath(localSource.Path, projectDirectory),
+                sourceOrder,
+                localSource.Name,
+                ConfiguredSourceIdentity.Create(localSource),
+                resourceLimits
+            ),
+            ProjectConfiguration.GitSource gitSource => await _gitPackDiscovery.BrowseAsync(
+                projectDirectory,
+                gitSource,
+                sourceOrder,
+                resourceLimits: resourceLimits
+            ),
+            ProjectConfiguration.OciSource ociSource => await _ociPackSource.ResolveCandidatesAsync(
+                projectDirectory,
+                ociSource,
+                sourceOrder,
+                packId,
+                requestedVersion,
+                resourceLimits: resourceLimits
+            ),
+            _ => ManifestOperationResult<IReadOnlyList<CatalogPack>>.Failure(
+                "Pack source type is unsupported."
+            ),
+        };
     }
 
     internal static ManifestOperationResult<DiscoveredPack> ResolveFromCatalog(

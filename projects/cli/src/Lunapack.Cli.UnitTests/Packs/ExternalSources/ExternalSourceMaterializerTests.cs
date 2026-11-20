@@ -1,4 +1,5 @@
 using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Packs.ExternalSources;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources;
@@ -57,6 +58,70 @@ public sealed class ExternalSourceMaterializerTests
         await Assert.That(result.Error).Contains("base path");
     }
 
+    [Test]
+    public async Task MaterializeAsync_WhenGitSnapshotExceedsFileLimit_StopsBeforeCheckout()
+    {
+        var runner = new MaterializingGitProcessRunner(
+            createBasePath: true,
+            snapshotFileSizes: [1L, 1L]
+        );
+        using var workspace = new TestWorkspace(gitProcessRunner: runner);
+        var materializer = new ExternalSourceMaterializer(
+            workspace.FileSystem,
+            runner,
+            new GitRefResolver(runner),
+            TestGitTransportPolicy.Create(workspace.FileSystem, workspace.UserSettingsStore)
+        );
+
+        var result = await materializer.MaterializeAsync(
+            workspace.Path,
+            CreatePlan([new ExternalSourceRequirementUse("pack", "1.0.0", "upstream", null, 1)]),
+            ResourceLimits.Default with
+            {
+                FilesPerPack = 1,
+            }
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert
+            .That(result.ErrorKind)
+            .IsEqualTo(ManifestOperationErrorKind.ResourceLimitExceeded);
+        await Assert.That(runner.CheckoutCount).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task MaterializeAsync_WhenGitParentDirectoriesExceedLimit_StopsBeforeCheckout()
+    {
+        var runner = new MaterializingGitProcessRunner(
+            createBasePath: true,
+            snapshotFileSizes: [1L],
+            nestedSnapshotFiles: true
+        );
+        using var workspace = new TestWorkspace(gitProcessRunner: runner);
+        var materializer = new ExternalSourceMaterializer(
+            workspace.FileSystem,
+            runner,
+            new GitRefResolver(runner),
+            TestGitTransportPolicy.Create(workspace.FileSystem, workspace.UserSettingsStore)
+        );
+
+        var result = await materializer.MaterializeAsync(
+            workspace.Path,
+            CreatePlan([new ExternalSourceRequirementUse("pack", "1.0.0", "upstream", null, 1)]),
+            ResourceLimits.Default with
+            {
+                FilesPerPack = 1,
+            }
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert
+            .That(result.ErrorKind)
+            .IsEqualTo(ManifestOperationErrorKind.ResourceLimitExceeded);
+        await Assert.That(result.Error).Contains("file and directory limit");
+        await Assert.That(runner.CheckoutCount).IsEqualTo(0);
+    }
+
     private static ExternalSourceRequirementPlan CreatePlan(
         IReadOnlyList<ExternalSourceRequirementUse> uses
     )
@@ -91,7 +156,11 @@ public sealed class ExternalSourceMaterializerTests
         );
     }
 
-    private sealed class MaterializingGitProcessRunner(bool createBasePath) : IGitProcessRunner
+    private sealed class MaterializingGitProcessRunner(
+        bool createBasePath,
+        IReadOnlyList<long>? snapshotFileSizes = null,
+        bool nestedSnapshotFiles = false
+    ) : IGitProcessRunner
     {
         public int CheckoutCount { get; private set; }
 
@@ -140,6 +209,18 @@ public sealed class ExternalSourceMaterializerTests
                     Directory.CreateDirectory(Path.Combine(root, "docs"));
                     File.WriteAllText(Path.Combine(root, "docs", "README.md"), "content");
                 }
+            }
+
+            if (arguments.Contains("ls-tree", StringComparer.Ordinal))
+            {
+                return Success(
+                    string.Concat(
+                        (snapshotFileSizes ?? []).Select(
+                            (size, index) =>
+                                $"100644 blob 1111111111111111111111111111111111111111 {size}\tdocs/{(nestedSnapshotFiles ? $"directory-{index}/" : string.Empty)}file-{index}\0"
+                        )
+                    )
+                );
             }
 
             return Success(string.Empty);

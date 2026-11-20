@@ -88,6 +88,53 @@ public sealed class UserSettingsStoreTests
     }
 
     [Test]
+    public async Task Load_WhenSettingsExceedBootstrapCeiling_RejectsBeforeDeserialization()
+    {
+        using var workspace = new TestWorkspace();
+        var settingsDirectory = Directory
+            .CreateDirectory(Path.Combine(workspace.Path, UserSettingsStore.DirectoryName))
+            .FullName;
+        UserSettingsPathSecurity.Apply(settingsDirectory, directory: true);
+        var settingsPath = Path.Combine(settingsDirectory, UserSettingsStore.FileName);
+        File.WriteAllText(settingsPath, new string('x', 1_048_577));
+        UserSettingsPathSecurity.Apply(settingsPath, directory: false);
+        var store = new UserSettingsStore(new FileSystem(), workspace.Path);
+
+        var loaded = await store.LoadAsync();
+
+        await Assert.That(loaded.IsSuccess).IsFalse();
+        await Assert.That(loaded.Error).Contains("at least 1048577 bytes");
+    }
+
+    [Test]
+    public async Task Load_WhenProjectResourceLimitKeyIsUnknown_ReturnsFailure()
+    {
+        using var workspace = new TestWorkspace();
+        var projectDirectory = Directory
+            .CreateDirectory(Path.Combine(workspace.Path, "project"))
+            .FullName;
+        var projectKey = CanonicalProjectPath
+            .Resolve(new FileSystem(), projectDirectory)
+            .RequireValue();
+        var settingsDirectory = Directory
+            .CreateDirectory(Path.Combine(workspace.Path, UserSettingsStore.DirectoryName))
+            .FullName;
+        UserSettingsPathSecurity.Apply(settingsDirectory, directory: true);
+        var settingsPath = Path.Combine(settingsDirectory, UserSettingsStore.FileName);
+        File.WriteAllText(
+            settingsPath,
+            $"projects:\n  '{projectKey}':\n    preferences:\n      resourceLimits:\n        packManifestBytez: 1024\n"
+        );
+        UserSettingsPathSecurity.Apply(settingsPath, directory: false);
+        var store = new UserSettingsStore(new FileSystem(), workspace.Path);
+
+        var loaded = await store.LoadAsync();
+
+        await Assert.That(loaded.IsSuccess).IsFalse();
+        await Assert.That(loaded.Error).Contains("Unknown resource-limit key 'packManifestBytez'");
+    }
+
+    [Test]
     public async Task Load_WhenDenialOmitted_DefaultsToNotDenied()
     {
         using var workspace = new TestWorkspace();

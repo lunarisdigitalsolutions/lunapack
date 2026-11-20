@@ -7,5 +7,6 @@ internal sealed record OciPackRelease(
     PackManifest Manifest,
     NuGetVersion Version,
     string PackDirectory,
-    OciSourceProvenance Provenance
+    OciSourceProvenance Provenance,
+    long ManifestByteCount = 0
 );

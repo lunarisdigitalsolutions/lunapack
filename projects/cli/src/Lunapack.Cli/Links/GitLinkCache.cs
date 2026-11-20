@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Application.Serialization;
 using Lunapack.Cli.Sources;
 
@@ -10,9 +11,13 @@ namespace Lunapack.Cli.Links;
 
 internal sealed class GitLinkCache(IFileSystem fileSystem, string cacheRoot)
 {
-    public const int CacheVersion = 1;
+    public const int CacheVersion = 2;
 
-    public GitLinkCacheMetadata? LoadMetadata(ConfiguredSourceIdentity identity, string commit)
+    public GitLinkCacheMetadata? LoadMetadata(
+        ConfiguredSourceIdentity identity,
+        string commit,
+        ResourceLimits? resourceLimits = null
+    )
     {
         var metadataPath = GetMetadataPath(identity, commit);
         if (!fileSystem.File.Exists(metadataPath))
@@ -22,8 +27,20 @@ internal sealed class GitLinkCache(IFileSystem fileSystem, string cacheRoot)
 
         try
         {
+            var limits = resourceLimits ?? ResourceLimits.Default;
+            var read = BoundedFileReader.ReadBytes(
+                fileSystem,
+                metadataPath,
+                limits.LockFileBytes,
+                "Git link cache metadata"
+            );
+            if (read.Value is not { } bytes)
+            {
+                return null;
+            }
+
             var metadata = JsonSerializer.Deserialize(
-                fileSystem.File.ReadAllText(metadataPath),
+                bytes,
                 LunapackJsonContext.Default.GitLinkCacheMetadata
             );
             return
@@ -31,6 +48,7 @@ internal sealed class GitLinkCache(IFileSystem fileSystem, string cacheRoot)
                 || metadata.Version != CacheVersion
                 || metadata.Source != identity
                 || !string.Equals(metadata.ResolvedCommit, commit, StringComparison.Ordinal)
+                || metadata.Tree.Count > limits.FilesPerGraph
                 ? null
                 : metadata;
         }
@@ -41,32 +59,60 @@ internal sealed class GitLinkCache(IFileSystem fileSystem, string cacheRoot)
         }
     }
 
-    public ManifestOperationResult<bool> SaveMetadata(GitLinkCacheMetadata metadata)
+    public ManifestOperationResult<bool> SaveMetadata(
+        GitLinkCacheMetadata metadata,
+        ResourceLimits? resourceLimits = null
+    )
     {
         ArgumentNullException.ThrowIfNull(metadata);
+        var limits = resourceLimits ?? ResourceLimits.Default;
+        if (metadata.Tree.Count > limits.FilesPerGraph)
+        {
+            return ManifestOperationResult<bool>.Failure(
+                $"Git link cache contains at least {metadata.Tree.Count} files, exceeding its {limits.FilesPerGraph} file limit.",
+                ManifestOperationErrorKind.ResourceLimitExceeded
+            );
+        }
 
-        return WriteAtomically(
-            GetMetadataPath(metadata.Source, metadata.ResolvedCommit),
-            Encoding.UTF8.GetBytes(
-                JsonSerializer.Serialize(metadata, LunapackJsonContext.Default.GitLinkCacheMetadata)
-            )
+        var contents = Encoding.UTF8.GetBytes(
+            JsonSerializer.Serialize(metadata, LunapackJsonContext.Default.GitLinkCacheMetadata)
         );
+        return contents.LongLength > limits.LockFileBytes
+            ? ManifestOperationResult<bool>.Failure(
+                $"Git link cache metadata exceeds its {limits.LockFileBytes} byte limit (at least {contents.LongLength} bytes produced).",
+                ManifestOperationErrorKind.ResourceLimitExceeded
+            )
+            : WriteAtomically(GetMetadataPath(metadata.Source, metadata.ResolvedCommit), contents);
     }
 
     public byte[]? TryReadBlob(ConfiguredSourceIdentity identity, string commit, string blobId)
     {
+        var blobPath = TryGetBlobPath(identity, commit, blobId, long.MaxValue);
+        return blobPath is null ? null : fileSystem.File.ReadAllBytes(blobPath);
+    }
+
+    public string? TryGetBlobPath(
+        ConfiguredSourceIdentity identity,
+        string commit,
+        string blobId,
+        long maximumBytes
+    )
+    {
         var blobPath = GetBlobPath(identity, commit, blobId);
-        if (!fileSystem.File.Exists(blobPath))
+        if (
+            !fileSystem.File.Exists(blobPath)
+            || fileSystem.FileInfo.New(blobPath).Length > maximumBytes
+        )
         {
             return null;
         }
 
         try
         {
-            var contents = fileSystem.File.ReadAllBytes(blobPath);
-            if (GitObjectId.Matches(blobId, contents))
+            using var contents = fileSystem.File.OpenRead(blobPath);
+            if (GitObjectId.Matches(blobId, contents, contents.Length))
             {
-                return contents;
+                return blobPath;
             }
 
             fileSystem.File.Delete(blobPath);
@@ -85,6 +131,13 @@ internal sealed class GitLinkCache(IFileSystem fileSystem, string cacheRoot)
         byte[] contents
     ) => WriteAtomically(GetBlobPath(identity, commit, blobId), contents);
 
+    public ManifestOperationResult<bool> SaveBlobFromPath(
+        ConfiguredSourceIdentity identity,
+        string commit,
+        string blobId,
+        string sourcePath
+    ) => CopyAtomically(GetBlobPath(identity, commit, blobId), sourcePath);
+
     private ManifestOperationResult<bool> WriteAtomically(string path, byte[] contents)
     {
         var temporaryPath = $"{path}.{Guid.NewGuid():N}.tmp";
@@ -99,6 +152,38 @@ internal sealed class GitLinkCache(IFileSystem fileSystem, string cacheRoot)
 
             fileSystem.Directory.CreateDirectory(directory);
             fileSystem.File.WriteAllBytes(temporaryPath, contents);
+            fileSystem.File.Move(temporaryPath, path, overwrite: true);
+            return ManifestOperationResult<bool>.Success(true);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return ManifestOperationResult<bool>.Failure(
+                $"Unable to persist Git link cache content: {exception.Message}"
+            );
+        }
+        finally
+        {
+            if (fileSystem.File.Exists(temporaryPath))
+            {
+                fileSystem.File.Delete(temporaryPath);
+            }
+        }
+    }
+
+    private ManifestOperationResult<bool> CopyAtomically(string path, string sourcePath)
+    {
+        var temporaryPath = $"{path}.{Guid.NewGuid():N}.tmp";
+        try
+        {
+            if (fileSystem.Path.GetDirectoryName(path) is not { Length: > 0 } directory)
+            {
+                throw new InvalidOperationException(
+                    $"Git link cache path '{path}' does not have a directory."
+                );
+            }
+
+            fileSystem.Directory.CreateDirectory(directory);
+            fileSystem.File.Copy(sourcePath, temporaryPath, overwrite: true);
             fileSystem.File.Move(temporaryPath, path, overwrite: true);
             return ManifestOperationResult<bool>.Success(true);
         }

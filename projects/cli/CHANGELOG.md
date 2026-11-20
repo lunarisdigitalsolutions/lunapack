@@ -7,6 +7,18 @@ pack-package, documentation, CI, build, test, and release-process changes.
 
 Update this section before creating a release tag.
 
+### Resource Limits
+
+- Luna now applies finite, configurable ceilings to project and pack manifests,
+  lock files, pack documents, snapshots, selected files, dependency graphs,
+  rendered content, Git output, and OCI downloads and archives. `luna config`
+  manages scoped limits; project settings can only lower built-in defaults,
+  and cannot raise a stricter user-project or global setting. Global-user and
+  user-project settings can raise effective limits within finite hard ceilings.
+  Over-limit inputs fail before parsing or project mutation with observed
+  values and units in the diagnostic. The same effective limits protect OCI
+  pack publication.
+
 ### Git Sources
 
 - Git operations now reject `http://` and `git://` sources by default. The

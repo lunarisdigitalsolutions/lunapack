@@ -1,7 +1,12 @@
 using System.IO.Abstractions;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Preferences;
+using Lunapack.Cli.Application.Serialization;
 using Lunapack.Cli.Catalog;
+using Lunapack.Cli.Packs.Manifest;
 using Lunapack.Cli.Packs.Planning;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources;
@@ -15,21 +20,25 @@ internal sealed class GitPackMaterializer(
     CliConsole console,
     GitTransportPolicy transportPolicy,
     IOperationSnapshotSecurity? snapshotSecurity = null,
-    OciPackSource? ociPackSource = null
+    OciPackSource? ociPackSource = null,
+    PackManifestStore? packManifestStore = null
 )
 {
     private const int DefaultTimeoutSeconds = 300;
     private readonly IOperationSnapshotSecurity _snapshotSecurity =
         snapshotSecurity ?? new OperationSnapshotSecurity();
     private readonly OciPackSource? _ociPackSource = ociPackSource;
+    private readonly PackManifestStore _packManifestStore = packManifestStore ?? new(fileSystem);
 
     public async Task<ManifestOperationResult<GitPackMaterialization>> MaterializeAsync(
         string projectDirectory,
         ResolvedPackGraph graph,
         ProjectConfiguration configuration,
+        ResourceLimits? resourceLimits = null,
         CancellationToken cancellationToken = default
     )
     {
+        var effectiveResourceLimits = resourceLimits ?? ResourceLimits.Default;
         var workspace = fileSystem.Path.Combine(
             Path.GetTempPath(),
             "lunapack",
@@ -44,6 +53,7 @@ internal sealed class GitPackMaterializer(
                 graph,
                 configuration,
                 workspace,
+                effectiveResourceLimits,
                 cancellationToken
             );
         }
@@ -72,6 +82,7 @@ internal sealed class GitPackMaterializer(
         ResolvedPackGraph graph,
         ProjectConfiguration configuration,
         string workspace,
+        ResourceLimits resourceLimits,
         CancellationToken cancellationToken
     )
     {
@@ -85,6 +96,7 @@ internal sealed class GitPackMaterializer(
                 configuration,
                 workspace,
                 materializedPacks.Count,
+                resourceLimits,
                 cancellationToken
             );
             if (sourcePackResult.Value is not { } sourcePack)
@@ -100,7 +112,7 @@ internal sealed class GitPackMaterializer(
                 "snapshots",
                 materializedPacks.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)
             );
-            var snapshot = snapshotter.Snapshot(sourcePack, snapshotRoot);
+            var snapshot = snapshotter.Snapshot(sourcePack, snapshotRoot, resourceLimits);
             if (snapshot.Value is not { } snapshottedPack)
             {
                 return Failure(workspace, snapshot.Error ?? "Unable to snapshot resolved pack.");
@@ -125,6 +137,7 @@ internal sealed class GitPackMaterializer(
         ProjectConfiguration configuration,
         string workspace,
         int packIndex,
+        ResourceLimits resourceLimits,
         CancellationToken cancellationToken
     )
     {
@@ -163,6 +176,7 @@ internal sealed class GitPackMaterializer(
                 configuredSource,
                 gitWorkspace,
                 transportMode,
+                resourceLimits,
                 cancellationToken
             );
         }
@@ -176,6 +190,7 @@ internal sealed class GitPackMaterializer(
                 configuration,
                 workspace,
                 packIndex,
+                resourceLimits,
                 cancellationToken
             );
         }
@@ -190,6 +205,7 @@ internal sealed class GitPackMaterializer(
         ProjectConfiguration configuration,
         string workspace,
         int packIndex,
+        ResourceLimits resourceLimits,
         CancellationToken cancellationToken
     )
     {
@@ -231,6 +247,7 @@ internal sealed class GitPackMaterializer(
             ociWorkspace,
             provenance.ManifestDigest,
             provenance.ContentDigest,
+            resourceLimits,
             cancellationToken
         );
         if (release.Value is not { } materializedRelease)
@@ -308,11 +325,68 @@ internal sealed class GitPackMaterializer(
         ProjectConfiguration.GitSource source,
         string workspace,
         GitTransportMode transportMode,
+        ResourceLimits resourceLimits,
         CancellationToken cancellationToken
     )
     {
         var timeout = TimeSpan.FromSeconds(source.TimeoutSeconds ?? DefaultTimeoutSeconds);
         fileSystem.Directory.CreateDirectory(workspace);
+        var preparation = await PreparePackWorkspaceAsync(
+            pack,
+            gitSource,
+            source,
+            workspace,
+            timeout,
+            transportMode,
+            cancellationToken
+        );
+        if (!preparation.IsSuccess)
+        {
+            return ManifestOperationResult<DiscoveredPack>.Failure(
+                preparation.Error ?? "Git pack materialization failed."
+            );
+        }
+
+        var packDirectory = GetPackDirectory(workspace, pack.RepositoryPath);
+        var loadedManifest = await _packManifestStore.LoadAsync(
+            packDirectory,
+            resourceLimits.PackManifestBytes
+        );
+        if (loadedManifest.Value is not { } checkedOutManifest)
+        {
+            return ManifestOperationResult<DiscoveredPack>.Failure(
+                loadedManifest.Error ?? "Unable to verify materialized Git pack manifest.",
+                loadedManifest.ErrorKind
+            );
+        }
+
+        if (!HaveEquivalentManifest(pack.Manifest, checkedOutManifest))
+        {
+            return ManifestOperationResult<DiscoveredPack>.Failure(
+                $"Materialized pack '{pack.Manifest.Id}@{pack.Manifest.Version}' does not match the manifest resolved from Git commit '{gitSource.ResolvedCommit}'.",
+                ManifestOperationErrorKind.SourceIntegrityMismatch
+            );
+        }
+
+        return ManifestOperationResult<DiscoveredPack>.Success(
+            pack with
+            {
+                SourcePath = workspace,
+                PackDirectory = packDirectory,
+            }
+        );
+    }
+
+    private async Task<ManifestOperationResult<bool>> PreparePackWorkspaceAsync(
+        DiscoveredPack pack,
+        GitSourceProvenance gitSource,
+        ProjectConfiguration.GitSource source,
+        string workspace,
+        TimeSpan timeout,
+        GitTransportMode transportMode,
+        CancellationToken cancellationToken
+    )
+    {
         var commands = new[]
         {
             (new[] { "init", "--quiet", workspace }, GitTransportMode.SecureOnly, (string?)null),
@@ -359,6 +433,7 @@ internal sealed class GitPackMaterializer(
                 gitSource.Url
             ),
         };
+
         foreach (var (command, commandTransportMode, repositoryUrl) in commands)
         {
             var result = await processRunner.RunAsync(
@@ -370,7 +445,7 @@ internal sealed class GitPackMaterializer(
             );
             if (!result.IsSuccess)
             {
-                return ManifestOperationResult<DiscoveredPack>.Failure(
+                return ManifestOperationResult<bool>.Failure(
                     GitSourceFailureFormatter.Format(
                         source.Name,
                         result.Error,
@@ -380,13 +455,18 @@ internal sealed class GitPackMaterializer(
             }
         }
 
-        return ManifestOperationResult<DiscoveredPack>.Success(
-            pack with
-            {
-                SourcePath = workspace,
-                PackDirectory = GetPackDirectory(workspace, pack.RepositoryPath),
-            }
+        return ManifestOperationResult<bool>.Success(true);
+    }
+
+    private static bool HaveEquivalentManifest(PackManifest expected, PackManifest actual)
+    {
+        var expectedNode = JsonNode.Parse(
+            JsonSerializer.Serialize(expected, LunapackJsonContext.Default.PackManifest)
         );
+        var actualNode = JsonNode.Parse(
+            JsonSerializer.Serialize(actual, LunapackJsonContext.Default.PackManifest)
+        );
+        return JsonNode.DeepEquals(expectedNode, actualNode);
     }
 
     private static ProjectConfiguration.GitSource? FindConfiguredSource(

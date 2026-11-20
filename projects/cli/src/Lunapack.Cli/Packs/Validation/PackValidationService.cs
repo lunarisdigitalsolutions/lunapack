@@ -1,5 +1,6 @@
 using System.IO.Abstractions;
 using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Catalog;
 using Lunapack.Cli.Project;
 using NuGet.Versioning;
@@ -23,7 +24,8 @@ internal sealed class PackValidationService(
         if (loadedState.Value is not { } state)
         {
             return ManifestOperationResult<LocalPackValidationResult>.Failure(
-                loadedState.Error ?? "Unable to load project state."
+                loadedState.Error ?? "Unable to load project state.",
+                loadedState.ErrorKind
             );
         }
 
@@ -31,12 +33,14 @@ internal sealed class PackValidationService(
             projectDirectory,
             state.Configuration,
             packId,
-            version
+            version,
+            state.EffectiveResourceLimits
         );
         if (foundCandidates.Value is not { } candidates)
         {
             return ManifestOperationResult<LocalPackValidationResult>.Failure(
-                foundCandidates.Error ?? "Unable to validate local pack source."
+                foundCandidates.Error ?? "Unable to validate local pack source.",
+                foundCandidates.ErrorKind
             );
         }
 
@@ -58,10 +62,56 @@ internal sealed class PackValidationService(
         string projectDirectory,
         ProjectConfiguration configuration,
         string packId,
-        string? version
+        string? version,
+        ResourceLimits resourceLimits
     )
     {
         var candidates = new List<PackValidationCandidate>();
+        var manifestBudget = new CatalogManifestBudget(resourceLimits);
+        var localCandidates = await AddLocalCandidatesAsync(
+            projectDirectory,
+            configuration,
+            packId,
+            version,
+            resourceLimits,
+            manifestBudget,
+            candidates
+        );
+        if (!localCandidates.IsSuccess)
+        {
+            return ManifestOperationResult<List<PackValidationCandidate>>.Failure(
+                localCandidates.Error!,
+                localCandidates.ErrorKind
+            );
+        }
+
+        var gitCandidates = await AddGitCandidatesAsync(
+            projectDirectory,
+            configuration,
+            packId,
+            version,
+            resourceLimits,
+            manifestBudget,
+            candidates
+        );
+        return gitCandidates.IsSuccess
+            ? ManifestOperationResult<List<PackValidationCandidate>>.Success(candidates)
+            : ManifestOperationResult<List<PackValidationCandidate>>.Failure(
+                gitCandidates.Error!,
+                gitCandidates.ErrorKind
+            );
+    }
+
+    private async Task<ManifestOperationResult<bool>> AddLocalCandidatesAsync(
+        string projectDirectory,
+        ProjectConfiguration configuration,
+        string packId,
+        string? version,
+        ResourceLimits resourceLimits,
+        CatalogManifestBudget manifestBudget,
+        List<PackValidationCandidate> candidates
+    )
+    {
         for (var sourceOrder = 0; sourceOrder < configuration.Sources.Count; sourceOrder++)
         {
             if (configuration.Sources[sourceOrder] is not ProjectConfiguration.LocalSource source)
@@ -70,11 +120,12 @@ internal sealed class PackValidationService(
             }
 
             var sourcePath = fileSystem.Path.GetFullPath(source.Path, projectDirectory);
-            var validated = await localPackDiscovery.ValidateAsync(sourcePath);
+            var validated = await localPackDiscovery.ValidateAsync(sourcePath, resourceLimits);
             if (validated.Value is not { } results)
             {
-                return ManifestOperationResult<List<PackValidationCandidate>>.Failure(
-                    validated.Error ?? "Unable to validate local pack source."
+                return ManifestOperationResult<bool>.Failure(
+                    validated.Error ?? "Unable to validate local pack source.",
+                    validated.ErrorKind
                 );
             }
 
@@ -82,49 +133,87 @@ internal sealed class PackValidationService(
             {
                 if (TryCreateCandidate(sourceOrder, result, packId, version, out var candidate))
                 {
+                    var observed = manifestBudget.Observe(result.ManifestByteCount);
+                    if (!observed.IsSuccess)
+                    {
+                        return ManifestOperationResult<bool>.Failure(
+                            observed.Error!,
+                            observed.ErrorKind
+                        );
+                    }
+
                     candidates.Add(candidate);
                 }
             }
         }
 
-        if (configuration.Sources.Any(source => source is ProjectConfiguration.GitSource))
-        {
-            var browsed = await packCatalog.BrowseAsync(projectDirectory, configuration);
-            if (browsed.Value is not { } catalog)
-            {
-                return ManifestOperationResult<List<PackValidationCandidate>>.Failure(
-                    browsed.Error ?? "Unable to validate Git pack source."
-                );
-            }
+        return ManifestOperationResult<bool>.Success(true);
+    }
 
-            foreach (var pack in catalog.Where(pack => pack.GitSource is not null))
-            {
-                if (
-                    string.Equals(pack.Manifest.Id, packId, StringComparison.Ordinal)
-                    && (
-                        version is null
-                        || string.Equals(pack.Manifest.Version, version, StringComparison.Ordinal)
-                    )
+    private async Task<ManifestOperationResult<bool>> AddGitCandidatesAsync(
+        string projectDirectory,
+        ProjectConfiguration configuration,
+        string packId,
+        string? version,
+        ResourceLimits resourceLimits,
+        CatalogManifestBudget manifestBudget,
+        List<PackValidationCandidate> candidates
+    )
+    {
+        if (!configuration.Sources.Any(source => source is ProjectConfiguration.GitSource))
+        {
+            return ManifestOperationResult<bool>.Success(true);
+        }
+
+        var browsed = await packCatalog.BrowseAsync(
+            projectDirectory,
+            configuration,
+            resourceLimits
+        );
+        if (browsed.Value is not { } catalog)
+        {
+            return ManifestOperationResult<bool>.Failure(
+                browsed.Error ?? "Unable to validate Git pack source.",
+                browsed.ErrorKind
+            );
+        }
+
+        foreach (var pack in catalog.Where(pack => pack.GitSource is not null))
+        {
+            if (
+                string.Equals(pack.Manifest.Id, packId, StringComparison.Ordinal)
+                && (
+                    version is null
+                    || string.Equals(pack.Manifest.Version, version, StringComparison.Ordinal)
                 )
+            )
+            {
+                var observed = manifestBudget.Observe(pack.ManifestByteCount);
+                if (!observed.IsSuccess)
                 {
-                    candidates.Add(
-                        new PackValidationCandidate(
-                            pack.SourceOrder,
-                            new LocalPackValidationResult(
-                                pack.RepositoryPath is { Length: > 0 } repositoryPath
-                                    ? $"{repositoryPath}/pack.yml"
-                                    : "pack.yml",
-                                pack.Manifest,
-                                []
-                            ),
-                            pack.Version
-                        )
+                    return ManifestOperationResult<bool>.Failure(
+                        observed.Error!,
+                        observed.ErrorKind
                     );
                 }
+
+                candidates.Add(
+                    new PackValidationCandidate(
+                        pack.SourceOrder,
+                        new LocalPackValidationResult(
+                            pack.RepositoryPath is { Length: > 0 } repositoryPath
+                                ? $"{repositoryPath}/pack.yml"
+                                : "pack.yml",
+                            pack.Manifest,
+                            []
+                        ),
+                        pack.Version
+                    )
+                );
             }
         }
 
-        return ManifestOperationResult<List<PackValidationCandidate>>.Success(candidates);
+        return ManifestOperationResult<bool>.Success(true);
     }
 
     private static bool TryCreateCandidate(

@@ -15,11 +15,12 @@ internal sealed class ConfigCommandHandler(
         "git.allow-insecure-transport",
         "search.only-composites",
         "next-steps.enabled",
+        .. ResourceLimits.Definitions.Select(definition => definition.Name),
     ];
 
     public Command CreateCommand(string projectDirectory, Option<string?> workspaceOption)
     {
-        var command = new Command("config", "Manage LunaPack preferences.");
+        var command = new Command("config", "Manage LunaPack preferences and resource limits.");
         command.Subcommands.Add(CreateSetCommand(projectDirectory, workspaceOption));
         command.Subcommands.Add(CreateListCommand(projectDirectory, workspaceOption));
         command.Subcommands.Add(CreateRemoveCommand(projectDirectory, workspaceOption));
@@ -31,9 +32,13 @@ internal sealed class ConfigCommandHandler(
         var keyArgument = CreatePreferenceKeyArgument();
         var valueArgument = new Argument<string>("value")
         {
-            Description = "Boolean preference value.",
+            Description = "Boolean preference or positive resource-limit value.",
         };
-        var command = new Command("set", "Set a preference.") { keyArgument, valueArgument };
+        var command = new Command("set", "Set a preference or resource limit.")
+        {
+            keyArgument,
+            valueArgument,
+        };
         var scopeOptions = AddScopeOptions(command);
         command.SetAction(async parseResult =>
         {
@@ -41,7 +46,7 @@ internal sealed class ConfigCommandHandler(
             var value = parseResult.GetValue(valueArgument);
             if (key is null || value is null)
             {
-                return console.Fail("A preference key and value are required.");
+                return console.Fail("A configuration key and value are required.");
             }
 
             if (!TryGetScope(parseResult, scopeOptions, out var scope))
@@ -61,7 +66,7 @@ internal sealed class ConfigCommandHandler(
 
     private Command CreateListCommand(string projectDirectory, Option<string?> workspaceOption)
     {
-        var command = new Command("list", "List preferences in selected scope.");
+        var command = new Command("list", "List settings in selected scope.");
         var scopeOptions = AddScopeOptions(command);
         command.SetAction(async parseResult =>
         {
@@ -82,13 +87,13 @@ internal sealed class ConfigCommandHandler(
 
             if (values.Count == 0)
             {
-                console.Info("No preferences are configured in the selected scope.");
+                console.Info("No settings are configured in the selected scope.");
                 return 0;
             }
 
             foreach (var (key, value) in values)
             {
-                console.Info($"{key}={value.ToString().ToLowerInvariant()}");
+                console.Info($"{key}={value}");
             }
 
             return 0;
@@ -99,14 +104,17 @@ internal sealed class ConfigCommandHandler(
     private Command CreateRemoveCommand(string projectDirectory, Option<string?> workspaceOption)
     {
         var keyArgument = CreatePreferenceKeyArgument();
-        var command = new Command("remove", "Remove a preference.") { keyArgument };
+        var command = new Command("remove", "Remove a preference or resource limit.")
+        {
+            keyArgument,
+        };
         var scopeOptions = AddScopeOptions(command);
         command.SetAction(async parseResult =>
         {
             var key = parseResult.GetValue(keyArgument);
             if (key is null)
             {
-                return console.Fail("A preference key is required.");
+                return console.Fail("A configuration key is required.");
             }
 
             if (!TryGetScope(parseResult, scopeOptions, out var scope))
@@ -126,7 +134,10 @@ internal sealed class ConfigCommandHandler(
 
     private static Argument<string> CreatePreferenceKeyArgument()
     {
-        var argument = new Argument<string>("key") { Description = "Preference key." };
+        var argument = new Argument<string>("key")
+        {
+            Description = "Preference or resource-limit key.",
+        };
         argument.CompletionSources.Add(_preferenceKeys);
         return argument;
     }
@@ -135,15 +146,15 @@ internal sealed class ConfigCommandHandler(
     {
         var projectOption = new Option<bool>("--project", "--local")
         {
-            Description = "Store preference in the current lunapack.yml.",
+            Description = "Store preference or limit in the current lunapack.yml.",
         };
         var userProjectOption = new Option<bool>("--user-project")
         {
-            Description = "Store preference for the current project in user settings.",
+            Description = "Store preference or limit for the current project in user settings.",
         };
         var globalOption = new Option<bool>("--global")
         {
-            Description = "Store preference in global user settings (default).",
+            Description = "Store preference or limit in global user settings (default).",
         };
         command.Options.Add(projectOption);
         command.Options.Add(userProjectOption);

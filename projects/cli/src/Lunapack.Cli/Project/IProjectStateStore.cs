@@ -6,6 +6,16 @@ internal interface IProjectStateStore
 {
     Task<ManifestOperationResult<ProjectState>> LoadAsync(string projectDirectory);
 
+    Task<ManifestOperationResult<bool>> ValidateForSaveAsync(
+        string projectDirectory,
+        ProjectState state
+    );
+
+    Task<ManifestOperationResult<bool>> ValidateForSaveAllowingUnavailableSourcesAsync(
+        string projectDirectory,
+        ProjectState state
+    );
+
     Task<ManifestOperationResult<bool>> SaveAsync(string projectDirectory, ProjectState state);
 
     Task<ManifestOperationResult<bool>> SaveAllowingUnavailableSourcesAsync(

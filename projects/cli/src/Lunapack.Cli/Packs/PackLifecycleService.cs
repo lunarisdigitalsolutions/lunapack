@@ -5,6 +5,7 @@ using System.Text;
 using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Application.Paths;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Catalog;
 using Lunapack.Cli.Packs.ContentScreening;
 using Lunapack.Cli.Packs.ExternalSources;
@@ -738,7 +739,8 @@ internal sealed class PackLifecycleService(
             projectDirectory,
             state.Configuration,
             requestedPack,
-            state.LockFile
+            state.LockFile,
+            state.EffectiveResourceLimits
         );
         return graph.Value is { } resolvedGraph
             ? PackParameterResolver.FindPromptable(
@@ -775,7 +777,8 @@ internal sealed class PackLifecycleService(
             projectDirectory,
             state.Configuration,
             requestedPack,
-            state.LockFile
+            state.LockFile,
+            state.EffectiveResourceLimits
         );
         return graph.Value is { } resolvedGraph
             ? PackParameterResolver.Prompt(
@@ -795,7 +798,8 @@ internal sealed class PackLifecycleService(
         string projectDirectory,
         ProjectConfiguration configuration,
         PackReference packReference,
-        ProjectLockFile lockFile
+        ProjectLockFile lockFile,
+        ResourceLimits resourceLimits
     )
     {
         var graph = await graphResolver.ResolveAsync(
@@ -803,7 +807,8 @@ internal sealed class PackLifecycleService(
             configuration,
             packReference.Id,
             packReference.Version,
-            lockFile
+            lockFile,
+            resourceLimits: resourceLimits
         );
         if (graph.Value is not { } resolvedGraph)
         {
@@ -926,7 +931,8 @@ internal sealed class PackLifecycleService(
             projectDirectory,
             nextConfiguration,
             selectedRequestedRoots,
-            state.LockFile
+            state.LockFile,
+            resourceLimits: state.EffectiveResourceLimits
         );
         return graph.Value is { } resolvedGraph
             ? PackParameterResolver.FindPromptable(
@@ -963,7 +969,8 @@ internal sealed class PackLifecycleService(
             projectDirectory,
             nextConfiguration,
             selectedRequestedRoots,
-            state.LockFile
+            state.LockFile,
+            resourceLimits: state.EffectiveResourceLimits
         );
         return graph.Value is { } resolvedGraph
             ? PackParameterResolver.Prompt(
@@ -1065,7 +1072,8 @@ internal sealed class PackLifecycleService(
                 preparedGraph.Configuration,
                 updatePlanningRequest,
                 installationRequest.AcceptSources,
-                previewSources
+                previewSources,
+                preparedGraph.State.EffectiveResourceLimits
             );
             if (sourcePreparation.Value is not { } preparedSources)
             {
@@ -1133,7 +1141,8 @@ internal sealed class PackLifecycleService(
             projectDirectory,
             nextConfiguration,
             packReference,
-            state.LockFile
+            state.LockFile,
+            state.EffectiveResourceLimits
         );
         if (graph.Value is not { } resolvedGraph)
         {
@@ -1145,7 +1154,8 @@ internal sealed class PackLifecycleService(
         var materializationResult = await _gitPackMaterializer.MaterializeAsync(
             projectDirectory,
             resolvedGraph,
-            nextConfiguration
+            nextConfiguration,
+            state.EffectiveResourceLimits
         );
         if (materializationResult.Value is not { } materialization)
         {
@@ -1167,7 +1177,8 @@ internal sealed class PackLifecycleService(
         ProjectConfiguration configuration,
         PackInstallationRequest planningRequest,
         bool acceptSources,
-        bool previewSources
+        bool previewSources,
+        ResourceLimits resourceLimits
     )
     {
         var selectionParameterResolution = PackParameterResolver.ResolveForSelection(
@@ -1219,7 +1230,8 @@ internal sealed class PackLifecycleService(
 
         var externalMaterialization = await _externalSourceMaterializer.MaterializeAsync(
             projectDirectory,
-            preparedSources.Requirements
+            preparedSources.Requirements,
+            resourceLimits
         );
         if (externalMaterialization.Value is not { } materialization)
         {
@@ -1315,7 +1327,8 @@ internal sealed class PackLifecycleService(
             preparedSources.Plan.CandidateConfiguration,
             planningRequest,
             preparedSources.Parameters,
-            preparedSources.Materialization.Roots
+            preparedSources.Materialization.Roots,
+            preparedGraph.State.EffectiveResourceLimits
         );
         if (installationPlan.Value is not { } plan)
         {
@@ -1419,7 +1432,8 @@ internal sealed class PackLifecycleService(
                 preparedGraph.Configuration,
                 updatePlanningRequest,
                 updateRequest.AcceptSources,
-                previewSources
+                previewSources,
+                preparedGraph.State.EffectiveResourceLimits
             );
             if (sourcePreparation.Value is not { } preparedSources)
             {
@@ -1468,7 +1482,8 @@ internal sealed class PackLifecycleService(
             projectDirectory,
             nextConfiguration,
             nextConfiguration.Packs,
-            state.LockFile
+            state.LockFile,
+            resourceLimits: state.EffectiveResourceLimits
         );
         if (graph.Value is not { } resolvedGraph)
         {
@@ -1480,7 +1495,8 @@ internal sealed class PackLifecycleService(
         var materializationResult = await _gitPackMaterializer.MaterializeAsync(
             projectDirectory,
             resolvedGraph,
-            nextConfiguration
+            nextConfiguration,
+            state.EffectiveResourceLimits
         );
         if (materializationResult.Value is not { } materialization)
         {
@@ -1508,7 +1524,8 @@ internal sealed class PackLifecycleService(
             preparedSources.Plan.CandidateConfiguration,
             planningRequest,
             preparedSources.Parameters,
-            preparedSources.Materialization.Roots
+            preparedSources.Materialization.Roots,
+            preparedGraph.State.EffectiveResourceLimits
         );
         if (installationPlan.Value is not { } plan)
         {
@@ -1739,7 +1756,12 @@ internal sealed class PackLifecycleService(
             state,
             prepared.RequestedRoot
         );
-        if (materialization is null)
+        if (!materialization.IsSuccess)
+        {
+            return _console.Fail(materialization.Error);
+        }
+
+        if (materialization.Value is not { } snapshot)
         {
             return await DeleteAndSaveAsync(
                 state,
@@ -1752,14 +1774,14 @@ internal sealed class PackLifecycleService(
             );
         }
 
-        await using (materialization)
+        await using (snapshot)
         {
             return await ExecuteMaterializedUninstallAsync(
                 projectDirectory,
                 state,
                 hookRequest,
                 prepared,
-                materialization,
+                snapshot,
                 onManagedFileChangesApplied,
                 cancellationToken
             );
@@ -1868,7 +1890,9 @@ internal sealed class PackLifecycleService(
             );
     }
 
-    private async Task<GitPackMaterialization?> TryMaterializeUninstallGraphAsync(
+    private async Task<
+        ManifestOperationResult<GitPackMaterialization?>
+    > TryMaterializeUninstallGraphAsync(
         string projectDirectory,
         ProjectState state,
         ProjectConfiguration.RequestedPack requestedRoot
@@ -1883,26 +1907,48 @@ internal sealed class PackLifecycleService(
             requestedRoot.Id,
             installedRoot?.Version ?? requestedRoot.Version,
             state.LockFile,
-            resolveLockedRootPacks: true
+            resolveLockedRootPacks: true,
+            resourceLimits: state.EffectiveResourceLimits
         );
         if (graph.Value is not { } resolvedGraph)
         {
+            if (graph.ErrorKind == ManifestOperationErrorKind.ResourceLimitExceeded)
+            {
+                return ManifestOperationResult<GitPackMaterialization?>.Failure(
+                    graph.Error ?? "Unable to resolve uninstall resource budget.",
+                    graph.ErrorKind
+                );
+            }
+
             WarnUninstallHooksUnavailable(requestedRoot.Id, graph.Error);
-            return null;
+            return ManifestOperationResult<GitPackMaterialization?>.Success(null);
         }
 
         var materialization = await _gitPackMaterializer.MaterializeAsync(
             projectDirectory,
             resolvedGraph,
-            state.Configuration
+            state.Configuration,
+            state.EffectiveResourceLimits
         );
         if (materialization.Value is not { } snapshot)
         {
+            if (
+                materialization.ErrorKind
+                is ManifestOperationErrorKind.ResourceLimitExceeded
+                    or ManifestOperationErrorKind.SourceIntegrityMismatch
+            )
+            {
+                return ManifestOperationResult<GitPackMaterialization?>.Failure(
+                    materialization.Error ?? "Unable to securely materialize uninstall hooks.",
+                    materialization.ErrorKind
+                );
+            }
+
             WarnUninstallHooksUnavailable(requestedRoot.Id, materialization.Error);
-            return null;
+            return ManifestOperationResult<GitPackMaterialization?>.Success(null);
         }
 
-        return snapshot;
+        return ManifestOperationResult<GitPackMaterialization?>.Success(snapshot);
     }
 
     private void WarnUninstallHooksUnavailable(string packId, string? reason)
@@ -1944,6 +1990,27 @@ internal sealed class PackLifecycleService(
             );
     }
 
+    private ManifestOperationResult<PackUpdateTransaction.Rollback> ApplyManagedUpdate(
+        string projectDirectory,
+        PackUpdatePlan updatePlan,
+        Action<TimeSpan>? onManagedFileChangesApplied,
+        Action<PackUpdatePlan>? onUpdateApplied
+    )
+    {
+        var mutationStartedAt = Stopwatch.GetTimestamp();
+        var appliedUpdate = updateTransaction.Apply(projectDirectory, updatePlan);
+        if (appliedUpdate.Value is not { } rollback)
+        {
+            return ManifestOperationResult<PackUpdateTransaction.Rollback>.Failure(
+                appliedUpdate.Error ?? "Unable to apply pack update."
+            );
+        }
+
+        onManagedFileChangesApplied?.Invoke(Stopwatch.GetElapsedTime(mutationStartedAt));
+        onUpdateApplied?.Invoke(updatePlan);
+        return ManifestOperationResult<PackUpdateTransaction.Rollback>.Success(rollback);
+    }
+
     private async Task<int> ApplyUpdateAndSaveAsync(
         ProjectState state,
         ProjectConfiguration nextConfiguration,
@@ -1958,30 +2025,41 @@ internal sealed class PackLifecycleService(
         CancellationToken cancellationToken = default
     )
     {
-        var manifestSnapshot = CreateManifestSnapshot(projectDirectory);
-        var preExecution = await ExecuteHooksAsync(
+        var updatePreflight = await TryPreflightUpdateAsync(
             projectDirectory,
+            state,
             nextConfiguration,
-            authorizedHooks?.PreMutation ?? [],
-            manifestSnapshot,
-            authorizedHooks?.ScriptsSkipped is true,
-            cancellationToken
+            graph,
+            installationPlan,
+            updatePlan,
+            preserveExistingLock
         );
-        if (!preExecution.IsSuccess)
+        if (!updatePreflight.IsSuccess)
         {
-            RestoreManifestSnapshot(projectDirectory, manifestSnapshot);
-            return _console.Fail(preExecution.Error);
+            return _console.Fail(updatePreflight.Error);
         }
 
-        var mutationStartedAt = Stopwatch.GetTimestamp();
-        var appliedUpdate = updateTransaction.Apply(projectDirectory, updatePlan);
+        var preMutation = await PreparePreMutationAsync(
+            projectDirectory,
+            nextConfiguration,
+            authorizedHooks,
+            cancellationToken
+        );
+        if (preMutation.Value is not { } manifestSnapshot)
+        {
+            return _console.Fail(preMutation.Error);
+        }
+
+        var appliedUpdate = ApplyManagedUpdate(
+            projectDirectory,
+            updatePlan,
+            onManagedFileChangesApplied,
+            onUpdateApplied
+        );
         if (appliedUpdate.Value is not { } rollback)
         {
             return _console.Fail(appliedUpdate.Error);
         }
-
-        onManagedFileChangesApplied?.Invoke(Stopwatch.GetElapsedTime(mutationStartedAt));
-        onUpdateApplied?.Invoke(updatePlan);
 
         var isCheckpointPersisted = false;
         var isPersisted = false;
@@ -2012,24 +2090,45 @@ internal sealed class PackLifecycleService(
         }
         finally
         {
-            if (!isPersisted)
-            {
-                if (isCheckpointPersisted)
-                {
-                    var restoredState = await projectStateStore.SaveAsync(projectDirectory, state);
-                    if (!restoredState.IsSuccess)
-                    {
-                        _console.Error(
-                            restoredState.Error
-                                ?? "Unable to restore project state after lifecycle failure."
-                        );
-                    }
-                }
+            await RestoreFailedUpdateAsync(
+                projectDirectory,
+                state,
+                isCheckpointPersisted,
+                isPersisted,
+                manifestSnapshot,
+                rollback
+            );
+        }
+    }
 
-                RestoreManifestSnapshot(projectDirectory, manifestSnapshot);
-                rollback.Restore();
+    private async Task RestoreFailedUpdateAsync(
+        string projectDirectory,
+        ProjectState state,
+        bool isCheckpointPersisted,
+        bool isPersisted,
+        ManifestSnapshot manifestSnapshot,
+        PackUpdateTransaction.Rollback rollback
+    )
+    {
+        if (isPersisted)
+        {
+            return;
+        }
+
+        if (isCheckpointPersisted)
+        {
+            var restoredState = await projectStateStore.SaveAsync(projectDirectory, state);
+            if (!restoredState.IsSuccess)
+            {
+                _console.Error(
+                    restoredState.Error
+                        ?? "Unable to restore project state after lifecycle failure."
+                );
             }
         }
+
+        RestoreManifestSnapshot(projectDirectory, manifestSnapshot);
+        rollback.Restore();
     }
 
     private void WritePreservedTargetWarnings(PackUpdatePlan updatePlan)
@@ -2040,6 +2139,111 @@ internal sealed class PackLifecycleService(
                 $"Preserved locally modified target '{action.TargetPathRelativeToProject}'; it is no longer managed by LunaPack."
             );
         }
+    }
+
+    private async Task<ManifestOperationResult<ManifestSnapshot>> PreparePreMutationAsync(
+        string projectDirectory,
+        ProjectConfiguration nextConfiguration,
+        AuthorizedLifecycleHooks? authorizedHooks,
+        CancellationToken cancellationToken
+    )
+    {
+        var manifestSnapshot = CreateManifestSnapshot(projectDirectory);
+        var execution = await ExecuteHooksAsync(
+            projectDirectory,
+            nextConfiguration,
+            authorizedHooks?.PreMutation ?? [],
+            manifestSnapshot,
+            authorizedHooks?.ScriptsSkipped is true,
+            cancellationToken
+        );
+        if (execution.IsSuccess)
+        {
+            return ManifestOperationResult<ManifestSnapshot>.Success(manifestSnapshot);
+        }
+
+        RestoreManifestSnapshot(projectDirectory, manifestSnapshot);
+        return ManifestOperationResult<ManifestSnapshot>.Failure(
+            execution.Error ?? "Unable to execute pre-mutation lifecycle hooks."
+        );
+    }
+
+    private async Task<ManifestOperationResult<bool>> TryPreflightUpdateAsync(
+        string projectDirectory,
+        ProjectState state,
+        ProjectConfiguration nextConfiguration,
+        ResolvedPackGraph graph,
+        PackInstallationPlan installationPlan,
+        PackUpdatePlan updatePlan,
+        bool preserveExistingLock
+    )
+    {
+        var preflight = await PreflightUpdateAsync(
+            projectDirectory,
+            state,
+            nextConfiguration,
+            graph,
+            installationPlan,
+            updatePlan,
+            preserveExistingLock
+        );
+        return preflight.IsSuccess
+            ? ManifestOperationResult<bool>.Success(true)
+            : ManifestOperationResult<bool>.Failure(
+                preflight.Error ?? "Resulting project state cannot be persisted.",
+                preflight.ErrorKind
+            );
+    }
+
+    private async Task<ManifestOperationResult<ProjectState>> PreflightUpdateAsync(
+        string projectDirectory,
+        ProjectState state,
+        ProjectConfiguration nextConfiguration,
+        ResolvedPackGraph graph,
+        PackInstallationPlan installationPlan,
+        PackUpdatePlan updatePlan,
+        bool preserveExistingLock
+    )
+    {
+        var resultingContents = CreateResultingContents(projectDirectory, updatePlan);
+        var updatedLockFile = CreateLockFile(
+            nextConfiguration,
+            graph,
+            installationPlan,
+            state.LockFile,
+            resultingContents
+        );
+        var mergedLockFile = preserveExistingLock
+            ? MergeLockFiles(state.LockFile, updatedLockFile)
+            : ManifestOperationResult<ProjectLockFile>.Success(updatedLockFile);
+        if (mergedLockFile.Value is not { } nextLockFile)
+        {
+            return ManifestOperationResult<ProjectState>.Failure(
+                mergedLockFile.Error ?? "Unable to create the resulting lock file.",
+                mergedLockFile.ErrorKind
+            );
+        }
+
+        foreach (var (targetPath, contents) in resultingContents)
+        {
+            UpdateManagedFileHash(nextLockFile, targetPath, contents);
+        }
+
+        var plannedState = state with
+        {
+            Configuration = nextConfiguration,
+            LockFile = nextLockFile,
+        };
+        var validation = await projectStateStore.ValidateForSaveAsync(
+            projectDirectory,
+            plannedState
+        );
+        return validation.IsSuccess
+            ? ManifestOperationResult<ProjectState>.Success(plannedState)
+            : ManifestOperationResult<ProjectState>.Failure(
+                validation.Error ?? "Resulting project state cannot be persisted.",
+                validation.ErrorKind
+            );
     }
 
     private async Task<(

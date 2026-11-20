@@ -3,6 +3,7 @@ using System.IO.Abstractions.TestingHelpers;
 using System.Text.Json;
 using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Catalog;
 using Lunapack.Cli.Packs;
 using Lunapack.Cli.Packs.Authoring;
@@ -67,6 +68,33 @@ public sealed class OciPackPublisherTests
             )
             .IsFalse();
         await Assert.That(GetOciTemporaryDirectories(fileSystem)).IsEmpty();
+    }
+
+    [Test]
+    public async Task PublishAsync_WhenEffectiveFileLimitIsLower_RejectsBeforeRegistryUpload()
+    {
+        var fileSystem = CreateFileSystem();
+        var registry = new FakeOciRegistryClient();
+        using var coordinator = CreateCoordinator();
+        var publisher = CreatePublisher(fileSystem, registry, coordinator);
+
+        var result = await publisher.PublishAsync(
+            _projectDirectory,
+            _packDirectory,
+            CreateSource(),
+            ResourceLimits.Default with
+            {
+                FilesPerPack = 1,
+            },
+            CancellationToken.None
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert
+            .That(result.ErrorKind)
+            .IsEqualTo(ManifestOperationErrorKind.ResourceLimitExceeded);
+        await Assert.That(registry.PushedBlobCount).IsEqualTo(0);
+        await Assert.That(registry.PushedManifestCount).IsEqualTo(0);
     }
 
     [Test]
@@ -153,11 +181,93 @@ public sealed class OciPackPublisherTests
             new ProjectConfiguration { Sources = [source] },
             lockedPack
         );
+        var exhaustedBudget = new CatalogManifestBudget(ResourceLimits.Default);
+        exhaustedBudget.Observe(CatalogManifestBudget.MaximumManifestBytes);
+        var overBudget = await catalog.ResolveLockedOciAsync(
+            _projectDirectory,
+            new ProjectConfiguration { Sources = [source] },
+            lockedPack,
+            workBudget: exhaustedBudget
+        );
 
         await Assert.That(publication.IsSuccess).IsTrue();
         await Assert.That(resolved.IsSuccess).IsTrue().Because(resolved.Error ?? string.Empty);
         await Assert.That(resolved.RequireValue().SourcePath).IsEmpty();
         await Assert.That(resolved.RequireValue().PackDirectory).IsEmpty();
+        await Assert.That(overBudget.IsSuccess).IsFalse();
+        await Assert
+            .That(overBudget.ErrorKind)
+            .IsEqualTo(ManifestOperationErrorKind.ResourceLimitExceeded);
+        await Assert.That(GetOciTemporaryDirectories(fileSystem)).IsEmpty();
+    }
+
+    [Test]
+    public async Task ResolveLockedOci_WhenDownloadExceedsEffectiveLimit_StopsBeforeContentFetch()
+    {
+        var fileSystem = CreateFileSystem();
+        var registry = new FakeOciRegistryClient();
+        using var publisherCoordinator = CreateCoordinator();
+        var publisher = CreatePublisher(fileSystem, registry, publisherCoordinator);
+        var source = CreateSource();
+        var publication = await publisher.PublishAsync(
+            _projectDirectory,
+            _packDirectory,
+            source,
+            CancellationToken.None
+        );
+        var manifest = OciPackArtifact.ReadManifest(registry.ManifestContent!).RequireValue();
+        var provenance = new OciSourceProvenance
+        {
+            RegistryUrl = source.Url,
+            Repository = OciRepositoryTagMapper.CreateRepository(source, "backend").RequireValue(),
+            Tag = OciRepositoryTagMapper.CreateTag("1.0.0").RequireValue(),
+            ManifestDigest = registry.ManifestDescriptor!.Digest,
+            ContentDigest = manifest.Content.Digest,
+            ContentSize = manifest.Content.Size,
+        };
+        using var ociPackSource = new OciPackSource(
+            fileSystem,
+            TestConsole.Create(),
+            registry,
+            new FakeCredentialStore(),
+            new FakeCredentialPrompt(null)
+        );
+        using var catalog = new PackCatalog(
+            fileSystem,
+            TestConsole.Create(),
+            ociPackSource: ociPackSource,
+            operationSnapshotSecurity: new NoOpOperationSnapshotSecurity()
+        );
+        var lockedPack = new ProjectLockFile.ResolvedPack
+        {
+            Id = "backend",
+            Version = "1.0.0",
+            PackPath = "backend",
+            SourceIdentity = ConfiguredSourceIdentity.Create(source),
+            SourceName = source.Name,
+            OciSource = provenance,
+        };
+        var resourceLimits = ResourceLimits.Default with
+        {
+            OciDownloadBytes = manifest.Content.Size - 1,
+        };
+
+        var resolved = await catalog.ResolveLockedOciAsync(
+            _projectDirectory,
+            new ProjectConfiguration { Sources = [source] },
+            lockedPack,
+            resourceLimits: resourceLimits
+        );
+
+        await Assert.That(publication.IsSuccess).IsTrue();
+        await Assert.That(resolved.IsSuccess).IsFalse();
+        await Assert
+            .That(resolved.ErrorKind)
+            .IsEqualTo(ManifestOperationErrorKind.ResourceLimitExceeded);
+        await Assert
+            .That(resolved.Error)
+            .Contains($"at least {manifest.Content.Size} bytes declared");
+        await Assert.That(registry.FetchedBlobCount).IsEqualTo(0);
         await Assert.That(GetOciTemporaryDirectories(fileSystem)).IsEmpty();
     }
 
@@ -841,6 +951,8 @@ public sealed class OciPackPublisherTests
 
         public int PushedManifestCount { get; private set; }
 
+        public int FetchedBlobCount { get; private set; }
+
         public OciRegistryDescriptor? ManifestDescriptor { get; private set; }
 
         public byte[]? ManifestContent { get; private set; }
@@ -861,6 +973,8 @@ public sealed class OciPackPublisherTests
             Uri registry,
             OciRegistryCredential? credential,
             string credentialPartition,
+            long maximumRecords,
+            long maximumBytes,
             CancellationToken cancellationToken
         )
         {
@@ -879,6 +993,8 @@ public sealed class OciPackPublisherTests
             string repository,
             OciRegistryCredential? credential,
             string credentialPartition,
+            long maximumRecords,
+            long maximumBytes,
             CancellationToken cancellationToken
         )
         {
@@ -947,6 +1063,7 @@ public sealed class OciPackPublisherTests
         )
         {
             RequestCalls++;
+            FetchedBlobCount++;
             if (
                 !_blobs.TryGetValue($"{repository}:{descriptor.Digest}", out var bytes)
                 || bytes.LongLength > maximumBytes

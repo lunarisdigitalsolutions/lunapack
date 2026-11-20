@@ -2,6 +2,7 @@ using System.Globalization;
 using System.IO.Abstractions;
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Application.Paths;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources;
 using Lunapack.Cli.Sources.Git;
@@ -21,12 +22,21 @@ internal sealed class GitLinkSourceProvider(
     public bool CanProvide(ProjectConfiguration.Source source) =>
         source is ProjectConfiguration.GitSource;
 
-    public async Task<ManifestOperationResult<LinkSourceListing>> ListAsync(
+    public Task<ManifestOperationResult<LinkSourceListing>> ListAsync(
         string projectDirectory,
         ProjectConfiguration.Source source,
         ProjectConfiguration.Link link,
         ConfiguredSourceIdentity? lockedIdentity,
         CancellationToken cancellationToken
+    ) => ListAsync(projectDirectory, source, link, lockedIdentity, null, cancellationToken);
+
+    public async Task<ManifestOperationResult<LinkSourceListing>> ListAsync(
+        string projectDirectory,
+        ProjectConfiguration.Source source,
+        ProjectConfiguration.Link link,
+        ConfiguredSourceIdentity? lockedIdentity,
+        ResourceLimits? resourceLimits = null,
+        CancellationToken cancellationToken = default
     )
     {
         ArgumentNullException.ThrowIfNull(link);
@@ -80,12 +90,14 @@ internal sealed class GitLinkSourceProvider(
             Url = gitSource.Url,
         };
 
-        var cached = cache.LoadMetadata(identity, resolvedRef.ResolvedCommit);
+        var limits = resourceLimits ?? ResourceLimits.Default;
+        var cached = cache.LoadMetadata(identity, resolvedRef.ResolvedCommit, limits);
         return cached is null
             ? await ListFromGitAsync(
                 effectiveSource,
                 identity,
                 provenance,
+                limits,
                 transportMode,
                 cancellationToken
             )
@@ -102,13 +114,21 @@ internal sealed class GitLinkSourceProvider(
             );
     }
 
+    public Task<ManifestOperationResult<IReadOnlyDictionary<string, string>>> MaterializeAsync(
+        LinkSourceListing listing,
+        IReadOnlyList<string> selectedPaths,
+        LinkOperationWorkspace workspace,
+        CancellationToken cancellationToken
+    ) => MaterializeAsync(listing, selectedPaths, workspace, null, cancellationToken);
+
     public async Task<
         ManifestOperationResult<IReadOnlyDictionary<string, string>>
     > MaterializeAsync(
         LinkSourceListing listing,
         IReadOnlyList<string> selectedPaths,
         LinkOperationWorkspace workspace,
-        CancellationToken cancellationToken
+        ResourceLimits? resourceLimits = null,
+        CancellationToken cancellationToken = default
     )
     {
         ArgumentNullException.ThrowIfNull(listing);
@@ -162,7 +182,23 @@ internal sealed class GitLinkSourceProvider(
         var snapshots = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var selectedPath in selectedPaths)
         {
-            snapshots.Add(selectedPath, workspace.Write(selectedPath, contents[selectedPath]));
+            var cachedContents = contents[selectedPath];
+            await using var source = new MemoryStream(cachedContents, writable: false);
+            var snapshot = await workspace.WriteAsync(
+                selectedPath,
+                source,
+                cachedContents.Length,
+                cancellationToken
+            );
+            if (snapshot.Value is not { } snapshotPath)
+            {
+                return ManifestOperationResult<IReadOnlyDictionary<string, string>>.Failure(
+                    snapshot.Error ?? $"Unable to snapshot link source file '{selectedPath}'.",
+                    snapshot.ErrorKind
+                );
+            }
+
+            snapshots.Add(selectedPath, snapshotPath);
         }
 
         return ManifestOperationResult<IReadOnlyDictionary<string, string>>.Success(snapshots);
@@ -172,6 +208,7 @@ internal sealed class GitLinkSourceProvider(
         ProjectConfiguration.GitSource source,
         ConfiguredSourceIdentity identity,
         GitSourceProvenance provenance,
+        ResourceLimits resourceLimits,
         GitTransportMode transportMode,
         CancellationToken cancellationToken
     )
@@ -194,9 +231,14 @@ internal sealed class GitLinkSourceProvider(
             );
         }
 
-        var listed = await processRunner.RunAsync(
+        var listed = await processRunner.RunBoundedRecordsAsync(
             ["-C", repository, "ls-tree", "-r", "-z", "FETCH_HEAD"],
             CreateTimeout(source),
+            resourceLimits.FilesPerGraph,
+            "Git link source tree enumeration",
+            0,
+            64L * 1024 * 1024,
+            1L * 1024 * 1024,
             transportMode,
             source.Url,
             cancellationToken
@@ -227,7 +269,8 @@ internal sealed class GitLinkSourceProvider(
                 ResolvedCommit = provenance.ResolvedCommit,
                 Source = identity,
                 Tree = [.. tree],
-            }
+            },
+            resourceLimits
         );
         if (!persisted.IsSuccess)
         {

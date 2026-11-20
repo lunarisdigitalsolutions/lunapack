@@ -1,4 +1,5 @@
 using System.IO.Abstractions;
+using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Application.Paths;
 using Lunapack.Cli.Sources.Git;
 
@@ -30,8 +31,14 @@ internal sealed class LinkOperationWorkspace : IDisposable
         return new LinkOperationWorkspace(fileSystem, directory);
     }
 
-    public string Write(string sourcePath, byte[] contents)
+    public async Task<ManifestOperationResult<string>> WriteAsync(
+        string sourcePath,
+        Stream source,
+        long expectedLength,
+        CancellationToken cancellationToken
+    )
     {
+        ArgumentOutOfRangeException.ThrowIfNegative(expectedLength);
         var snapshotPath = _fileSystem.Path.Combine(
             Directory,
             ProjectPath.Normalize(sourcePath).Replace('/', _fileSystem.Path.DirectorySeparatorChar)
@@ -42,8 +49,54 @@ internal sealed class LinkOperationWorkspace : IDisposable
             _fileSystem.Directory.CreateDirectory(snapshotDirectory);
         }
 
-        _fileSystem.File.WriteAllBytes(snapshotPath, contents);
-        return snapshotPath;
+        var completed = false;
+        try
+        {
+            await using var destination = _fileSystem.File.Open(
+                snapshotPath,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None
+            );
+            var buffer = new byte[81920];
+            long bytesWritten = 0;
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var read = await source.ReadAsync(buffer, cancellationToken);
+                if (read == 0)
+                {
+                    break;
+                }
+
+                bytesWritten = checked(bytesWritten + read);
+                if (bytesWritten > expectedLength)
+                {
+                    return ManifestOperationResult<string>.Failure(
+                        $"Link source file '{sourcePath}' changed while its snapshot was being created."
+                    );
+                }
+
+                await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+            }
+
+            if (bytesWritten != expectedLength)
+            {
+                return ManifestOperationResult<string>.Failure(
+                    $"Link source file '{sourcePath}' changed while its snapshot was being created."
+                );
+            }
+
+            completed = true;
+            return ManifestOperationResult<string>.Success(snapshotPath);
+        }
+        finally
+        {
+            if (!completed && _fileSystem.File.Exists(snapshotPath))
+            {
+                _fileSystem.File.Delete(snapshotPath);
+            }
+        }
     }
 
     public byte[] Read(string snapshotPath) => _fileSystem.File.ReadAllBytes(snapshotPath);

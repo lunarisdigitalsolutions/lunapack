@@ -58,7 +58,7 @@ internal sealed class TestWorkspace : IDisposable
             doctorService: doctorService
         );
         ManifestStore = new ProjectManifestStore(FileSystem);
-        StateStore = new ProjectStateStore(FileSystem);
+        StateStore = new ProjectStateStore(FileSystem, UserSettingsStore);
     }
 
     public CliApplication Application { get; }

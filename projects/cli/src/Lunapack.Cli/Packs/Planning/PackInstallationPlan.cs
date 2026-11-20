@@ -10,4 +10,6 @@ internal sealed record PackInstallationPlan(IReadOnlyList<PlannedManagedFile> Ma
     public IReadOnlyList<ManagedFileRemapping> Remappings { get; init; } = [];
 
     public IReadOnlyList<ManagedFileTemplateDiagnostic> Diagnostics { get; init; } = [];
+
+    public long RenderedOutputBytes { get; init; }
 }

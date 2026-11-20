@@ -2,6 +2,7 @@ using System.IO.Abstractions;
 using System.Text;
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Application.Paths;
+using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Packs.ManagedFiles;
 using Scriban;
 using Scriban.Runtime;
@@ -19,24 +20,44 @@ internal sealed class PackTemplateRenderer(IFileSystem fileSystem)
     public ManifestOperationResult<byte[]> Render(
         string templatePath,
         bool isTemplate,
-        ResolvedPackParameters parameters
+        ResolvedPackParameters parameters,
+        ResourceLimits? resourceLimits = null,
+        RenderedOutputBudget? outputBudget = null
     )
     {
         try
         {
-            var contents = fileSystem.File.ReadAllBytes(templatePath);
-            if (!isTemplate)
+            var limits = resourceLimits ?? ResourceLimits.Default;
+            var contents = BoundedFileReader.ReadBytes(
+                fileSystem,
+                templatePath,
+                limits.PackDocumentBytes,
+                $"Pack document '{templatePath}'"
+            );
+            if (contents.Value is not { } bytes)
             {
-                return ManifestOperationResult<byte[]>.Success(contents);
+                return ManifestOperationResult<byte[]>.Failure(contents.Error!, contents.ErrorKind);
             }
 
-            var templateText = _utf8.GetString(contents);
-            var rendered = RenderText(templateText, templatePath, parameters);
-            return rendered.Value is { } value
-                ? ManifestOperationResult<byte[]>.Success(_utf8.GetBytes(value))
-                : ManifestOperationResult<byte[]>.Failure(
-                    rendered.Error ?? $"Template '{templatePath}' cannot be rendered."
+            if (!isTemplate)
+            {
+                var observed = (outputBudget ?? new RenderedOutputBudget(limits)).Observe(
+                    templatePath,
+                    bytes.Length,
+                    bytes.Length
                 );
+                return observed.IsSuccess
+                    ? ManifestOperationResult<byte[]>.Success(bytes)
+                    : ManifestOperationResult<byte[]>.Failure(observed.Error!, observed.ErrorKind);
+            }
+
+            var templateText = _utf8.GetString(bytes);
+            return RenderBytes(
+                templateText,
+                templatePath,
+                CreateContext(parameters, null, null),
+                outputBudget ?? new RenderedOutputBudget(limits)
+            );
         }
         catch (Exception exception)
             when (exception
@@ -55,34 +76,60 @@ internal sealed class PackTemplateRenderer(IFileSystem fileSystem)
         string templatePath,
         bool isTemplate,
         ResolvedPackParameters parameters,
-        ManagedFileTemplateContext managedFileContext
+        ManagedFileTemplateContext managedFileContext,
+        ResourceLimits? resourceLimits = null,
+        RenderedOutputBudget? outputBudget = null
     )
     {
         try
         {
-            var contents = fileSystem.File.ReadAllBytes(templatePath);
-            if (!isTemplate)
+            var limits = resourceLimits ?? ResourceLimits.Default;
+            var contents = BoundedFileReader.ReadBytes(
+                fileSystem,
+                templatePath,
+                isTemplate ? limits.PackDocumentBytes : limits.RenderedFileBytes,
+                $"Managed file '{templatePath}'"
+            );
+            if (contents.Value is not { } bytes)
             {
-                return ManifestOperationResult<RenderedManagedFileTemplate>.Success(
-                    new RenderedManagedFileTemplate(contents, [])
+                return ManifestOperationResult<RenderedManagedFileTemplate>.Failure(
+                    contents.Error!,
+                    contents.ErrorKind
                 );
             }
 
-            var templateText = _utf8.GetString(contents);
+            if (!isTemplate)
+            {
+                var observed = (outputBudget ?? new RenderedOutputBudget(limits)).Observe(
+                    templatePath,
+                    bytes.Length,
+                    bytes.Length
+                );
+                return observed.IsSuccess
+                    ? ManifestOperationResult<RenderedManagedFileTemplate>.Success(
+                        new RenderedManagedFileTemplate(bytes, [])
+                    )
+                    : ManifestOperationResult<RenderedManagedFileTemplate>.Failure(
+                        observed.Error!,
+                        observed.ErrorKind
+                    );
+            }
+
+            var templateText = _utf8.GetString(bytes);
             var diagnostics = new List<ManagedFileTemplateDiagnostic>();
-            var rendered = RenderText(
+            var rendered = RenderBytes(
                 templateText,
                 templatePath,
-                parameters,
-                managedFileContext,
-                diagnostics
+                CreateContext(parameters, managedFileContext, diagnostics),
+                outputBudget ?? new RenderedOutputBudget(limits)
             );
             return rendered.Value is { } value
                 ? ManifestOperationResult<RenderedManagedFileTemplate>.Success(
-                    new RenderedManagedFileTemplate(_utf8.GetBytes(value), diagnostics)
+                    new RenderedManagedFileTemplate(value, diagnostics)
                 )
                 : ManifestOperationResult<RenderedManagedFileTemplate>.Failure(
-                    rendered.Error ?? $"Template '{templatePath}' cannot be rendered."
+                    rendered.Error ?? $"Template '{templatePath}' cannot be rendered.",
+                    rendered.ErrorKind
                 );
         }
         catch (Exception exception)
@@ -101,36 +148,28 @@ internal sealed class PackTemplateRenderer(IFileSystem fileSystem)
     public static ManifestOperationResult<string> RenderText(
         string templateText,
         string templateName,
-        ResolvedPackParameters parameters
+        ResolvedPackParameters parameters,
+        ResourceLimits? resourceLimits = null,
+        RenderedOutputBudget? outputBudget = null
     )
     {
-        try
-        {
-            var template = Template.Parse(templateText, templateName);
-            if (template.HasErrors)
-            {
-                return ManifestOperationResult<string>.Failure(
-                    $"Template '{templateName}' cannot be parsed: {string.Join(Environment.NewLine, template.Messages)}"
-                );
-            }
-
-            var context = CreateContext(parameters, null, null);
-            return ManifestOperationResult<string>.Success(template.Render(context));
-        }
-        catch (ScriptRuntimeException exception)
-        {
-            return ManifestOperationResult<string>.Failure(
-                $"Template '{templateName}' cannot be rendered: {exception.Message}"
-            );
-        }
+        var limits = resourceLimits ?? ResourceLimits.Default;
+        var rendered = RenderBytes(
+            templateText,
+            templateName,
+            CreateContext(parameters, null, null),
+            outputBudget ?? new RenderedOutputBudget(limits)
+        );
+        return rendered.Value is { } bytes
+            ? ManifestOperationResult<string>.Success(_utf8.GetString(bytes))
+            : ManifestOperationResult<string>.Failure(rendered.Error!, rendered.ErrorKind);
     }
 
-    private static ManifestOperationResult<string> RenderText(
+    private static ManifestOperationResult<byte[]> RenderBytes(
         string templateText,
         string templateName,
-        ResolvedPackParameters parameters,
-        ManagedFileTemplateContext managedFileContext,
-        ICollection<ManagedFileTemplateDiagnostic> diagnostics
+        TemplateContext context,
+        RenderedOutputBudget outputBudget
     )
     {
         try
@@ -138,17 +177,38 @@ internal sealed class PackTemplateRenderer(IFileSystem fileSystem)
             var template = Template.Parse(templateText, templateName);
             if (template.HasErrors)
             {
-                return ManifestOperationResult<string>.Failure(
+                return ManifestOperationResult<byte[]>.Failure(
                     $"Template '{templateName}' cannot be parsed: {string.Join(Environment.NewLine, template.Messages)}"
                 );
             }
 
-            var context = CreateContext(parameters, managedFileContext, diagnostics);
-            return ManifestOperationResult<string>.Success(template.Render(context));
+            using var output = new BoundedScriptOutput(templateName, outputBudget);
+            context.PushOutput(output);
+            try
+            {
+                template.Render(context);
+                return ManifestOperationResult<byte[]>.Success(output.ToArray());
+            }
+            finally
+            {
+                context.PopOutput();
+            }
         }
-        catch (ScriptRuntimeException exception)
+        catch (RenderedOutputLimitException exception)
         {
-            return ManifestOperationResult<string>.Failure(
+            return ManifestOperationResult<byte[]>.Failure(
+                exception.Message,
+                ManifestOperationErrorKind.ResourceLimitExceeded
+            );
+        }
+        catch (Exception exception)
+            when (exception
+                    is ScriptRuntimeException
+                        or EncoderFallbackException
+                        or OverflowException
+            )
+        {
+            return ManifestOperationResult<byte[]>.Failure(
                 $"Template '{templateName}' cannot be rendered: {exception.Message}"
             );
         }
@@ -204,6 +264,65 @@ internal sealed class PackTemplateRenderer(IFileSystem fileSystem)
         context.PushGlobal(globals);
         return context;
     }
+
+    private sealed class BoundedScriptOutput(string outputName, RenderedOutputBudget outputBudget)
+        : IScriptOutput,
+            IDisposable
+    {
+        private readonly MemoryStream _contents = new();
+        private long _fileBytes;
+
+        public void Write(string text, int offset, int count)
+        {
+            ArgumentNullException.ThrowIfNull(text);
+
+            if ((uint)offset > (uint)text.Length)
+            {
+                throw new ArgumentOutOfRangeException(nameof(offset));
+            }
+
+            if (count < 0 || count > text.Length - offset)
+            {
+                throw new ArgumentOutOfRangeException(nameof(count));
+            }
+
+            if (count == 0)
+            {
+                return;
+            }
+
+            var byteCount = _utf8.GetByteCount(text.AsSpan(offset, count));
+            var observedFileBytes = checked(_fileBytes + byteCount);
+            var observed = outputBudget.Observe(outputName, byteCount, observedFileBytes);
+            if (!observed.IsSuccess)
+            {
+                throw new RenderedOutputLimitException(
+                    observed.Error ?? "Rendered output exceeds its configured limit."
+                );
+            }
+
+            _fileBytes = observedFileBytes;
+            _contents.Write(_utf8.GetBytes(text.Substring(offset, count)));
+        }
+
+        public ValueTask WriteAsync(
+            string text,
+            int offset,
+            int count,
+            CancellationToken cancellationToken
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Write(text, offset, count);
+            return ValueTask.CompletedTask;
+        }
+
+        public byte[] ToArray() => _contents.ToArray();
+
+        public void Dispose() => _contents.Dispose();
+    }
+
+    private sealed class RenderedOutputLimitException(string message) : Exception(message);
 
     private static string ResolvePath(
         string declaredTarget,

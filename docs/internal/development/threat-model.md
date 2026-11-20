@@ -19,8 +19,14 @@ when consuming packs and running Luna.
   deployment environments remain external service controls.
 - Website artifacts cross from a read-only build job into a privileged deployment
   job.
+- Pack configuration, local or remote pack data, graph declarations, template
+  output, and OCI ZIP content cross into CLI parser, memory, CPU, temporary
+  storage, and workspace-planning boundaries.
 - Pack content and paths cross from repository-controlled bytes into human
   review, CLI diagnostics, project workspaces, and registry publication.
+- Pack configuration, local or remote pack data, graph declarations, template
+  output, and OCI ZIP content cross into CLI parser, memory, CPU, temporary
+  storage, and workspace-planning boundaries.
 
 ## Spoofing
 
@@ -82,6 +88,26 @@ when consuming packs and running Luna.
 | Verification  | Release-rerun, checksum, and workflow contract tests.                                                                       |
 | Residual risk | LunaPack does not maintain an independent append-only publication log. External audit retention remains service-controlled. |
 
+## Denial of Service
+
+### TM-D01: Resource Exhaustion From Pack Inputs
+
+| Field         | Assessment                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Component     | CLI configuration parsing, local/Git/OCI discovery, graph traversal, file selection, snapshotting, template rendering, and OCI archive handling                                                                                                                                                                                                                                                                                                      |
+| Asset         | CLI availability, memory, CPU, disk, and project transaction state                                                                                                                                                                                                                                                                                                                                                                                   |
+| Scenario      | A very large document, file tree, dependency graph, rendered output, or OCI artifact consumes resources before Luna can reject it.                                                                                                                                                                                                                                                                                                                   |
+| Preconditions | A maintainer tests or automates a repository, pack source, Git ref, or registry artifact with attacker-controlled size or nesting.                                                                                                                                                                                                                                                                                                                   |
+| Likelihood    | Medium                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Impact        | Process termination, disk exhaustion, long evaluation, or blocked automation.                                                                                                                                                                                                                                                                                                                                                                        |
+| Severity      | High                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Controls      | Non-overridable bootstrap reads; typed scoped limits; finite user ceilings; project reductions; byte-counted reads and copies; bounded Git records, measured cache accounting, aggregate catalogs, and OCI pagination; lock-collection YAML preflight; directory-inclusive snapshot counts; streaming link and file enumeration; shared graph, catalog, file, and rendered budgets; bounded OCI transfer/archive/extraction; pre-mutation rejection. |
+| Fix           | Enforce the effective resource policy at every producer boundary, including publication, and keep path, identity, digest, and trust checks independent from size overrides.                                                                                                                                                                                                                                                                          |
+| Priority      | Implemented release control                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Status        | Fixed for defined pack-input and lifecycle boundaries                                                                                                                                                                                                                                                                                                                                                                                                |
+| Verification  | Unit, integration, and OCI security tests cover exact and over-limit inputs, lower-bound diagnostics, state preservation, raised-limit unsafe entries, and shared graph/output budgets.                                                                                                                                                                                                                                                              |
+| Residual risk | User-owned raises can consume more resources by policy. CPU loops inside approved lifecycle scripts and parser nesting beyond byte ceilings remain separate risks.                                                                                                                                                                                                                                                                                   |
+
 ## Information Disclosure
 
 ### TM-I03: OCI Publishing Workflow Credentials
@@ -133,3 +159,9 @@ when consuming packs and running Luna.
    verification for published and installed artifacts.
 7. Investigate hidden-Unicode diagnostics and path rejections during pull
    request and release review; do not override them solely to clear CI.
+8. Keep project resource limits at or below built-in defaults; review every
+   user-owned increase and require a finite ceiling for new producer types.
+9. Keep intermediate-output safeguards below any resource limit that can
+   allocate retained collections; current Git/path records are capped at 1 MiB
+   each and 64 MiB per enumeration, while aggregate catalog manifests are capped
+   at 64 MiB.

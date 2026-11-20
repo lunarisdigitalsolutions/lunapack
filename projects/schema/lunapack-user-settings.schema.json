@@ -198,6 +198,95 @@
         },
         "nextSteps": {
           "$ref": "#/definitions/nextStepPreferences"
+        },
+        "resourceLimits": {
+          "$ref": "#/definitions/userResourceLimits"
+        }
+      }
+    },
+    "userResourceLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "projectManifestBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16777216
+        },
+        "packManifestBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 67108864
+        },
+        "lockFileBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1073741824
+        },
+        "packDocumentBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 268435456
+        },
+        "packSnapshotBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 17179869184
+        },
+        "renderedFileBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 268435456
+        },
+        "renderedTotalBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967296
+        },
+        "dependencyDepth": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 128
+        },
+        "dependencyNodes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000
+        },
+        "dependencyReferences": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "filesPerPack": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000
+        },
+        "filesPerGraph": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "ociArchiveEntries": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "ociDownloadBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 17179869184
+        },
+        "ociEntryBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967296
+        },
+        "ociExpandedBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 17179869184
         }
       }
     },

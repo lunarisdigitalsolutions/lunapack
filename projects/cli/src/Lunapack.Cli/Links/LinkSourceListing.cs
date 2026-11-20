@@ -13,6 +13,9 @@ internal sealed record LinkSourceListing(
     public IReadOnlyDictionary<string, string> BlobIds { get; init; } =
         new Dictionary<string, string>(StringComparer.Ordinal);
 
+    public IReadOnlyDictionary<string, long> BlobSizes { get; init; } =
+        new Dictionary<string, long>(StringComparer.Ordinal);
+
     public GitTransportMode TransportMode { get; init; } = GitTransportMode.SecureOnly;
 
     public string SourceName { get; init; } = string.Empty;

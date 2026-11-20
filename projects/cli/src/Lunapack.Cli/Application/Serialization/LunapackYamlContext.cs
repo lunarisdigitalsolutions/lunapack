@@ -18,6 +18,7 @@ namespace Lunapack.Cli.Application.Serialization;
 [YamlSerializable(typeof(GitPreferences))]
 [YamlSerializable(typeof(CatalogPreferences))]
 [YamlSerializable(typeof(NextStepPreferences))]
+[YamlSerializable(typeof(ResourceLimitPreferences))]
 [YamlSerializable(typeof(PackManifest))]
 [YamlSerializable(typeof(PackManifest.PackManagedFile))]
 [YamlSerializable(typeof(PackManifest.PackManagedFileStrategy))]

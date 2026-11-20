@@ -154,6 +154,8 @@ public sealed class OciDistributionRegistryClientTests
             _registry,
             null,
             "partition",
+            100_000,
+            64L * 1024 * 1024,
             CancellationToken.None
         );
         var repositories = result.Value?.ToArray() ?? [];
@@ -168,6 +170,142 @@ public sealed class OciDistributionRegistryClientTests
     }
 
     [Test]
+    public async Task Scenario_RegistryCatalogPagination_RecordLimitExceeded_StopsRequest()
+    {
+        var requestCount = 0;
+        var client = CreateClient(
+            (_, _) =>
+            {
+                requestCount++;
+                return Task.FromResult(
+                    CreateJsonResponse(
+                        HttpStatusCode.OK,
+                        "{\"repositories\":[\"team/backend\",\"team/security\"]}"
+                    )
+                );
+            }
+        );
+
+        var result = await client.ListRepositoriesAsync(
+            _registry,
+            null,
+            "partition",
+            1,
+            64L * 1024 * 1024,
+            CancellationToken.None
+        );
+
+        await Assert
+            .That(result.Failure?.Kind)
+            .IsEqualTo(OciRegistryFailureKind.ResourceLimitExceeded);
+        await Assert.That(result.Failure?.Message).Contains("1 record limit");
+        await Assert.That(requestCount).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task Scenario_RegistryCatalogPagination_AggregateLimitExceeded_StopsNextPage()
+    {
+        const string firstPage = "{\"repositories\":[\"team/backend\"]}";
+        const string secondPage = "{\"repositories\":[\"team/security\"]}";
+        var requestCount = 0;
+        var client = CreateClient(
+            (_, _) =>
+            {
+                requestCount++;
+                var response = CreateJsonResponse(
+                    HttpStatusCode.OK,
+                    requestCount == 1 ? firstPage : secondPage
+                );
+                if (requestCount == 1)
+                {
+                    response.Headers.TryAddWithoutValidation(
+                        "Link",
+                        "</v2/_catalog?n=100&last=team%2Fbackend>; rel=\"next\""
+                    );
+                }
+
+                return Task.FromResult(response);
+            }
+        );
+
+        var result = await client.ListRepositoriesAsync(
+            _registry,
+            null,
+            "partition",
+            100_000,
+            Encoding.UTF8.GetByteCount(firstPage),
+            CancellationToken.None
+        );
+
+        await Assert
+            .That(result.Failure?.Kind)
+            .IsEqualTo(OciRegistryFailureKind.ResourceLimitExceeded);
+        await Assert.That(result.Failure?.Message).Contains("byte aggregate limit");
+        await Assert.That(requestCount).IsEqualTo(2);
+    }
+
+    [Test]
+    public async Task Scenario_RegistryCatalogPagination_OversizedPage_IsResourceLimitFailure()
+    {
+        var client = CreateClient(
+            (_, _) =>
+                Task.FromResult(
+                    CreateJsonResponse(
+                        HttpStatusCode.OK,
+                        "{\"repositories\":[\"" + new string('x', 1024 * 1024) + "\"]}"
+                    )
+                )
+        );
+
+        var result = await client.ListRepositoriesAsync(
+            _registry,
+            null,
+            "partition",
+            100_000,
+            64L * 1024 * 1024,
+            CancellationToken.None
+        );
+
+        await Assert
+            .That(result.Failure?.Kind)
+            .IsEqualTo(OciRegistryFailureKind.ResourceLimitExceeded);
+        await Assert.That(result.Failure?.Message).Contains("configured limit");
+    }
+
+    [Test]
+    public async Task Scenario_RegistryCatalogPagination_EmptyPages_StopAtFinitePageLimit()
+    {
+        var requestCount = 0;
+        var client = CreateClient(
+            (_, _) =>
+            {
+                requestCount++;
+                var response = CreateJsonResponse(HttpStatusCode.OK, "{\"repositories\":[]}");
+                response.Headers.TryAddWithoutValidation(
+                    "Link",
+                    $"</v2/_catalog?n=100&last=page-{requestCount}>; rel=\"next\""
+                );
+                return Task.FromResult(response);
+            }
+        );
+
+        var result = await client.ListRepositoriesAsync(
+            _registry,
+            null,
+            "partition",
+            1,
+            64L * 1024 * 1024,
+            CancellationToken.None
+        );
+
+        await Assert
+            .That(result.Failure?.Kind)
+            .IsEqualTo(OciRegistryFailureKind.ResourceLimitExceeded);
+        await Assert.That(result.Failure?.Message).Contains("page limit");
+        await Assert.That(requestCount).IsEqualTo(2);
+    }
+
+    [Test]
     public async Task Scenario_RegistryCatalogMissingRepositoryList_IsInvalidResponse()
     {
         var client = CreateClient(
@@ -178,6 +316,8 @@ public sealed class OciDistributionRegistryClientTests
             _registry,
             null,
             "partition",
+            100_000,
+            64L * 1024 * 1024,
             CancellationToken.None
         );
 
@@ -205,6 +345,8 @@ public sealed class OciDistributionRegistryClientTests
             _registry,
             null,
             "partition",
+            100_000,
+            64L * 1024 * 1024,
             CancellationToken.None
         );
 
@@ -234,6 +376,8 @@ public sealed class OciDistributionRegistryClientTests
             "team/backend",
             null,
             "partition",
+            100_000,
+            64L * 1024 * 1024,
             CancellationToken.None
         );
         var tags = result.Value?.ToArray() ?? [];
@@ -783,7 +927,7 @@ public sealed class OciDistributionRegistryClientTests
         await Assert.That(oversized.IsSuccess).IsFalse();
         await Assert
             .That(oversized.Failure?.Kind)
-            .IsEqualTo(OciRegistryFailureKind.InvalidResponse);
+            .IsEqualTo(OciRegistryFailureKind.ResourceLimitExceeded);
     }
 
     [Test]
@@ -805,7 +949,9 @@ public sealed class OciDistributionRegistryClientTests
         );
 
         await Assert.That(result.IsSuccess).IsFalse();
-        await Assert.That(result.Failure?.Kind).IsEqualTo(OciRegistryFailureKind.InvalidResponse);
+        await Assert
+            .That(result.Failure?.Kind)
+            .IsEqualTo(OciRegistryFailureKind.ResourceLimitExceeded);
     }
 
     [Test]
@@ -860,7 +1006,7 @@ public sealed class OciDistributionRegistryClientTests
         await Assert.That(oversized.IsSuccess).IsFalse();
         await Assert
             .That(oversized.Failure?.Kind)
-            .IsEqualTo(OciRegistryFailureKind.InvalidResponse);
+            .IsEqualTo(OciRegistryFailureKind.ResourceLimitExceeded);
         await Assert.That(requestCount).IsEqualTo(0);
     }
 
@@ -890,7 +1036,9 @@ public sealed class OciDistributionRegistryClientTests
         );
 
         await Assert.That(result.IsSuccess).IsFalse();
-        await Assert.That(result.Failure?.Kind).IsEqualTo(OciRegistryFailureKind.InvalidResponse);
+        await Assert
+            .That(result.Failure?.Kind)
+            .IsEqualTo(OciRegistryFailureKind.ResourceLimitExceeded);
     }
 
     [Test]
@@ -918,7 +1066,7 @@ public sealed class OciDistributionRegistryClientTests
             "team/backend",
             descriptor,
             destination,
-            expectedContent.LongLength,
+            long.MaxValue,
             null,
             "partition",
             CancellationToken.None
