@@ -82,36 +82,62 @@ internal static class UserSettingsPathSecurity
     private static void ApplyWindows(string path, bool directory)
     {
         var identity = GetWindowsIdentity();
-        FileSystemSecurity security = directory ? new DirectorySecurity() : new FileSecurity();
-        security.SetOwner(identity);
-        security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
-        var inheritanceFlags = directory
-            ? InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit
-            : InheritanceFlags.None;
-        security.AddAccessRule(
-            new FileSystemAccessRule(
-                identity,
-                FileSystemRights.FullControl,
-                inheritanceFlags,
-                PropagationFlags.None,
-                AccessControlType.Allow
-            )
-        );
+        FileSystemSecurity security = directory
+            ? new DirectoryInfo(path).GetAccessControl()
+            : new FileInfo(path).GetAccessControl();
 
-        if (directory)
+        try
         {
-            new DirectoryInfo(path).SetAccessControl((DirectorySecurity)security);
+            if (security.GetOwner(typeof(SecurityIdentifier)) != identity)
+            {
+                security.SetOwner(identity);
+            }
+
+            security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+            var inheritanceFlags = directory
+                ? InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit
+                : InheritanceFlags.None;
+            security.AddAccessRule(
+                new FileSystemAccessRule(
+                    identity,
+                    FileSystemRights.FullControl,
+                    inheritanceFlags,
+                    PropagationFlags.None,
+                    AccessControlType.Allow
+                )
+            );
+
+            if (directory)
+            {
+                new DirectoryInfo(path).SetAccessControl((DirectorySecurity)security);
+            }
+            else
+            {
+                new FileInfo(path).SetAccessControl((FileSecurity)security);
+            }
         }
-        else
+        catch (PrivilegeNotHeldException exception)
         {
-            new FileInfo(path).SetAccessControl((FileSecurity)security);
+            throw new UnauthorizedAccessException(
+                $"Unable to secure user settings path '{path}' for the current user.",
+                exception
+            );
+        }
+
+        var validationError = ValidateWindows(path, directory);
+        if (validationError is not null)
+        {
+            throw new UnauthorizedAccessException(validationError);
         }
     }
 
     [SupportedOSPlatform("windows")]
-    private static SecurityIdentifier GetWindowsIdentity() =>
-        WindowsIdentity.GetCurrent().User
-        ?? throw new UnauthorizedAccessException(
-            "Current Windows user has no security identifier."
-        );
+    private static SecurityIdentifier GetWindowsIdentity()
+    {
+        using var identity = WindowsIdentity.GetCurrent();
+        return identity.User
+            ?? throw new UnauthorizedAccessException(
+                "Current Windows user has no security identifier."
+            );
+    }
 }

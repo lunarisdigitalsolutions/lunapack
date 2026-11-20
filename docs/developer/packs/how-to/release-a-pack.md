@@ -19,9 +19,18 @@ luna pack validate
 ```
 
 `luna pack validate` checks the local manifest, local selector matches, and
-pack-defined external Git sources. It reports every available issue without
-changing the manifest. Fix warnings about unused source aliases unless the
-source is intentionally reserved for an imminent selector.
+pack-defined external Git sources. It also screens raw managed source content
+and blocks high-confidence Unicode bidi controls and U+200B ZERO WIDTH SPACE
+before a release can validate. Other format characters remain warnings. Review
+every finding; use `--allow-hidden-characters` only for reviewed content. The
+override leaves every diagnostic visible and is not saved in `pack.yml`. Fix
+warnings about unused source aliases unless the source is intentionally
+reserved for an imminent selector.
+
+Validation also detects recoverable controls after NUL or invalid UTF-8 bytes
+and recognizes BOM-tagged UTF-16 and UTF-32 content. The CLI rejects managed
+paths containing terminal controls or hidden Unicode format characters rather
+than emitting terminal-spoofable diagnostics.
 
 When required metadata is missing, use the authoring commands instead of
 rewriting the whole manifest:
@@ -93,4 +102,6 @@ older releases available for exact references and update tests. See
 versioned layout.
 
 Commit the release to a local catalog or Git repository only after both
-validation commands and the fixture lifecycle pass.
+validation commands and the fixture lifecycle pass. `luna publish` repeats raw
+managed-source screening before upload. High-confidence findings stop
+publication unless the publish command includes `--allow-hidden-characters`.

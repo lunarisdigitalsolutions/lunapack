@@ -437,11 +437,16 @@ internal static partial class SourceIdentityNormalizer
             );
         }
 
+        var parsedUri = Uri.TryCreate(trimmed, UriKind.Absolute, out var uri) ? uri : null;
+        var isScpLike = ScpLikePattern().IsMatch(trimmed);
         var embedsCredentials =
-            location.UserInformation is { } credentials
+            location.UserInformation is not null
+            && !isScpLike
             && (
-                credentials.Contains(':', StringComparison.Ordinal)
-                || trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+                parsedUri is null
+                || !string.Equals(parsedUri.Scheme, "ssh", StringComparison.OrdinalIgnoreCase)
+                || Uri.UnescapeDataString(parsedUri.UserInfo)
+                    .Contains(':', StringComparison.Ordinal)
             );
         if (embedsCredentials)
         {

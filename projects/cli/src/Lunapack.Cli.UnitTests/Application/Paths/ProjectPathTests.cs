@@ -31,9 +31,13 @@ public sealed class ProjectPathTests
 
     [Test]
     [Arguments("")]
+    [Arguments("C:outside/file.md")]
     [Arguments(@"C:\outside\file.md")]
     [Arguments(@"..\outside\file.md")]
     [Arguments(@"..\workspace-copy\file.md")]
+    [Arguments("docs/\u001B]8;;https://example.test\u0007file.txt")]
+    [Arguments("docs/\u202Efile.txt")]
+    [Arguments("docs/\nfile.txt")]
     public async Task NormalizeProjectRelativePath_WhenPathIsNotContained_ReturnsFailure(
         string path
     )

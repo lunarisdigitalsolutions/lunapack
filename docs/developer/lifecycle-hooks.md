@@ -36,6 +36,47 @@ luna trust pack dotnet-project --source engineering
 See [Lifecycle hooks and script trust](cli/trust-and-scripts.md) for trust
 scope, revocation, execution order, and noninteractive behavior.
 
+## Inspect local script history
+
+Every lifecycle script process attempt is recorded in
+`~/.lunapack/lifecycle-hook-history.jsonl`. Luna retains the newest 100 entries
+and keeps the file accessible only to the current user. History is per user,
+not project state, so it is not committed with the workspace.
+
+Each entry identifies the lifecycle event, resolved executable, pack ID and
+version, UTC timestamp, displayed arguments, authorization source, duration,
+outcome, and available exit code. The authorization source is invocation-level
+`--scripts run`, persisted trust with every matching project, local-user, and
+global-user scope, or interactive confirmation. Instructions and scripts that
+were skipped, declined, denied, or conditionally ignored create no entry.
+Process start failures, cancellations, nonzero exits, and successful exits are
+included.
+
+Luna omits the working directory, process environment, and script output. It
+replaces argument values associated with conventional names containing
+`password`, `passwd`, `secret`, `token`, `credential`, `authorization`, `auth`,
+`api-key`, `api_key`, `apikey`, `access-key`, `access_key`, or `accesskey` with
+`[REDACTED]`. This matching is best-effort: an arbitrary secret that does not
+use one of those argument names may remain in history. Avoid passing secrets
+through command arguments. Terminal control and bidirectional characters are
+displayed as visible escapes.
+
+Run `luna hooks history` to inspect the newest 20 entries:
+
+```powershell
+luna hooks history
+luna hooks history --limit 100
+```
+
+The command is read-only, orders results newest first, and accepts limits from
+1 through 100. Missing history is reported as empty without creating a file.
+Unreadable or invalid history returns a failure instead of appearing empty.
+Delete history manually by removing
+`~/.lunapack/lifecycle-hook-history.jsonl`; there is no clear command.
+
+If Luna cannot write a history entry, it warns but preserves the script's
+success or failure and existing rollback behavior.
+
 ## Follow instructions
 
 Instruction hooks display publisher-provided Markdown and never launch a
@@ -57,6 +98,11 @@ Dry runs validate and summarize scripts and instructions without requesting hook
 consent, starting a process, or entering guided display. Parameter prompts still
 occur before planning unless `--skip-parameters` is set. Denied script rows show
 `policy-denied` and every applicable scope without execution warnings.
+
+Authorized scripts also warn about inherited environment variable names outside
+the configured allow-list and have a per-hook timeout. The warning does not
+remove variables from the child process. See the [script policy reference](cli/trust-and-scripts.md#lifecycle-script-policy)
+for scope, defaults, and compatibility behavior.
 
 Hook conditions can react to script handling during the same lifecycle event.
 `scriptsSkipped()` is true only when scripts are suppressed for the whole

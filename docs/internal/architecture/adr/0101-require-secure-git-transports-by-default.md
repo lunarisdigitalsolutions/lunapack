@@ -5,7 +5,7 @@ decision-makers:
   - Lunaris Engineering
 ---
 
-# ADR-0090: Require Secure Git Transports by Default
+# ADR-0101: Require Secure Git Transports by Default
 
 ## Context and Problem Statement
 

@@ -30,7 +30,7 @@
       from output and logs.
 - [x] 2.4 Add focused source, credential, and identity regression tests; update
       developer and internal guidance with opt-in risks and residual Git-config
-      credential paths, add ADR-0090 and its index entry, and update the CLI
+      credential paths, add ADR-0101 and its index entry, and update the CLI
       changelog; verify docs, ADR links, and the changelog describe implemented
       behavior.
 - [x] 2.5 Complete a security-focused code review and fix every actionable

@@ -28,29 +28,33 @@ internal sealed class SourceIgnoreStore
         .Build();
 
     private readonly IFileSystem _fileSystem;
-    private readonly string _settingsDirectory;
+    private readonly UserSidecarFile _sidecarFile;
 
     public SourceIgnoreStore(IFileSystem fileSystem, string settingsDirectory)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(settingsDirectory);
         _fileSystem = fileSystem;
-        _settingsDirectory = fileSystem.Path.GetFullPath(settingsDirectory);
-        SettingsPath = fileSystem.Path.Combine(_settingsDirectory, FileName);
+        _sidecarFile = new UserSidecarFile(
+            fileSystem,
+            settingsDirectory,
+            FileName,
+            "Source-ignore settings"
+        );
     }
 
-    public string SettingsPath { get; }
+    public string SettingsPath => _sidecarFile.SettingsPath;
 
     public Task<ManifestOperationResult<SourceIgnoreSettings>> LoadAsync()
     {
         try
         {
-            var pathError = ValidateExistingPaths();
+            var pathError = _sidecarFile.ValidateExistingPaths();
             if (pathError is not null)
             {
                 return Result(ManifestOperationResult<SourceIgnoreSettings>.Failure(pathError));
             }
 
-            if (!_fileSystem.File.Exists(SettingsPath))
+            if (!_sidecarFile.Exists())
             {
                 return Result(
                     ManifestOperationResult<SourceIgnoreSettings>.Success(
@@ -60,9 +64,9 @@ internal sealed class SourceIgnoreStore
             }
 
             var settings = _deserializer.Deserialize<SourceIgnoreSettings>(
-                _fileSystem.File.ReadAllText(SettingsPath)
+                _sidecarFile.ReadAllText()
             );
-            if (settings is null || !IsValid(settings))
+            if (settings is null || !IsValidForLoad(settings))
             {
                 return Result(
                     ManifestOperationResult<SourceIgnoreSettings>.Failure(
@@ -92,7 +96,7 @@ internal sealed class SourceIgnoreStore
 
     public Task<ManifestOperationResult<bool>> SaveAsync(SourceIgnoreSettings settings)
     {
-        if (!IsValid(settings))
+        if (!IsValidForSave(settings))
         {
             return Result(
                 ManifestOperationResult<bool>.Failure(
@@ -101,25 +105,15 @@ internal sealed class SourceIgnoreStore
             );
         }
 
-        var temporaryPath = _fileSystem.Path.Combine(
-            _settingsDirectory,
-            $".{FileName}.{Guid.NewGuid():N}.tmp"
-        );
         try
         {
-            var pathError = ValidateExistingPaths();
+            var pathError = _sidecarFile.ValidateExistingPaths();
             if (pathError is not null)
             {
                 return Result(ManifestOperationResult<bool>.Failure(pathError));
             }
 
-            EnsureSettingsDirectory();
-            _fileSystem.File.WriteAllText(
-                temporaryPath,
-                _serializer.Serialize(Normalize(settings))
-            );
-            UserSettingsPathSecurity.Apply(temporaryPath, directory: false);
-            _fileSystem.File.Move(temporaryPath, SettingsPath, overwrite: true);
+            _sidecarFile.WriteAllText(_serializer.Serialize(Normalize(settings)));
             return Result(ManifestOperationResult<bool>.Success(true));
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
@@ -130,95 +124,36 @@ internal sealed class SourceIgnoreStore
                 )
             );
         }
-        finally
-        {
-            if (_fileSystem.File.Exists(temporaryPath))
-            {
-                _fileSystem.File.Delete(temporaryPath);
-            }
-        }
     }
 
-    private string? ValidateExistingPaths()
+    private bool IsValidForLoad(SourceIgnoreSettings settings)
     {
-        if (_fileSystem.File.Exists(_settingsDirectory))
-        {
-            return $"Source-ignore settings path '{_settingsDirectory}' must be a directory.";
-        }
-
-        if (_fileSystem.Directory.Exists(_settingsDirectory))
-        {
-            var directoryError = UserSettingsPathSecurity.ValidateExisting(
-                _fileSystem,
-                _settingsDirectory,
-                directory: true
-            );
-            if (directoryError is not null)
-            {
-                return directoryError;
-            }
-        }
-
-        if (_fileSystem.Directory.Exists(SettingsPath))
-        {
-            return $"Source-ignore settings path '{SettingsPath}' must be a regular file.";
-        }
-
-        return _fileSystem.File.Exists(SettingsPath)
-            ? UserSettingsPathSecurity.ValidateExisting(_fileSystem, SettingsPath, directory: false)
-            : null;
-    }
-
-    private void EnsureSettingsDirectory()
-    {
-        if (!_fileSystem.Directory.Exists(_settingsDirectory))
-        {
-            _fileSystem.Directory.CreateDirectory(_settingsDirectory);
-            UserSettingsPathSecurity.Apply(_settingsDirectory, directory: true);
-        }
-    }
-
-    private bool IsValid(SourceIgnoreSettings settings)
-    {
-        if (ManifestModelValidator.Validate(settings).Count != 0)
+        if (settings.Projects is null)
         {
             return false;
         }
 
-        foreach (var projectPath in settings.Projects.Keys)
+        if (!ProjectIdentityMap.ValidateForLoad(_fileSystem, settings.Projects.Keys))
         {
-            var fullPath = _fileSystem.Path.GetFullPath(projectPath);
-            var normalizedPath = ProjectPath.Normalize(
-                _fileSystem.Path.TrimEndingDirectorySeparator(fullPath)
-            );
-            if (!string.Equals(projectPath, normalizedPath, StringComparison.Ordinal))
-            {
-                return false;
-            }
-
-            if (_fileSystem.Directory.Exists(fullPath))
-            {
-                var canonicalPath = CanonicalProjectPath.Resolve(_fileSystem, fullPath);
-                var hasExpectedCanonicalPath =
-                    canonicalPath.Value is { } value
-                    && string.Equals(projectPath, value, StringComparison.Ordinal);
-                if (!hasExpectedCanonicalPath)
-                {
-                    return false;
-                }
-            }
+            return false;
         }
 
-        return true;
+        var normalizedSettings = settings with
+        {
+            Projects = ProjectIdentityMap.NormalizeSeparators(settings.Projects),
+        };
+        return ManifestModelValidator.Validate(normalizedSettings).Count == 0;
     }
 
-    private static SourceIgnoreSettings Normalize(SourceIgnoreSettings settings) =>
+    private bool IsValidForSave(SourceIgnoreSettings settings) =>
+        settings.Projects is not null
+        && ManifestModelValidator.Validate(settings).Count == 0
+        && ProjectIdentityMap.ValidateForSave(_fileSystem, settings.Projects.Keys);
+
+    private SourceIgnoreSettings Normalize(SourceIgnoreSettings settings) =>
         settings with
         {
-            Projects = new Dictionary<string, List<ConfiguredSourceIdentity>>(
-                settings.Projects,
-                StringComparer.Ordinal
-            ),
+            Projects = ProjectIdentityMap.Normalize(_fileSystem, settings.Projects),
         };
 
     private static Task<ManifestOperationResult<T>> Result<T>(ManifestOperationResult<T> result) =>

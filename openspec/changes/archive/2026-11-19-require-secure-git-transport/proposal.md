@@ -42,5 +42,5 @@ legacy environments.
 Affected systems include CLI preference parsing, scope resolution and
 serialization; Git source addition, ref resolution, catalog discovery,
 materialization, external pack sources, links, Git process execution; project
-and user-settings schemas; tests; `docs/developer`; `docs/internal`; ADR-0090;
+and user-settings schemas; tests; `docs/developer`; `docs/internal`; ADR-0101;
 the OpenSpec schema specification; and `projects/cli/CHANGELOG.md`.

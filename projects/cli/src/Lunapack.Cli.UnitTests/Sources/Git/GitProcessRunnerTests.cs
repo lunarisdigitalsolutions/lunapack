@@ -8,6 +8,46 @@ namespace Lunapack.Cli.UnitTests.Sources.Git;
 public sealed class GitProcessRunnerTests
 {
     [Test]
+    [NotInParallel]
+    public async Task StartInfo_WhenDoctorModeIsUsed_RemovesInheritedGitSecrets()
+    {
+        var configCount = Environment.GetEnvironmentVariable("GIT_CONFIG_COUNT");
+        var configKey = Environment.GetEnvironmentVariable("GIT_CONFIG_KEY_0");
+        var configValue = Environment.GetEnvironmentVariable("GIT_CONFIG_VALUE_0");
+        var trace = Environment.GetEnvironmentVariable("GIT_TRACE_CURL");
+        try
+        {
+            Environment.SetEnvironmentVariable("GIT_CONFIG_COUNT", "1");
+            Environment.SetEnvironmentVariable("GIT_CONFIG_KEY_0", "http.extraHeader");
+            Environment.SetEnvironmentVariable("GIT_CONFIG_VALUE_0", "secret-header");
+            Environment.SetEnvironmentVariable("GIT_TRACE_CURL", "1");
+            var executable = OperatingSystem.IsWindows()
+                ? "C:\\Windows\\System32\\cmd.exe"
+                : "/bin/sh";
+
+            var startInfo = new GitProcessRunner(
+                executable,
+                nonInteractive: true
+            ).CreateStartInfoForTests(executable);
+
+            await Assert.That(startInfo.Environment).DoesNotContainKey("GIT_CONFIG_COUNT");
+            await Assert.That(startInfo.Environment).DoesNotContainKey("GIT_CONFIG_KEY_0");
+            await Assert.That(startInfo.Environment).DoesNotContainKey("GIT_CONFIG_VALUE_0");
+            await Assert.That(startInfo.Environment).DoesNotContainKey("GIT_TRACE_CURL");
+            await Assert.That(startInfo.Environment["GIT_CONFIG_NOSYSTEM"]).IsEqualTo("1");
+            await Assert.That(startInfo.Environment["GIT_SSH_COMMAND"]).StartsWith("\"");
+            await Assert.That(startInfo.Environment["GIT_SSH_COMMAND"]).DoesNotStartWith("ssh");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("GIT_CONFIG_COUNT", configCount);
+            Environment.SetEnvironmentVariable("GIT_CONFIG_KEY_0", configKey);
+            Environment.SetEnvironmentVariable("GIT_CONFIG_VALUE_0", configValue);
+            Environment.SetEnvironmentVariable("GIT_TRACE_CURL", trace);
+        }
+    }
+
+    [Test]
     [Arguments(
         "fatal: Authentication failed for 'https://user:sentinel@registry.example.test/packs.git'",
         "Git authentication failed"

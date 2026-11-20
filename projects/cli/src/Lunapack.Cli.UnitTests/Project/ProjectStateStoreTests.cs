@@ -37,6 +37,38 @@ public sealed class ProjectStateStoreTests
     }
 
     [Test]
+    public async Task Scenario_LifecycleScriptPolicyConfigured_PreservesValues()
+    {
+        var fileSystem = CreateFileSystem();
+        const string projectDirectory = @"C:\project";
+        fileSystem.AddDirectory(projectDirectory);
+        fileSystem.AddFile(
+            fileSystem.Path.Combine(projectDirectory, ProjectStateStore.ConfigurationFileName),
+            new MockFileData(
+                "schemaVersion: 1\nsources: []\npacks: []\ntrust:\n  scripts:\n    allowedEnvironmentVariables:\n      - CUSTOM_PATH\n    timeoutSeconds: 30\n"
+            )
+        );
+        fileSystem.AddFile(
+            fileSystem.Path.Combine(projectDirectory, ProjectStateStore.LockFileName),
+            new MockFileData("schemaVersion: 1\npacks: []\n")
+        );
+        var stateStore = new ProjectStateStore(fileSystem);
+
+        var loaded = await stateStore.LoadAsync(projectDirectory);
+        var saved = await stateStore.SaveAsync(projectDirectory, loaded.RequireValue());
+        var reloaded = await stateStore.LoadAsync(projectDirectory);
+
+        await Assert.That(saved.IsSuccess).IsTrue();
+        await Assert.That(reloaded.IsSuccess).IsTrue();
+        await Assert
+            .That(reloaded.RequireValue().Configuration.Trust.Scripts?.AllowedEnvironmentVariables)
+            .Contains("CUSTOM_PATH");
+        await Assert
+            .That(reloaded.RequireValue().Configuration.Trust.Scripts?.TimeoutSeconds)
+            .IsEqualTo(30);
+    }
+
+    [Test]
     public async Task Save_WhenStateValid_PersistsConfigurationAndLockFile()
     {
         var fileSystem = CreateFileSystem();

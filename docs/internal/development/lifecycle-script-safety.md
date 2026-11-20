@@ -25,6 +25,10 @@ must still accept.
   scripts.
 - Every planned script is authorized before any hook is processed. Instructions
   do not use persisted trust and cannot grant process authority.
+- Lifecycle script policy is independent of authorization and denial. Project
+  settings use `trust.scripts`; global-user and canonical project-local user
+  settings use `<profile>/.lunapack/lifecycle-hook-policy.yml`, separate from
+  `config.yml`.
 - Runtime hook conditions are evaluated during ordered dispatch. Every script
   that could execute is still authorized up front. State is scoped to the
   nearest earlier script in the same pack and lifecycle event; a false static
@@ -43,6 +47,17 @@ must still accept.
 - Interactive hooks inherit standard input, output, and error so child prompts
   use the invoking terminal. Noninteractive hooks retain bounded, sanitized
   output capture and must not prompt for input.
+- Before an authorized script starts, LunaPack compares inherited variable
+  names with a platform baseline plus additions from all policy scopes. It warns
+  with names only; the script still receives the full environment, so this is
+  not isolation. Each script has a 300-second default timeout; the smallest
+  configured scope value from 1 through 1,800 seconds applies. The deadline
+  includes root-process exit, remaining descendants, and captured-output
+  draining. Hooks run under a supervised Windows job or Unix session. Root
+  exit with active descendants does not complete the hook. Timeout terminates
+  the supervised process tree and fails the lifecycle transaction; caller
+  cancellation remains a distinct outcome. Managed state and exact original
+  `lunapack.yml` bytes are restored on failure.
 - Exact original `lunapack.yml` bytes are retained. LunaPack verifies and
   restores them after every process, and restores managed files when a
   post-hook, instruction cancellation, or persistence step fails.
@@ -73,19 +88,21 @@ no-follow control.
 
 ## Residual Risks
 
-1. **Critical: user-authority execution.** Approved hooks can read credentials,
-   modify files, access the network, and start other processes with the user's
-   ambient authority.
+1. **Critical: user-authority execution.** Approved hooks can read every
+   inherited environment value, including credentials, modify files, access the
+   network, and start other processes with the user's ambient authority.
+   Environment warnings report names only and do not filter values.
 2. **High: future trusted content.** Source trust spans versions, so a later
    release from a trusted source can execute changed content.
 3. **High: irreversible effects.** LunaPack can restore its own state, not
    external writes, remote changes, spawned processes, or deleted credentials.
 4. **Medium: skipped source objects.** Unsupported entries are omitted with a
-  warning, so a pack may be incomplete even though regular siblings remain.
+   warning, so a pack may be incomplete even though regular siblings remain.
 5. **Medium: settings compromise.** A same-user attacker able to alter user
-   settings can change persistent execution authority.
+   settings can change persistent execution authority and suppress environment
+   warnings or change timeouts.
 6. **Medium: same-user races.** Object checks and digest verification narrow
-  staged-content races but cannot protect every process-visible resource.
+   staged-content races but cannot protect every process-visible resource.
 7. **Medium: mode trade-offs.** Without persistent denial, `--scripts run`
    bypasses consent for one invocation. Either skip control or policy denial can
    omit setup required by a pack. Resetting denial can reactivate retained

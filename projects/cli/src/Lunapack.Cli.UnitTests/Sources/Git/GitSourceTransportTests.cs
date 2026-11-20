@@ -318,6 +318,42 @@ public sealed class GitSourceTransportTests
     }
 
     [Test]
+    public async Task ProcessRunner_WhenWorkspaceContainsGitExecutable_IgnoresWorkspaceCopy()
+    {
+        var root = Path.Combine(
+            Path.GetTempPath(),
+            "lunapack-git-path",
+            Guid.NewGuid().ToString("N")
+        );
+        var workspace = Path.Combine(root, "workspace");
+        var trusted = Path.Combine(root, "trusted");
+        Directory.CreateDirectory(workspace);
+        Directory.CreateDirectory(trusted);
+        try
+        {
+            var extension = OperatingSystem.IsWindows() ? ".exe" : string.Empty;
+            var workspaceGit = Path.Combine(workspace, $"git{extension}");
+            var trustedGit = Path.Combine(trusted, $"git{extension}");
+            File.WriteAllText(workspaceGit, string.Empty);
+            File.WriteAllText(trustedGit, string.Empty);
+            var searchPath = string.Join(Path.PathSeparator, workspace, trusted);
+
+            var resolved = GitProcessRunner.ResolveExecutable(
+                "git",
+                searchPath,
+                workspace,
+                OperatingSystem.IsWindows()
+            );
+
+            await Assert.That(resolved).IsEqualTo(trustedGit);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Test]
     public async Task ProcessRunner_WhenGitReturnsNonZero_ReturnsFailure()
     {
         var result = await new GitProcessRunner().RunAsync(

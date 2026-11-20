@@ -1177,7 +1177,14 @@ internal sealed class PackAuthoringCommandHandler(
 
     private Command CreateValidateCommand(string projectDirectory, Option<string?> workspaceOption)
     {
-        var command = new Command("validate", "Validate the local pack manifest.");
+        var allowHiddenCharactersOption = new Option<bool>("--allow-hidden-characters")
+        {
+            Description = "Continue after reviewing high-confidence hidden Unicode findings.",
+        };
+        var command = new Command("validate", "Validate the local pack manifest.")
+        {
+            allowHiddenCharactersOption,
+        };
         command.SetAction(async parseResult =>
         {
             var workspace = ResolveWorkspace(parseResult, projectDirectory, workspaceOption);
@@ -1205,7 +1212,8 @@ internal sealed class PackAuthoringCommandHandler(
             var externalValidation = await validationService.ValidateExternalSourcesAsync(
                 workspace,
                 workspace,
-                manifest
+                manifest,
+                parseResult.GetValue(allowHiddenCharactersOption)
             );
             if (!externalValidation.IsSuccess)
             {

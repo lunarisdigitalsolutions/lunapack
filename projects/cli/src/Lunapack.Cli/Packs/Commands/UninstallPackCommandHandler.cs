@@ -44,7 +44,8 @@ internal sealed class UninstallPackCommandHandler(
         skipVariableOption.CompletionSources.Add(completionProvider.GetConfiguredVariableNames);
         var scriptsOption = new Option<string?>("--scripts")
         {
-            Description = "Lifecycle script mode: prompt, run, or skip.",
+            Description =
+                "Lifecycle script mode: prompt, run, or skip. Authorized hooks warn on inherited environment names and have per-hook timeouts.",
         };
         scriptsOption.CompletionSources.Add("prompt", "run", "skip");
         var skipInstructionsOption = new Option<bool>("--skip-instructions")
@@ -68,8 +69,15 @@ internal sealed class UninstallPackCommandHandler(
             Scripts: scriptsOption,
             SkipInstructions: skipInstructionsOption
         );
-        command.SetAction(parseResult =>
-            ExecuteAsync(projectDirectory, workspaceOption, parseResult, options)
+        command.SetAction(
+            (parseResult, cancellationToken) =>
+                ExecuteAsync(
+                    projectDirectory,
+                    workspaceOption,
+                    parseResult,
+                    options,
+                    cancellationToken
+                )
         );
 
         return command;
@@ -86,7 +94,8 @@ internal sealed class UninstallPackCommandHandler(
             Option<string[]> SkippedVariables,
             Option<string?> Scripts,
             Option<bool> SkipInstructions
-        ) options
+        ) options,
+        CancellationToken cancellationToken
     )
     {
         var packReferenceValues = parseResult.GetValue(options.PackReferences) ?? [];
@@ -132,7 +141,7 @@ internal sealed class UninstallPackCommandHandler(
                 return console.Fail(hookRequest.Error);
             }
 
-            var exitCode = await UninstallAsync(workspaceDirectory, request);
+            var exitCode = await UninstallAsync(workspaceDirectory, request, cancellationToken);
             if (exitCode != 0)
             {
                 return exitCode;
@@ -145,7 +154,8 @@ internal sealed class UninstallPackCommandHandler(
 
     private async Task<int> UninstallAsync(
         string workspaceDirectory,
-        PackInstallationRequest hookRequest
+        PackInstallationRequest hookRequest,
+        CancellationToken cancellationToken
     )
     {
         var packReferenceValue = hookRequest.PackReference.Version is { } version
@@ -173,7 +183,8 @@ internal sealed class UninstallPackCommandHandler(
                 packLifecycleService.UninstallAsync(
                     workspaceDirectory,
                     hookRequest,
-                    duration => managedFileChangesDuration = duration
+                    duration => managedFileChangesDuration = duration,
+                    cancellationToken
                 )
         );
         if (exitCode != 0)

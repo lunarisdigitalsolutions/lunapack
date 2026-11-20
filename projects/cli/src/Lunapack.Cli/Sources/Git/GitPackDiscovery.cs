@@ -224,7 +224,7 @@ internal sealed class GitPackDiscovery(
         {
             (new[] { "init", "--quiet", workspace }, GitTransportMode.SecureOnly, (string?)null),
             (
-                new[] { "-C", workspace, "remote", "add", "--", "origin", source.Url },
+                ["-C", workspace, "remote", "add", "--", "origin", source.Url],
                 GitTransportMode.SecureOnly,
                 null
             ),

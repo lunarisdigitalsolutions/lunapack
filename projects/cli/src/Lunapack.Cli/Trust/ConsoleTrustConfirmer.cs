@@ -6,7 +6,12 @@ internal sealed class ConsoleTrustConfirmer(CliConsole console) : ITrustConfirme
 {
     public bool Confirm(string warning)
     {
-        console.Warning(warning);
-        return console.IsInteractive && console.Confirm("Grant this lifecycle script trust?");
+        if (!console.IsInteractive)
+        {
+            console.WarningLines(warning);
+            return false;
+        }
+
+        return console.ConfirmWithDetails("Grant this lifecycle script trust?", [warning]);
     }
 }

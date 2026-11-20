@@ -82,6 +82,44 @@ public sealed class ExternalSourceIdentityTests
     }
 
     [Test]
+    public async Task Normalizer_WhenHttpUrlEmbedsTokenOnlyUserInfo_IsRejected()
+    {
+        var fingerprint = SourceIdentityNormalizer.CreateGit(
+            "http://placeholder-token@example.test/owner/packs.git",
+            reference: null,
+            path: null
+        );
+
+        await Assert.That(fingerprint.IsSuccess).IsFalse();
+        await Assert.That(fingerprint.Error).DoesNotContain("placeholder-token");
+    }
+
+    [Test]
+    public async Task Normalizer_WhenSshUrlEmbedsPassword_IsRejected()
+    {
+        var fingerprint = SourceIdentityNormalizer.CreateGit(
+            "ssh://git:placeholder-password@example.test/owner/packs.git",
+            reference: null,
+            path: null
+        );
+
+        await Assert.That(fingerprint.IsSuccess).IsFalse();
+        await Assert.That(fingerprint.Error).DoesNotContain("placeholder-password");
+    }
+
+    [Test]
+    public async Task Normalizer_WhenGitUrlStartsWithOptionPrefix_IsRejected()
+    {
+        var fingerprint = SourceIdentityNormalizer.CreateGit(
+            "--upload-pack=$(command)@example.test:owner/packs.git",
+            reference: null,
+            path: null
+        );
+
+        await Assert.That(fingerprint.IsSuccess).IsFalse();
+    }
+
+    [Test]
     [Arguments("../escape")]
     [Arguments("packs/../../escape")]
     public async Task Normalizer_WhenBasePathEscapes_IsRejected(string basePath)
@@ -113,6 +151,18 @@ public sealed class ExternalSourceIdentityTests
 
         await Assert.That(normalized.IsSuccess).IsTrue();
         await Assert.That(normalized.Value).IsEqualTo("file:///tmp/engineering-packs");
+    }
+
+    [Test]
+    public async Task Normalizer_WhenRepositoryUsesUserlessScpSyntax_IsAccepted()
+    {
+        var fingerprint = SourceIdentityNormalizer.CreateGit(
+            "git.example.test:owner/packs.git",
+            reference: null,
+            path: null
+        );
+
+        await Assert.That(fingerprint.IsSuccess).IsTrue();
     }
 
     [Test]

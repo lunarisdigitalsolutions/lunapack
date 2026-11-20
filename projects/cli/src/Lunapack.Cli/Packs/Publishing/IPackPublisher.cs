@@ -11,6 +11,7 @@ internal interface IPackPublisher
         string projectDirectory,
         string packDirectory,
         ProjectConfiguration.Source source,
-        CancellationToken cancellationToken
+        bool allowHiddenCharacters = false,
+        CancellationToken cancellationToken = default
     );
 }

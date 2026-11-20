@@ -19,6 +19,8 @@ when consuming packs and running Luna.
   deployment environments remain external service controls.
 - Website artifacts cross from a read-only build job into a privileged deployment
   job.
+- Pack content and paths cross from repository-controlled bytes into human
+  review, CLI diagnostics, project workspaces, and registry publication.
 
 ## Spoofing
 
@@ -39,6 +41,26 @@ when consuming packs and running Luna.
 | Status        | OCI content integrity is mitigated; publisher identity and tag immutability remain external controls                                                                                                                                                                                         |
 | Verification  | Exact npm and NuGet trusted-publisher bindings, release workflow contract tests, release dry run, package inspection, OCI unit tests, and pack-validation integration tests.                                                                                                                 |
 | Residual risk | Checksums and digests prove byte identity, not publisher identity. Registry policies must prevent mutable tags and independent-publisher races.                                                                                                                                              |
+
+## Tampering
+
+### TM-T05: Review Bypass Through Hidden Unicode
+
+| Field         | Assessment                                                                                                                                                                                                                                 |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Component     | Pack implementation, review tooling, publication validation, managed paths, and terminal diagnostics                                                                                                                                       |
+| Asset         | Maintainer review accuracy, exact release bytes, and trustworthy CLI output                                                                                                                                                                |
+| Scenario      | A contributor or upstream pack uses bidi controls, zero-width characters, malformed encodings, BOM ambiguity, or terminal controls in paths so review or diagnostics differ from the processed bytes.                                      |
+| Preconditions | A reviewer trusts rendered source, filenames, or terminal output without inspecting the reported Unicode code points or original bytes.                                                                                                    |
+| Likelihood    | Medium                                                                                                                                                                                                                                     |
+| Impact        | Deceptive text, identifiers, filenames, or output can bypass human review and reach consumers or release artifacts.                                                                                                                        |
+| Severity      | High                                                                                                                                                                                                                                       |
+| Controls      | Shared final-plan/raw-source/installed-target scanner, Bidi_Control and U+200B blocking, warning classes, valid emoji exemptions, UTF-8/BOM recovery, path rejection and escaping, 1,000-finding retention, and retained blocker evidence. |
+| Fix           | Treat hidden-Unicode diagnostics as a release review gate. Preserve the explicit override for documented exceptions without allowing it to suppress output.                                                                                |
+| Priority      | Maintainer review control                                                                                                                                                                                                                  |
+| Status        | Implemented with documented residual semantic risk                                                                                                                                                                                         |
+| Verification  | Unit, integration, security, local CLI smoke, path, truncation, opaque-encoding, authoring, lifecycle, publication, and audit tests.                                                                                                       |
+| Residual risk | Unicode cannot establish benign intent. Editors, diffs, fonts, and terminals may disagree about valid text, and the override remains a human decision.                                                                                     |
 
 ## Repudiation
 
@@ -109,3 +131,5 @@ when consuming packs and running Luna.
 5. Keep dependency builds separate from publication credentials.
 6. Configure immutable OCI version tags and preserve manifest/content digest
    verification for published and installed artifacts.
+7. Investigate hidden-Unicode diagnostics and path rejections during pull
+   request and release review; do not override them solely to clear CI.

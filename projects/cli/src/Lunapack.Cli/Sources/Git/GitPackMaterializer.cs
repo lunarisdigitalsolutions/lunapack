@@ -317,7 +317,7 @@ internal sealed class GitPackMaterializer(
         {
             (new[] { "init", "--quiet", workspace }, GitTransportMode.SecureOnly, (string?)null),
             (
-                new[] { "-C", workspace, "remote", "add", "--", "origin", gitSource.Url },
+                ["-C", workspace, "remote", "add", "--", "origin", gitSource.Url],
                 GitTransportMode.SecureOnly,
                 null
             ),
@@ -336,13 +336,12 @@ internal sealed class GitPackMaterializer(
                 gitSource.Url
             ),
             (
-                new[] { "-C", workspace, "sparse-checkout", "init", "--no-cone" },
+                ["-C", workspace, "sparse-checkout", "init", "--no-cone"],
                 GitTransportMode.SecureOnly,
                 null
             ),
             (
-                new[]
-                {
+                [
                     "-C",
                     workspace,
                     "sparse-checkout",
@@ -350,7 +349,7 @@ internal sealed class GitPackMaterializer(
                     "--no-cone",
                     "--",
                     CreateSparsePattern(pack.RepositoryPath),
-                },
+                ],
                 GitTransportMode.SecureOnly,
                 null
             ),

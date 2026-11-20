@@ -52,6 +52,8 @@ namespace Lunapack.Cli.Application.Serialization;
 [YamlSerializable(typeof(ProjectLockFile.ExternalSourceLock))]
 [YamlSerializable(typeof(ConfiguredSourceIdentity))]
 [YamlSerializable(typeof(SourceIgnoreSettings))]
+[YamlSerializable(typeof(LifecycleHookPolicy))]
+[YamlSerializable(typeof(LifecycleHookPolicySettings))]
 [YamlSerializable(typeof(LocalProjectTrust))]
 [YamlSerializable(typeof(ScriptDenial))]
 [YamlSerializable(typeof(TrustAcknowledgements))]

@@ -219,7 +219,7 @@ internal sealed class ExternalSourceMaterializer(
         {
             (new[] { "init", "--quiet", workspace }, GitTransportMode.SecureOnly, (string?)null),
             (
-                new[] { "-C", workspace, "remote", "add", "--", "origin", group.Source.Url },
+                ["-C", workspace, "remote", "add", "--", "origin", group.Source.Url],
                 GitTransportMode.SecureOnly,
                 null
             ),
@@ -238,13 +238,12 @@ internal sealed class ExternalSourceMaterializer(
                 group.Source.Url
             ),
             (
-                new[] { "-C", workspace, "sparse-checkout", "init", "--no-cone" },
+                ["-C", workspace, "sparse-checkout", "init", "--no-cone"],
                 GitTransportMode.SecureOnly,
                 null
             ),
             (
-                new[]
-                {
+                [
                     "-C",
                     workspace,
                     "sparse-checkout",
@@ -252,7 +251,7 @@ internal sealed class ExternalSourceMaterializer(
                     "--no-cone",
                     "--",
                     CreateSparsePattern(group.Source.Path),
-                },
+                ],
                 GitTransportMode.SecureOnly,
                 null
             ),

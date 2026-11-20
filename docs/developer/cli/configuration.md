@@ -74,6 +74,13 @@ explicit `false` mean no denial. `LUNAPACK_USER_PROFILE` can select an alternate
 profile root for isolated automation; Luna stores settings beneath that root's
 `.lunapack` directory.
 
+Optional lifecycle script policy in `trust.scripts` controls environment
+warnings and per-hook timeouts, not script authorization. Global-user and
+project-local user policy use
+`<profile>/.lunapack/lifecycle-hook-policy.yml`, leaving `config.yml` unchanged.
+See [Lifecycle hooks and script trust](trust-and-scripts.md#lifecycle-script-policy)
+for the policy fields, defaults, and precedence.
+
 ## CLI preferences
 
 Use `luna config` to set, list, or remove Boolean preferences. Supported keys

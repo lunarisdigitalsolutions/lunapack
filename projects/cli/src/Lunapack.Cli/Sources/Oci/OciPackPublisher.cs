@@ -25,11 +25,19 @@ internal sealed class OciPackPublisher(
     public bool CanPublish(ProjectConfiguration.Source source) =>
         source is ProjectConfiguration.OciSource;
 
-    public async Task<ManifestOperationResult<PackPublicationResult>> PublishAsync(
+    public Task<ManifestOperationResult<PackPublicationResult>> PublishAsync(
         string projectDirectory,
         string packDirectory,
         ProjectConfiguration.Source source,
         CancellationToken cancellationToken
+    ) => PublishAsync(projectDirectory, packDirectory, source, false, cancellationToken);
+
+    public async Task<ManifestOperationResult<PackPublicationResult>> PublishAsync(
+        string projectDirectory,
+        string packDirectory,
+        ProjectConfiguration.Source source,
+        bool allowHiddenCharacters = false,
+        CancellationToken cancellationToken = default
     )
     {
         if (source is not ProjectConfiguration.OciSource ociSource)
@@ -63,6 +71,7 @@ internal sealed class OciPackPublisher(
                 projectDirectory,
                 archivePath,
                 snapshotDirectory,
+                allowHiddenCharacters,
                 cancellationToken
             );
             if (validation.Value is not { } manifest)
@@ -124,6 +133,7 @@ internal sealed class OciPackPublisher(
         string projectDirectory,
         string archivePath,
         string snapshotDirectory,
+        bool allowHiddenCharacters,
         CancellationToken cancellationToken
     )
     {
@@ -175,7 +185,8 @@ internal sealed class OciPackPublisher(
         var externalValidation = await authoringValidationService.ValidateExternalSourcesAsync(
             projectDirectory,
             snapshotDirectory,
-            manifest
+            manifest,
+            allowHiddenCharacters
         );
         return externalValidation.IsSuccess
             ? ManifestOperationResult<PackManifest>.Success(manifest)

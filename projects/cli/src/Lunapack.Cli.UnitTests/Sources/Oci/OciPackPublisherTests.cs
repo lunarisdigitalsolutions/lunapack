@@ -223,7 +223,7 @@ public sealed class OciPackPublisherTests
     }
 
     [Test]
-    public async Task GetAvailableAsync_WhenRepositoryEnumerationIsDenied_QueriesLockedOciReleaseDirectly()
+    public async Task GetAvailableAsync_WhenRepositoryEnumerationIsDenied_FailsClosed()
     {
         var fileSystem = CreateFileSystem();
         var registry = new FakeOciRegistryClient();
@@ -261,11 +261,9 @@ public sealed class OciPackPublisherTests
         await Assert.That(stateSaved.IsSuccess).IsTrue().Because(stateSaved.Error ?? string.Empty);
         await Assert
             .That(availability.IsSuccess)
-            .IsTrue()
+            .IsFalse()
             .Because(availability.Error ?? string.Empty);
-        await Assert
-            .That(availability.RequireValue().Updates.Single().Latest.Manifest.Version)
-            .IsEqualTo("1.1.0");
+        await Assert.That(availability.Error).Contains("discovery is incomplete");
         await Assert.That(ansiConsole.Output).Contains("catalog enumeration");
         await Assert.That(ansiConsole.Output).Contains("incomplete");
     }
@@ -484,17 +482,96 @@ public sealed class OciPackPublisherTests
         await Assert.That(registry.PushedManifestCount).IsEqualTo(0);
     }
 
+    [Test]
+    public async Task PublishAsync_WhenManagedSourceHasHighConfidenceFinding_RequiresOverride()
+    {
+        var fileSystem = CreateFileSystem();
+        fileSystem.File.WriteAllText(
+            fileSystem.Path.Combine(_packDirectory, PackManifestStore.FileName),
+            "id: backend\nversion: 1.0.0\nauthor: Test Author\nlicense: MIT\nmanagedFiles:\n  - source: README.md\n    target: docs/README.md\n"
+        );
+        fileSystem.File.WriteAllBytes(
+            fileSystem.Path.Combine(_packDirectory, "README.md"),
+            [0x73, 0x61, 0x66, 0x65, 0x00, 0xE2, 0x80, 0xAE]
+        );
+        var registry = new FakeOciRegistryClient();
+        var ansiConsole = new Spectre.Console.Testing.TestConsole();
+        ansiConsole.Profile.Width = 500;
+        using var coordinator = CreateCoordinator();
+        var publisher = CreatePublisher(
+            fileSystem,
+            registry,
+            coordinator,
+            console: new CliConsole(ansiConsole, CliLogLevel.Info)
+        );
+
+        var blocked = await publisher.PublishAsync(
+            _projectDirectory,
+            _packDirectory,
+            CreateSource(),
+            CancellationToken.None
+        );
+
+        await Assert.That(blocked.IsSuccess).IsFalse();
+        await Assert.That(blocked.Error).Contains("--allow-hidden-characters");
+        await Assert.That(registry.RequestCalls).IsEqualTo(0);
+        await Assert.That(registry.PushedBlobCount).IsEqualTo(0);
+        await Assert.That(registry.PushedManifestCount).IsEqualTo(0);
+        await Assert.That(ansiConsole.Output).Contains("Hidden Unicode in 'README.md'");
+        await Assert.That(ansiConsole.Output).Contains("U+202E (high-confidence)");
+
+        var allowed = await publisher.PublishAsync(
+            _projectDirectory,
+            _packDirectory,
+            CreateSource(),
+            allowHiddenCharacters: true
+        );
+
+        await Assert.That(allowed.IsSuccess).IsTrue().Because(allowed.Error ?? string.Empty);
+        await Assert.That(registry.PushedBlobCount).IsEqualTo(2);
+        await Assert.That(registry.PushedManifestCount).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task PublishAsync_WhenManagedSourceHasWarningFinding_Continues()
+    {
+        var fileSystem = CreateFileSystem();
+        fileSystem.File.WriteAllText(
+            fileSystem.Path.Combine(_packDirectory, PackManifestStore.FileName),
+            "id: backend\nversion: 1.0.0\nauthor: Test Author\nlicense: MIT\nmanagedFiles:\n  - source: README.md\n    target: docs/README.md\n"
+        );
+        fileSystem.File.WriteAllText(
+            fileSystem.Path.Combine(_packDirectory, "README.md"),
+            "safe\u00ADtext"
+        );
+        var registry = new FakeOciRegistryClient();
+        using var coordinator = CreateCoordinator();
+        var publisher = CreatePublisher(fileSystem, registry, coordinator);
+
+        var result = await publisher.PublishAsync(
+            _projectDirectory,
+            _packDirectory,
+            CreateSource(),
+            CancellationToken.None
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue().Because(result.Error ?? string.Empty);
+        await Assert.That(registry.PushedManifestCount).IsEqualTo(1);
+    }
+
     private static OciPackPublisher CreatePublisher(
         MockFileSystem fileSystem,
         FakeOciRegistryClient registry,
         OciSourceCredentialCoordinator coordinator,
-        IGitProcessRunner? sourceMetadataRunner = null
+        IGitProcessRunner? sourceMetadataRunner = null,
+        CliConsole? console = null
     )
     {
         var gitRunner = new StubGitProcessRunner();
         var gitRefResolver = new GitRefResolver(gitRunner);
         var transportPolicy = TestGitTransportPolicy.Create(fileSystem);
         var authoringValidationService = new PackAuthoringValidationService(
+            fileSystem,
             new ExternalSourceRequirementPlanner(gitRefResolver, transportPolicy),
             new ExternalSourceMaterializer(
                 fileSystem,
@@ -503,7 +580,8 @@ public sealed class OciPackPublisherTests
                 transportPolicy,
                 new NoOpOperationSnapshotSecurity()
             ),
-            new PackInstallationPlanner(fileSystem, new PackTemplateRenderer(fileSystem))
+            new PackInstallationPlanner(fileSystem, new PackTemplateRenderer(fileSystem)),
+            console ?? TestConsole.Create()
         );
         return new OciPackPublisher(
             fileSystem,
@@ -600,7 +678,8 @@ public sealed class OciPackPublisherTests
             new PackUpdateTransaction(fileSystem, console),
             stateStore,
             console,
-            TestGitTransportPolicy.Create(fileSystem)
+            TestGitTransportPolicy.Create(fileSystem),
+            new LifecycleHookPolicyStore(fileSystem, @"C:\profile\.lunapack")
         );
 
     private static OciSourceCredentialCoordinator CreateCoordinator(

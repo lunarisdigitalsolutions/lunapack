@@ -6,6 +6,7 @@ using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Application.Paths;
 using Lunapack.Cli.Catalog;
+using Lunapack.Cli.Packs.ContentScreening;
 using Lunapack.Cli.Packs.ExternalSources;
 using Lunapack.Cli.Packs.Instructions;
 using Lunapack.Cli.Packs.Lifecycle;
@@ -28,6 +29,7 @@ internal sealed class PackLifecycleService(
     IProjectStateStore projectStateStore,
     CliConsole console,
     GitTransportPolicy transportPolicy,
+    LifecycleHookPolicyStore configuredHookPolicyStore,
     GitPackMaterializer? configuredGitPackMaterializer = null,
     LifecycleHookPlanner? configuredHookPlanner = null,
     LifecycleHookAuthorizer? configuredHookAuthorizer = null,
@@ -49,6 +51,7 @@ internal sealed class PackLifecycleService(
     private readonly CliConsole _console = console;
     private readonly ConfiguredSourceIgnoreService? _sourceIgnoreService =
         configuredSourceIgnoreService;
+    private readonly LifecycleHookPolicyStore _hookPolicyStore = configuredHookPolicyStore;
     private readonly LifecycleHookPlanner _hookPlanner = configuredHookPlanner ?? new(fileSystem);
     private readonly LifecycleHookAuthorizer _hookAuthorizer =
         configuredHookAuthorizer
@@ -87,7 +90,8 @@ internal sealed class PackLifecycleService(
         PackInstallationRequest installationRequest,
         Action<TimeSpan>? onManagedFileChangesApplied = null,
         Action<PackUpdatePlan>? onUpdateApplied = null,
-        Action<PackSourceSelection>? onSourceSelected = null
+        Action<PackSourceSelection>? onSourceSelected = null,
+        CancellationToken cancellationToken = default
     )
     {
         _console.Info($"Installing pack '{installationRequest.PackReference.Id}'.");
@@ -103,6 +107,15 @@ internal sealed class PackLifecycleService(
         await using (preparedInstallation.Materialization)
         await using (preparedInstallation.ExternalMaterialization)
         {
+            var screening = ScreenPlannedContent(
+                preparedInstallation.UpdatePlan,
+                installationRequest.AllowHiddenCharacters
+            );
+            if (!screening.IsSuccess)
+            {
+                return _console.Fail(screening.Error);
+            }
+
             var hooks = await AuthorizeHooksAsync(
                 projectDirectory,
                 preparedInstallation.State,
@@ -127,7 +140,8 @@ internal sealed class PackLifecycleService(
                 preserveExistingLock: true,
                 authorizedHooks,
                 onManagedFileChangesApplied,
-                onUpdateApplied
+                onUpdateApplied,
+                cancellationToken
             );
             if (exitCode == 0 && preparedInstallation.SourceSelection is { } sourceSelection)
             {
@@ -160,6 +174,17 @@ internal sealed class PackLifecycleService(
         await using (preparedInstallation.Materialization)
         await using (preparedInstallation.ExternalMaterialization)
         {
+            var screening = ScreenPlannedContent(
+                preparedInstallation.UpdatePlan,
+                installationRequest.AllowHiddenCharacters
+            );
+            if (!screening.IsSuccess)
+            {
+                return ManifestOperationResult<PackInstallDryRunResult>.Failure(
+                    screening.Error ?? PackContentScreeningPolicy.BlockingMessage
+                );
+            }
+
             var lifecycle = await CreateDryRunLifecyclePlanAsync(
                 projectDirectory,
                 preparedInstallation.State,
@@ -822,7 +847,8 @@ internal sealed class PackLifecycleService(
         string projectDirectory,
         IReadOnlyList<ProjectConfiguration.RequestedPack> selectedRequestedRoots,
         PackInstallationRequest updateRequest,
-        Action<PackUpdatePlan>? onUpdateApplied = null
+        Action<PackUpdatePlan>? onUpdateApplied = null,
+        CancellationToken cancellationToken = default
     )
     {
         var preparation = await PrepareUpdateAsync(
@@ -842,6 +868,15 @@ internal sealed class PackLifecycleService(
         await using (preparedUpdate.Materialization)
         await using (preparedUpdate.ExternalMaterialization)
         {
+            var screening = ScreenPlannedContent(
+                preparedUpdate.UpdatePlan,
+                updateRequest.AllowHiddenCharacters
+            );
+            if (!screening.IsSuccess)
+            {
+                return _console.Fail(screening.Error);
+            }
+
             var hooks = await AuthorizeHooksAsync(
                 projectDirectory,
                 preparedUpdate.State,
@@ -864,7 +899,8 @@ internal sealed class PackLifecycleService(
                 preparedUpdate.UpdatePlan,
                 projectDirectory,
                 authorizedHooks: authorizedHooks,
-                onUpdateApplied: onUpdateApplied
+                onUpdateApplied: onUpdateApplied,
+                cancellationToken: cancellationToken
             );
         }
     }
@@ -966,6 +1002,17 @@ internal sealed class PackLifecycleService(
         await using (preparedUpdate.Materialization)
         await using (preparedUpdate.ExternalMaterialization)
         {
+            var screening = ScreenPlannedContent(
+                preparedUpdate.UpdatePlan,
+                updateRequest.AllowHiddenCharacters
+            );
+            if (!screening.IsSuccess)
+            {
+                return ManifestOperationResult<PackUpdatePlan>.Failure(
+                    screening.Error ?? PackContentScreeningPolicy.BlockingMessage
+                );
+            }
+
             var lifecycle = await CreateDryRunLifecyclePlanAsync(
                 projectDirectory,
                 preparedUpdate.State,
@@ -1279,7 +1326,8 @@ internal sealed class PackLifecycleService(
 
         var collision = ManagedRootInventory.FindCrossRootCollision(
             ManagedRootInventory.FromInstallationPlan(preparedSources.Graph, plan),
-            preparedGraph.State.LockFile
+            preparedGraph.State.LockFile,
+            fileSystem
         );
         return collision is null
             ? ManifestOperationResult<PackInstallationPlan>.Success(plan)
@@ -1302,6 +1350,43 @@ internal sealed class PackLifecycleService(
         {
             _console.Info(ManagedFileRemappingFormatter.Format(remapping));
         }
+    }
+
+    private ManifestOperationResult<bool> ScreenPlannedContent(
+        PackUpdatePlan updatePlan,
+        bool allowHiddenCharacters
+    )
+    {
+        var scans = updatePlan
+            .Actions.Where(action =>
+                action.ResultingContents is not null && action is not SkipManagedFileUpdateAction
+            )
+            .GroupBy(action => action.TargetPathRelativeToProject, StringComparer.Ordinal)
+            .Select(group => group.Last())
+            .Select(action =>
+                action.ResultingContents is { } contents
+                    ? PackContentScanner.Scan(action.TargetPathRelativeToProject, contents)
+                    : new PackContentScanResult([], 0, false)
+            )
+            .ToList();
+        var findings = scans.SelectMany(scan => scan.Findings);
+        foreach (var finding in findings)
+        {
+            _console.Warning(PackContentDiagnosticFormatter.Format(finding));
+        }
+
+        var omittedFindingCount = scans.Sum(scan => scan.OmittedFindingCount);
+        if (omittedFindingCount > 0)
+        {
+            _console.Warning(PackContentDiagnosticFormatter.FormatOmitted(omittedFindingCount));
+        }
+
+        return PackContentScreeningPolicy.Blocks(
+            scans.Any(scan => scan.HasHighConfidenceFinding),
+            allowHiddenCharacters
+        )
+            ? ManifestOperationResult<bool>.Failure(PackContentScreeningPolicy.BlockingMessage)
+            : ManifestOperationResult<bool>.Success(true);
     }
 
     private async Task<ManifestOperationResult<PreparedPackUpdate>> PrepareUpdateAsync(
@@ -1432,7 +1517,12 @@ internal sealed class PackLifecycleService(
             );
         }
 
-        var updatePlan = updatePlanner.Plan(projectDirectory, preparedGraph.State.LockFile, plan);
+        var updatePlan = updatePlanner.Plan(
+            projectDirectory,
+            preparedGraph.State.LockFile,
+            plan,
+            removeModified: planningRequest.RemoveModified
+        );
         if (updatePlan.Value is not { } plannedUpdate)
         {
             return ManifestOperationResult<PreparedPackUpdate>.Failure(
@@ -1505,7 +1595,8 @@ internal sealed class PackLifecycleService(
     public async Task<int> UninstallAsync(
         string projectDirectory,
         PackInstallationRequest hookRequest,
-        Action<TimeSpan>? onManagedFileChangesApplied = null
+        Action<TimeSpan>? onManagedFileChangesApplied = null,
+        CancellationToken cancellationToken = default
     )
     {
         var packReference = hookRequest.PackReference;
@@ -1533,7 +1624,8 @@ internal sealed class PackLifecycleService(
             state,
             hookRequest,
             prepared,
-            onManagedFileChangesApplied
+            onManagedFileChangesApplied,
+            cancellationToken
         );
         if (exitCode == 0)
         {
@@ -1638,7 +1730,8 @@ internal sealed class PackLifecycleService(
         ProjectState state,
         PackInstallationRequest hookRequest,
         PreparedUninstall prepared,
-        Action<TimeSpan>? onManagedFileChangesApplied
+        Action<TimeSpan>? onManagedFileChangesApplied,
+        CancellationToken cancellationToken
     )
     {
         var materialization = await TryMaterializeUninstallGraphAsync(
@@ -1654,7 +1747,8 @@ internal sealed class PackLifecycleService(
                 prepared.ManagedFilesToRemove,
                 projectDirectory,
                 null,
-                onManagedFileChangesApplied
+                onManagedFileChangesApplied,
+                cancellationToken
             );
         }
 
@@ -1666,7 +1760,8 @@ internal sealed class PackLifecycleService(
                 hookRequest,
                 prepared,
                 materialization,
-                onManagedFileChangesApplied
+                onManagedFileChangesApplied,
+                cancellationToken
             );
         }
     }
@@ -1677,7 +1772,8 @@ internal sealed class PackLifecycleService(
         PackInstallationRequest hookRequest,
         PreparedUninstall prepared,
         GitPackMaterialization materialization,
-        Action<TimeSpan>? onManagedFileChangesApplied
+        Action<TimeSpan>? onManagedFileChangesApplied,
+        CancellationToken cancellationToken
     )
     {
         var removedPackIds = prepared
@@ -1696,7 +1792,8 @@ internal sealed class PackLifecycleService(
                 prepared.ManagedFilesToRemove,
                 projectDirectory,
                 null,
-                onManagedFileChangesApplied
+                onManagedFileChangesApplied,
+                cancellationToken
             );
         }
 
@@ -1732,7 +1829,8 @@ internal sealed class PackLifecycleService(
             prepared.ManagedFilesToRemove,
             projectDirectory,
             authorizedHooks,
-            onManagedFileChangesApplied
+            onManagedFileChangesApplied,
+            cancellationToken
         );
     }
 
@@ -1856,18 +1954,22 @@ internal sealed class PackLifecycleService(
         bool preserveExistingLock = false,
         AuthorizedLifecycleHooks? authorizedHooks = null,
         Action<TimeSpan>? onManagedFileChangesApplied = null,
-        Action<PackUpdatePlan>? onUpdateApplied = null
+        Action<PackUpdatePlan>? onUpdateApplied = null,
+        CancellationToken cancellationToken = default
     )
     {
         var manifestSnapshot = CreateManifestSnapshot(projectDirectory);
         var preExecution = await ExecuteHooksAsync(
             projectDirectory,
+            nextConfiguration,
             authorizedHooks?.PreMutation ?? [],
             manifestSnapshot,
-            authorizedHooks?.ScriptsSkipped is true
+            authorizedHooks?.ScriptsSkipped is true,
+            cancellationToken
         );
         if (!preExecution.IsSuccess)
         {
+            RestoreManifestSnapshot(projectDirectory, manifestSnapshot);
             return _console.Fail(preExecution.Error);
         }
 
@@ -1893,10 +1995,15 @@ internal sealed class PackLifecycleService(
                 updatePlan,
                 projectDirectory,
                 preserveExistingLock,
-                authorizedHooks
+                authorizedHooks,
+                cancellationToken
             );
             isCheckpointPersisted = IsCheckpointPersisted;
             isPersisted = IsPersisted;
+            if (ExitCode == 0)
+            {
+                WritePreservedTargetWarnings(updatePlan);
+            }
             return ExitCode;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
@@ -1919,8 +2026,19 @@ internal sealed class PackLifecycleService(
                     }
                 }
 
+                RestoreManifestSnapshot(projectDirectory, manifestSnapshot);
                 rollback.Restore();
             }
+        }
+    }
+
+    private void WritePreservedTargetWarnings(PackUpdatePlan updatePlan)
+    {
+        foreach (var action in updatePlan.Actions.OfType<PreserveManagedFileUpdateAction>())
+        {
+            _console.Warning(
+                $"Preserved locally modified target '{action.TargetPathRelativeToProject}'; it is no longer managed by LunaPack."
+            );
         }
     }
 
@@ -1936,10 +2054,11 @@ internal sealed class PackLifecycleService(
         PackUpdatePlan updatePlan,
         string projectDirectory,
         bool preserveExistingLock,
-        AuthorizedLifecycleHooks? authorizedHooks
+        AuthorizedLifecycleHooks? authorizedHooks,
+        CancellationToken cancellationToken
     )
     {
-        var resultingContents = CreateResultingContents(updatePlan);
+        var resultingContents = CreateResultingContents(projectDirectory, updatePlan);
         var updatedLockFile = CreateLockFile(
             nextConfiguration,
             graph,
@@ -1969,9 +2088,11 @@ internal sealed class PackLifecycleService(
 
         var postExecution = await ExecuteHooksAsync(
             projectDirectory,
+            nextConfiguration,
             authorizedHooks?.PostMutation ?? [],
             CreateManifestSnapshot(projectDirectory),
-            authorizedHooks?.ScriptsSkipped is true
+            authorizedHooks?.ScriptsSkipped is true,
+            cancellationToken
         );
         if (!postExecution.IsSuccess)
         {
@@ -2142,67 +2263,68 @@ internal sealed class PackLifecycleService(
         );
     }
 
-    private async Task<ManifestOperationResult<bool>> ExecuteHooksAsync(
+    private async Task<LifecycleHookExecutionResult> ExecuteHooksAsync(
         string projectDirectory,
+        ProjectConfiguration configuration,
         IReadOnlyList<AuthorizedLifecycleHook> hooks,
         ManifestSnapshot manifestSnapshot,
-        bool scriptsSkipped
+        bool scriptsSkipped,
+        CancellationToken cancellationToken
     )
     {
         var previousStates =
             new Dictionary<(string PackId, LifecycleHook Hook), LifecycleScriptState>();
+        EffectiveLifecycleHookPolicy? effectivePolicy = null;
         foreach (var hook in hooks)
         {
             var key = (hook.Invocation.Pack.Manifest.Id, hook.Invocation.Hook);
-            if (hook.Invocation.PlannedPreviousScriptState is { } plannedState)
+            if (!ShouldExecuteHook(hook, key, previousStates, scriptsSkipped))
             {
-                previousStates[key] = plannedState;
+                continue;
             }
 
-            var previousState = previousStates.GetValueOrDefault(key, LifecycleScriptState.None);
-            if (
-                hook.Invocation.RuntimeCondition is { } condition
-                && !condition.Evaluate(
-                    hook.Invocation.ParameterValues
-                        ?? new Dictionary<string, ResolvedPackParameterValue>(
-                            StringComparer.Ordinal
-                        ),
-                    new(scriptsSkipped, previousState)
-                )
-            )
+            if (hook.Script is not null && effectivePolicy is null)
             {
-                if (hook.Invocation.IsScript)
+                var policy = await ResolveLifecycleHookPolicyAsync(projectDirectory, configuration);
+                if (policy.Value is not { } resolvedPolicy)
                 {
-                    previousStates[key] = LifecycleScriptState.Ignored;
+                    return LifecycleHookExecutionResult.Failure(
+                        policy.Error ?? "Unable to resolve lifecycle hook policy."
+                    );
                 }
 
-                continue;
+                effectivePolicy = resolvedPolicy;
             }
 
-            if (hook.Invocation.IsScript && hook.Script is null)
-            {
-                previousStates[key] = LifecycleScriptState.Skipped;
-                continue;
-            }
-
-            var execution = await DispatchHookAsync(projectDirectory, hook);
+            var execution = await DispatchHookAsync(
+                projectDirectory,
+                hook,
+                effectivePolicy,
+                cancellationToken
+            );
             var integrity = VerifyManifestSnapshot(manifestSnapshot);
             if (!integrity.IsSuccess)
             {
-                return integrity;
+                if (!execution.IsSuccess)
+                {
+                    return execution.WithAdditionalError(
+                        integrity.Error ?? "Lifecycle hook changed project configuration."
+                    );
+                }
+
+                return LifecycleHookExecutionResult.Failure(
+                    integrity.Error ?? "Lifecycle hook changed project configuration."
+                );
             }
 
             if (!execution.IsSuccess)
             {
                 if (hook.Invocation.IsScript)
                 {
-                    previousStates[key] = execution.Error?.Contains(
-                        "canceled",
-                        StringComparison.OrdinalIgnoreCase
-                    )
-                        is true
-                        ? LifecycleScriptState.Cancelled
-                        : LifecycleScriptState.Failed;
+                    previousStates[key] =
+                        execution.Outcome == LifecycleHookOutcome.Cancelled
+                            ? LifecycleScriptState.Cancelled
+                            : LifecycleScriptState.Failed;
                 }
 
                 return execution;
@@ -2214,36 +2336,124 @@ internal sealed class PackLifecycleService(
             }
         }
 
-        return ManifestOperationResult<bool>.Success(true);
+        return LifecycleHookExecutionResult.Success();
     }
 
-    private async Task<ManifestOperationResult<bool>> DispatchHookAsync(
+    private static bool ShouldExecuteHook(
+        AuthorizedLifecycleHook hook,
+        (string PackId, LifecycleHook Hook) key,
+        Dictionary<(string PackId, LifecycleHook Hook), LifecycleScriptState> previousStates,
+        bool scriptsSkipped
+    )
+    {
+        if (hook.Invocation.PlannedPreviousScriptState is { } plannedState)
+        {
+            previousStates[key] = plannedState;
+        }
+
+        var previousState = previousStates.GetValueOrDefault(key, LifecycleScriptState.None);
+        if (
+            hook.Invocation.RuntimeCondition is { } condition
+            && !condition.Evaluate(
+                hook.Invocation.ParameterValues
+                    ?? new Dictionary<string, ResolvedPackParameterValue>(StringComparer.Ordinal),
+                new(scriptsSkipped, previousState)
+            )
+        )
+        {
+            if (hook.Invocation.IsScript)
+            {
+                previousStates[key] = LifecycleScriptState.Ignored;
+            }
+
+            return false;
+        }
+
+        if (hook.Invocation.IsScript && hook.Script is null)
+        {
+            previousStates[key] = LifecycleScriptState.Skipped;
+            return false;
+        }
+
+        return true;
+    }
+
+    private async Task<
+        ManifestOperationResult<EffectiveLifecycleHookPolicy>
+    > ResolveLifecycleHookPolicyAsync(string projectDirectory, ProjectConfiguration configuration)
+    {
+        var loadedSettings = await _hookPolicyStore.LoadAsync();
+        if (loadedSettings.Value is not { } settings)
+        {
+            return ManifestOperationResult<EffectiveLifecycleHookPolicy>.Failure(
+                loadedSettings.Error ?? "Unable to load lifecycle hook policy."
+            );
+        }
+
+        var projectKey = CanonicalProjectPath.Resolve(fileSystem, projectDirectory);
+        if (projectKey.Value is not { } canonicalProjectKey)
+        {
+            return ManifestOperationResult<EffectiveLifecycleHookPolicy>.Failure(
+                projectKey.Error ?? "Unable to resolve the project path for lifecycle hook policy."
+            );
+        }
+
+        settings.Projects.TryGetValue(canonicalProjectKey, out var localProjectPolicy);
+        return ManifestOperationResult<EffectiveLifecycleHookPolicy>.Success(
+            LifecycleHookPolicyResolver.Resolve(
+                configuration.Trust.Scripts,
+                localProjectPolicy,
+                settings.Global
+            )
+        );
+    }
+
+    private async Task<LifecycleHookExecutionResult> DispatchHookAsync(
         string projectDirectory,
-        AuthorizedLifecycleHook hook
+        AuthorizedLifecycleHook hook,
+        EffectiveLifecycleHookPolicy? effectivePolicy,
+        CancellationToken cancellationToken
     )
     {
         if (hook.Script is { } script)
         {
-            return await _hookExecutor.ExecuteAsync(projectDirectory, script);
+            if (effectivePolicy is null)
+            {
+                return LifecycleHookExecutionResult.Failure(
+                    "Lifecycle hook execution policy was not prepared."
+                );
+            }
+
+            return await _hookExecutor.ExecuteAsync(
+                projectDirectory,
+                script,
+                effectivePolicy,
+                cancellationToken
+            );
         }
 
         if (hook.Invocation.Instruction is not { } instruction)
         {
-            return ManifestOperationResult<bool>.Failure("Lifecycle instruction was not prepared.");
+            return LifecycleHookExecutionResult.Failure("Lifecycle instruction was not prepared.");
         }
 
         var verified = instruction.PackedFile.Verify(fileSystem);
         if (!verified.IsSuccess)
         {
-            return ManifestOperationResult<bool>.Failure(
+            return LifecycleHookExecutionResult.Failure(
                 verified.Error ?? "Packed lifecycle instruction integrity verification failed."
             );
         }
 
-        return new InstructionPresenter(_console).Present(
+        var result = new InstructionPresenter(_console).Present(
             hook.Invocation.Pack.Manifest.Id,
             instruction
         );
+        return result.IsSuccess
+            ? LifecycleHookExecutionResult.Success()
+            : LifecycleHookExecutionResult.Failure(
+                result.Error ?? "Unable to present lifecycle instruction."
+            );
     }
 
     private ManifestSnapshot CreateManifestSnapshot(string projectDirectory)
@@ -2279,14 +2489,49 @@ internal sealed class PackLifecycleService(
         );
     }
 
-    private static Dictionary<string, byte[]> CreateResultingContents(PackUpdatePlan updatePlan)
+    private void RestoreManifestSnapshot(string projectDirectory, ManifestSnapshot snapshot)
     {
-        var resultingContents = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        try
+        {
+            ProjectMutationPathSecurity.ReplaceFile(
+                fileSystem,
+                projectDirectory,
+                snapshot.Path,
+                snapshot.Contents
+            );
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            _console.Error($"Unable to restore lunapack.yml: {exception.Message}");
+        }
+    }
+
+    private Dictionary<string, byte[]> CreateResultingContents(
+        string projectDirectory,
+        PackUpdatePlan updatePlan
+    )
+    {
+        var resultingContents = new Dictionary<string, byte[]>(
+            ProjectPath.ProjectRelativePathComparer(fileSystem)
+        );
         foreach (var action in updatePlan.Actions)
         {
             if (action.ResultingContents is { } contents)
             {
-                resultingContents[action.TargetPathRelativeToProject] = contents;
+                var normalized = ProjectPath.NormalizeProjectRelativePath(
+                    fileSystem,
+                    projectDirectory,
+                    action.TargetPathRelativeToProject
+                );
+                if (normalized.Value is not { } targetPath)
+                {
+                    throw new InvalidOperationException(
+                        normalized.Error
+                            ?? $"Invalid planned managed target '{action.TargetPathRelativeToProject}'."
+                    );
+                }
+
+                resultingContents[targetPath] = contents;
             }
         }
 
@@ -2321,17 +2566,22 @@ internal sealed class PackLifecycleService(
         IReadOnlyList<ManagedFileRemoval> managedFilesToRemove,
         string projectDirectory,
         AuthorizedLifecycleHooks? authorizedHooks,
-        Action<TimeSpan>? onManagedFileChangesApplied
+        Action<TimeSpan>? onManagedFileChangesApplied,
+        CancellationToken cancellationToken
     )
     {
+        var manifestSnapshot = CreateManifestSnapshot(projectDirectory);
         var preExecution = await ExecuteHooksAsync(
             projectDirectory,
+            previousState.Configuration,
             authorizedHooks?.PreMutation ?? [],
-            CreateManifestSnapshot(projectDirectory),
-            authorizedHooks?.ScriptsSkipped is true
+            manifestSnapshot,
+            authorizedHooks?.ScriptsSkipped is true,
+            cancellationToken
         );
         if (!preExecution.IsSuccess)
         {
+            RestoreManifestSnapshot(projectDirectory, manifestSnapshot);
             return _console.Fail(preExecution.Error);
         }
 
@@ -2346,7 +2596,8 @@ internal sealed class PackLifecycleService(
                 authorizedHooks,
                 snapshots,
                 transaction,
-                onManagedFileChangesApplied
+                onManagedFileChangesApplied,
+                cancellationToken
             );
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
@@ -2359,7 +2610,8 @@ internal sealed class PackLifecycleService(
                 projectDirectory,
                 previousState,
                 snapshots,
-                transaction
+                transaction,
+                manifestSnapshot
             );
         }
     }
@@ -2371,7 +2623,8 @@ internal sealed class PackLifecycleService(
         AuthorizedLifecycleHooks? authorizedHooks,
         ICollection<ManagedFileSnapshot> snapshots,
         UninstallTransactionState transaction,
-        Action<TimeSpan>? onManagedFileChangesApplied
+        Action<TimeSpan>? onManagedFileChangesApplied,
+        CancellationToken cancellationToken
     )
     {
         var mutationStartedAt = Stopwatch.GetTimestamp();
@@ -2399,9 +2652,11 @@ internal sealed class PackLifecycleService(
         transaction.IsCheckpointPersisted = true;
         var postExecution = await ExecuteHooksAsync(
             projectDirectory,
+            nextState.Configuration,
             authorizedHooks?.PostMutation ?? [],
             CreateManifestSnapshot(projectDirectory),
-            authorizedHooks?.ScriptsSkipped is true
+            authorizedHooks?.ScriptsSkipped is true,
+            cancellationToken
         );
         if (!postExecution.IsSuccess)
         {
@@ -2444,7 +2699,8 @@ internal sealed class PackLifecycleService(
         string projectDirectory,
         ProjectState previousState,
         IReadOnlyList<ManagedFileSnapshot> snapshots,
-        UninstallTransactionState transaction
+        UninstallTransactionState transaction,
+        ManifestSnapshot manifestSnapshot
     )
     {
         if (transaction.IsPersisted)
@@ -2467,6 +2723,7 @@ internal sealed class PackLifecycleService(
             }
         }
 
+        RestoreManifestSnapshot(projectDirectory, manifestSnapshot);
         RestoreManagedFiles(projectDirectory, snapshots);
     }
 
@@ -2640,13 +2897,20 @@ internal sealed class PackLifecycleService(
             .. installationPlan
                 .ManagedFiles.Where(managedFile => IsSamePack(managedFile.Pack, pack))
                 .Select(managedFile =>
-                    CreateLockManagedFile(pack, managedFile, previousLockFile, resultingContents)
+                    CreateLockManagedFile(
+                        pack,
+                        managedFile,
+                        installationPlan,
+                        previousLockFile,
+                        resultingContents
+                    )
                 ),
         ];
 
     private static ProjectLockFile.ManagedFile CreateLockManagedFile(
         DiscoveredPack pack,
         PlannedManagedFile managedFile,
+        PackInstallationPlan installationPlan,
         ProjectLockFile previousLockFile,
         IReadOnlyDictionary<string, byte[]>? resultingContents
     )
@@ -2660,8 +2924,23 @@ internal sealed class PackLifecycleService(
                     StringComparison.Ordinal
                 )
             );
+        var commandRemapping = installationPlan.Remappings.Any(remapping =>
+            remapping.Origin == ManagedFileRemappingOrigin.Command
+            && string.Equals(
+                remapping.PackId,
+                managedFile.Pack.Manifest.Id,
+                StringComparison.Ordinal
+            )
+            && string.Equals(
+                ProjectPath.Normalize(remapping.DeclaredTarget),
+                ProjectPath.Normalize(managedFile.DeclaredTargetPath),
+                StringComparison.Ordinal
+            )
+        );
         var effectiveTargetPath =
-            previousManagedFile?.TargetPath ?? managedFile.TargetPathRelativeToProject;
+            !commandRemapping && previousManagedFile is not null
+                ? previousManagedFile.TargetPath
+                : managedFile.TargetPathRelativeToProject;
 
         return new ProjectLockFile.ManagedFile
         {
@@ -2913,19 +3192,15 @@ internal sealed class PackLifecycleService(
         return lines;
     }
 
-    private static void UpdateManagedFileHash(
-        ProjectLockFile lockFile,
-        string targetPath,
-        byte[] contents
-    )
+    private void UpdateManagedFileHash(ProjectLockFile lockFile, string targetPath, byte[] contents)
     {
         var normalizedTargetPath = ProjectPath.Normalize(targetPath);
+        var pathComparer = ProjectPath.ProjectRelativePathComparer(fileSystem);
         foreach (var managedFile in lockFile.Packs.SelectMany(pack => pack.ManagedFiles))
         {
-            var isMatchingTarget = string.Equals(
+            var isMatchingTarget = pathComparer.Equals(
                 ProjectPath.Normalize(managedFile.TargetPath),
-                normalizedTargetPath,
-                StringComparison.Ordinal
+                normalizedTargetPath
             );
             if (isMatchingTarget)
             {

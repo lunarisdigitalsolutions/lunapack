@@ -1,3 +1,4 @@
+using Lunapack.Cli.Packs.ManagedFiles;
 using Lunapack.Cli.Project;
 
 namespace Lunapack.Cli.Audit;
@@ -32,4 +33,23 @@ internal static class AuditOutputFormatter
 
     public static string Format(AuditReport.ExternalFile file) =>
         $"external file: {file.PackId}@{file.PackVersion} alias={file.Alias} workspace={file.WorkspaceSourceName} fingerprint={file.Fingerprint} ref={file.Ref} commit={file.ResolvedCommit} source={file.SourcePath} target={file.TargetPath} sha256={file.Sha256} status={file.Status}";
+
+    public static string Format(ManagedRootOwner owner) =>
+        owner.Kind switch
+        {
+            ManagedRootKind.Pack => owner.Version is null
+                ? $"pack '{owner.Name}'"
+                : $"pack '{owner.Name}@{owner.Version}'",
+            ManagedRootKind.Link => $"link '{owner.Name}'",
+            _ => throw new ArgumentOutOfRangeException(nameof(owner)),
+        };
+
+    public static string Format(ManagedFileIntegrityStatus status) =>
+        status switch
+        {
+            ManagedFileIntegrityStatus.Current => "current",
+            ManagedFileIntegrityStatus.Missing => "missing",
+            ManagedFileIntegrityStatus.Modified => "modified",
+            _ => throw new ArgumentOutOfRangeException(nameof(status)),
+        };
 }

@@ -14,5 +14,9 @@ internal sealed record PackUpdateOptions
 
     public bool SaveRemapping { get; init; }
 
+    public bool RemoveModified { get; init; }
+
+    public bool AllowHiddenCharacters { get; init; }
+
     public bool HasRemappings => DirectoryRemappings.Count > 0 || FileRemappings.Count > 0;
 }
