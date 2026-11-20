@@ -5,7 +5,7 @@ decision-makers:
   - Lunaris Engineering
 ---
 
-# ADR-0099: Confine Managed-File Audit Reads
+# ADR-0100: Confine Managed-File Audit Reads
 
 ## Context and Problem Statement
 
@@ -78,4 +78,4 @@ The audit design and public command reference describe the confinement rule.
 ## More Information
 
 ADR-0071 records the existing residual race and future handle-relative
-hardening. ADR-0098 defines the strict-audit exit-code contract.
+hardening. ADR-0099 defines the strict-audit exit-code contract.

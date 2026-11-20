@@ -63,29 +63,31 @@ internal sealed class InstallPackCommandHandler(
             skipInstructionsOption,
             allowHiddenCharactersOption,
         };
-        command.SetAction(parseResult =>
-            ExecuteCommandAsync(
-                projectDirectory,
-                workspaceOption,
-                parseResult,
-                packReferenceArgument,
-                destinationOption,
-                remapDirectoryOption,
-                remapFileOption,
-                saveRemapOption,
-                adoptExistingOption,
-                dryRunOption,
-                noFileChangeOutputOption,
-                acceptSourcesOption,
-                parameterOption,
-                promptParametersOption,
-                skipParametersOption,
-                noVariablesOption,
-                skipVariableOption,
-                scriptsOption,
-                skipInstructionsOption,
-                allowHiddenCharactersOption
-            )
+        command.SetAction(
+            (parseResult, cancellationToken) =>
+                ExecuteCommandAsync(
+                    projectDirectory,
+                    workspaceOption,
+                    parseResult,
+                    packReferenceArgument,
+                    destinationOption,
+                    remapDirectoryOption,
+                    remapFileOption,
+                    saveRemapOption,
+                    adoptExistingOption,
+                    dryRunOption,
+                    noFileChangeOutputOption,
+                    acceptSourcesOption,
+                    parameterOption,
+                    promptParametersOption,
+                    skipParametersOption,
+                    noVariablesOption,
+                    skipVariableOption,
+                    scriptsOption,
+                    skipInstructionsOption,
+                    allowHiddenCharactersOption,
+                    cancellationToken
+                )
         );
 
         return command;
@@ -111,7 +113,8 @@ internal sealed class InstallPackCommandHandler(
         Option<string[]> skipVariableOption,
         Option<string?> scriptsOption,
         Option<bool> skipInstructionsOption,
-        Option<bool> allowHiddenCharactersOption
+        Option<bool> allowHiddenCharactersOption,
+        CancellationToken cancellationToken
     )
     {
         var packReferences = parseResult.GetValue(packReferenceArgument) ?? [];
@@ -163,7 +166,8 @@ internal sealed class InstallPackCommandHandler(
                 parseResult.GetValue(noFileChangeOutputOption),
                 parseResult.GetValue(acceptSourcesOption),
                 parseResult.GetValue(allowHiddenCharactersOption),
-                skipInstalledRoots: packReferences.Length > 1
+                skipInstalledRoots: packReferences.Length > 1,
+                cancellationToken: cancellationToken
             );
             if (exitCode != 0)
             {
@@ -267,7 +271,8 @@ internal sealed class InstallPackCommandHandler(
     {
         var option = new Option<string?>("--scripts")
         {
-            Description = "Lifecycle script mode: prompt, run, or skip.",
+            Description =
+                "Lifecycle script mode: prompt, run, or skip. Authorized hooks warn on inherited environment names and have per-hook timeouts.",
         };
         option.CompletionSources.Add("prompt", "run", "skip");
         return option;
@@ -300,7 +305,8 @@ internal sealed class InstallPackCommandHandler(
         bool noFileChangeOutput,
         bool acceptSources,
         bool allowHiddenCharacters,
-        bool skipInstalledRoots
+        bool skipInstalledRoots,
+        CancellationToken cancellationToken
     )
     {
         var prerequisiteFailure = await prerequisiteGuard.RequireSourcesAsync(workspaceDirectory);
@@ -350,7 +356,8 @@ internal sealed class InstallPackCommandHandler(
             noFileChangeOutput,
             acceptSources,
             allowHiddenCharacters,
-            skipInstalledRoots
+            skipInstalledRoots,
+            cancellationToken
         );
     }
 
@@ -400,7 +407,8 @@ internal sealed class InstallPackCommandHandler(
         bool noFileChangeOutput,
         bool acceptSources,
         bool allowHiddenCharacters,
-        bool skipInstalledRoots
+        bool skipInstalledRoots,
+        CancellationToken cancellationToken
     )
     {
         var installationRequest = CreateInstallationRequest(
@@ -433,7 +441,8 @@ internal sealed class InstallPackCommandHandler(
             dryRun,
             noFileChangeOutput,
             skipInstalledRoots,
-            promptParameters
+            promptParameters,
+            cancellationToken
         );
     }
 
@@ -453,7 +462,8 @@ internal sealed class InstallPackCommandHandler(
         bool dryRun,
         bool noFileChangeOutput,
         bool skipInstalledRoots,
-        bool promptParameters
+        bool promptParameters,
+        CancellationToken cancellationToken
     )
     {
         var skippedInstall = await WarnWhenRootAlreadyInstalledAsync(
@@ -492,13 +502,19 @@ internal sealed class InstallPackCommandHandler(
         request = request with { ParameterValues = parameters };
         return dryRun
             ? await PreviewInstallAsync(workspaceDirectory, request)
-            : await ExecuteInstallAsync(workspaceDirectory, request, noFileChangeOutput);
+            : await ExecuteInstallAsync(
+                workspaceDirectory,
+                request,
+                noFileChangeOutput,
+                cancellationToken
+            );
     }
 
     private async Task<int> ExecuteInstallAsync(
         string workspaceDirectory,
         PackInstallationRequest request,
-        bool noFileChangeOutput
+        bool noFileChangeOutput,
+        CancellationToken cancellationToken
     )
     {
         TimeSpan? managedFileChangesDuration = null;
@@ -511,7 +527,8 @@ internal sealed class InstallPackCommandHandler(
                     request,
                     duration => managedFileChangesDuration = duration,
                     plan => appliedPlan = plan,
-                    selection => sourceSelection = selection
+                    selection => sourceSelection = selection,
+                    cancellationToken: cancellationToken
                 )
                 : await console.RunWithStatusAsync(
                     $"Installing {request.PackReference.Id}...",
@@ -521,7 +538,8 @@ internal sealed class InstallPackCommandHandler(
                             request,
                             duration => managedFileChangesDuration = duration,
                             plan => appliedPlan = plan,
-                            selection => sourceSelection = selection
+                            selection => sourceSelection = selection,
+                            cancellationToken: cancellationToken
                         )
                 );
         if (exitCode == 0)

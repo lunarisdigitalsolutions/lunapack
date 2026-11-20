@@ -99,6 +99,11 @@ consent, starting a process, or entering guided display. Parameter prompts still
 occur before planning unless `--skip-parameters` is set. Denied script rows show
 `policy-denied` and every applicable scope without execution warnings.
 
+Authorized scripts also warn about inherited environment variable names outside
+the configured allow-list and have a per-hook timeout. The warning does not
+remove variables from the child process. See the [script policy reference](cli/trust-and-scripts.md#lifecycle-script-policy)
+for scope, defaults, and compatibility behavior.
+
 Hook conditions can react to script handling during the same lifecycle event.
 `scriptsSkipped()` is true only when scripts are suppressed for the whole
 invocation by effective script mode or trust-policy denial. An individual

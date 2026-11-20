@@ -220,6 +220,11 @@ public sealed class LifecycleHookAuthorizationTests
             Trust = new ProjectConfiguration.ProjectTrust
             {
                 Deny = new ScriptDenial { Scripts = true },
+                Scripts = new LifecycleHookPolicy
+                {
+                    AllowedEnvironmentVariables = ["CUSTOM_VALUE"],
+                    TimeoutSeconds = 1,
+                },
             },
         };
 

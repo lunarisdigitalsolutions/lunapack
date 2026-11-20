@@ -30,6 +30,30 @@ public sealed class LifecycleHookExecutorTests
     }
 
     [Test]
+    [Arguments(true)]
+    [Arguments(false)]
+    public async Task Scenario_ConsoleModeConfiguresSupervisorStreams(bool isInteractive)
+    {
+        var ansiConsole = new SpectreTestConsole();
+        ansiConsole.Profile.Capabilities.Interactive = isInteractive;
+        var executor = new LifecycleHookExecutor(
+            new FileSystem(),
+            new CliConsole(ansiConsole, CliLogLevel.Info)
+        );
+
+        var startInfo = executor.CreateSupervisorStartInfo(
+            Environment.CurrentDirectory,
+            CreateInvocation(),
+            Path.Combine(Path.GetTempPath(), "result.txt"),
+            Path.Combine(Path.GetTempPath(), "control.txt")
+        );
+
+        await Assert.That(startInfo.RedirectStandardOutput).IsEqualTo(!isInteractive);
+        await Assert.That(startInfo.RedirectStandardError).IsEqualTo(!isInteractive);
+        await Assert.That(startInfo.CreateNoWindow).IsEqualTo(!isInteractive);
+    }
+
+    [Test]
     public async Task ExecuteAsync_WhenHookExitsNonzero_ReturnsFailureContext()
     {
         using var workspace = new TestWorkspace();
@@ -215,7 +239,7 @@ public sealed class LifecycleHookExecutorTests
         var ansiConsole = new SpectreTestConsole();
         var command = OperatingSystem.IsWindows()
             ? "(echo first & echo second)"
-            : "printf 'first\\nsecond\\n'";
+            : "printf 'first\nsecond\n'";
         var result = await new LifecycleHookExecutor(
             workspace.FileSystem,
             new CliConsole(ansiConsole, CliLogLevel.Info)
@@ -235,10 +259,11 @@ public sealed class LifecycleHookExecutorTests
     private static LifecycleHookHistoryStore CreateHistoryStore(TestWorkspace workspace) =>
         new(workspace.FileSystem, workspace.UserSettingsStore.SettingsDirectory);
 
-    private static ResolvedLifecycleHookInvocation CreateInvocation(params string[] arguments)
-    {
-        return CreateInvocationWithExecutable(ShellExecutable, arguments);
-    }
+    private static ResolvedLifecycleHookInvocation CreateInvocation() =>
+        CreateInvocationWithExecutable("executable");
+
+    private static ResolvedLifecycleHookInvocation CreateInvocation(params string[] arguments) =>
+        CreateInvocationWithExecutable(ShellExecutable, arguments);
 
     private static ResolvedLifecycleHookInvocation CreateInvocationWithExecutable(
         string executable,

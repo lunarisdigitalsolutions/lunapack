@@ -2,7 +2,8 @@
 
 Luna reads a small set of environment variables for user settings, cache
 placement, and lifecycle command resolution. Project behavior otherwise comes
-from CLI input and version-1 YAML documents.
+from CLI input, version-1 YAML documents, and the user-local lifecycle policy
+sidecar described below.
 
 ## Environment preflight
 
@@ -31,6 +32,8 @@ the current user profile for this location. It does not change the selected
 workspace, source cache, or process environment.
 Source-ignore preferences are stored alongside it in
 `<profile>/.lunapack/source-ignores.yml`.
+Lifecycle script policy is stored in
+`<profile>/.lunapack/lifecycle-hook-policy.yml`, separate from `config.yml`.
 
 Use an isolated profile for automation:
 
@@ -100,6 +103,12 @@ existing entries.
 
 Luna resolves lifecycle commands with the invoking process's `PATH`. On Windows,
 it also uses `PATHEXT`; when `PATHEXT` is absent, `.EXE` is the default extension.
+Authorized lifecycle scripts inherit the invoking process environment. Luna
+warns with names of variables outside the effective allow-list, but scripts
+still receive their values; remove unneeded credentials before running
+untrusted hooks. The allow-list and per-hook timeout are configurable in project
+and user policy. See [Lifecycle script policy](trust-and-scripts.md#lifecycle-script-policy).
+
 Luna resolves `git` to an absolute executable from absolute `PATH` entries and
 does not run a same-directory `git` executable from the selected workspace.
 Doctor Git probes also remove inherited Git config/environment authentication

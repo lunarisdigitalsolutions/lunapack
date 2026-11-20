@@ -7,6 +7,15 @@ pack-package, documentation, CI, build, test, and release-process changes.
 
 Update this section before creating a release tag.
 
+### Lifecycle Hooks
+
+- Authorized scripts now warn with names of inherited environment variables
+  outside the effective allow-list. Warnings do not filter the child
+  environment. Each script hook now has a 300-second default timeout, with
+  optional project and user policy from 1 through 1,800 seconds; the shortest
+  configured timeout applies. Timeouts terminate the process tree and fail the
+  lifecycle operation, separately from caller cancellation.
+
 ### Added
 
 - `luna audit --strict` now verifies every pack- and link-managed target against

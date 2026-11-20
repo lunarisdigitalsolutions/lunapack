@@ -5,7 +5,7 @@ decision-makers:
   - Lunaris Engineering
 ---
 
-# ADR-0098: Define Strict Audit Exit Codes
+# ADR-0099: Define Strict Audit Exit Codes
 
 ## Context and Problem Statement
 
