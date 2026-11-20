@@ -1,5 +1,6 @@
 ﻿using System.Collections;
 using System.Text.RegularExpressions;
+using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Application.Paths;
 using Lunapack.Cli.Packs.ManagedFiles;
@@ -1007,6 +1008,11 @@ internal static partial class ManifestModelValidator
                 "Trusted packs must be unique bare pack IDs bound to configured source names."
             );
         }
+
+        if (trust.Scripts is not null)
+        {
+            ValidateLifecycleHookPolicy(trust.Scripts, "Project lifecycle script policy", issues);
+        }
     }
 
     public static IReadOnlyList<string> Validate(ProjectLockFile lockFile)
@@ -1141,6 +1147,93 @@ internal static partial class ManifestModelValidator
         }
 
         return issues;
+    }
+
+    public static IReadOnlyList<string> Validate(LifecycleHookPolicySettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+
+        var issues = new List<string>();
+        if (settings.Global is null)
+        {
+            issues.Add("Global lifecycle script policy must be an object.");
+        }
+        else
+        {
+            ValidateLifecycleHookPolicy(
+                settings.Global,
+                "Global user lifecycle script policy",
+                issues
+            );
+        }
+
+        if (settings.Projects is null)
+        {
+            issues.Add("Lifecycle script policy must contain project identities.");
+            return issues;
+        }
+
+        foreach (var (projectPath, policy) in settings.Projects)
+        {
+            if (!IsCanonicalAbsolutePath(projectPath))
+            {
+                issues.Add(
+                    $"Local project lifecycle script policy key '{projectPath}' is not a canonical path."
+                );
+            }
+
+            if (policy is null)
+            {
+                issues.Add(
+                    $"Local project lifecycle script policy '{projectPath}' must be an object."
+                );
+                continue;
+            }
+
+            ValidateLifecycleHookPolicy(
+                policy,
+                $"Local project lifecycle script policy '{projectPath}'",
+                issues
+            );
+        }
+
+        return issues;
+    }
+
+    private static void ValidateLifecycleHookPolicy(
+        LifecycleHookPolicy? policy,
+        string context,
+        List<string> issues
+    )
+    {
+        if (policy is null)
+        {
+            return;
+        }
+
+        var variableNames = policy.AllowedEnvironmentVariables;
+        var comparer = OperatingSystemStringComparer.EnvironmentVariableNames;
+        var hasInvalidVariableNames =
+            variableNames is null
+            || variableNames.Any(name =>
+                string.IsNullOrEmpty(name) || name.Contains('=') || name.Contains('\0')
+            )
+            || variableNames.Distinct(comparer).Count() != variableNames.Count;
+        if (hasInvalidVariableNames)
+        {
+            issues.Add(
+                $"{context} allowed environment variable names must be unique, non-empty, and contain neither '=' nor NUL."
+            );
+        }
+
+        if (
+            policy.TimeoutSeconds
+            is < LifecycleHookPolicy.MinimumTimeoutSeconds
+                or > LifecycleHookPolicy.MaximumTimeoutSeconds
+        )
+        {
+            issues.Add($"{context} timeoutSeconds must be from 1 through 1,800.");
+        }
     }
 
     private static void ValidateTrustEntries(

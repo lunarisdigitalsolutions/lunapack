@@ -505,7 +505,9 @@ Both install and update accept `--accept-sources` for conflict-free proposed
 source additions. `install`, `update`, and `uninstall` accept
 `--scripts <prompt|run|skip>`; `prompt` is the default and requires effective
 trust or interactive consent for each script hook. Interactive consent defaults
-to no. Use `--skip-instructions` to suppress instruction loading and display
+to no. Authorized scripts report inherited environment variable names outside
+the configured allow-list and run with a per-hook timeout. Use
+`--skip-instructions` to suppress instruction loading and display
 without changing script consent behavior. Uninstall also accepts repeatable
 `--parameter` (`-p`), `--no-variables` (`-nv`), and repeatable
 `--skip-variable` (`-sv`) inputs.

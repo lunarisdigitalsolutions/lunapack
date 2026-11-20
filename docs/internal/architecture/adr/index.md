@@ -101,6 +101,7 @@ Create a new architecture decision record from the [MADR-based template](templat
 | [ADR-0095][adr-0095]                                                            | Store bounded local lifecycle hook history in a user-local sidecar.                     |
 | [ADR-0096][adr-0096]                                                            | Close redirected lifecycle output after cancellation.                                   |
 | [ADR-0097][adr-0097]                                                            | Show complete lifecycle consent details at every log level.                             |
+| [ADR-0098][adr-0098]                                                            | Keep lifecycle environment warnings advisory and enforce per-hook timeouts.             |
 
 [adr-0070]: 0070-bind-privileged-workflows-to-trusted-provenance.md
 [adr-0071]: 0071-reject-filesystem-aliases-at-mutation-boundaries.md
@@ -129,3 +130,4 @@ Create a new architecture decision record from the [MADR-based template](templat
 [adr-0095]: 0095-store-local-lifecycle-hook-history.md
 [adr-0096]: 0096-close-lifecycle-output-streams-after-cancellation.md
 [adr-0097]: 0097-show-lifecycle-consent-details-at-every-log-level.md
+[adr-0098]: 0098-constrain-lifecycle-hook-environment-and-runtime.md

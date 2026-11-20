@@ -89,6 +89,8 @@ internal sealed record ProjectConfiguration
 
         public List<TrustedPack> Packs { get; set; } = [];
 
+        public LifecycleHookPolicy? Scripts { get; set; }
+
         public List<string> Sources { get; set; } = [];
     }
 

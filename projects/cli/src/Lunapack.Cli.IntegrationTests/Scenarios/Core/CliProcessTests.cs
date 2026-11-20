@@ -207,6 +207,65 @@ public sealed class CliProcessTests
     }
 
     [Test]
+    [Arguments("preInstall")]
+    [Arguments("postInstall")]
+    public async Task Scenario_HookTimesOut_RestoresFilesAndState(string hook)
+    {
+        using var workspace = new TestWorkspace();
+        var scriptCommand = OperatingSystem.IsWindows() ? "cmd.exe" : "/bin/sh";
+        var scriptArguments = OperatingSystem.IsWindows()
+            ? "        - /c\n        - 'echo ran>hook-ran.txt & echo # changed>>lunapack.yml & ping -n 10 127.0.0.1 > nul'"
+            : "        - -c\n        - 'printf ran > hook-ran.txt; printf \"\\n# changed\\n\" >> lunapack.yml; sleep 10'";
+        var sourcePath = CreateInstructionPackSource(
+            workspace.Path,
+            "example",
+            $"id: example\nversion: 1.0.0\nhooks:\n  {hook}:\n    - type: script\n      command: {scriptCommand}\n      arguments:\n{scriptArguments}\nmanagedFiles:\n  - source: templates/content.txt\n    target: .pack\n",
+            new Dictionary<string, string>(StringComparer.Ordinal)
+        );
+        await InitializeAndAddSourceAsync(workspace.Path, sourcePath);
+        var configurationPath = Path.Combine(workspace.Path, "lunapack.yml");
+        var lockPath = Path.Combine(workspace.Path, "lunapack-lock.yml");
+        var configuration = File.ReadAllText(configurationPath);
+        File.WriteAllText(
+            configurationPath,
+            configuration.Replace(
+                "  sources: []",
+                "  sources: []\n  scripts:\n    timeoutSeconds: 1",
+                StringComparison.Ordinal
+            )
+        );
+        var initialConfiguration = File.ReadAllText(configurationPath);
+        var initialLock = File.ReadAllText(lockPath);
+
+        var install = await CliProcess.InvokeAsync(
+            workspace.Path,
+            "install",
+            "example",
+            "--scripts",
+            "run"
+        );
+
+        var output = install.StandardOutput + install.StandardError;
+        var normalizedOutput = string.Join(
+            " ",
+            output.Split(
+                [' ', '\r', '\n', '\t'],
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+            )
+        );
+        var outputTail = normalizedOutput[^Math.Min(normalizedOutput.Length, 150)..];
+        await Assert.That(install.ExitCode).IsEqualTo(1);
+        await Assert
+            .That(outputTail)
+            .Contains("exceeded its 1-second timeout")
+            .Because($"output tail: {outputTail}");
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, "hook-ran.txt"))).IsTrue();
+        await Assert.That(File.Exists(Path.Combine(workspace.Path, ".pack"))).IsFalse();
+        await Assert.That(File.ReadAllText(configurationPath)).IsEqualTo(initialConfiguration);
+        await Assert.That(File.ReadAllText(lockPath)).IsEqualTo(initialLock);
+    }
+
+    [Test]
     public async Task Install_WhenPackAlreadyInstalled_PreservesManagedFileAndProjectState()
     {
         using var workspace = new TestWorkspace();

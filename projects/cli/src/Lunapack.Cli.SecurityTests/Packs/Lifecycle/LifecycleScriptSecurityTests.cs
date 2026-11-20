@@ -16,16 +16,16 @@ public sealed class LifecycleScriptSecurityTests
     [Arguments("$(whoami)")]
     [Arguments("`id`")]
     [Arguments("| tee captured.txt")]
-    public async Task CreateStartInfo_WhenArgumentContainsShellMetacharacters_PreservesLiteralArgument(
+    public async Task Scenario_ArgumentContainsShellMetacharacters_PreservesLiteralArgument(
         string untrustedArgument
     )
     {
         var invocation = CreateInvocation(["--flag", untrustedArgument]);
 
-        var startInfo = LifecycleHookExecutor.CreateStartInfo(
+        var startInfo = LifecycleHookExecutor.CreateInheritedStartInfo(
             Environment.CurrentDirectory,
-            invocation,
-            isInteractive: false
+            invocation.Executable,
+            invocation.Arguments
         );
 
         await Assert.That(startInfo.UseShellExecute).IsFalse();
