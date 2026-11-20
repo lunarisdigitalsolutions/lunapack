@@ -96,7 +96,12 @@ Create a new architecture decision record from the [MADR-based template](templat
 | [ADR-0090][adr-0090]                                                            | Version CLI JSON diagnostics behind explicit public DTOs.                               |
 | [ADR-0091](0091-screen-pack-managed-content-for-hidden-unicode.md)              | Screen pack-managed text for hidden Unicode with fail-safe, bounded diagnostics.        |
 | [ADR-0092][adr-0092]                                                            | Keep one canonical Luna CLI skill across installation routes.                           |
-| [ADR-0093][adr-0093]                                                            | Keep lifecycle environment warnings advisory and enforce per-hook timeouts.             |
+| [ADR-0093][adr-0093]                                                            | Preserve modified targets removed by pack updates, with explicit removal.               |
+| [ADR-0094][adr-0094]                                                            | Diagnose environment blockers through opt-in, bounded project preflight checks.         |
+| [ADR-0095][adr-0095]                                                            | Store bounded local lifecycle hook history in a user-local sidecar.                     |
+| [ADR-0096][adr-0096]                                                            | Close redirected lifecycle output after cancellation.                                   |
+| [ADR-0097][adr-0097]                                                            | Show complete lifecycle consent details at every log level.                             |
+| [ADR-0098][adr-0098]                                                            | Keep lifecycle environment warnings advisory and enforce per-hook timeouts.             |
 
 [adr-0070]: 0070-bind-privileged-workflows-to-trusted-provenance.md
 [adr-0071]: 0071-reject-filesystem-aliases-at-mutation-boundaries.md
@@ -120,4 +125,9 @@ Create a new architecture decision record from the [MADR-based template](templat
 [adr-0089]: 0089-separate-direct-pack-roots-from-dependency-resolution.md
 [adr-0090]: 0090-version-cli-json-diagnostics.md
 [adr-0092]: 0092-keep-one-canonical-luna-cli-skill.md
-[adr-0093]: 0093-constrain-lifecycle-hook-environment-and-runtime.md
+[adr-0093]: 0093-protect-modified-targets-removed-by-updates.md
+[adr-0094]: 0094-provide-read-only-environment-preflight.md
+[adr-0095]: 0095-store-local-lifecycle-hook-history.md
+[adr-0096]: 0096-close-lifecycle-output-streams-after-cancellation.md
+[adr-0097]: 0097-show-lifecycle-consent-details-at-every-log-level.md
+[adr-0098]: 0098-constrain-lifecycle-hook-environment-and-runtime.md

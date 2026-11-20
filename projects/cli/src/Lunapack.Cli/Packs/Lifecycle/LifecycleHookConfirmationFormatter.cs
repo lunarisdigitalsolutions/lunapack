@@ -1,3 +1,5 @@
+using Lunapack.Cli.Application;
+
 namespace Lunapack.Cli.Packs.Lifecycle;
 
 internal static class LifecycleHookConfirmationFormatter
@@ -10,8 +12,8 @@ internal static class LifecycleHookConfirmationFormatter
     public static string FormatCommand(ResolvedLifecycleHookInvocation invocation)
     {
         var command = invocation.Invocation.PackedFile is { } packedFile
-            ? $"{invocation.Executable} {packedFile.RelativePath}"
-            : invocation.Executable;
+            ? $"{TerminalText.EncodeControls(invocation.Executable)} {TerminalText.EncodeControls(packedFile.RelativePath)}"
+            : TerminalText.EncodeControls(invocation.Executable);
         var arguments = FormatArguments(invocation.Invocation.Script.Arguments);
         return arguments.Length == 0 ? command : $"{command} {arguments}";
     }
@@ -20,7 +22,10 @@ internal static class LifecycleHookConfirmationFormatter
         string.Join(" ", arguments.Select(Escape));
 
     private static string Escape(string value) =>
+        EscapeValue(value, TerminalText.EncodeControls(value));
+
+    private static string EscapeValue(string value, string encodedValue) =>
         value.Any(char.IsWhiteSpace) || value.Contains('"')
-            ? $"\"{value.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal)}\""
-            : value;
+            ? $"\"{encodedValue.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal)}\""
+            : encodedValue;
 }

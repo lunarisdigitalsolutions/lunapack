@@ -8,6 +8,7 @@ using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Audit;
 using Lunapack.Cli.Catalog;
 using Lunapack.Cli.Catalog.Commands;
+using Lunapack.Cli.Doctor;
 using Lunapack.Cli.Links;
 using Lunapack.Cli.Links.Commands;
 using Lunapack.Cli.Packs;
@@ -37,7 +38,8 @@ internal sealed class CliApplication(
     ITrustConfirmer? trustConfirmer = null,
     UserSettingsStore? userSettingsStore = null,
     IGitProcessRunner? gitProcessRunner = null,
-    CompletionScriptInstallerResolver? completionScriptInstallerResolver = null
+    CompletionScriptInstallerResolver? completionScriptInstallerResolver = null,
+    IDoctorService? doctorService = null
 )
 {
     public async Task<int> RunAsync(
@@ -54,27 +56,28 @@ internal sealed class CliApplication(
             return formatExitCode;
         }
 
-        if (!CliLogLevelParser.TryParse(args, out var minimumLevel, out var logLevelError))
+        var bootstrap = CreateInvocationBootstrap(args, streams);
+        if (bootstrap.Console is not { } console)
         {
-            var logLevelExitCode = new CliConsole(
-                streams.DiagnosticConsole,
-                CliLogLevel.Info,
-                sanitizeOutput: streams.RoutesDiagnosticsToError
-            ).Fail(logLevelError);
-            if (streams.JsonCommand is { } jsonCommand)
-            {
-                CliJsonWriter.WriteFailure(streams.CommandOutput, jsonCommand);
-            }
-
-            return logLevelExitCode;
+            return bootstrap.ExitCode;
         }
 
-        var console = new CliConsole(
-            streams.DiagnosticConsole,
-            minimumLevel,
-            sanitizeOutput: streams.RoutesDiagnosticsToError
+        console.Debug($"Running CLI command in {DoctorText.Sanitize(projectDirectory)}");
+        var invocationConfiguration = CreateInvocationConfiguration(
+            streams.CommandOutput,
+            streams.DiagnosticOutput
         );
-        console.Debug($"Running CLI command in {projectDirectory}");
+        var doctorExitCode = await TryRunDoctorAsync(
+            args,
+            projectDirectory,
+            console,
+            invocationConfiguration
+        );
+        if (doctorExitCode is not null)
+        {
+            return doctorExitCode.Value;
+        }
+
         var nextStepRenderer = new NextStepRenderer(console);
         using var services = CreateCommandServices(console, nextStepRenderer);
         var suppressNextStepsOption = CreateSuppressNextStepsOption();
@@ -87,10 +90,6 @@ internal sealed class CliApplication(
             services
         );
         var parseResult = rootCommand.Parse(args);
-        var invocationConfiguration = CreateInvocationConfiguration(
-            streams.CommandOutput,
-            streams.DiagnosticOutput
-        );
         var earlyExitCode = await InvokeParseErrorOrHelpAsync(args, parseResult, streams);
         if (earlyExitCode is { } parseOrHelpExitCode)
         {
@@ -125,6 +124,36 @@ internal sealed class CliApplication(
 
         console.Debug($"CLI command completed with exit code {commandExitCode}");
         return commandExitCode;
+    }
+
+    private static InvocationBootstrap CreateInvocationBootstrap(
+        string[] args,
+        CliInvocationStreams streams
+    )
+    {
+        if (CliLogLevelParser.TryParse(args, out var minimumLevel, out var logLevelError))
+        {
+            return new InvocationBootstrap(
+                new CliConsole(
+                    streams.DiagnosticConsole,
+                    minimumLevel,
+                    sanitizeOutput: streams.RoutesDiagnosticsToError
+                ),
+                0
+            );
+        }
+
+        var exitCode = new CliConsole(
+            streams.DiagnosticConsole,
+            CliLogLevel.Info,
+            sanitizeOutput: streams.RoutesDiagnosticsToError
+        ).Fail(logLevelError);
+        if (streams.JsonCommand is { } jsonCommand)
+        {
+            CliJsonWriter.WriteFailure(streams.CommandOutput, jsonCommand);
+        }
+
+        return new InvocationBootstrap(null, exitCode);
     }
 
     private static int? ValidateOutputFormat(
@@ -201,6 +230,11 @@ internal sealed class CliApplication(
                 "config",
                 StringComparison.Ordinal
             )
+            || string.Equals(
+                parseResult.CommandResult.Command.Name,
+                "doctor",
+                StringComparison.Ordinal
+            )
         )
         {
             return null;
@@ -242,6 +276,7 @@ internal sealed class CliApplication(
         );
         ConfigureRootAction(rootCommand, services, projectDirectory, workspaceOption, console);
         AddPreferenceCommands(rootCommand, services, projectDirectory, workspaceOption, console);
+        AddDoctorCommand(rootCommand, projectDirectory, workspaceOption, console);
 
         AddProjectCommands(
             rootCommand,
@@ -303,6 +338,73 @@ internal sealed class CliApplication(
         AddCompletionCommands(rootCommand, console);
 
         return rootCommand;
+    }
+
+    private async Task<int?> TryRunDoctorAsync(
+        string[] args,
+        string projectDirectory,
+        CliConsole console,
+        InvocationConfiguration invocationConfiguration
+    )
+    {
+        var rootCommand = new RootCommand("Manage LunaPack packs.");
+        var workspaceOption = CreateWorkspaceOption();
+        rootCommand.Options.Add(workspaceOption);
+        rootCommand.Options.Add(CreateLogLevelOption());
+        rootCommand.Options.Add(CreateSuppressNextStepsOption());
+        rootCommand.Add(
+            CreateDoctorCommandHandler(console).CreateCommand(projectDirectory, workspaceOption)
+        );
+        var parseResult = rootCommand.Parse(args);
+        return string.Equals(
+            parseResult.CommandResult.Command.Name,
+            "doctor",
+            StringComparison.Ordinal
+        )
+            ? await parseResult.InvokeAsync(invocationConfiguration)
+            : null;
+    }
+
+    private void AddDoctorCommand(
+        RootCommand rootCommand,
+        string projectDirectory,
+        Option<string?> workspaceOption,
+        CliConsole console
+    ) =>
+        rootCommand.Add(
+            CreateDoctorCommandHandler(console).CreateCommand(projectDirectory, workspaceOption)
+        );
+
+    private DoctorCommandHandler CreateDoctorCommandHandler(CliConsole console) =>
+        new(CreateDoctorService(console), new WorkspaceDirectoryResolver(fileSystem), console);
+
+    private IDoctorService CreateDoctorService(CliConsole console)
+    {
+        if (doctorService is not null)
+        {
+            return doctorService;
+        }
+
+        var effectiveGitProcessRunner =
+            gitProcessRunner ?? new GitProcessRunner(nonInteractive: true);
+        return new DoctorService(
+            fileSystem,
+            new ProjectStateStore(fileSystem),
+            effectiveGitProcessRunner,
+            () => userSettingsStore ?? new UserSettingsStore(fileSystem),
+            new DoctorCredentialStoreProbe(),
+            new DoctorTemporaryFileProbe(fileSystem),
+            new DoctorRemoteSourceProbe(
+                fileSystem,
+                effectiveGitProcessRunner,
+                new OciDistributionRegistryClient(
+                    TimeSpan.FromSeconds(DoctorService.NetworkSourceTimeoutSeconds),
+                    new AzureAcrAccessTokenProvider(console),
+                    allowAutoRedirect: false
+                ),
+                new NativeSourceCredentialStore()
+            )
+        );
     }
 
     private static void AddPreferenceCommands(
@@ -387,15 +489,13 @@ internal sealed class CliApplication(
     {
         var projectStateStore = new ProjectStateStore(fileSystem);
         var effectiveUserSettingsStore = userSettingsStore ?? new UserSettingsStore(fileSystem);
+        var lifecycleHookHistoryStore = CreateLifecycleHookHistoryStore(effectiveUserSettingsStore);
         var cliPreferenceService = new CliPreferenceService(
             fileSystem,
             projectStateStore,
             effectiveUserSettingsStore
         );
-        var sourceIgnoreService = new ConfiguredSourceIgnoreService(
-            fileSystem,
-            effectiveUserSettingsStore
-        );
+        var sourceIgnoreService = CreateSourceIgnoreService(effectiveUserSettingsStore);
         var workspaceDirectoryResolver = new WorkspaceDirectoryResolver(fileSystem);
         var effectiveGitProcessRunner = gitProcessRunner ?? new GitProcessRunner();
         var gitRefResolver = new GitRefResolver(effectiveGitProcessRunner);
@@ -422,7 +522,8 @@ internal sealed class CliApplication(
             effectiveGitProcessRunner,
             gitRefResolver,
             ociPackSource,
-            sourceIgnoreService
+            sourceIgnoreService,
+            lifecycleHookHistoryStore
         );
         var packPublishingServices = CreatePackPublishingServices(
             projectStateStore,
@@ -444,6 +545,7 @@ internal sealed class CliApplication(
             ociPackSource,
             projectStateStore,
             effectiveUserSettingsStore,
+            lifecycleHookHistoryStore,
             cliPreferenceService,
             workspaceDirectoryResolver,
             new CatalogService(packCatalog, projectStateStore),
@@ -461,6 +563,14 @@ internal sealed class CliApplication(
             effectiveGitProcessRunner
         );
     }
+
+    private LifecycleHookHistoryStore CreateLifecycleHookHistoryStore(
+        UserSettingsStore userSettingsStore
+    ) => new(fileSystem, userSettingsStore.SettingsDirectory);
+
+    private ConfiguredSourceIgnoreService CreateSourceIgnoreService(
+        UserSettingsStore userSettingsStore
+    ) => new(fileSystem, userSettingsStore);
 
     private static WorkflowPrerequisiteGuard CreateWorkflowPrerequisiteGuard(
         NextStepAdvisor nextStepAdvisor,
@@ -670,6 +780,12 @@ internal sealed class CliApplication(
         CliConsole console
     )
     {
+        rootCommand.Add(
+            new LifecycleHookHistoryCommandHandler(
+                services.LifecycleHookHistoryStore,
+                console
+            ).CreateCommand()
+        );
         AddPackAuthoringCommand(
             rootCommand,
             fileSystem,
@@ -750,7 +866,8 @@ internal sealed class CliApplication(
         IGitProcessRunner gitProcessRunner,
         GitRefResolver gitRefResolver,
         OciPackSource ociPackSource,
-        ConfiguredSourceIgnoreService sourceIgnoreService
+        ConfiguredSourceIgnoreService sourceIgnoreService,
+        LifecycleHookHistoryStore lifecycleHookHistoryStore
     )
     {
         var packLifecycleService = new PackLifecycleService(
@@ -773,6 +890,11 @@ internal sealed class CliApplication(
                 new TrustPolicy(fileSystem),
                 new LifecycleCommandResolver(fileSystem),
                 new ConsoleLifecycleHookConfirmer(console)
+            ),
+            configuredHookExecutor: new LifecycleHookExecutor(
+                fileSystem,
+                console,
+                lifecycleHookHistoryStore
             ),
             configuredExternalSourceRequirementPlanner: new ExternalSourceRequirementPlanner(
                 gitRefResolver
@@ -1067,6 +1189,7 @@ internal sealed class CliApplication(
         OciPackSource OciPackSource,
         ProjectStateStore ProjectStateStore,
         UserSettingsStore UserSettingsStore,
+        LifecycleHookHistoryStore LifecycleHookHistoryStore,
         CliPreferenceService CliPreferenceService,
         WorkspaceDirectoryResolver WorkspaceDirectoryResolver,
         CatalogService CatalogService,
@@ -1090,6 +1213,8 @@ internal sealed class CliApplication(
             OciPackSource.Dispose();
         }
     }
+
+    private sealed record InvocationBootstrap(CliConsole? Console, int ExitCode);
 
     private static async Task<int> RenderWorkspaceGuidanceAsync(
         NextStepAdvisor nextStepAdvisor,

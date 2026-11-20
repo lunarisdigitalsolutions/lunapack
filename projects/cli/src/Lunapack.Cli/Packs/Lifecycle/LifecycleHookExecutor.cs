@@ -2,19 +2,39 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO.Abstractions;
+using System.Security;
 using System.Text;
 using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.CommandExecution;
+using Lunapack.Cli.Application.Paths;
 using Lunapack.Cli.Trust;
 
 namespace Lunapack.Cli.Packs.Lifecycle;
 
-internal sealed class LifecycleHookExecutor(IFileSystem fileSystem, CliConsole console)
+internal sealed class LifecycleHookExecutor(
+    IFileSystem fileSystem,
+    CliConsole console,
+    LifecycleHookHistoryStore? historyStore = null,
+    TimeProvider? timeProvider = null
+)
 {
     private const int MaximumOutputCharacters = 64 * 1024;
     private const int AbortTimeoutSeconds = 5;
     private static readonly TimeSpan _abortTimeout = TimeSpan.FromSeconds(AbortTimeoutSeconds);
     private static readonly TimeSpan _outputDrainTimeout = TimeSpan.FromSeconds(5);
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
+
+    public Task<LifecycleHookExecutionResult> ExecuteAsync(
+        string projectDirectory,
+        ResolvedLifecycleHookInvocation invocation,
+        CancellationToken cancellationToken = default
+    ) =>
+        ExecuteAsync(
+            projectDirectory,
+            invocation,
+            LifecycleHookPolicyResolver.Resolve(null, null, null),
+            cancellationToken
+        );
 
     public async Task<LifecycleHookExecutionResult> ExecuteAsync(
         string projectDirectory,
@@ -31,11 +51,8 @@ internal sealed class LifecycleHookExecutor(IFileSystem fileSystem, CliConsole c
             );
         }
 
-        if (cancellationToken.IsCancellationRequested)
-        {
-            return LifecycleHookExecutionResult.Cancelled("Lifecycle hook execution was canceled.");
-        }
-
+        var timestamp = _timeProvider.GetUtcNow();
+        var startedAt = Stopwatch.GetTimestamp();
         var resultPath = fileSystem.Path.Combine(
             fileSystem.Path.GetTempPath(),
             $"lunapack-lifecycle-{Guid.NewGuid():N}.result"
@@ -44,42 +61,48 @@ internal sealed class LifecycleHookExecutor(IFileSystem fileSystem, CliConsole c
             fileSystem.Path.GetTempPath(),
             $"lunapack-lifecycle-{Guid.NewGuid():N}.control"
         );
+        LifecycleHookExecutionResult result;
         try
         {
             PrepareResultPath(resultPath);
             PrepareResultPath(controlPath);
-            return await ExecutePreparedAsync(
+            result = await ExecutePreparedAsync(
                 projectDirectory,
                 invocation,
                 policy,
                 resultPath,
                 controlPath,
+                startedAt,
                 cancellationToken
             );
         }
         catch (Win32Exception exception)
         {
-            return LifecycleHookExecutionResult.Failure(
-                $"Unable to start lifecycle hook executable '{invocation.Executable}': {exception.Message}"
+            result = LifecycleHookExecutionResult.Failure(
+                $"Unable to start lifecycle hook executable '{invocation.Executable}': {exception.Message}",
+                historyOutcome: "start-failed"
             );
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            return LifecycleHookExecutionResult.Failure(
-                $"Unable to prepare lifecycle hook execution: {exception.Message}"
+            result = LifecycleHookExecutionResult.Failure(
+                $"Unable to prepare lifecycle hook execution: {exception.Message}",
+                historyOutcome: "start-failed"
             );
         }
         finally
         {
-            if (fileSystem.File.Exists(resultPath))
-            {
-                fileSystem.File.Delete(resultPath);
-            }
-            if (fileSystem.File.Exists(controlPath))
-            {
-                fileSystem.File.Delete(controlPath);
-            }
+            DeleteTemporaryFile(resultPath);
+            DeleteTemporaryFile(controlPath);
         }
+
+        return await CompleteAttemptAsync(
+            projectDirectory,
+            invocation,
+            timestamp,
+            startedAt,
+            result
+        );
     }
 
     private async Task<LifecycleHookExecutionResult> ExecutePreparedAsync(
@@ -88,10 +111,10 @@ internal sealed class LifecycleHookExecutor(IFileSystem fileSystem, CliConsole c
         EffectiveLifecycleHookPolicy policy,
         string resultPath,
         string controlPath,
+        long startedAt,
         CancellationToken cancellationToken
     )
     {
-        var startedAt = Stopwatch.GetTimestamp();
         WarnAboutUnallowedEnvironmentVariables(invocation, policy);
         using var process = new Process
         {
@@ -105,20 +128,23 @@ internal sealed class LifecycleHookExecutor(IFileSystem fileSystem, CliConsole c
         if (!process.Start())
         {
             return LifecycleHookExecutionResult.Failure(
-                $"Unable to start lifecycle hook for pack '{invocation.Invocation.Pack.Manifest.Id}'."
+                $"Unable to start lifecycle hook for pack '{invocation.Invocation.Pack.Manifest.Id}'.",
+                historyOutcome: "start-failed"
             );
         }
 
+        using var outputReadCancellation = new CancellationTokenSource();
         var standardOutput = process.StartInfo.RedirectStandardOutput
-            ? ReadBoundedAsync(process.StandardOutput)
+            ? ReadBoundedAsync(process.StandardOutput, outputReadCancellation.Token)
             : Task.FromResult(string.Empty);
         var standardError = process.StartInfo.RedirectStandardError
-            ? ReadBoundedAsync(process.StandardError)
+            ? ReadBoundedAsync(process.StandardError, outputReadCancellation.Token)
             : Task.FromResult(string.Empty);
         var interrupted = await WaitForProcessAsync(
             process,
             standardOutput,
             standardError,
+            outputReadCancellation,
             invocation,
             policy.TimeoutSeconds,
             resultPath,
@@ -130,8 +156,7 @@ internal sealed class LifecycleHookExecutor(IFileSystem fileSystem, CliConsole c
             return interrupted;
         }
 
-        WriteOutput(await standardOutput, isError: false);
-        WriteOutput(await standardError, isError: true);
+        await WriteOutputAsync(standardOutput, standardError);
         var exitCode = ReadHookExitCode(resultPath, invocation);
         if (exitCode.Failure is not null)
         {
@@ -141,7 +166,8 @@ internal sealed class LifecycleHookExecutor(IFileSystem fileSystem, CliConsole c
         if (exitCode.Value != 0)
         {
             return LifecycleHookExecutionResult.Failure(
-                $"Lifecycle hook '{LifecycleHookPlanner.ToManifestValue(invocation.Invocation.Hook)}' for pack '{invocation.Invocation.Pack.Manifest.Id}' exited with code {exitCode.Value}."
+                $"Lifecycle hook '{LifecycleHookPlanner.ToManifestValue(invocation.Invocation.Hook)}' for pack '{invocation.Invocation.Pack.Manifest.Id}' exited with code {exitCode.Value}.",
+                exitCode.Value
             );
         }
 
@@ -149,13 +175,14 @@ internal sealed class LifecycleHookExecutor(IFileSystem fileSystem, CliConsole c
             $"Lifecycle command completed in {CliDuration.Format(Stopwatch.GetElapsedTime(startedAt))}"
         );
         console.Info(string.Empty);
-        return LifecycleHookExecutionResult.Success();
+        return LifecycleHookExecutionResult.Success(exitCode.Value);
     }
 
     private async Task<LifecycleHookExecutionResult?> WaitForProcessAsync(
         Process process,
         Task<string> standardOutput,
         Task<string> standardError,
+        CancellationTokenSource outputReadCancellation,
         ResolvedLifecycleHookInvocation invocation,
         int timeoutSeconds,
         string resultPath,
@@ -179,6 +206,7 @@ internal sealed class LifecycleHookExecutor(IFileSystem fileSystem, CliConsole c
                 process,
                 standardOutput,
                 standardError,
+                outputReadCancellation,
                 invocation,
                 timeoutSeconds,
                 resultPath,
@@ -192,6 +220,7 @@ internal sealed class LifecycleHookExecutor(IFileSystem fileSystem, CliConsole c
                 process,
                 standardOutput,
                 standardError,
+                outputReadCancellation,
                 invocation,
                 timeoutSeconds,
                 resultPath,
@@ -205,6 +234,7 @@ internal sealed class LifecycleHookExecutor(IFileSystem fileSystem, CliConsole c
         Process process,
         Task<string> standardOutput,
         Task<string> standardError,
+        CancellationTokenSource outputReadCancellation,
         ResolvedLifecycleHookInvocation invocation,
         int timeoutSeconds,
         string resultPath,
@@ -214,9 +244,14 @@ internal sealed class LifecycleHookExecutor(IFileSystem fileSystem, CliConsole c
     {
         await RequestAbortAsync(controlPath);
         var cleanupError = await StopAsync(process);
+        outputReadCancellation.Cancel();
+        CloseRedirectedOutput(process);
         if (cleanupError is not null)
         {
-            return LifecycleHookExecutionResult.Failure(cleanupError);
+            return LifecycleHookExecutionResult.Failure(
+                cleanupError,
+                process.HasExited ? process.ExitCode : null
+            );
         }
 
         var supervisorFailure = ReadSupervisorFailure(resultPath, invocation);
@@ -233,22 +268,28 @@ internal sealed class LifecycleHookExecutor(IFileSystem fileSystem, CliConsole c
         catch (TimeoutException)
         {
             return LifecycleHookExecutionResult.Failure(
-                $"Unable to drain lifecycle hook output for pack '{invocation.Invocation.Pack.Manifest.Id}' after terminating its process tree."
+                $"Unable to drain lifecycle hook output for pack '{invocation.Invocation.Pack.Manifest.Id}' after terminating its process tree.",
+                process.HasExited ? process.ExitCode : null
             );
         }
         catch (Exception exception) when (exception is IOException or ObjectDisposedException)
         {
             return LifecycleHookExecutionResult.Failure(
-                $"Unable to drain lifecycle hook output after terminating its process tree: {exception.Message}"
+                $"Unable to drain lifecycle hook output after terminating its process tree: {exception.Message}",
+                process.HasExited ? process.ExitCode : null
             );
         }
 
-        WriteOutput(await standardOutput, isError: false);
-        WriteOutput(await standardError, isError: true);
+        await WriteOutputAsync(standardOutput, standardError);
+        int? exitCode = process.HasExited ? process.ExitCode : null;
         return cancellationToken.IsCancellationRequested
-            ? LifecycleHookExecutionResult.Cancelled("Lifecycle hook execution was canceled.")
+            ? LifecycleHookExecutionResult.Cancelled(
+                "Lifecycle hook execution was canceled.",
+                exitCode
+            )
             : LifecycleHookExecutionResult.Timeout(
-                $"Lifecycle hook '{LifecycleHookPlanner.ToManifestValue(invocation.Invocation.Hook)}' for pack '{invocation.Invocation.Pack.Manifest.Id}' exceeded its {timeoutSeconds}-second timeout."
+                $"Lifecycle hook '{LifecycleHookPlanner.ToManifestValue(invocation.Invocation.Hook)}' for pack '{invocation.Invocation.Pack.Manifest.Id}' exceeded its {timeoutSeconds}-second timeout.",
+                exitCode
             );
     }
 
@@ -314,6 +355,28 @@ internal sealed class LifecycleHookExecutor(IFileSystem fileSystem, CliConsole c
         }
 
         return escapedName.ToString();
+    }
+
+    internal static ProcessStartInfo CreateStartInfo(
+        string projectDirectory,
+        ResolvedLifecycleHookInvocation invocation,
+        bool isInteractive
+    )
+    {
+        var startInfo = new ProcessStartInfo(invocation.Executable)
+        {
+            CreateNoWindow = !isInteractive,
+            RedirectStandardError = !isInteractive,
+            RedirectStandardOutput = !isInteractive,
+            UseShellExecute = false,
+            WorkingDirectory = projectDirectory,
+        };
+        foreach (var argument in invocation.Arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        return startInfo;
     }
 
     internal static ProcessStartInfo CreateInheritedStartInfo(
@@ -386,22 +449,48 @@ internal sealed class LifecycleHookExecutor(IFileSystem fileSystem, CliConsole c
         {
             if (isError)
             {
-                console.Warning(sanitized);
+                console.WarningLines(sanitized);
             }
             else
             {
-                console.Info(sanitized);
+                console.InfoLines(sanitized);
             }
         }
     }
 
-    private static async Task<string> ReadBoundedAsync(StreamReader reader)
+    private async Task WriteOutputAsync(Task<string> standardOutput, Task<string> standardError)
+    {
+        WriteOutput(await standardOutput, isError: false);
+        WriteOutput(await standardError, isError: true);
+    }
+
+    private static async Task<string> ReadBoundedAsync(
+        StreamReader reader,
+        CancellationToken cancellationToken
+    )
     {
         var buffer = new char[4096];
         var output = new StringBuilder(MaximumOutputCharacters);
         while (true)
         {
-            var read = await reader.ReadAsync(buffer.AsMemory());
+            int read;
+            try
+            {
+                read = await reader.ReadAsync(buffer.AsMemory(), cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return output.ToString();
+            }
+            catch (IOException) when (cancellationToken.IsCancellationRequested)
+            {
+                return output.ToString();
+            }
+            catch (ObjectDisposedException) when (cancellationToken.IsCancellationRequested)
+            {
+                return output.ToString();
+            }
+
             if (read == 0)
             {
                 return output.ToString();
@@ -411,12 +500,153 @@ internal sealed class LifecycleHookExecutor(IFileSystem fileSystem, CliConsole c
         }
     }
 
+    private static void CloseRedirectedOutput(Process process)
+    {
+        try
+        {
+            if (process.StartInfo.RedirectStandardOutput)
+            {
+                process.StandardOutput.Dispose();
+            }
+
+            if (process.StartInfo.RedirectStandardError)
+            {
+                process.StandardError.Dispose();
+            }
+        }
+        catch (ObjectDisposedException) { }
+    }
+
     private static string Sanitize(string output) =>
         new([
             .. output.Where(character =>
                 character is '\n' or '\r' or '\t' || !char.IsControl(character)
             ),
         ]);
+
+    private async Task<LifecycleHookExecutionResult> CompleteAttemptAsync(
+        string projectDirectory,
+        ResolvedLifecycleHookInvocation invocation,
+        DateTimeOffset timestamp,
+        long startedAt,
+        LifecycleHookExecutionResult result
+    )
+    {
+        if (historyStore is null)
+        {
+            return result;
+        }
+
+        if (invocation.Authorization is not { } authorization)
+        {
+            console.Warning(
+                "Lifecycle hook history was not recorded because its authorization source is unavailable."
+            );
+            return result;
+        }
+
+        var entry = new LifecycleHookHistoryEntry
+        {
+            Version = LifecycleHookHistoryEntry.CurrentVersion,
+            Timestamp = timestamp.ToUniversalTime(),
+            Event = LifecycleHookPlanner.ToManifestValue(invocation.Invocation.Hook),
+            Executable = SanitizeProjectPath(invocation.Executable, projectDirectory),
+            PackId = invocation.Invocation.Pack.Manifest.Id,
+            PackVersion = invocation.Invocation.Pack.Manifest.Version,
+            Arguments = SanitizeArguments(projectDirectory, invocation),
+            AuthorizationSource = FormatAuthorizationSource(authorization.Kind),
+            TrustScopes = [.. authorization.TrustScopes.Select(FormatTrustScope)],
+            DurationMilliseconds = Math.Max(
+                0,
+                Convert.ToInt64(Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds)
+            ),
+            Outcome =
+                result.HistoryOutcome
+                ?? (
+                    result.Outcome switch
+                    {
+                        LifecycleHookOutcome.Succeeded => "succeeded",
+                        LifecycleHookOutcome.Cancelled => "canceled",
+                        _ => "failed",
+                    }
+                ),
+            ExitCode = result.ExitCode,
+        };
+        ManifestOperationResult<bool> saved;
+        try
+        {
+            saved = await historyStore.AppendAsync(entry);
+        }
+        catch (Exception exception)
+            when (exception
+                    is IOException
+                        or UnauthorizedAccessException
+                        or SecurityException
+                        or ArgumentException
+                        or NotSupportedException
+            )
+        {
+            console.Warning($"Unable to record lifecycle hook history: {exception.Message}");
+            return result;
+        }
+
+        if (!saved.IsSuccess)
+        {
+            console.Warning(
+                $"Unable to record lifecycle hook history: {saved.Error ?? "history write failed."}"
+            );
+        }
+
+        return result;
+    }
+
+    private IReadOnlyList<string> SanitizeArguments(
+        string projectDirectory,
+        ResolvedLifecycleHookInvocation invocation
+    )
+    {
+        var arguments = invocation.Invocation.PackedFile is { } packedFile
+            ? [packedFile.RelativePath, .. invocation.Invocation.Script.Arguments]
+            : invocation.Invocation.Script.Arguments;
+        return [.. arguments.Select(argument => SanitizeProjectPath(argument, projectDirectory))];
+    }
+
+    private string SanitizeProjectPath(string value, string projectDirectory)
+    {
+        var fullProjectDirectory = fileSystem.Path.TrimEndingDirectorySeparator(
+            fileSystem.Path.GetFullPath(projectDirectory)
+        );
+        var normalizedProjectDirectory = ProjectPath.Normalize(fullProjectDirectory);
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+        var sanitized = value.Replace(fullProjectDirectory, "[PROJECT]", comparison);
+        return string.Equals(
+            fullProjectDirectory,
+            normalizedProjectDirectory,
+            StringComparison.Ordinal
+        )
+            ? sanitized
+            : sanitized.Replace(normalizedProjectDirectory, "[PROJECT]", comparison);
+    }
+
+    private static string FormatAuthorizationSource(LifecycleScriptAuthorizationKind kind) =>
+        kind switch
+        {
+            LifecycleScriptAuthorizationKind.InvocationRun => "scripts-run",
+            LifecycleScriptAuthorizationKind.PersistedTrust => "persisted-trust",
+            LifecycleScriptAuthorizationKind.InteractiveConfirmation => "interactive-confirmation",
+            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+        };
+
+    private static string FormatTrustScope(TrustScope scope) =>
+        scope switch
+        {
+            TrustScope.Project => "project",
+            TrustScope.LocalUser => "local-user",
+            TrustScope.GlobalUser => "global-user",
+            _ => throw new ArgumentOutOfRangeException(nameof(scope)),
+        };
 
     private static async Task<string?> StopAsync(Process process)
     {
@@ -502,7 +732,8 @@ internal sealed class LifecycleHookExecutor(IFileSystem fileSystem, CliConsole c
         var value = fileSystem.File.ReadAllText(resultPath);
         return value.StartsWith(LifecycleHookSupervisor.FailurePrefix, StringComparison.Ordinal)
             ? LifecycleHookExecutionResult.Failure(
-                $"Lifecycle hook supervisor failed for executable '{invocation.Executable}': {value[LifecycleHookSupervisor.FailurePrefix.Length..]}"
+                $"Lifecycle hook supervisor failed for executable '{invocation.Executable}': {value[LifecycleHookSupervisor.FailurePrefix.Length..]}",
+                historyOutcome: "start-failed"
             )
             : null;
     }
@@ -528,6 +759,14 @@ internal sealed class LifecycleHookExecutor(IFileSystem fileSystem, CliConsole c
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
             // Process-tree termination below is the fallback when control-file I/O fails.
+        }
+    }
+
+    private void DeleteTemporaryFile(string path)
+    {
+        if (fileSystem.File.Exists(path))
+        {
+            fileSystem.File.Delete(path);
         }
     }
 

@@ -22,6 +22,9 @@ Markdown but never launch a process and do not use trust. See the
 Persisted script denial overrides all three modes and every source or pack
 grant. It is evaluated before command resolution or confirmation.
 
+Before requesting consent, LunaPack displays the pack ID, resolved command and
+arguments, and optional script description, regardless of the minimum log level.
+
 Dry runs do not execute hooks or request hook consent. They may prompt for pack
 parameters before planning unless `--skip-parameters` is set. They show each
 hook phase, pack and version, suppression, and expected consent source. Script rows report applicable
@@ -44,6 +47,10 @@ by LunaPack.
 In noninteractive sessions, LunaPack captures bounded hook output. Hooks used in
 automation must not require input; configure the underlying command's
 noninteractive or accept-defaults option instead.
+
+When cancellation stops a hook's process tree, LunaPack closes redirected
+readers instead of waiting for detached descendants that retain output handles.
+Output already captured is emitted; unread output may be discarded.
 
 ## Trust scopes
 

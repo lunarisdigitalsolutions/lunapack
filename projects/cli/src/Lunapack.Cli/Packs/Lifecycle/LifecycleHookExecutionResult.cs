@@ -1,6 +1,11 @@
 namespace Lunapack.Cli.Packs.Lifecycle;
 
-internal sealed record LifecycleHookExecutionResult(LifecycleHookOutcome Outcome, string? Error)
+internal sealed record LifecycleHookExecutionResult(
+    LifecycleHookOutcome Outcome,
+    string? Error,
+    int? ExitCode = null,
+    string? HistoryOutcome = null
+)
 {
     public bool IsSuccess => Outcome == LifecycleHookOutcome.Succeeded;
 
@@ -13,15 +18,18 @@ internal sealed record LifecycleHookExecutionResult(LifecycleHookOutcome Outcome
             ),
         };
 
-    public static LifecycleHookExecutionResult Success() =>
-        new(LifecycleHookOutcome.Succeeded, null);
+    public static LifecycleHookExecutionResult Success(int? exitCode = 0) =>
+        new(LifecycleHookOutcome.Succeeded, null, exitCode, "succeeded");
 
-    public static LifecycleHookExecutionResult Failure(string error) =>
-        new(LifecycleHookOutcome.Failed, error);
+    public static LifecycleHookExecutionResult Failure(
+        string error,
+        int? exitCode = null,
+        string? historyOutcome = "failed"
+    ) => new(LifecycleHookOutcome.Failed, error, exitCode, historyOutcome);
 
-    public static LifecycleHookExecutionResult Timeout(string error) =>
-        new(LifecycleHookOutcome.TimedOut, error);
+    public static LifecycleHookExecutionResult Timeout(string error, int? exitCode = null) =>
+        new(LifecycleHookOutcome.TimedOut, error, exitCode, "failed");
 
-    public static LifecycleHookExecutionResult Cancelled(string error) =>
-        new(LifecycleHookOutcome.Cancelled, error);
+    public static LifecycleHookExecutionResult Cancelled(string error, int? exitCode = null) =>
+        new(LifecycleHookOutcome.Cancelled, error, exitCode, "canceled");
 }

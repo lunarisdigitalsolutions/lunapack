@@ -10,9 +10,12 @@ project state changes.
 
 Update and uninstall treat local changes differently. Update leaves local drift
 alone when newly rendered pack content still matches the previous locked
-digest. If a newer pack stops declaring a target, however, update deletes that
-obsolete target without a drift check. Preview updates before applying them;
-use an `@ignore` remapping when an obsolete managed file must remain locally.
+digest. If a newer pack stops declaring a target, update deletes an unchanged
+obsolete target. A locally modified target is preserved, reported with a
+warning, and removed from lock ownership. Use `--dry-run` to preview that
+decision and `--remove-modified` only when you intentionally want the modified
+obsolete target deleted. Use an `@ignore` remapping when a still-declared file
+must remain locally owned.
 
 Uninstall removes an unchanged copy target when it is unreachable. For a
 section merge, it removes only that pack's recorded marker-bounded section;

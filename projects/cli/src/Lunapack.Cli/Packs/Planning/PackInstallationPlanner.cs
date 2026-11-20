@@ -35,6 +35,7 @@ internal sealed class PackInstallationPlanner(
             );
         }
 
+        var previousManagedTargets = CreatePreviousManagedTargetMap(lockFile);
         var plannedManagedFiles = PlanManagedFiles(
             projectDirectory,
             graph,
@@ -44,7 +45,8 @@ internal sealed class PackInstallationPlanner(
             installationRequest,
             parameters,
             externalContentRoots ?? ExternalContentRoots.Empty,
-            ignoredDeclaredTargets
+            ignoredDeclaredTargets,
+            previousManagedTargets
         );
         if (plannedManagedFiles.Value is not { } plan)
         {
@@ -61,12 +63,30 @@ internal sealed class PackInstallationPlanner(
         );
     }
 
-    private static ManifestOperationResult<
+    private ManifestOperationResult<
         Dictionary<string, List<ManagedRootOwner>>
     > CreateExistingManagedTargetMap(ProjectLockFile lockFile) =>
         ManifestOperationResult<Dictionary<string, List<ManagedRootOwner>>>.Success(
-            ManagedRootInventory.CreateOwnershipMap(lockFile)
+            ManagedRootInventory.CreateOwnershipMap(lockFile, fileSystem)
         );
+
+    private static Dictionary<
+        (string PackId, string DeclaredTarget),
+        string
+    > CreatePreviousManagedTargetMap(ProjectLockFile lockFile) =>
+        lockFile
+            .Packs.SelectMany(pack =>
+                pack.ManagedFiles.Select(file =>
+                    (
+                        Key: (
+                            pack.Id,
+                            ProjectPath.Normalize(file.DeclaredTargetPath ?? file.TargetPath)
+                        ),
+                        Value: ProjectPath.Normalize(file.TargetPath)
+                    )
+                )
+            )
+            .ToDictionary(entry => entry.Key, entry => entry.Value);
 
     private ManifestOperationResult<PackInstallationPlan> PlanManagedFiles(
         string projectDirectory,
@@ -77,7 +97,8 @@ internal sealed class PackInstallationPlanner(
         PackInstallationRequest installationRequest,
         ResolvedPackParameters parameters,
         ExternalContentRoots externalContentRoots,
-        HashSet<string> ignoredDeclaredTargets
+        HashSet<string> ignoredDeclaredTargets,
+        IReadOnlyDictionary<(string PackId, string DeclaredTarget), string> previousManagedTargets
     )
     {
         var expandedCandidates = CreateManagedFileCandidates(
@@ -86,7 +107,8 @@ internal sealed class PackInstallationPlanner(
             requestedPacks,
             installationRequest,
             parameters,
-            externalContentRoots
+            externalContentRoots,
+            previousManagedTargets
         );
         if (expandedCandidates.Value is not { } candidates)
         {
@@ -94,16 +116,12 @@ internal sealed class PackInstallationPlanner(
                 expandedCandidates.Error ?? "Unable to expand managed files."
             );
         }
-        var remappings = candidates
-            .Select(candidate => candidate.Remapping)
-            .OfType<ManagedFileRemapping>()
-            .Distinct()
-            .ToList();
+        var remappings = CreateManagedFileRemappings(candidates);
         candidates = FilterIgnoredCandidates(candidates, ignoredDeclaredTargets);
         var effectiveTargets = CreateEffectiveTargetMap(candidates);
         var diagnostics = new List<ManagedFileTemplateDiagnostic>();
         var plannedTargets = new Dictionary<string, List<PlannedManagedFile>>(
-            StringComparer.Ordinal
+            ProjectPath.ProjectRelativePathComparer(fileSystem)
         );
         foreach (var candidate in candidates)
         {
@@ -183,6 +201,16 @@ internal sealed class PackInstallationPlanner(
             }),
         ];
 
+    private static List<ManagedFileRemapping> CreateManagedFileRemappings(
+        IReadOnlyList<ManagedFilePlanCandidate> candidates
+    ) =>
+        [
+            .. candidates
+                .Select(candidate => candidate.Remapping)
+                .OfType<ManagedFileRemapping>()
+                .Distinct(),
+        ];
+
     private static Dictionary<string, string> CreateEffectiveTargetMap(
         IReadOnlyList<ManagedFilePlanCandidate> candidates
     ) =>
@@ -204,7 +232,8 @@ internal sealed class PackInstallationPlanner(
         IReadOnlyList<ProjectConfiguration.RequestedPack> requestedPacks,
         PackInstallationRequest installationRequest,
         ResolvedPackParameters parameters,
-        ExternalContentRoots externalContentRoots
+        ExternalContentRoots externalContentRoots,
+        IReadOnlyDictionary<(string PackId, string DeclaredTarget), string> previousManagedTargets
     )
     {
         var candidates = new List<ManagedFilePlanCandidate>();
@@ -246,7 +275,8 @@ internal sealed class PackInstallationPlanner(
                         candidate.DeclaredTarget,
                         requestedPacks,
                         configuration,
-                        installationRequest
+                        installationRequest,
+                        previousManagedTargets
                     );
                     if (resolvedTarget.Value is not { } resolution)
                     {
@@ -310,54 +340,20 @@ internal sealed class PackInstallationPlanner(
         string target,
         IReadOnlyList<ProjectConfiguration.RequestedPack> requestedPacks,
         ProjectConfiguration configuration,
-        PackInstallationRequest installationRequest
+        PackInstallationRequest installationRequest,
+        IReadOnlyDictionary<(string PackId, string DeclaredTarget), string> previousManagedTargets
     )
     {
-        var globalRemapping = ManagedFileTargetRemapping.FromConfiguration(configuration.Remap);
-        var packRemapping = ManagedFileTargetRemapping.FromConfiguration(
-            requestedPacks
-                .FirstOrDefault(request =>
-                    string.Equals(request.Id, pack.Manifest.Id, StringComparison.Ordinal)
-                )
-                ?.Remap
+        var configuredTarget = ResolveConfiguredTarget(
+            pack,
+            target,
+            requestedPacks,
+            configuration,
+            installationRequest
         );
-        var remappedTarget = installationRequest.TargetRemapping?.TryResolve(target);
-        if (remappedTarget is not null)
+        if (configuredTarget is not null)
         {
-            return ManifestOperationResult<ManagedFileTargetResolution>.Success(
-                CreateRemappedTargetResolution(
-                    pack.Manifest.Id,
-                    target,
-                    remappedTarget,
-                    ManagedFileRemappingOrigin.Command
-                )
-            );
-        }
-
-        remappedTarget = packRemapping.TryResolve(target);
-        if (remappedTarget is not null)
-        {
-            return ManifestOperationResult<ManagedFileTargetResolution>.Success(
-                CreateRemappedTargetResolution(
-                    pack.Manifest.Id,
-                    target,
-                    remappedTarget,
-                    ManagedFileRemappingOrigin.Pack
-                )
-            );
-        }
-
-        remappedTarget = globalRemapping.TryResolve(target);
-        if (remappedTarget is not null)
-        {
-            return ManifestOperationResult<ManagedFileTargetResolution>.Success(
-                CreateRemappedTargetResolution(
-                    pack.Manifest.Id,
-                    target,
-                    remappedTarget,
-                    ManagedFileRemappingOrigin.Project
-                )
-            );
+            return ManifestOperationResult<ManagedFileTargetResolution>.Success(configuredTarget);
         }
 
         var compositeTarget = graph.ResolveCompositeTarget(pack, target);
@@ -381,17 +377,103 @@ internal sealed class PackInstallationPlanner(
             );
         }
 
+        var previousTarget = GetPreviousManagedTarget(
+            pack,
+            target,
+            installationRequest,
+            previousManagedTargets
+        );
+        if (previousTarget is not null)
+        {
+            return ManifestOperationResult<ManagedFileTargetResolution>.Success(
+                new ManagedFileTargetResolution(previousTarget)
+            );
+        }
+
+        return ManifestOperationResult<ManagedFileTargetResolution>.Success(
+            new ManagedFileTargetResolution(
+                ResolveUnmappedTarget(fileSystem, pack, target, requestedPacks)
+            )
+        );
+    }
+
+    private static ManagedFileTargetResolution? ResolveConfiguredTarget(
+        DiscoveredPack pack,
+        string target,
+        IReadOnlyList<ProjectConfiguration.RequestedPack> requestedPacks,
+        ProjectConfiguration configuration,
+        PackInstallationRequest installationRequest
+    )
+    {
+        var commandTarget = installationRequest.TargetRemapping?.TryResolve(target);
+        if (commandTarget is not null)
+        {
+            return CreateRemappedTargetResolution(
+                pack.Manifest.Id,
+                target,
+                commandTarget,
+                ManagedFileRemappingOrigin.Command
+            );
+        }
+
+        var packRemapping = ManagedFileTargetRemapping.FromConfiguration(
+            requestedPacks
+                .FirstOrDefault(request =>
+                    string.Equals(request.Id, pack.Manifest.Id, StringComparison.Ordinal)
+                )
+                ?.Remap
+        );
+        var packTarget = packRemapping.TryResolve(target);
+        if (packTarget is not null)
+        {
+            return CreateRemappedTargetResolution(
+                pack.Manifest.Id,
+                target,
+                packTarget,
+                ManagedFileRemappingOrigin.Pack
+            );
+        }
+
+        var projectTarget = ManagedFileTargetRemapping
+            .FromConfiguration(configuration.Remap)
+            .TryResolve(target);
+        return projectTarget is null
+            ? null
+            : CreateRemappedTargetResolution(
+                pack.Manifest.Id,
+                target,
+                projectTarget,
+                ManagedFileRemappingOrigin.Project
+            );
+    }
+
+    private static string? GetPreviousManagedTarget(
+        DiscoveredPack pack,
+        string target,
+        PackInstallationRequest installationRequest,
+        IReadOnlyDictionary<(string PackId, string DeclaredTarget), string> previousManagedTargets
+    ) =>
+        installationRequest.PlanningMode == PackManagedFilePlanningMode.Update
+        && previousManagedTargets.TryGetValue(
+            (pack.Manifest.Id, ProjectPath.Normalize(target)),
+            out var previousTarget
+        )
+            ? previousTarget
+            : null;
+
+    private static string ResolveUnmappedTarget(
+        IFileSystem fileSystem,
+        DiscoveredPack pack,
+        string target,
+        IReadOnlyList<ProjectConfiguration.RequestedPack> requestedPacks
+    )
+    {
         var destination = requestedPacks
             .FirstOrDefault(request =>
                 string.Equals(request.Id, pack.Manifest.Id, StringComparison.Ordinal)
             )
             ?.Destination;
-
-        return ManifestOperationResult<ManagedFileTargetResolution>.Success(
-            new ManagedFileTargetResolution(
-                destination is null ? target : fileSystem.Path.Combine(destination, target)
-            )
-        );
+        return destination is null ? target : fileSystem.Path.Combine(destination, target);
     }
 
     private static ManagedFileTargetResolution CreateRemappedTargetResolution(

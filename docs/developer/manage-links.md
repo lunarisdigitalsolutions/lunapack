@@ -72,6 +72,12 @@ effective target paths in the lock file.
 Git links lock one immutable commit per operation. A new commit alone is not an
 update when selected paths, mapped targets, definition, and content are
 equivalent. Local links use content digests, not timestamps, as final evidence.
+When an update stops selecting an installed link target, Luna deletes it only
+when its current digest matches the lock record. A locally modified target is
+preserved with a warning and becomes user-owned because Luna removes its stale
+lock entry. An already absent target needs no file action. `--dry-run` and
+`--remove-modified` are pack-update-only and are rejected for named link
+updates before files or state change.
 
 ## Remove or recover
 

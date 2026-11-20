@@ -25,6 +25,8 @@ internal sealed class CliConsole(
 
     public void Info(string message) => Write(CliLogLevel.Info, message);
 
+    public void InfoLines(string message) => WriteLines(CliLogLevel.Info, message);
+
     public void MarkupInfo(string markup)
     {
         if (IsEnabled(CliLogLevel.Info))
@@ -38,6 +40,8 @@ internal sealed class CliConsole(
     public void Accent(string message) => WriteStyledInfo("cyan", message);
 
     public void Warning(string message) => Write(CliLogLevel.Warning, message);
+
+    public void WarningLines(string message) => WriteLines(CliLogLevel.Warning, message);
 
     public void Error(string message) => Write(CliLogLevel.Error, message);
 
@@ -55,6 +59,24 @@ internal sealed class CliConsole(
         return response is null || response.Value.Key == ConsoleKey.Enter
             ? defaultValue
             : response.Value.KeyChar is 'y' or 'Y';
+    }
+
+    public bool ConfirmWithDetails(
+        string prompt,
+        IEnumerable<string> details,
+        bool defaultValue = true
+    )
+    {
+        WriteDetails(details);
+        return Confirm(prompt, defaultValue);
+    }
+
+    public void WriteDetails(IEnumerable<string> details)
+    {
+        foreach (var detail in details)
+        {
+            ansiConsole.WriteLine(Sanitize(detail));
+        }
     }
 
     public bool WaitForContinue()
@@ -209,5 +231,14 @@ internal sealed class CliConsole(
     }
 
     private string Sanitize(string value) =>
-        sanitizeOutput ? CliTerminalSanitizer.Sanitize(value) : value;
+        TerminalText.EncodeControls(sanitizeOutput ? CliTerminalSanitizer.Sanitize(value) : value);
+
+    private void WriteLines(CliLogLevel level, string message)
+    {
+        using var reader = new StringReader(message);
+        while (reader.ReadLine() is { } line)
+        {
+            Write(level, line);
+        }
+    }
 }

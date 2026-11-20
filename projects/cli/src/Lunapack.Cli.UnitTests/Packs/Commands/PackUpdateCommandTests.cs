@@ -122,6 +122,83 @@ public sealed class PackUpdateCommandTests
     }
 
     [Test]
+    public async Task Update_WhenRemovedManagedTargetModified_PreservesFileAndDropsOwnership()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        ansiConsole.Profile.Width = 500;
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var sourcePath = CreateRemovedManagedFilePackSource(workspace.Path, "dotnet");
+        await ConfigureSourceAsync(workspace, sourcePath);
+        await workspace.Application.RunAsync(["install", "dotnet@1.0.0"], workspace.Path);
+        var targetPath = Path.Combine(workspace.Path, "dotnet.txt");
+        File.WriteAllText(targetPath, "local change");
+        var outputStart = ansiConsole.Output.Length;
+
+        var exitCode = await workspace.Application.RunAsync(["update", "dotnet"], workspace.Path);
+        var state = (await workspace.StateStore.LoadAsync(workspace.Path)).RequireValue();
+        var output = ansiConsole.Output[outputStart..];
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(File.ReadAllText(targetPath)).IsEqualTo("local change");
+        await Assert.That(output).Contains("Preserved locally modified target 'dotnet.txt'");
+        await Assert.That(output).Contains("no longer managed by LunaPack");
+        await Assert.That(state.LockFile.Packs.Single().ManagedFiles).IsEmpty();
+    }
+
+    [Test]
+    public async Task Update_WhenRemoveModifiedSpecified_DeletesModifiedObsoleteTarget()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        ansiConsole.Profile.Width = 500;
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var sourcePath = CreateRemovedManagedFilePackSource(workspace.Path, "dotnet");
+        await ConfigureSourceAsync(workspace, sourcePath);
+        await workspace.Application.RunAsync(["install", "dotnet@1.0.0"], workspace.Path);
+        var targetPath = Path.Combine(workspace.Path, "dotnet.txt");
+        File.WriteAllText(targetPath, "local change");
+        var outputStart = ansiConsole.Output.Length;
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["update", "dotnet", "--remove-modified"],
+            workspace.Path
+        );
+        var state = (await workspace.StateStore.LoadAsync(workspace.Path)).RequireValue();
+        var output = ansiConsole.Output[outputStart..];
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(File.Exists(targetPath)).IsFalse();
+        await Assert.That(output).Contains("locally modified; --remove-modified");
+        await Assert.That(state.LockFile.Packs.Single().ManagedFiles).IsEmpty();
+    }
+
+    [Test]
+    public async Task UpdateDryRun_WhenRemovedManagedTargetModified_PreservesStateAndPreviews()
+    {
+        var ansiConsole = new SpectreTestConsole();
+        ansiConsole.Profile.Width = 500;
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var sourcePath = CreateRemovedManagedFilePackSource(workspace.Path, "dotnet");
+        await ConfigureSourceAsync(workspace, sourcePath);
+        await workspace.Application.RunAsync(["install", "dotnet@1.0.0"], workspace.Path);
+        var targetPath = Path.Combine(workspace.Path, "dotnet.txt");
+        File.WriteAllText(targetPath, "local change");
+        var initialState = await ReadStateAsync(workspace.Path);
+        var outputStart = ansiConsole.Output.Length;
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["update", "dotnet", "--dry-run"],
+            workspace.Path
+        );
+        var output = ansiConsole.Output[outputStart..];
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(File.ReadAllText(targetPath)).IsEqualTo("local change");
+        await Assert.That(output).Contains("Preserve dotnet.txt");
+        await Assert.That(output).Contains("locally modified");
+        await Assert.That(await ReadStateAsync(workspace.Path)).IsEqualTo(initialState);
+    }
+
+    [Test]
     public async Task Scenario_UpdateReleaseExistsInMultipleSources_ReportsSelectedSource()
     {
         var ansiConsole = new SpectreTestConsole();
@@ -515,6 +592,49 @@ public sealed class PackUpdateCommandTests
     }
 
     [Test]
+    [Arguments("--dry-run")]
+    [Arguments("--remove-modified")]
+    public async Task Update_WhenPackOnlyOptionTargetsNamedLink_RejectsBeforeMutation(string option)
+    {
+        var ansiConsole = new SpectreTestConsole();
+        ansiConsole.Profile.Width = 500;
+        using var workspace = new TestWorkspace(ansiConsole: ansiConsole);
+        var sourcePath = Path.Combine(workspace.Path, "source");
+        Directory.CreateDirectory(sourcePath);
+        File.WriteAllText(Path.Combine(sourcePath, "linked.txt"), "initial");
+        await ConfigureSourceAsync(workspace, "source");
+        await workspace.Application.RunAsync(
+            [
+                "links",
+                "add",
+                "guidance",
+                "--source",
+                "local",
+                "--include",
+                "linked.txt",
+                "--target",
+                "docs",
+                "--install",
+            ],
+            workspace.Path
+        );
+        var targetPath = Path.Combine(workspace.Path, "docs", "linked.txt");
+        File.WriteAllText(Path.Combine(sourcePath, "linked.txt"), "updated");
+        var initialState = await ReadStateAsync(workspace.Path);
+
+        var exitCode = await workspace.Application.RunAsync(
+            ["update", "guidance", option],
+            workspace.Path
+        );
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(File.ReadAllText(targetPath)).IsEqualTo("initial");
+        await Assert.That(await ReadStateAsync(workspace.Path)).IsEqualTo(initialState);
+        await Assert.That(ansiConsole.Output).Contains(option);
+        await Assert.That(ansiConsole.Output).Contains("link updates");
+    }
+
+    [Test]
     public async Task Update_WhenNoVariablesSpecified_UsesDeclaredDefault()
     {
         using var workspace = new TestWorkspace();
@@ -619,6 +739,49 @@ public sealed class PackUpdateCommandTests
     }
 
     [Test]
+    public async Task Update_WhenCommandRemapsPreservedTarget_LocksNewPathForLaterUpdates()
+    {
+        using var workspace = new TestWorkspace();
+        var sourcePath = CreateVersionedPackSource(
+            workspace.Path,
+            "dotnet",
+            "1.0.0",
+            "2.0.0",
+            "3.0.0"
+        );
+        await ConfigureSourceAsync(workspace, sourcePath);
+        await workspace.Application.RunAsync(["install", "dotnet@1.0.0"], workspace.Path);
+        var oldTarget = Path.Combine(workspace.Path, "dotnet.txt");
+        File.WriteAllText(oldTarget, "local change");
+
+        var remappedExitCode = await workspace.Application.RunAsync(
+            ["update", "dotnet@2.0.0", "--remap-file", "dotnet.txt=docs/dotnet.txt"],
+            workspace.Path
+        );
+        var remappedState = (await workspace.StateStore.LoadAsync(workspace.Path)).RequireValue();
+
+        await Assert.That(remappedExitCode).IsEqualTo(0);
+        await Assert.That(File.ReadAllText(oldTarget)).IsEqualTo("local change");
+        await Assert
+            .That(File.ReadAllText(Path.Combine(workspace.Path, "docs", "dotnet.txt")))
+            .IsEqualTo("2.0.0");
+        await Assert
+            .That(remappedState.LockFile.Packs.Single().ManagedFiles.Single().TargetPath)
+            .IsEqualTo("docs/dotnet.txt");
+
+        var nextExitCode = await workspace.Application.RunAsync(
+            ["update", "dotnet@3.0.0"],
+            workspace.Path
+        );
+
+        await Assert.That(nextExitCode).IsEqualTo(0);
+        await Assert.That(File.ReadAllText(oldTarget)).IsEqualTo("local change");
+        await Assert
+            .That(File.ReadAllText(Path.Combine(workspace.Path, "docs", "dotnet.txt")))
+            .IsEqualTo("3.0.0");
+    }
+
+    [Test]
     [Arguments(new[] { "update", "dotnet", "--skip-parameters" }, "--dry-run")]
     [Arguments(new[] { "update", "--save-remap" }, "requires")]
     [Arguments(new[] { "update", "--remap-file", "a=b" }, "exactly one")]
@@ -690,6 +853,29 @@ public sealed class PackUpdateCommandTests
             manifestPath,
             $"id: {id}\nversion: {version}\nlicense: MIT\nauthor: Lunaris Digital Solutions <info@lunaris.digital>\nmanagedFiles:\n  - source: templates/content.txt\n    target: {id}.txt\n    strategy:\n      type: {type}\n      method: {method}\n"
         );
+    }
+
+    private static string CreateRemovedManagedFilePackSource(string projectDirectory, string id)
+    {
+        var sourceDirectory = "source";
+        var sourcePath = Path.Combine(projectDirectory, sourceDirectory);
+        var oldPackDirectory = Path.Combine(sourcePath, $"{id}-1.0.0");
+        var newPackDirectory = Path.Combine(sourcePath, $"{id}-2.0.0");
+        Directory.CreateDirectory(Path.Combine(oldPackDirectory, "templates"));
+        Directory.CreateDirectory(newPackDirectory);
+        File.WriteAllText(
+            Path.Combine(oldPackDirectory, "pack.yml"),
+            $"id: {id}\nversion: 1.0.0\nlicense: MIT\nauthor: Lunaris Digital Solutions <info@lunaris.digital>\nmanagedFiles:\n  - source: templates/content.txt\n    target: {id}.txt\n"
+        );
+        File.WriteAllText(
+            Path.Combine(oldPackDirectory, "templates", "content.txt"),
+            "managed content"
+        );
+        File.WriteAllText(
+            Path.Combine(newPackDirectory, "pack.yml"),
+            $"id: {id}\nversion: 2.0.0\nlicense: MIT\nauthor: Lunaris Digital Solutions <info@lunaris.digital>\nmanagedFiles: []\n"
+        );
+        return sourceDirectory;
     }
 
     private static async Task<string> ReadStateAsync(string projectDirectory) =>

@@ -1,4 +1,5 @@
 using System.IO.Abstractions.TestingHelpers;
+using System.Security.Cryptography;
 using System.Text;
 using Lunapack.Cli.Catalog;
 using Lunapack.Cli.Packs.ManagedFiles;
@@ -105,7 +106,8 @@ public sealed class PackUpdateTransactionTests
                         previousPack.ManagedFiles.Single().TargetPath,
                         previousPack.ManagedFiles.Single().Sha256
                     ),
-                    ProjectPath("removed.txt")
+                    ProjectPath("removed.txt"),
+                    ComputeSha256("old content")
                 ),
             ])
         );
@@ -120,6 +122,124 @@ public sealed class PackUpdateTransactionTests
             .That(ReadFile(fileSystem, ProjectPath("removed.txt")))
             .IsEqualTo("old content");
     }
+
+    [Test]
+    public async Task Apply_WhenDeleteTargetChangedAfterPlanning_RollsBackEarlierAction()
+    {
+        var fileSystem = CreateFileSystem((ProjectPath("removed.txt"), "changed content"));
+        var createdFile = CreateManagedFile("created.txt", "new content");
+        var transaction = new PackUpdateTransaction(fileSystem, TestConsole.Create());
+
+        var result = transaction.Apply(
+            _projectDirectory,
+            new PackUpdatePlan([
+                new CreateManagedFileUpdateAction(createdFile),
+                CreateDeleteAction(
+                    "removed.txt",
+                    ComputeSha256("planned content"),
+                    wasModifiedAtPlanning: true
+                ),
+            ])
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("changed after the update was planned");
+        await Assert.That(fileSystem.File.Exists(ProjectPath("created.txt"))).IsFalse();
+        await Assert
+            .That(ReadFile(fileSystem, ProjectPath("removed.txt")))
+            .IsEqualTo("changed content");
+    }
+
+    [Test]
+    public async Task Apply_WhenModifiedDeleteMatchesPlanning_DeletesTarget()
+    {
+        var fileSystem = CreateFileSystem((ProjectPath("removed.txt"), "modified content"));
+        var transaction = new PackUpdateTransaction(fileSystem, TestConsole.Create());
+
+        var result = transaction.Apply(
+            _projectDirectory,
+            new PackUpdatePlan([
+                CreateDeleteAction(
+                    "removed.txt",
+                    ComputeSha256("modified content"),
+                    wasModifiedAtPlanning: true
+                ),
+            ])
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert.That(fileSystem.File.Exists(ProjectPath("removed.txt"))).IsFalse();
+    }
+
+    [Test]
+    public async Task Apply_WhenDeleteTargetRemovedAfterPlanning_ReturnsFailure()
+    {
+        var fileSystem = CreateFileSystem();
+        var transaction = new PackUpdateTransaction(fileSystem, TestConsole.Create());
+
+        var result = transaction.Apply(
+            _projectDirectory,
+            new PackUpdatePlan([
+                CreateDeleteAction(
+                    "removed.txt",
+                    ComputeSha256("planned content"),
+                    wasModifiedAtPlanning: false
+                ),
+            ])
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("changed after the update was planned");
+    }
+
+    [Test]
+    public async Task Apply_WhenMissingTargetWasNotPlanned_PreservesNewFile()
+    {
+        var fileSystem = CreateFileSystem((ProjectPath("newly-created.txt"), "user content"));
+        var transaction = new PackUpdateTransaction(fileSystem, TestConsole.Create());
+
+        var result = transaction.Apply(_projectDirectory, new PackUpdatePlan([]));
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert
+            .That(ReadFile(fileSystem, ProjectPath("newly-created.txt")))
+            .IsEqualTo("user content");
+    }
+
+    [Test]
+    public async Task Apply_WhenMultipleActionsCreateSameTarget_RollbackLeavesItAbsent()
+    {
+        var fileSystem = CreateFileSystem();
+        fileSystem.Directory.CreateDirectory(_projectDirectory);
+        var first = CreateManagedFile("shared.txt", "first");
+        var second = CreateManagedFile("shared.txt", "second");
+        var transaction = new PackUpdateTransaction(fileSystem, TestConsole.Create());
+
+        var result = transaction.Apply(
+            _projectDirectory,
+            new PackUpdatePlan([
+                new CreateManagedFileUpdateAction(first),
+                new CopyManagedFileUpdateAction(second, null),
+            ])
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        result.RequireValue().Restore();
+        await Assert.That(fileSystem.File.Exists(ProjectPath("shared.txt"))).IsFalse();
+    }
+
+    private static DeleteManagedFileUpdateAction CreateDeleteAction(
+        string target,
+        string plannedTargetSha256,
+        bool wasModifiedAtPlanning
+    ) =>
+        new(
+            new ManagedRootOwner(ManagedRootKind.Pack, "example", "1.0.0"),
+            new ManagedRootFile("example", target, target, "locked-sha256"),
+            ProjectPath(target),
+            plannedTargetSha256,
+            wasModifiedAtPlanning
+        );
 
     private static PlannedManagedFile CreateManagedFile(string target, string contents) =>
         new(
@@ -163,4 +283,7 @@ public sealed class PackUpdateTransactionTests
 
     private static string ReadFile(MockFileSystem fileSystem, string path) =>
         fileSystem.File.ReadAllText(path);
+
+    private static string ComputeSha256(string contents) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(contents)));
 }

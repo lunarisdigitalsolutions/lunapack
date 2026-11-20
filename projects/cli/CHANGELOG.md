@@ -18,6 +18,10 @@ Update this section before creating a release tag.
 
 ### Added
 
+- `luna doctor` reports project-relevant Git, credential-store, state, and
+  profile/cache problems with remediation. Its default checks are offline;
+  `--network` enables bounded, noninteractive checks for configured Git and OCI
+  sources.
 - Install, update, local pack validation, and OCI publication now screen
   pack-managed UTF-8 text for hidden Unicode. Bidi controls and U+200B block
   before side effects unless `--allow-hidden-characters` is supplied; other
@@ -32,11 +36,24 @@ Update this section before creating a release tag.
   `--format json` for versioned machine-readable results. JSON stays on
   standard output while human-readable diagnostics use standard error; audit
   results include stable finding codes and severity counts.
+- Luna records bounded per-user lifecycle script attempt history and adds
+  `luna hooks history` for read-only inspection of recent commands, authorization
+  sources, durations, and outcomes. History persistence failures warn without
+  changing script results or rollback behavior.
 
 ### Fixed
 
+- Lifecycle consent always displays the pack ID, resolved command and arguments,
+  and optional description even when informational output is suppressed.
+- Canceling noninteractive lifecycle hooks no longer waits for detached
+  descendants that retain output handles. Unread output may be discarded.
+- Pack and link updates now preserve locally modified managed targets removed
+  from their next selection and warn that the files are no longer managed.
+  Pack updates support explicit deletion with `--remove-modified`.
 - Git links now fetch selected files missing from cached content using the
   resolved commit.
+- Luna resolves Git from trusted absolute `PATH` entries instead of a
+  same-directory executable, and rejects credential-bearing HTTP Git URLs.
 
 ## Version 1.6.0 - 2026-11-17
 
