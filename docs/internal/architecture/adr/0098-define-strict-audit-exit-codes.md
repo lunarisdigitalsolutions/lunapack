@@ -5,7 +5,7 @@ decision-makers:
   - Lunaris Engineering
 ---
 
-# ADR-0090: Define Strict Audit Exit Codes
+# ADR-0098: Define Strict Audit Exit Codes
 
 ## Context and Problem Statement
 
@@ -45,6 +45,9 @@ from invalid invocation or unreadable state without parsing presentation text.
 `--fail-fast` requires `--strict` and stops after the first missing or modified
 target. Source-provenance and ownership-conflict statuses remain informational.
 The lock-file schema and default audit behavior do not change.
+Strict audit uses text output. Combining `--strict` with `--format json` is
+invalid usage and returns exit code `1` with a JSON failure envelope; JSON
+output remains available for report-only audit.
 
 ### Consequences
 

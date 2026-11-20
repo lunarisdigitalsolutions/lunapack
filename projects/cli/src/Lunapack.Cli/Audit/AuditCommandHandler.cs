@@ -1,6 +1,8 @@
 using System.CommandLine;
 using Lunapack.Cli.Application;
+using Lunapack.Cli.Application.Diagnostics;
 using Lunapack.Cli.Links;
+using Lunapack.Cli.Packs.ContentScreening;
 using Lunapack.Cli.Project;
 using Spectre.Console;
 
@@ -27,36 +29,59 @@ internal sealed class AuditCommandHandler(
         {
             Description = "Stop strict audit after the first integrity violation.",
         };
+        var formatOption = CliOutputFormatOption.Create();
         command.Options.Add(strictOption);
         command.Options.Add(failFastOption);
-        command.SetAction(parseResult =>
-            AuditAsync(
+        command.Options.Add(formatOption);
+        command.SetAction(async parseResult =>
+        {
+            var formatValue = parseResult.GetValue(formatOption);
+            if (!CliOutputFormatOption.TryParse(formatValue, out var format))
+            {
+                return console.Fail(CliOutputFormatOption.FormatUnsupportedMessage(formatValue));
+            }
+
+            return await AuditAsync(
                 workspaceDirectoryResolver.Resolve(
                     projectDirectory,
                     parseResult.GetValue(workspaceOption)
                 ),
                 parseResult.GetValue(strictOption),
-                parseResult.GetValue(failFastOption)
-            )
-        );
+                parseResult.GetValue(failFastOption),
+                format,
+                parseResult.InvocationConfiguration.Output
+            );
+        });
 
         return command;
     }
 
     public async Task<int> AuditAsync(
         string projectDirectory,
-        bool strict = false,
-        bool failFast = false
+        bool strict,
+        bool failFast,
+        CliOutputFormat format,
+        TextWriter output
     )
     {
         if (failFast && !strict)
         {
-            return console.Fail("Option '--fail-fast' requires '--strict'.");
+            var exitCode = console.Fail("Option '--fail-fast' requires '--strict'.");
+            WriteJsonFailure(format, output);
+            return exitCode;
+        }
+
+        if (strict && format == CliOutputFormat.Json)
+        {
+            var exitCode = console.Fail("Option '--strict' cannot be used with '--format json'.");
+            WriteJsonFailure(format, output);
+            return exitCode;
         }
 
         var prerequisiteFailure = await prerequisiteGuard.RequireWorkspaceAsync(projectDirectory);
         if (prerequisiteFailure is not null)
         {
+            WriteJsonFailure(format, output);
             return prerequisiteFailure.Value;
         }
 
@@ -68,9 +93,48 @@ internal sealed class AuditCommandHandler(
         var inspected = await auditService.InspectAsync(projectDirectory);
         if (inspected.Value is not { } report)
         {
-            return console.Fail(inspected.Error);
+            return Fail(inspected.Error, format, output);
         }
 
+        if (format == CliOutputFormat.Json)
+        {
+            var loadedState = await projectStateStore.LoadAsync(projectDirectory);
+            if (loadedState.Value is not { } state)
+            {
+                return Fail(loadedState.Error, format, output);
+            }
+
+            var links = linkLifecycleService.Audit(projectDirectory, state.LockFile);
+            var findings = AuditJsonMapper.MapFindings(report, links);
+            CliJsonWriter.WriteAudit(
+                output,
+                AuditJsonMapper.MapResult(report, links),
+                findings,
+                CliJsonSummary.FromFindings(findings)
+            );
+            return 0;
+        }
+
+        RenderReport(report);
+        var textState = await projectStateStore.LoadAsync(projectDirectory);
+        if (textState.Value is not { } projectState)
+        {
+            return console.Fail(textState.Error);
+        }
+
+        RenderLinks(linkLifecycleService.Audit(projectDirectory, projectState.LockFile));
+        return 0;
+    }
+
+    private int Fail(string? message, CliOutputFormat format, TextWriter output)
+    {
+        var exitCode = console.Fail(message);
+        WriteJsonFailure(format, output);
+        return exitCode;
+    }
+
+    private void RenderReport(AuditReport report)
+    {
         var table = new Table().Title("[bold]Resolved packs[/]").Border(TableBorder.Rounded);
         table.AddColumn("[bold]Pack[/]");
         table.AddColumn("[bold]Source[/]");
@@ -108,14 +172,19 @@ internal sealed class AuditCommandHandler(
             console.Info(AuditOutputFormatter.Format(file));
         }
 
-        var state = await projectStateStore.LoadAsync(projectDirectory);
-        if (state.Value is not { } projectState)
+        foreach (var finding in report.HiddenCharacterFindings)
         {
-            return console.Fail(state.Error);
+            console.Warning(PackContentDiagnosticFormatter.Format(finding));
         }
 
-        RenderLinks(projectDirectory, projectState.LockFile);
-        return 0;
+        if (report.OmittedHiddenCharacterFindingCount > 0)
+        {
+            console.Warning(
+                PackContentDiagnosticFormatter.FormatOmitted(
+                    report.OmittedHiddenCharacterFindingCount
+                )
+            );
+        }
     }
 
     private async Task<int> AuditStrictAsync(string projectDirectory, bool failFast)
@@ -175,9 +244,16 @@ internal sealed class AuditCommandHandler(
         console.Render(table);
     }
 
-    private void RenderLinks(string projectDirectory, ProjectLockFile lockFile)
+    private static void WriteJsonFailure(CliOutputFormat format, TextWriter output)
     {
-        var reports = linkLifecycleService.Audit(projectDirectory, lockFile);
+        if (format == CliOutputFormat.Json)
+        {
+            CliJsonWriter.WriteAuditFailure(output);
+        }
+    }
+
+    private void RenderLinks(IReadOnlyList<LinkAuditReport> reports)
+    {
         if (reports.Count == 0)
         {
             return;

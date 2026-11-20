@@ -91,6 +91,43 @@ suggestions even when the shell strips trailing whitespace or reports a cursor
 position beyond the rendered command line. Command containers return no value
 suggestions until an argument-taking command or option is selected.
 
+## Diagnose The Environment
+
+`luna doctor` checks the selected workspace without repairing or initializing
+it. Each result is `PASS`, `FAIL`, or `INFO` and includes remediation when an
+action can resolve the problem. The default checks are local: Git availability,
+native credential-store support, project and lock state, user settings,
+source-ignore state, and existing profile/cache directories. Luna never creates
+missing profile or cache directories during these checks. It may create and
+immediately remove one unique empty probe file in each existing profile/cache
+directory to verify write access.
+
+Use `luna doctor --network` to opt in to configured Git and OCI source checks.
+Local and locally ignored sources are not contacted. Each source has a
+five-second budget, and the complete network phase stops after 20 seconds.
+Git probes use an isolated command configuration with no terminal or
+credential-helper prompt, inherited header, or unqualified SSH helper. If a
+pack is already locked to an OCI source, the probe checks that configured
+repository; otherwise it checks the registry endpoint. OCI probes never
+prompt, save, or remove credentials and do not follow redirects. Windows can
+safely read an existing source-bound registry credential for the probe. On
+macOS and Linux, Luna does not open the native credential store for doctor;
+anonymous access and an existing noninteractive Azure identity remain
+available.
+
+The command exits non-zero only when a reported failure blocks an operation
+configured for the selected project. An unavailable prerequisite that no
+configured operation needs is informational. Authentication that was
+deliberately not attempted, such as a private Git HTTPS source requiring a
+credential helper, is also informational rather than a false blocking failure.
+Project configuration, lock state, user settings, source-ignore state, and
+credentials remain unchanged.
+
+```powershell
+luna doctor
+luna doctor --network --workspace ../another-project
+```
+
 ## Project And Sources
 
 - `luna init`: Creates version-1 `lunapack.yml` and `lunapack-lock.yml` with
@@ -185,8 +222,9 @@ project. Pack trust and pack-trust revocation require `--source` or `-s`. See
   installable packs and configured links. Pack results include their latest
   eligible releases; link results include source, target, and installation
   status. Both raw and composite packs appear by default.
-- `luna validate <pack-reference>`: Validates the selected release from configured
-  local, Git, or OCI sources, or the latest release when version is omitted.
+- `luna validate <pack-reference> [--format text|json]`: Validates the selected
+  release from configured local, Git, or OCI sources, or the latest release
+  when version is omitted. JSON reports a Boolean `valid` result.
   Direct references can select draft and dependency-only packs even though
   discovery and search hide those packs by default.
 - `luna inspect <pack-reference>`: Shows the selected pack's identity,
@@ -251,9 +289,9 @@ project. Pack trust and pack-trust revocation require `--source` or `-s`. See
 <value>`: Remove named declarations. ID and version cannot be removed.
 - `luna pack list`, `luna pack hooks`, and `luna pack show`: Display local
   manifest contents. Hook output preserves event and declaration order.
-- `luna pack validate`: Validates local and external selector reachability,
-  warns about unused source aliases, and never executes hooks or changes
-  trust.
+- `luna pack validate [--allow-hidden-characters]`: Validates local and
+  external selector reachability, screens managed source text, warns about
+  unused source aliases, and never executes hooks or changes trust.
 
 Every mutation validates the complete candidate and atomically replaces
 `pack.yml`. Failure preserves the previous file. File, directory, target, and
@@ -266,10 +304,10 @@ adding content, viewing the manifest, or validating it.
 
 ## Pack Publishing
 
-- `luna publish <folder> --target <source>`: Publishes a validated pack folder
-  to a configured OCI source. `<folder>` is a project-relative directory with
-  its root `pack.yml`; `--target` is required and must name a non-ignored OCI
-  source.
+- `luna publish <folder> --target <source> [--allow-hidden-characters]`:
+  Publishes a validated pack folder to a configured OCI source. `<folder>` is a
+  project-relative directory with its root `pack.yml`; `--target` is required
+  and must name a non-ignored OCI source.
 
 Luna reads the pack ID and version only from the root `pack.yml`, validates the
 complete authoring tree, and publishes one ZIP/config/manifest artifact. It
@@ -286,23 +324,95 @@ includes the registry reference and verified manifest digest. There are no
 - `luna uninstall <pack-reference> [<pack-reference>...]`: Removes one or more
   installed roots and unchanged files no longer owned by another pack. When
   supplied, each version must match the currently installed release.
-- `luna outdated`: Lists installed roots with a newer release or changed
-  external content. `--offline` avoids remote checks and reports uncertainty.
+- `luna outdated [--offline] [--format text|json]`: Lists installed roots with a
+  newer release or changed external content. `--offline` avoids remote checks
+  and reports uncertainty.
 - `luna update [<pack-reference>...]`: Updates all roots or one or more selected
   roots.
 - `luna mv <source> <target>` (`luna move`): Moves one managed file or all
   managed files below a directory and updates lock ownership. If files were
   moved manually, it can rebind ownership when only the targets exist.
   `--save-remap` also records the move as a reusable project mapping.
-- `luna audit [--strict] [--fail-fast]`: Reports resolved packs, dependencies,
+- `luna audit [--strict] [--fail-fast] [--format text|json]`: Reports resolved packs, dependencies,
   external alias mappings, fingerprints, refs, commits, source and target
-  paths, ownership, digests, and drift or local-modification status. `--strict`
-  instead reports the locked integrity status for every pack- and link-managed
+  paths, ownership, digests, and drift or local-modification status. It also
+  reports hidden Unicode in existing managed targets without changing files or
+  state. `--strict` instead reports the locked integrity status for every pack- and link-managed
   target. It returns `0` when every target matches, `2` for one or more missing
   or modified targets, and `1` for invalid usage or unreadable project or target
   state, including unsafe or filesystem-aliased lock paths. `--fail-fast`
   requires `--strict` and stops after the first integrity violation. Without
   `--strict`, findings remain report-only.
+  `--format json` applies to report-only audit. Combining it with `--strict`
+  returns exit code `1` and a JSON failure envelope.
+- `luna hooks history [--limit <count>]`: Shows recent local lifecycle script
+  attempts newest first. It is read-only, displays 20 entries by default, and
+  accepts limits from 1 through 100.
+
+## Machine-readable command output
+
+The root `luna audit`, `luna outdated`, and `luna validate <pack-reference>`
+commands default to their existing text format. Pass `--format json` for one
+machine-readable JSON object. The separate local-manifest `luna pack validate`
+command does not accept this option.
+
+For example:
+
+```powershell
+luna validate dotnet-gitignore --format json
+```
+
+```json
+{ "schemaVersion": 1, "command": "validate", "result": { "valid": true } }
+```
+
+Standard output contains only the JSON object. Human-readable diagnostics,
+logs, parser help, validation issues, and ANSI-independent progress output go
+to standard error. A supported command that cannot produce its result writes
+`result: null`; an invalid audit or outdated prerequisite does not add partial
+result arrays. If `outdated` cannot completely inspect configured remote
+sources or receives partial OCI release discovery, it fails with
+`result: null` instead of reporting an incomplete catalog as fully checked.
+An unsupported format is an error, writes no command data to standard output,
+and keeps the process unsuccessful.
+
+Every JSON object contains an integer `schemaVersion` of `1`, a `command` value
+of `audit`, `outdated`, or `validate`, and `result`. The result shapes are:
+
+| Command    | Result fields                                                                                                  |
+| ---------- | -------------------------------------------------------------------------------------------------------------- |
+| `audit`    | `packs`, `links`, `externalSources`, and `externalFiles` arrays                                                |
+| `outdated` | `updates`, `outdatedLinks`, `integrityViolations`, and `uncheckedOciPacks` arrays; Boolean `remoteRefsChecked` |
+| `validate` | Boolean `valid`                                                                                                |
+
+Audit pack entries contain `id`, `version`, `sourcePath`, `packPath`,
+`dependencies` with `id` and `version`, and `managedFiles` with `targetPath` and
+`sha256`. Audit link entries contain `name`, `sourceName`, `resolvedCommit`, and
+`files` with `targetPath` and `status`.
+
+Audit external-source entries contain `packId`, `packVersion`, `alias`,
+`workspaceSourceName`, `fingerprint`, `ref`, `resolvedCommit`, and `status`.
+External-file entries add `sourcePath`, `targetPath`, and `sha256`. Audit JSON
+also contains top-level `findings` and `summary`; see
+[Audit ownership and recover drift](../advanced/audit-and-recover.md) for stable
+codes and severity semantics.
+
+Outdated update entries contain `id`, `currentVersion`, `latestVersion`, and
+`reason`. Outdated-link entries contain `name` and `reasons`. Integrity
+violations contain `id`, `version`, `sourceName`, `lockedManifestDigest`, and
+`observedManifestDigest`; unchecked OCI entries contain `id`, `version`, and
+`sourceName`. Array properties remain present when empty. Optional values use
+JSON `null`.
+
+Online outdated results set `remoteRefsChecked` to true only after every
+configured update source and locked OCI release check completes. `--offline`
+sets it to false.
+
+Within schema version 1, added fields and finding codes are compatible.
+renaming or removing a field or code, or changing its type or meaning, requires
+a new schema version. Do not parse human-readable `message` wording as a stable
+identifier, and do not infer process success from a finding's severity: exit
+behavior remains command-specific.
 
 `<pack-reference>` is a pack ID or `<id>@<version>`. When version is omitted,
 commands select the latest available release. `install` accepts `--dry-run`
@@ -314,12 +424,14 @@ Dry runs group release selection, external sources, managed-file changes, and
 lifecycle work into labeled sections with ASCII action prefixes. Lifecycle
 script rows identify whether policy, `--scripts`, persisted trust, or interactive
 confirmation determines consent. Already locked source identities are not
-repeated as lifecycle actions. Successful installs and updates list each
-created, copied, replaced, merged, skipped, or deleted managed file by default.
+repeated as lifecycle actions. Successful installs and updates list each created, copied, replaced, merged,
+skipped, preserved, or deleted managed file by default.
 When the selected pack ID and version are available from multiple configured
 sources, install and update output identifies the selected source name and type.
 Pass `--no-file-change-output` to either command to suppress that success output;
 it does not hide the plan during `--dry-run`.
+Install and update accept `--allow-hidden-characters` after review of
+high-confidence findings.
 Install also accepts repeatable `--remap-directory <source>=<target>` and
 `--remap-file <source>=<target>` options. Add `--save-remap` to persist those
 mappings after a successful installation. Pack installation stores them on the
@@ -339,8 +451,8 @@ effective target.
 `update` accepts `--dry-run` (`-D`), repeatable `--parameter`,
 `--prompt-parameters`, `--skip-parameters`, `--no-variables` (`-nv`), repeatable
 `--skip-variable` (`-sv`), repeatable `--remap-directory` and `--remap-file`,
-and `--save-remap`; update-all also accepts `--prompt` (`-p`). Unlike install,
-update reserves `-p` for update selection, so parameter values require the long
+`--save-remap`, and `--remove-modified`; update-all also accepts `--prompt`
+(`-p`). Unlike install, update reserves `-p` for update selection, so parameter values require the long
 `--parameter` form. Install and
 update dry runs prompt for every configurable parameter on an active graph path
 before planning. Add `--skip-parameters` to a dry run for noninteractive
@@ -351,12 +463,51 @@ active `requiredWhen` parameter fails preflight. For real operations,
 `--prompt-parameters` extends
 prompting from unresolved required parameters to all configurable parameters
 and offers declared defaults.
+
+Luna screens payloads selected as pack-managed files. It streams strict UTF-8
+and supports UTF-8, UTF-16, and UTF-32 leading BOMs. NUL-containing or invalid
+UTF-8 bytes do not fail by themselves, but later recoverable hidden controls
+are still detected. Diagnostics identify the relative path, 1-based line,
+1-based Unicode-scalar column, code point, and severity. During invalid UTF-8
+recovery, each invalid byte occupies one scan position. Unicode `Bidi_Control`
+characters and U+200B ZERO WIDTH SPACE are high-confidence findings; other
+Unicode format characters and orphan variation selectors are warnings. Valid
+emoji zero-width joiners and variation-selector sequences do not generate
+findings.
+
+These characters can make text display in a different order, hide separators or
+filenames, split identifiers, or make a terminal warning appear trustworthy
+when the underlying bytes differ. A clean-looking diff therefore does not prove
+that pack content is safe to apply. Review the reported `U+` code point and the
+original bytes, then use an override only for a known and reviewed case.
+
+Managed paths reject terminal controls, hidden Unicode format characters, line
+separators, and paragraph separators. Diagnostic output visibly escapes unsafe
+legacy path characters. Luna retains at most 1,000 findings per payload and
+reports how many more were omitted without losing blocking evidence.
+
+For install and update, screening runs on final planned content after template
+rendering and merge planning, before hooks or mutation. For `luna pack validate`
+and `luna publish`, it runs on selected source content before success or
+upload. High-confidence findings make those four operations fail without
+changing project files, configuration, lock state, or registry content.
+`--allow-hidden-characters` continues after review; it never hides diagnostics.
+Warning findings remain non-blocking. `luna audit` reports all severities
+without changing its exit status or mutating state.
+
 Update parameter and variable options use install precedence and validation.
 Update remapping options require exactly one pack reference. Command remappings
 relocate matching managed targets during that update. `--save-remap` persists
 provided mappings on that installed root and requires at least one remapping.
 Update keeps the installed destination and ownership, so `--destination` and
 `--adopt-existing` remain install-only.
+When an updated graph no longer declares a managed target, unchanged targets
+are deleted and modified targets are preserved by default, warned about, and
+removed from lock ownership. `--remove-modified` explicitly deletes those
+modified obsolete targets. It never overrides a strategy for a target still
+declared by the new graph, and named link updates reject the option. Dry runs
+label both preservation and forced deletion. Luna aborts the transaction if a
+target changes after planning.
 Both install and update accept `--accept-sources` for conflict-free proposed
 source additions. `install`, `update`, and `uninstall` accept
 `--scripts <prompt|run|skip>`; `prompt` is the default and requires effective
@@ -365,6 +516,19 @@ to no. Use `--skip-instructions` to suppress instruction loading and display
 without changing script consent behavior. Uninstall also accepts repeatable
 `--parameter` (`-p`), `--no-variables` (`-nv`), and repeatable
 `--skip-variable` (`-sv`) inputs.
+`--dry-run` and `--remove-modified` are pack-update options. Named link updates
+reject either option before changing files or state.
+
+Lifecycle history is stored per user in
+`~/.lunapack/lifecycle-hook-history.jsonl` with at most 100 entries. It records
+script start failures, cancellations, exits, authorization provenance, and
+sanitized arguments, but not instructions, skipped hooks, project paths,
+environment values, or output. `luna hooks history` never creates or changes
+the file. Delete it manually to clear history. Missing history is empty;
+unreadable or corrupt history returns a failure. See
+[Use lifecycle hooks](../lifecycle-hooks.md#inspect-local-script-history) for
+recorded fields and best-effort redaction limitations.
+
 Repeat `--parameter <name>=<value>` for each selected value of a multi-select
 enum. Repeated scalar names and duplicate or unknown selections are rejected.
 Interactive sessions show one prepared instruction step at a time and wait for

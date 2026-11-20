@@ -606,11 +606,30 @@ combinations SHALL make a manifest invalid before project mutation.
 During an update, LunaPack SHALL compare the prior resolved target set with the
 new resolved target set. It SHALL add new targets, apply the selected strategy
 to retained targets whose source content changes, and remove targets no longer
-owned by the resolved graph. Strategy selection SHALL apply even when the
-current target hash differs from the hash recorded in the prior lock file.
+owned by the resolved graph only when their current digest matches the previous
+lock-file digest. Strategy selection SHALL apply to retained targets even when
+their current hash differs from the hash recorded in the prior lock file.
 LunaPack SHALL persist hashes of the resulting target content after a successful
 update and SHALL restore all changed targets and state if the update cannot
 complete.
+
+When an obsolete target differs from its previous lock-file digest, LunaPack
+SHALL preserve the target by default, warn that it was retained, and omit its
+stale ownership from the next lock file. `luna update --remove-modified` SHALL
+explicitly allow deletion of modified obsolete targets and SHALL affect no
+target still owned by the new resolved graph. The dry-run SHALL identify both
+preserved modified targets and modified targets selected for deletion by the
+override.
+
+Before deleting an obsolete target, LunaPack SHALL verify that its current
+content still matches the content observed during planning. If the target
+changes after planning, LunaPack SHALL fail the update and roll back the
+operation without deleting that changed content.
+
+When multiple prior merge owners share an effective target, LunaPack SHALL
+treat that path as one removal unit. A target still planned by any owner SHALL
+not be removed. Otherwise, LunaPack SHALL remove it at most once and only when
+its content matches the lock-file digest recorded by every prior owner.
 
 For `copy`, `overwrite` SHALL replace a target; `fail-if-exists` SHALL fail if
 the target exists; `skip-if-exists` SHALL retain an existing target; and
@@ -659,8 +678,60 @@ are not structurally equal to an existing destination element.
 #### Scenario: Remove a target absent from the new release
 
 - **WHEN** an updated resolved graph no longer owns a target recorded by the
-  prior resolved graph
-- **THEN** LunaPack removes that target and removes its lock-file record
+  prior resolved graph and the target matches its locked digest
+- **THEN** LunaPack removes that target and its lock-file record
+
+#### Scenario: Preserve a locally modified obsolete target
+
+- **WHEN** an updated resolved graph no longer owns a target and its current
+  digest differs from the prior lock-file digest
+- **THEN** LunaPack retains the file, warns, and removes its stale lock
+  ownership while completing the update
+
+#### Scenario: Delete a modified obsolete target with the override
+
+- **WHEN** a user runs `luna update --remove-modified` and an obsolete target
+  differs from its prior lock-file digest
+- **THEN** LunaPack deletes the target and removes its lock-file record
+
+#### Scenario: Remove stale ownership when an obsolete target is already missing
+
+- **WHEN** an updated resolved graph no longer owns a target and the target is
+  already absent
+- **THEN** LunaPack completes the update and removes the stale lock-file record
+
+#### Scenario: Preview obsolete-target preservation
+
+- **WHEN** a user dry-runs an update that encounters a modified obsolete target
+- **THEN** LunaPack reports that the target will be preserved without modifying
+  project files or state
+
+#### Scenario: Preview modified-target deletion with the override
+
+- **WHEN** a user dry-runs `luna update --remove-modified` and an obsolete
+  target differs from its prior lock-file digest
+- **THEN** LunaPack reports that the target will be deleted without modifying
+  project files or state
+
+#### Scenario: Keep a target shared with a remaining owner
+
+- **WHEN** an update removes one prior merge owner but another planned owner
+  still uses the same effective target
+- **THEN** LunaPack retains the target and records the remaining ownership
+
+#### Scenario: Preserve a modified target shared by merge owners
+
+- **WHEN** an update removes every prior merge owner of a shared target and its
+  current digest does not match every prior owner's locked digest
+- **THEN** LunaPack preserves the target once, warns once, and removes stale
+  ownership
+
+#### Scenario: Revalidate an obsolete target before deletion
+
+- **WHEN** an obsolete target changes after planning but before transaction
+  deletion
+- **THEN** LunaPack fails the update, preserves the changed target, and rolls
+  back other managed-file and state changes
 
 ### Requirement: Select a cataloged version for installation
 
@@ -1240,6 +1311,21 @@ LunaPack SHALL start each authorized command as the declared executable with its
 - **WHEN** the declared executable cannot be started
 - **THEN** LunaPack reports the hook and pack ID and returns a non-success result
 
+### Requirement: Complete canceled lifecycle hooks without waiting for detached output handles
+
+When cancellation stops a lifecycle hook, LunaPack SHALL cancel and close
+redirected output readers after stopping the process tree. Output already
+captured SHALL remain eligible for normal CLI rendering. LunaPack SHALL NOT wait
+for detached descendants that retain inherited redirected output handles.
+
+#### Scenario: Cancel while a detached descendant retains output
+
+- **WHEN** a lifecycle hook is canceled after a detached descendant inherits a
+  redirected output handle
+- **THEN** LunaPack stops the hook process tree, closes redirected readers,
+  records the canceled outcome, and completes without waiting for the
+  descendant to exit
+
 ### Requirement: Apply transient lifecycle suppression
 
 Every resolved transient pack SHALL participate in lifecycle planning and execute the same install or update hooks as a directly requested pack unless its incoming composite references suppress those lifecycle types. Suppression SHALL be expressed by lifecycle type, not script name. When the same transient pack is reachable through multiple references, LunaPack SHALL suppress the union of every incoming `disabledHooks` collection. Suppression on a transient reference SHALL not suppress hooks when that pack is also a directly requested root.
@@ -1521,3 +1607,213 @@ operation error, not as an integrity violation.
 - **WHEN** strict audit encounters invalid command usage or cannot read project
   or target state, including explicit-null required collections
 - **THEN** it reports the operation error and returns exit code `1`
+
+#### Scenario: Reject JSON format for strict audit
+
+- **WHEN** a user combines `--strict` with `--format json`
+- **THEN** LunaPack reports invalid usage, writes a JSON failure envelope, and returns exit code `1`
+
+### Requirement: Record lifecycle script execution attempts
+
+Luna SHALL record each lifecycle script process attempt, including attempts
+that fail to start, are cancelled, or exit unsuccessfully. Each entry SHALL
+identify the lifecycle event, resolved executable, pack ID and version, UTC
+timestamp, sanitized arguments, duration in milliseconds, outcome, and numeric
+exit code when available. Instruction hooks and scripts not executed because
+they are skipped, denied, or conditionally ignored SHALL not be recorded.
+
+#### Scenario: Record a successful invocation
+
+- **WHEN** a lifecycle script executes successfully under `--scripts run`
+- **THEN** history records the event, executable, pack and version, sanitized
+  arguments, invocation-level `--scripts run` authorization source, duration,
+  successful outcome, and exit code
+
+#### Scenario: Record an unsuccessful invocation
+
+- **WHEN** a script process fails to start, is cancelled, or exits
+  unsuccessfully
+- **THEN** history records the corresponding outcome and includes a numeric
+  exit code when the process provides one
+
+#### Scenario: Omit hooks that do not execute
+
+- **WHEN** a script is skipped, denied, or conditionally ignored, or an
+  instruction hook is displayed
+- **THEN** Luna creates no history entry for that hook
+
+### Requirement: Identify the script authorization source
+
+Each recorded entry SHALL identify whether the script was authorized by
+invocation-level `--scripts run`, persisted trust, or interactive confirmation.
+For persisted trust, the entry SHALL identify every applicable project,
+local-user, or global-user scope.
+
+#### Scenario: Record persisted trust scopes
+
+- **WHEN** persisted trust authorizes a lifecycle script from multiple scopes
+- **THEN** the history entry identifies each applicable trust scope
+
+#### Scenario: Record interactive confirmation
+
+- **WHEN** a user explicitly confirms an otherwise untrusted lifecycle script
+- **THEN** the history entry identifies interactive confirmation as its
+  authorization source
+
+### Requirement: Bound and protect per-user history
+
+Luna SHALL store one per-user history at
+`~/.lunapack/lifecycle-hook-history.jsonl`, retain at most 100 entries, and evict
+the oldest entries first. The history file SHALL be accessible only to the
+current user and SHALL not contain project paths or process environment values.
+
+#### Scenario: Evict the oldest entry at capacity
+
+- **WHEN** a new history entry is added while 100 entries are already retained
+- **THEN** Luna retains the newest 100 entries and removes the oldest entry
+
+#### Scenario: Exclude project paths and environment values
+
+- **WHEN** Luna records a lifecycle script execution
+- **THEN** the history entry contains neither the project path nor process
+  environment values
+
+### Requirement: Redact secret-like arguments before persistence
+
+Before storing arguments, Luna SHALL replace values associated with
+case-insensitive argument names containing `password`, `passwd`, `secret`,
+`token`, `credential`, `authorization`, `auth`, `api[-_]?key`, or
+`access[-_]?key` with `[REDACTED]`. Redaction SHALL cover separate-value and
+`name=value` forms. Other arbitrary secret values may remain and SHALL be
+documented as a limitation.
+
+#### Scenario: Redact separate and assigned secret values
+
+- **WHEN** a script argument contains `--token value` or `api_key=value`
+- **THEN** the stored arguments replace each associated value with
+  `[REDACTED]`
+
+### Requirement: Preserve hook results when history writes fail
+
+If Luna cannot persist a history entry, it SHALL warn without changing the
+hook's success or failure result or the lifecycle operation's existing
+rollback behavior.
+
+#### Scenario: Preserve a successful hook result
+
+- **WHEN** a script succeeds but writing its history entry fails
+- **THEN** Luna warns about the history failure and preserves the successful
+  hook result
+
+#### Scenario: Preserve a failed hook result
+
+- **WHEN** a script fails and writing its history entry also fails
+- **THEN** Luna warns about the history failure and preserves the original
+  script failure result
+
+### Requirement: Inspect recent lifecycle history
+
+`luna hooks history` SHALL display entries newest first, showing the newest 20
+by default. `--limit <count>` SHALL accept integers from 1 through 100. The
+command SHALL be read-only, SHALL not create or alter the history file, and
+SHALL provide no clear operation. Users SHALL delete history by removing the
+sidecar.
+
+#### Scenario: Read history when no file exists
+
+- **WHEN** a user runs `luna hooks history` before any entry has been recorded
+- **THEN** Luna reports an empty history without creating the sidecar
+
+#### Scenario: Limit displayed entries
+
+- **WHEN** a user runs `luna hooks history --limit 5` with at least five entries
+- **THEN** Luna displays the five newest entries in newest-first order without
+  changing the file
+
+#### Scenario: Report invalid or unreadable history
+
+- **WHEN** the history file cannot be read or contains invalid data
+- **THEN** the command returns a non-success result and does not report an
+  empty successful history
+
+#### Scenario: Delete history manually
+
+- **WHEN** a user removes the history sidecar and runs `luna hooks history`
+- **THEN** Luna reports an empty history without recreating the sidecar
+
+### Requirement: Show complete lifecycle consent details
+
+Before requesting script authorization, LunaPack SHALL display the pack ID,
+resolved command and arguments, and optional script description, regardless of
+the minimum log level.
+
+#### Scenario: Keep consent details visible with restricted logging
+
+- **WHEN** a lifecycle script requests consent while the minimum log level is
+  warning or error
+- **THEN** LunaPack displays the pack ID, resolved command and arguments, and
+  optional description before confirmation
+
+### Requirement: Render lifecycle commands and history safely
+
+Luna SHALL render pack-controlled lifecycle command text, descriptions, and
+persisted history fields without emitting terminal control characters. Control,
+format, line-separator, paragraph-separator, and bidirectional override
+characters SHALL appear as visible escape notation in CLI output. Safe rendering
+SHALL not change the original argument vector delivered to a process.
+
+#### Scenario: Escape terminal controls before consent
+
+- **WHEN** a lifecycle command or description contains ANSI, line-control, or
+  bidirectional control characters
+- **THEN** the consent prompt displays visible escapes and does not emit the
+  controls to the terminal
+
+#### Scenario: Escape terminal controls from persisted history
+
+- **WHEN** a valid history entry contains terminal control characters
+- **THEN** `luna hooks history` displays visible escapes, and the history file
+  remains unchanged
+
+#### Scenario: Preserve executable arguments
+
+- **WHEN** safe rendering escapes a lifecycle argument
+- **THEN** the script process still receives the original literal argument
+
+### Requirement: Screen managed text before lifecycle changes
+
+`luna install` and `luna update` SHALL screen eligible final managed-file content planned for creation or replacement after template rendering and merge planning, before hooks execute or project files or state change. Findings SHALL identify the effective project-relative target.
+
+#### Scenario: Report a rendered install finding
+
+- **WHEN** an install renders a managed template containing a hidden character for effective target `docs/readme.md`
+- **THEN** LunaPack reports the finding against `docs/readme.md` before applying the plan
+
+#### Scenario: Screen merged update content
+
+- **WHEN** an update plans a merge whose resulting text contains a hidden character
+- **THEN** LunaPack reports the finding in the final planned target content
+
+#### Scenario: Screen a dry-run plan
+
+- **WHEN** an install or update dry run plans eligible text containing a hidden character
+- **THEN** LunaPack reports the same finding without changing project files or state
+
+#### Scenario: Block before lifecycle side effects
+
+- **WHEN** enforcement is enabled and a lifecycle plan contains a high-confidence finding without an override
+- **THEN** LunaPack stops before executing hooks or changing project files, configuration, or lock state
+
+### Requirement: Screen installed managed text during audit
+
+`luna audit` SHALL screen existing eligible managed-file targets and report findings with their installed project-relative paths. Findings SHALL not change audit exit status or mutate project files, configuration, or lock state.
+
+#### Scenario: Report a finding in an installed file
+
+- **WHEN** an existing installed managed-file target contains a hidden character
+- **THEN** `luna audit` reports the finding against that target
+
+#### Scenario: Preserve audit state
+
+- **WHEN** `luna audit` reports hidden-character findings
+- **THEN** it leaves all files and project state unchanged and does not fail solely because findings exist

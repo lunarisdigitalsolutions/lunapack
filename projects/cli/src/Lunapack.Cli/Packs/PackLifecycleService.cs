@@ -6,6 +6,7 @@ using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Application.Paths;
 using Lunapack.Cli.Catalog;
+using Lunapack.Cli.Packs.ContentScreening;
 using Lunapack.Cli.Packs.ExternalSources;
 using Lunapack.Cli.Packs.Instructions;
 using Lunapack.Cli.Packs.Lifecycle;
@@ -97,6 +98,15 @@ internal sealed class PackLifecycleService(
         await using (preparedInstallation.Materialization)
         await using (preparedInstallation.ExternalMaterialization)
         {
+            var screening = ScreenPlannedContent(
+                preparedInstallation.UpdatePlan,
+                installationRequest.AllowHiddenCharacters
+            );
+            if (!screening.IsSuccess)
+            {
+                return _console.Fail(screening.Error);
+            }
+
             var hooks = await AuthorizeHooksAsync(
                 projectDirectory,
                 preparedInstallation.State,
@@ -154,6 +164,17 @@ internal sealed class PackLifecycleService(
         await using (preparedInstallation.Materialization)
         await using (preparedInstallation.ExternalMaterialization)
         {
+            var screening = ScreenPlannedContent(
+                preparedInstallation.UpdatePlan,
+                installationRequest.AllowHiddenCharacters
+            );
+            if (!screening.IsSuccess)
+            {
+                return ManifestOperationResult<PackInstallDryRunResult>.Failure(
+                    screening.Error ?? PackContentScreeningPolicy.BlockingMessage
+                );
+            }
+
             var lifecycle = await CreateDryRunLifecyclePlanAsync(
                 projectDirectory,
                 preparedInstallation.State,
@@ -836,6 +857,15 @@ internal sealed class PackLifecycleService(
         await using (preparedUpdate.Materialization)
         await using (preparedUpdate.ExternalMaterialization)
         {
+            var screening = ScreenPlannedContent(
+                preparedUpdate.UpdatePlan,
+                updateRequest.AllowHiddenCharacters
+            );
+            if (!screening.IsSuccess)
+            {
+                return _console.Fail(screening.Error);
+            }
+
             var hooks = await AuthorizeHooksAsync(
                 projectDirectory,
                 preparedUpdate.State,
@@ -960,6 +990,17 @@ internal sealed class PackLifecycleService(
         await using (preparedUpdate.Materialization)
         await using (preparedUpdate.ExternalMaterialization)
         {
+            var screening = ScreenPlannedContent(
+                preparedUpdate.UpdatePlan,
+                updateRequest.AllowHiddenCharacters
+            );
+            if (!screening.IsSuccess)
+            {
+                return ManifestOperationResult<PackUpdatePlan>.Failure(
+                    screening.Error ?? PackContentScreeningPolicy.BlockingMessage
+                );
+            }
+
             var lifecycle = await CreateDryRunLifecyclePlanAsync(
                 projectDirectory,
                 preparedUpdate.State,
@@ -1272,7 +1313,8 @@ internal sealed class PackLifecycleService(
 
         var collision = ManagedRootInventory.FindCrossRootCollision(
             ManagedRootInventory.FromInstallationPlan(preparedSources.Graph, plan),
-            preparedGraph.State.LockFile
+            preparedGraph.State.LockFile,
+            fileSystem
         );
         return collision is null
             ? ManifestOperationResult<PackInstallationPlan>.Success(plan)
@@ -1295,6 +1337,43 @@ internal sealed class PackLifecycleService(
         {
             _console.Info(ManagedFileRemappingFormatter.Format(remapping));
         }
+    }
+
+    private ManifestOperationResult<bool> ScreenPlannedContent(
+        PackUpdatePlan updatePlan,
+        bool allowHiddenCharacters
+    )
+    {
+        var scans = updatePlan
+            .Actions.Where(action =>
+                action.ResultingContents is not null && action is not SkipManagedFileUpdateAction
+            )
+            .GroupBy(action => action.TargetPathRelativeToProject, StringComparer.Ordinal)
+            .Select(group => group.Last())
+            .Select(action =>
+                action.ResultingContents is { } contents
+                    ? PackContentScanner.Scan(action.TargetPathRelativeToProject, contents)
+                    : new PackContentScanResult([], 0, false)
+            )
+            .ToList();
+        var findings = scans.SelectMany(scan => scan.Findings);
+        foreach (var finding in findings)
+        {
+            _console.Warning(PackContentDiagnosticFormatter.Format(finding));
+        }
+
+        var omittedFindingCount = scans.Sum(scan => scan.OmittedFindingCount);
+        if (omittedFindingCount > 0)
+        {
+            _console.Warning(PackContentDiagnosticFormatter.FormatOmitted(omittedFindingCount));
+        }
+
+        return PackContentScreeningPolicy.Blocks(
+            scans.Any(scan => scan.HasHighConfidenceFinding),
+            allowHiddenCharacters
+        )
+            ? ManifestOperationResult<bool>.Failure(PackContentScreeningPolicy.BlockingMessage)
+            : ManifestOperationResult<bool>.Success(true);
     }
 
     private async Task<ManifestOperationResult<PreparedPackUpdate>> PrepareUpdateAsync(
@@ -1425,7 +1504,12 @@ internal sealed class PackLifecycleService(
             );
         }
 
-        var updatePlan = updatePlanner.Plan(projectDirectory, preparedGraph.State.LockFile, plan);
+        var updatePlan = updatePlanner.Plan(
+            projectDirectory,
+            preparedGraph.State.LockFile,
+            plan,
+            removeModified: planningRequest.RemoveModified
+        );
         if (updatePlan.Value is not { } plannedUpdate)
         {
             return ManifestOperationResult<PreparedPackUpdate>.Failure(
@@ -1889,6 +1973,10 @@ internal sealed class PackLifecycleService(
             );
             isCheckpointPersisted = IsCheckpointPersisted;
             isPersisted = IsPersisted;
+            if (ExitCode == 0)
+            {
+                WritePreservedTargetWarnings(updatePlan);
+            }
             return ExitCode;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
@@ -1916,6 +2004,16 @@ internal sealed class PackLifecycleService(
         }
     }
 
+    private void WritePreservedTargetWarnings(PackUpdatePlan updatePlan)
+    {
+        foreach (var action in updatePlan.Actions.OfType<PreserveManagedFileUpdateAction>())
+        {
+            _console.Warning(
+                $"Preserved locally modified target '{action.TargetPathRelativeToProject}'; it is no longer managed by LunaPack."
+            );
+        }
+    }
+
     private async Task<(
         int ExitCode,
         bool IsCheckpointPersisted,
@@ -1931,7 +2029,7 @@ internal sealed class PackLifecycleService(
         AuthorizedLifecycleHooks? authorizedHooks
     )
     {
-        var resultingContents = CreateResultingContents(updatePlan);
+        var resultingContents = CreateResultingContents(projectDirectory, updatePlan);
         var updatedLockFile = CreateLockFile(
             nextConfiguration,
             graph,
@@ -2271,14 +2369,32 @@ internal sealed class PackLifecycleService(
         );
     }
 
-    private static Dictionary<string, byte[]> CreateResultingContents(PackUpdatePlan updatePlan)
+    private Dictionary<string, byte[]> CreateResultingContents(
+        string projectDirectory,
+        PackUpdatePlan updatePlan
+    )
     {
-        var resultingContents = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        var resultingContents = new Dictionary<string, byte[]>(
+            ProjectPath.ProjectRelativePathComparer(fileSystem)
+        );
         foreach (var action in updatePlan.Actions)
         {
             if (action.ResultingContents is { } contents)
             {
-                resultingContents[action.TargetPathRelativeToProject] = contents;
+                var normalized = ProjectPath.NormalizeProjectRelativePath(
+                    fileSystem,
+                    projectDirectory,
+                    action.TargetPathRelativeToProject
+                );
+                if (normalized.Value is not { } targetPath)
+                {
+                    throw new InvalidOperationException(
+                        normalized.Error
+                            ?? $"Invalid planned managed target '{action.TargetPathRelativeToProject}'."
+                    );
+                }
+
+                resultingContents[targetPath] = contents;
             }
         }
 
@@ -2632,13 +2748,20 @@ internal sealed class PackLifecycleService(
             .. installationPlan
                 .ManagedFiles.Where(managedFile => IsSamePack(managedFile.Pack, pack))
                 .Select(managedFile =>
-                    CreateLockManagedFile(pack, managedFile, previousLockFile, resultingContents)
+                    CreateLockManagedFile(
+                        pack,
+                        managedFile,
+                        installationPlan,
+                        previousLockFile,
+                        resultingContents
+                    )
                 ),
         ];
 
     private static ProjectLockFile.ManagedFile CreateLockManagedFile(
         DiscoveredPack pack,
         PlannedManagedFile managedFile,
+        PackInstallationPlan installationPlan,
         ProjectLockFile previousLockFile,
         IReadOnlyDictionary<string, byte[]>? resultingContents
     )
@@ -2652,8 +2775,23 @@ internal sealed class PackLifecycleService(
                     StringComparison.Ordinal
                 )
             );
+        var commandRemapping = installationPlan.Remappings.Any(remapping =>
+            remapping.Origin == ManagedFileRemappingOrigin.Command
+            && string.Equals(
+                remapping.PackId,
+                managedFile.Pack.Manifest.Id,
+                StringComparison.Ordinal
+            )
+            && string.Equals(
+                ProjectPath.Normalize(remapping.DeclaredTarget),
+                ProjectPath.Normalize(managedFile.DeclaredTargetPath),
+                StringComparison.Ordinal
+            )
+        );
         var effectiveTargetPath =
-            previousManagedFile?.TargetPath ?? managedFile.TargetPathRelativeToProject;
+            !commandRemapping && previousManagedFile is not null
+                ? previousManagedFile.TargetPath
+                : managedFile.TargetPathRelativeToProject;
 
         return new ProjectLockFile.ManagedFile
         {
@@ -2905,19 +3043,15 @@ internal sealed class PackLifecycleService(
         return lines;
     }
 
-    private static void UpdateManagedFileHash(
-        ProjectLockFile lockFile,
-        string targetPath,
-        byte[] contents
-    )
+    private void UpdateManagedFileHash(ProjectLockFile lockFile, string targetPath, byte[] contents)
     {
         var normalizedTargetPath = ProjectPath.Normalize(targetPath);
+        var pathComparer = ProjectPath.ProjectRelativePathComparer(fileSystem);
         foreach (var managedFile in lockFile.Packs.SelectMany(pack => pack.ManagedFiles))
         {
-            var isMatchingTarget = string.Equals(
+            var isMatchingTarget = pathComparer.Equals(
                 ProjectPath.Normalize(managedFile.TargetPath),
-                normalizedTargetPath,
-                StringComparison.Ordinal
+                normalizedTargetPath
             );
             if (isMatchingTarget)
             {

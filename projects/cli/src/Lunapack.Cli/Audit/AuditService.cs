@@ -2,6 +2,7 @@ using System.IO.Abstractions;
 using System.Security.Cryptography;
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Application.Paths;
+using Lunapack.Cli.Packs.ContentScreening;
 using Lunapack.Cli.Packs.ManagedFiles;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources;
@@ -22,6 +23,9 @@ internal sealed class AuditService(IFileSystem fileSystem, ProjectStateStore pro
 
         var sources = new List<AuditReport.ExternalSource>();
         var files = new List<AuditReport.ExternalFile>();
+        var hiddenCharacterFindings = new List<PackContentFinding>();
+        var omittedHiddenCharacterFindingCount = 0L;
+        var screenedTargets = new HashSet<string>(StringComparer.Ordinal);
         foreach (var pack in state.LockFile.Packs.OrderBy(pack => pack.Id, StringComparer.Ordinal))
         {
             foreach (var (alias, source) in pack.ExternalSources)
@@ -42,6 +46,21 @@ internal sealed class AuditService(IFileSystem fileSystem, ProjectStateStore pro
 
             foreach (var managedFile in pack.ManagedFiles)
             {
+                if (screenedTargets.Add(managedFile.TargetPath))
+                {
+                    var screening = ScreenManagedFile(projectDirectory, managedFile);
+                    if (screening.Value is not { } result)
+                    {
+                        return ManifestOperationResult<AuditReport>.Failure(
+                            screening.Error
+                                ?? $"Unable to screen managed target '{PackContentDiagnosticFormatter.EscapePath(managedFile.TargetPath)}'."
+                        );
+                    }
+
+                    hiddenCharacterFindings.AddRange(result.Findings);
+                    omittedHiddenCharacterFindingCount += result.OmittedFindingCount;
+                }
+
                 var externalFile = CreateExternalFile(projectDirectory, pack, managedFile);
                 if (externalFile.Error is { } error)
                 {
@@ -56,7 +75,13 @@ internal sealed class AuditService(IFileSystem fileSystem, ProjectStateStore pro
         }
 
         return ManifestOperationResult<AuditReport>.Success(
-            new AuditReport(state.LockFile.Packs, sources, files)
+            new AuditReport(
+                state.LockFile.Packs,
+                sources,
+                files,
+                hiddenCharacterFindings,
+                omittedHiddenCharacterFindingCount
+            )
         );
     }
 
@@ -143,6 +168,45 @@ internal sealed class AuditService(IFileSystem fileSystem, ProjectStateStore pro
         {
             return ManifestOperationResult<ManagedFileIntegrityResult>.Failure(
                 $"Unable to resolve managed target '{file.TargetPath}' owned by {AuditOutputFormatter.Format(owner)}: {exception.Message}"
+            );
+        }
+    }
+
+    private ManifestOperationResult<PackContentScanResult> ScreenManagedFile(
+        string projectDirectory,
+        ProjectLockFile.ManagedFile managedFile
+    )
+    {
+        try
+        {
+            using var stream = ProjectFileReader.OpenRead(
+                fileSystem,
+                projectDirectory,
+                managedFile.TargetPath
+            );
+            using var contents = new MemoryStream();
+            stream.CopyTo(contents);
+            return ManifestOperationResult<PackContentScanResult>.Success(
+                PackContentScanner.Scan(managedFile.TargetPath, contents.ToArray())
+            );
+        }
+        catch (Exception exception)
+            when (exception is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return ManifestOperationResult<PackContentScanResult>.Success(
+                new PackContentScanResult([], 0, false)
+            );
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return ManifestOperationResult<PackContentScanResult>.Failure(
+                $"Unable to read managed target '{PackContentDiagnosticFormatter.EscapePath(managedFile.TargetPath)}' during audit: {PackContentDiagnosticFormatter.EscapePath(exception.Message)}"
+            );
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException)
+        {
+            return ManifestOperationResult<PackContentScanResult>.Failure(
+                $"Unable to resolve managed target '{PackContentDiagnosticFormatter.EscapePath(managedFile.TargetPath)}' during audit: {PackContentDiagnosticFormatter.EscapePath(exception.Message)}"
             );
         }
     }

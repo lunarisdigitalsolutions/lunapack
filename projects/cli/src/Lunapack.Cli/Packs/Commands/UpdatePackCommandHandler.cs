@@ -30,6 +30,7 @@ internal sealed class UpdatePackCommandHandler(
         var packReferenceArgument = CreatePackReferenceArgument(completionProvider);
         var promptOption = CreatePromptOption();
         var dryRunOption = CreateDryRunOption();
+        var removeModifiedOption = CreateRemoveModifiedOption();
         var noFileChangeOutputOption = CreateNoFileChangeOutputOption();
         var acceptSourcesOption = CreateAcceptSourcesOption();
         var promptParametersOption = CreatePromptParametersOption();
@@ -37,17 +38,20 @@ internal sealed class UpdatePackCommandHandler(
         var configurationOptions = CreateConfigurationOptions(completionProvider);
         var scriptsOption = CreateScriptsOption();
         var skipInstructionsOption = CreateSkipInstructionsOption();
+        var allowHiddenCharactersOption = CreateAllowHiddenCharactersOption();
         var command = new Command("update", "Update installed packs.")
         {
             packReferenceArgument,
             promptOption,
             dryRunOption,
+            removeModifiedOption,
             noFileChangeOutputOption,
             acceptSourcesOption,
             promptParametersOption,
             skipParametersOption,
             scriptsOption,
             skipInstructionsOption,
+            allowHiddenCharactersOption,
         };
         AddConfigurationOptions(command, configurationOptions);
         command.SetAction(parseResult =>
@@ -58,6 +62,7 @@ internal sealed class UpdatePackCommandHandler(
                 packReferenceArgument,
                 promptOption,
                 dryRunOption,
+                removeModifiedOption,
                 noFileChangeOutputOption,
                 acceptSourcesOption,
                 promptParametersOption,
@@ -69,7 +74,8 @@ internal sealed class UpdatePackCommandHandler(
                 configurationOptions.RemapFile,
                 configurationOptions.SaveRemap,
                 scriptsOption,
-                skipInstructionsOption
+                skipInstructionsOption,
+                allowHiddenCharactersOption
             )
         );
 
@@ -103,6 +109,7 @@ internal sealed class UpdatePackCommandHandler(
         Argument<string[]> packReferenceArgument,
         Option<bool> promptOption,
         Option<bool> dryRunOption,
+        Option<bool> removeModifiedOption,
         Option<bool> noFileChangeOutputOption,
         Option<bool> acceptSourcesOption,
         Option<bool> promptParametersOption,
@@ -114,7 +121,8 @@ internal sealed class UpdatePackCommandHandler(
         Option<string[]> remapFileOption,
         Option<bool> saveRemapOption,
         Option<string?> scriptsOption,
-        Option<bool> skipInstructionsOption
+        Option<bool> skipInstructionsOption,
+        Option<bool> allowHiddenCharactersOption
     )
     {
         var referenceValues = parseResult.GetValue(packReferenceArgument) ?? [];
@@ -135,7 +143,6 @@ internal sealed class UpdatePackCommandHandler(
         }
 
         var dryRun = parseResult.GetValue(dryRunOption);
-        var showFileChanges = !parseResult.GetValue(noFileChangeOutputOption);
         var acceptSources = parseResult.GetValue(acceptSourcesOption);
         var promptAllParameters = parseResult.GetValue(promptParametersOption);
         var skipParameters = parseResult.GetValue(skipParametersOption);
@@ -157,7 +164,9 @@ internal sealed class UpdatePackCommandHandler(
             skipVariableOption,
             remapDirectoryOption,
             remapFileOption,
-            saveRemapOption
+            saveRemapOption,
+            removeModifiedOption,
+            allowHiddenCharactersOption
         );
         var targetRemapping = CreateTargetRemapping(
             workspaceDirectory,
@@ -187,7 +196,7 @@ internal sealed class UpdatePackCommandHandler(
             references,
             prompt,
             dryRun,
-            showFileChanges,
+            !parseResult.GetValue(noFileChangeOutputOption),
             parsedScriptMode,
             parseResult.GetValue(skipInstructionsOption),
             acceptSources,
@@ -316,7 +325,9 @@ internal sealed class UpdatePackCommandHandler(
                 workspaceDirectory,
                 referenceValue,
                 targetRemapping,
-                updateOptions.SaveRemapping
+                updateOptions.SaveRemapping,
+                dryRun,
+                updateOptions.RemoveModified
             );
             if (linkExitCode is not null)
             {
@@ -372,6 +383,12 @@ internal sealed class UpdatePackCommandHandler(
 
     private static Option<bool> CreateDryRunOption() =>
         new("--dry-run", "-D") { Description = "Plan updates without modifying files or state." };
+
+    private static Option<bool> CreateRemoveModifiedOption() =>
+        new("--remove-modified")
+        {
+            Description = "Delete locally modified managed files no longer declared by a pack.",
+        };
 
     private static Option<bool> CreateNoFileChangeOutputOption() =>
         new("--no-file-change-output")
@@ -460,6 +477,12 @@ internal sealed class UpdatePackCommandHandler(
     private static Option<bool> CreateSkipInstructionsOption() =>
         new("--skip-instructions") { Description = "Skip lifecycle instructions." };
 
+    private static Option<bool> CreateAllowHiddenCharactersOption() =>
+        new("--allow-hidden-characters")
+        {
+            Description = "Continue after reviewing high-confidence hidden Unicode findings.",
+        };
+
     private Task<PackUpdateService.UpdateResult> UpdateAsync(
         string projectDirectory,
         PackReference? reference,
@@ -507,7 +530,10 @@ internal sealed class UpdatePackCommandHandler(
         PackUpdateOptions updateOptions
     )
     {
-        var availableUpdates = await updateSelectionService.GetAvailableAsync(projectDirectory);
+        var availableUpdates = await updateSelectionService.GetAvailableAsync(
+            projectDirectory,
+            allowHiddenCharacters: updateOptions.AllowHiddenCharacters
+        );
         if (availableUpdates.Value is not { } availability)
         {
             return PackUpdateService.UpdateResult.Failure(
@@ -602,7 +628,9 @@ internal sealed class UpdatePackCommandHandler(
         Option<string[]> skipVariableOption,
         Option<string[]> remapDirectoryOption,
         Option<string[]> remapFileOption,
-        Option<bool> saveRemapOption
+        Option<bool> saveRemapOption,
+        Option<bool> removeModifiedOption,
+        Option<bool> allowHiddenCharactersOption
     ) =>
         new()
         {
@@ -612,6 +640,8 @@ internal sealed class UpdatePackCommandHandler(
             DirectoryRemappings = parseResult.GetValue(remapDirectoryOption) ?? [],
             FileRemappings = parseResult.GetValue(remapFileOption) ?? [],
             SaveRemapping = parseResult.GetValue(saveRemapOption),
+            RemoveModified = parseResult.GetValue(removeModifiedOption),
+            AllowHiddenCharacters = parseResult.GetValue(allowHiddenCharactersOption),
         };
 
     private static ManifestOperationResult<IReadOnlyList<PackReference>> ParseReferences(

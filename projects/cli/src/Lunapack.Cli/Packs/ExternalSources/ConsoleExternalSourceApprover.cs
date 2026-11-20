@@ -33,8 +33,8 @@ internal sealed class ConsoleExternalSourceApprover(CliConsole console) : IExter
                 )
                 .TrimEnd(' ', '|');
         });
-        var prompt =
-            $"Add required external sources?{Environment.NewLine}{string.Join(Environment.NewLine, details)}";
-        return Task.FromResult(console.Confirm(prompt));
+        return Task.FromResult(
+            console.ConfirmWithDetails("Add required external sources?", details)
+        );
     }
 }
