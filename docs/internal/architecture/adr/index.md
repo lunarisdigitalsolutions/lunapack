@@ -102,6 +102,8 @@ Create a new architecture decision record from the [MADR-based template](templat
 | [ADR-0096][adr-0096]                                                            | Close redirected lifecycle output after cancellation.                                   |
 | [ADR-0097][adr-0097]                                                            | Show complete lifecycle consent details at every log level.                             |
 | [ADR-0098][adr-0098]                                                            | Keep lifecycle environment warnings advisory and enforce per-hook timeouts.             |
+| [ADR-0099](0099-define-strict-audit-exit-codes.md)                              | Reserve strict audit exit 2 for integrity violations and 1 for usage or state errors.   |
+| [ADR-0100](0100-confine-managed-file-audit-reads.md)                            | Confine lock-backed managed-file audit reads to non-aliased workspace paths.            |
 
 [adr-0070]: 0070-bind-privileged-workflows-to-trusted-provenance.md
 [adr-0071]: 0071-reject-filesystem-aliases-at-mutation-boundaries.md

@@ -18,6 +18,13 @@ Update this section before creating a release tag.
 
 ### Added
 
+- `luna audit --strict` now verifies every pack- and link-managed target against
+  its locked SHA-256 digest. It returns `2` for missing or modified targets,
+  while invalid usage or unreadable state returns `1`; `--fail-fast` stops after
+  the first integrity violation. Strict reads remain inside the selected
+  workspace and reject symbolic-link or reparse-point paths. Strict audit uses
+  text output; combining `--strict` with `--format json` returns exit code `1`
+  with a JSON failure envelope.
 - `luna doctor` reports project-relevant Git, credential-store, state, and
   profile/cache problems with remediation. Its default checks are offline;
   `--network` enables bounded, noninteractive checks for configured Git and OCI

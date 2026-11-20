@@ -333,11 +333,18 @@ includes the registry reference and verified manifest digest. There are no
   managed files below a directory and updates lock ownership. If files were
   moved manually, it can rebind ownership when only the targets exist.
   `--save-remap` also records the move as a reusable project mapping.
-- `luna audit [--format text|json]`: Reports resolved packs, dependencies,
+- `luna audit [--strict] [--fail-fast] [--format text|json]`: Reports resolved packs, dependencies,
   external alias mappings, fingerprints, refs, commits, source and target
   paths, ownership, digests, and drift or local-modification status. It also
   reports hidden Unicode in existing managed targets without changing files or
-  state.
+  state. `--strict` instead reports the locked integrity status for every pack- and link-managed
+  target. It returns `0` when every target matches, `2` for one or more missing
+  or modified targets, and `1` for invalid usage or unreadable project or target
+  state, including unsafe or filesystem-aliased lock paths. `--fail-fast`
+  requires `--strict` and stops after the first integrity violation. Without
+  `--strict`, findings remain report-only.
+  `--format json` applies to report-only audit. Combining it with `--strict`
+  returns exit code `1` and a JSON failure envelope.
 - `luna hooks history [--limit <count>]`: Shows recent local lifecycle script
   attempts newest first. It is read-only, displays 20 entries by default, and
   accepts limits from 1 through 100.

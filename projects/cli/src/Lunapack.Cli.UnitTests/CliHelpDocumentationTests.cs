@@ -116,7 +116,7 @@ public sealed class CliHelpDocumentationTests
             ]
         ),
         new("mv", "<source> <target>", ["--save-remap"]),
-        new("audit", null, ["--format"]),
+        new("audit", null, ["--strict", "--fail-fast", "--format"]),
         new("hooks history", null, ["--limit"]),
     ];
 
