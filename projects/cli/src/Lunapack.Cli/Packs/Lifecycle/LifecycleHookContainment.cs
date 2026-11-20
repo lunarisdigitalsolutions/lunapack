@@ -11,14 +11,6 @@ internal sealed class LifecycleHookContainment : IDisposable
 {
     private const int JobObjectBasicAccountingInformation = 1;
     private const int JobExitCode = 1;
-    private const int MacEventCapacity = 32;
-    private const short MacProcessFilter = -5;
-    private const ushort MacEventAdd = 0x0001;
-    private const ushort MacEventEnable = 0x0004;
-    private const uint MacNoteExit = 0x80000000;
-    private const uint MacNoteFork = 0x40000000;
-    private const uint MacNoteTrack = 0x00000001;
-    private const int MacPollingNanoseconds = 25_000_000;
     private const int MacDescendantSettleMilliseconds = 25;
     private const int SupervisorProcessCount = 1;
 
@@ -91,26 +83,7 @@ internal sealed class LifecycleHookContainment : IDisposable
             return Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
         }
 
-        var queue = LifecycleHookMacNativeMethods.CreateQueue();
-        if (queue < 0)
-        {
-            throw new Win32Exception(
-                Marshal.GetLastWin32Error(),
-                "Unable to create lifecycle hook process tracker."
-            );
-        }
-
-        try
-        {
-            RegisterMacProcess(queue, rootProcessId);
-            _macProcessIds.TryAdd(rootProcessId, 0);
-            return TrackMacEventsAsync(queue, cancellationToken);
-        }
-        catch
-        {
-            _ = LifecycleHookMacNativeMethods.Close(queue);
-            throw;
-        }
+        return TrackMacProcessesAsync(rootProcessId, cancellationToken);
     }
 
     public static void Kill(Process process)
@@ -362,6 +335,21 @@ internal sealed class LifecycleHookContainment : IDisposable
         return !_macProcessIds.IsEmpty;
     }
 
+    private async Task TrackMacProcessesAsync(
+        int rootProcessId,
+        CancellationToken cancellationToken
+    )
+    {
+        await RefreshMacDescendantsAsync(rootProcessId, cancellationToken);
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            await Task.Delay(MacDescendantSettleMilliseconds, cancellationToken);
+            await RefreshMacDescendantsAsync(rootProcessId: null, cancellationToken);
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+    }
+
     private async Task RefreshMacDescendantsAsync(
         int? rootProcessId,
         CancellationToken cancellationToken
@@ -494,83 +482,6 @@ internal sealed class LifecycleHookContainment : IDisposable
             {
                 _ = KillUnixProcess(processId);
             }
-        }
-    }
-
-    private static void RegisterMacProcess(int queue, int processId)
-    {
-        var change = new LifecycleHookMacEvent
-        {
-            Identity = (nuint)processId,
-            Filter = MacProcessFilter,
-            Flags = (ushort)(MacEventAdd | MacEventEnable),
-            FilterFlags = MacNoteExit | MacNoteFork | MacNoteTrack,
-        };
-        var timeout = default(LifecycleHookMacTimespec);
-        var result = LifecycleHookMacNativeMethods.WaitForEvent(
-            queue,
-            [change],
-            1,
-            [],
-            0,
-            ref timeout
-        );
-        if (result < 0)
-        {
-            throw new Win32Exception(
-                Marshal.GetLastWin32Error(),
-                "Unable to track lifecycle hook descendants."
-            );
-        }
-    }
-
-    private void RecordMacProcess(int processId)
-    {
-        if (processId > 0 && processId != Environment.ProcessId)
-        {
-            _macProcessIds.TryAdd(processId, 0);
-        }
-    }
-
-    private async Task TrackMacEventsAsync(int queue, CancellationToken cancellationToken)
-    {
-        var timeout = new LifecycleHookMacTimespec { Nanoseconds = MacPollingNanoseconds };
-        var events = new LifecycleHookMacEvent[MacEventCapacity];
-        try
-        {
-            while (!cancellationToken.IsCancellationRequested)
-            {
-                var eventCount = LifecycleHookMacNativeMethods.WaitForEvent(
-                    queue,
-                    [],
-                    0,
-                    events,
-                    events.Length,
-                    ref timeout
-                );
-                if (eventCount < 0)
-                {
-                    throw new Win32Exception(
-                        Marshal.GetLastWin32Error(),
-                        "Unable to observe lifecycle hook descendants."
-                    );
-                }
-
-                for (var index = 0; index < eventCount; index++)
-                {
-                    RecordMacProcess((int)events[index].Identity);
-                    if ((events[index].FilterFlags & MacNoteFork) != 0)
-                    {
-                        RecordMacProcess((int)events[index].Data);
-                    }
-                }
-
-                await Task.Yield();
-            }
-        }
-        finally
-        {
-            _ = LifecycleHookMacNativeMethods.Close(queue);
         }
     }
 

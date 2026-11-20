@@ -18,16 +18,20 @@ internal sealed class DoctorTemporaryFileProbe(IFileSystem fileSystem) : IDoctor
             normalizedDirectory,
             $".lunapack-doctor-{RandomNumberGenerator.GetHexString(32, lowercase: true)}.tmp"
         );
-        FileStream? probe = null;
+        return ProbeTemporaryFile(probePath);
+    }
+
+    private DoctorTemporaryFileProbeResult ProbeTemporaryFile(string probePath)
+    {
         try
         {
-            probe = new FileStream(
+            using var probe = new FileStream(
                 probePath,
                 FileMode.CreateNew,
                 FileAccess.Write,
                 FileShare.None,
                 bufferSize: 1,
-                FileOptions.DeleteOnClose
+                FileOptions.None
             );
             probe.WriteByte(0);
             probe.Flush(flushToDisk: false);
@@ -40,21 +44,56 @@ internal sealed class DoctorTemporaryFileProbe(IFileSystem fileSystem) : IDoctor
                         or ArgumentException
             )
         {
+            return RemoveProbeAfterWriteFailure(probePath);
+        }
+
+        return RemoveProbe(probePath);
+    }
+
+    private DoctorTemporaryFileProbeResult RemoveProbeAfterWriteFailure(string probePath)
+    {
+        try
+        {
+            fileSystem.File.Delete(probePath);
+        }
+        catch (Exception exception)
+            when (exception
+                    is IOException
+                        or UnauthorizedAccessException
+                        or NotSupportedException
+                        or ArgumentException
+            )
+        {
             return new DoctorTemporaryFileProbeResult(
                 false,
-                "The directory could not be written with an exclusive temporary probe."
+                $"The directory could not be written with an exclusive temporary probe. Temporary probe cleanup also failed: {exception.Message}"
             );
         }
-        finally
+
+        return new DoctorTemporaryFileProbeResult(
+            false,
+            "The directory could not be written with an exclusive temporary probe."
+        );
+    }
+
+    private DoctorTemporaryFileProbeResult RemoveProbe(string probePath)
+    {
+        try
         {
-            try
-            {
-                probe?.Dispose();
-            }
-            catch (IOException)
-            {
-                // The post-dispose existence check reports cleanup failure.
-            }
+            fileSystem.File.Delete(probePath);
+        }
+        catch (Exception exception)
+            when (exception
+                    is IOException
+                        or UnauthorizedAccessException
+                        or NotSupportedException
+                        or ArgumentException
+            )
+        {
+            return new DoctorTemporaryFileProbeResult(
+                false,
+                $"The temporary probe could not be removed: {exception.Message}"
+            );
         }
 
         return fileSystem.File.Exists(probePath)

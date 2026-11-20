@@ -75,18 +75,6 @@ internal static class LifecycleHookSupervisor
         string[] hookArguments
     )
     {
-        if (OperatingSystem.IsMacOS())
-        {
-            return await ExecuteMacHookAsync(
-                fileSystem,
-                containment,
-                resultPath,
-                controlPath,
-                executable,
-                hookArguments
-            );
-        }
-
         using var process = CreateProcess(projectDirectory, executable, hookArguments);
         process.Start();
         using var trackingCancellation = new CancellationTokenSource();
@@ -101,33 +89,6 @@ internal static class LifecycleHookSupervisor
             resultPath,
             controlPath,
             exitTask,
-            trackingTask,
-            trackingCancellation
-        );
-    }
-
-    private static async Task<int> ExecuteMacHookAsync(
-        IFileSystem fileSystem,
-        LifecycleHookContainment containment,
-        string resultPath,
-        string controlPath,
-        string executable,
-        string[] hookArguments
-    )
-    {
-        var processId = LifecycleHookMacProcess.StartSuspended(executable, hookArguments);
-        using var trackingCancellation = new CancellationTokenSource();
-        var trackingTask = containment.TrackMacDescendantsAsync(
-            processId,
-            trackingCancellation.Token
-        );
-        LifecycleHookMacProcess.Resume(processId);
-        return await CompleteHookAsync(
-            fileSystem,
-            containment,
-            resultPath,
-            controlPath,
-            LifecycleHookMacProcess.WaitForExitAsync(processId),
             trackingTask,
             trackingCancellation
         );

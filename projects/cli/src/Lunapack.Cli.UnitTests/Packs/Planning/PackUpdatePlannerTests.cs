@@ -1,3 +1,4 @@
+using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
 using System.Security.Cryptography;
 using System.Text;
@@ -474,6 +475,51 @@ public sealed class PackUpdatePlannerTests
             Skip.Test("The default filesystem is not known to alias path case.");
         }
 
+        if (OperatingSystem.IsMacOS() && !HostAliasesPathCase())
+        {
+            Skip.Test("The macOS filesystem is case-sensitive.");
+        }
+
+        if (OperatingSystem.IsMacOS())
+        {
+            var projectDirectory = Directory.CreateTempSubdirectory(
+                "lunapack-case-insensitive-project"
+            );
+            try
+            {
+                var macFileSystem = new FileSystem();
+                await File.WriteAllTextAsync(
+                    Path.Combine(projectDirectory.FullName, "Shared.txt"),
+                    "old content"
+                );
+                var macLockFile = CreateLockFile("first", "Shared.txt", "old content");
+                var macAliasedTarget = CreateManagedFile(
+                    "second",
+                    "shared.txt",
+                    "new content",
+                    projectDirectory: projectDirectory.FullName
+                );
+                var macPlanner = new PackUpdatePlanner(macFileSystem);
+
+                var macResult = macPlanner.Plan(
+                    projectDirectory.FullName,
+                    macLockFile,
+                    new PackInstallationPlan([macAliasedTarget])
+                );
+
+                await Assert.That(macResult.RequireValue().Actions).Count().IsEqualTo(1);
+                await Assert
+                    .That(macResult.RequireValue().Actions.Single())
+                    .IsTypeOf<CopyManagedFileUpdateAction>();
+            }
+            finally
+            {
+                projectDirectory.Delete(recursive: true);
+            }
+
+            return;
+        }
+
         var fileSystem = CreateFileSystem((ProjectPath("Shared.txt"), "old content"));
         var lockFile = CreateLockFile("first", "Shared.txt", "old content");
         var aliasedTarget = CreateManagedFile("second", "shared.txt", "new content");
@@ -663,9 +709,12 @@ public sealed class PackUpdatePlannerTests
         string target,
         string contents,
         PackManifest.PackManagedFileStrategy? strategy = null,
-        string? declaredTarget = null
-    ) =>
-        new(
+        string? declaredTarget = null,
+        string? projectDirectory = null
+    )
+    {
+        var absoluteProjectDirectory = projectDirectory ?? _projectDirectory;
+        return new(
             new DiscoveredPack(
                 _packsDirectory,
                 PacksPath("example"),
@@ -679,10 +728,11 @@ public sealed class PackUpdatePlannerTests
             PacksPath("example", "source.txt"),
             declaredTarget ?? target,
             Encoding.UTF8.GetBytes(contents),
-            ProjectPath(target),
+            ProjectPathForDirectory(absoluteProjectDirectory, target),
             target,
             strategy ?? PackManifest.PackManagedFileStrategy.CopyOverwrite
         );
+    }
 
     private static MockFileSystem CreateFileSystem(params (string Path, string Contents)[] files)
     {
@@ -701,8 +751,27 @@ public sealed class PackUpdatePlannerTests
     private static string ProjectPath(params string[] paths) =>
         Path.Combine([_projectDirectory, .. paths]);
 
+    private static string ProjectPathForDirectory(string projectDirectory, params string[] paths) =>
+        Path.Combine([projectDirectory, .. paths]);
+
     private static string PacksPath(params string[] paths) =>
         Path.Combine([_packsDirectory, .. paths]);
+
+    private static bool HostAliasesPathCase()
+    {
+        var directory = Directory.CreateTempSubdirectory("lunapack-case-alias");
+        try
+        {
+            var probePath = Path.Combine(directory.FullName, "LunapackCaseAlias.txt");
+            var aliasedPath = Path.Combine(directory.FullName, "lunapackcasealias.txt");
+            File.WriteAllText(probePath, "probe");
+            return File.Exists(aliasedPath);
+        }
+        finally
+        {
+            directory.Delete(recursive: true);
+        }
+    }
 
     private static PlannedPackUpdateAction PlanMerge(
         string targetContents,
