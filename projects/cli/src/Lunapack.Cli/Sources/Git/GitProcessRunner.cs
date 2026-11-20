@@ -5,47 +5,133 @@ using Lunapack.Cli.Application.CommandExecution;
 
 namespace Lunapack.Cli.Sources.Git;
 
-internal sealed class GitProcessRunner(
-    string executable = "git",
-    long maximumStandardOutputBytes = 64L * 1024 * 1024
-) : IGitProcessRunner
+internal sealed class GitProcessRunner : IGitProcessRunner
 {
     private const int MaximumDiagnosticCharacters = 64 * 1024;
+    private static readonly Encoding _gitTextEncoding = new UTF8Encoding(false);
+    private readonly GitCheckoutFilterGuard _checkoutFilterGuard;
+    private readonly string _executable;
+    private readonly bool _isGitExecutable;
+    private readonly bool _nonInteractive;
+    private readonly GitTransportSecurity _transportSecurity;
+
+    public GitProcessRunner(string executable = "git", bool nonInteractive = false)
+    {
+        _executable = executable;
+        _nonInteractive = nonInteractive;
+        _isGitExecutable = string.Equals(
+            Path.GetFileNameWithoutExtension(executable),
+            "git",
+            StringComparison.OrdinalIgnoreCase
+        );
+        _transportSecurity = new GitTransportSecurity(ExecuteSecurityProbeAsync);
+        _checkoutFilterGuard = new GitCheckoutFilterGuard(ExecuteSecurityProbeAsync);
+    }
 
     public Task<ManifestOperationResult<GitProcessOutput>> RunAsync(
         IReadOnlyList<string> arguments,
         TimeSpan timeout,
         CancellationToken cancellationToken
+    ) => RunAsync(arguments, timeout, GitTransportMode.SecureOnly, cancellationToken);
+
+    public Task<ManifestOperationResult<GitProcessOutput>> RunAsync(
+        IReadOnlyList<string> arguments,
+        TimeSpan timeout,
+        GitTransportMode transportMode,
+        CancellationToken cancellationToken
+    ) => RunAsync(arguments, timeout, transportMode, null, cancellationToken);
+
+    public async Task<ManifestOperationResult<GitProcessOutput>> RunAsync(
+        IReadOnlyList<string> arguments,
+        TimeSpan timeout,
+        GitTransportMode transportMode,
+        string? repositoryUrl,
+        CancellationToken cancellationToken
     )
     {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumStandardOutputBytes);
-        return RunCoreAsync(
-            arguments,
-            timeout,
-            maximumStandardOutputBytes,
-            "Git standard output",
-            cancellationToken
+        if (timeout <= TimeSpan.Zero)
+        {
+            return ManifestOperationResult<GitProcessOutput>.Failure(
+                "Git operation timeout must be greater than zero."
+            );
+        }
+
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return ManifestOperationResult<GitProcessOutput>.Failure("Git operation was canceled.");
+        }
+        if (
+            repositoryUrl is not null
+            && !string.Equals(repositoryUrl, repositoryUrl.Trim(), StringComparison.Ordinal)
+        )
+        {
+            return ManifestOperationResult<GitProcessOutput>.Failure(
+                "Git repository URL must not contain leading or trailing whitespace."
+            );
+        }
+
+        var resolvedExecutable = ResolveExecutable();
+        if (resolvedExecutable is null)
+        {
+            return ManifestOperationResult<GitProcessOutput>.Failure(
+                $"Unable to locate a trusted Git executable for '{_executable}'."
+            );
+        }
+
+        using var timeoutCancellation = new CancellationTokenSource(timeout);
+        using var operationCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            timeoutCancellation.Token
         );
+        try
+        {
+            return await ExecuteConfiguredAsync(
+                arguments,
+                resolvedExecutable,
+                timeout,
+                transportMode,
+                repositoryUrl,
+                operationCancellation.Token,
+                cancellationToken
+            );
+        }
+        catch (Win32Exception exception)
+        {
+            return ManifestOperationResult<GitProcessOutput>.Failure(
+                $"Unable to run Git executable '{_executable}': {exception.Message}"
+            );
+        }
     }
 
-    public Task<ManifestOperationResult<GitProcessOutput>> RunBoundedAsync(
+    public async Task<ManifestOperationResult<GitProcessOutput>> RunBoundedAsync(
         IReadOnlyList<string> arguments,
         TimeSpan timeout,
         long standardOutputByteLimit,
         string outputName,
-        CancellationToken cancellationToken = default
+        GitTransportMode transportMode,
+        string? repositoryUrl,
+        CancellationToken cancellationToken
     )
     {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(standardOutputByteLimit);
-        ArgumentException.ThrowIfNullOrWhiteSpace(outputName);
-
-        return RunCoreAsync(
+        var result = await RunAsync(
             arguments,
             timeout,
-            standardOutputByteLimit,
-            outputName,
+            transportMode,
+            repositoryUrl,
             cancellationToken
         );
+        if (result.Value is not { } output)
+        {
+            return result;
+        }
+
+        var byteCount = Encoding.UTF8.GetByteCount(output.StandardOutput);
+        return output.StandardOutputTruncated || byteCount > standardOutputByteLimit
+            ? ManifestOperationResult<GitProcessOutput>.Failure(
+                $"{outputName} exceeds its {standardOutputByteLimit} byte limit (at least {byteCount} bytes read).",
+                ManifestOperationErrorKind.ResourceLimitExceeded
+            )
+            : result;
     }
 
     public async Task<ManifestOperationResult<GitProcessOutput>> RunBoundedRecordsAsync(
@@ -54,186 +140,330 @@ internal sealed class GitProcessRunner(
         long recordLimit,
         string outputName,
         byte recordSeparator,
-        long? outputByteLimit = null,
-        long? recordByteLimit = null,
-        CancellationToken cancellationToken = default
-    )
-    {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(recordLimit);
-        ArgumentException.ThrowIfNullOrWhiteSpace(outputName);
-        if (outputByteLimit is <= 0 || recordByteLimit is <= 0)
-        {
-            throw new ArgumentOutOfRangeException(
-                outputByteLimit is <= 0 ? nameof(outputByteLimit) : nameof(recordByteLimit)
-            );
-        }
-        if (timeout <= TimeSpan.Zero)
-        {
-            return ManifestOperationResult<GitProcessOutput>.Failure(
-                "Git operation timeout must be greater than zero."
-            );
-        }
-
-        if (cancellationToken.IsCancellationRequested)
-        {
-            return ManifestOperationResult<GitProcessOutput>.Failure("Git operation was canceled.");
-        }
-
-        try
-        {
-            using var process = new Process { StartInfo = CreateStartInfo(arguments) };
-            if (!process.Start())
-            {
-                return ManifestOperationResult<GitProcessOutput>.Failure(
-                    "Unable to start the Git executable."
-                );
-            }
-
-            return await CaptureBoundedRecordsAsync(
-                process,
-                timeout,
-                recordLimit,
-                outputName,
-                recordSeparator,
-                outputByteLimit,
-                recordByteLimit,
-                cancellationToken
-            );
-        }
-        catch (Win32Exception exception)
-        {
-            return ManifestOperationResult<GitProcessOutput>.Failure(
-                $"Unable to run Git executable '{executable}': {exception.Message}"
-            );
-        }
-    }
-
-    private static async Task<ManifestOperationResult<GitProcessOutput>> CaptureBoundedRecordsAsync(
-        Process process,
-        TimeSpan timeout,
-        long recordLimit,
-        string outputName,
-        byte recordSeparator,
         long? outputByteLimit,
         long? recordByteLimit,
+        GitTransportMode transportMode,
+        string? repositoryUrl,
         CancellationToken cancellationToken
     )
     {
-        using var limitCancellation = new CancellationTokenSource();
-        var standardOutput = ReadBoundedRecordsAsync(
-            process.StandardOutput.BaseStream,
-            recordLimit,
-            recordSeparator,
-            outputByteLimit,
-            recordByteLimit,
-            limitCancellation.Cancel
+        var result = await RunAsync(
+            arguments,
+            timeout,
+            transportMode,
+            repositoryUrl,
+            cancellationToken
         );
-        var standardError = ReadBoundedAsync(process.StandardError);
-        using var timeoutCancellation = new CancellationTokenSource(timeout);
-        using var operationCancellation = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken,
-            timeoutCancellation.Token,
-            limitCancellation.Token
+        if (result.Value is not { } output)
+        {
+            return result;
+        }
+
+        var records = output.StandardOutput.Split(
+            (char)recordSeparator,
+            StringSplitOptions.RemoveEmptyEntries
+        );
+        if (records.Length > recordLimit)
+        {
+            return ManifestOperationResult<GitProcessOutput>.Failure(
+                $"{outputName} exceeds its {recordLimit} record limit (at least {records.Length} records read).",
+                ManifestOperationErrorKind.ResourceLimitExceeded
+            );
+        }
+
+        var outputByteCount = Encoding.UTF8.GetByteCount(output.StandardOutput);
+        if (
+            output.StandardOutputTruncated
+            || (outputByteLimit is { } byteLimit && outputByteCount > byteLimit)
+        )
+        {
+            var effectiveLimit = outputByteLimit ?? outputByteCount;
+            return ManifestOperationResult<GitProcessOutput>.Failure(
+                $"{outputName} exceeds its {effectiveLimit} byte limit (at least {outputByteCount} bytes read).",
+                ManifestOperationErrorKind.ResourceLimitExceeded
+            );
+        }
+
+        if (
+            recordByteLimit is { } singleRecordByteLimit
+            && records.Any(record => Encoding.UTF8.GetByteCount(record) > singleRecordByteLimit)
+        )
+        {
+            return ManifestOperationResult<GitProcessOutput>.Failure(
+                $"{outputName} record exceeds its {singleRecordByteLimit} byte limit.",
+                ManifestOperationErrorKind.ResourceLimitExceeded
+            );
+        }
+
+        return result;
+    }
+
+    private async Task<ManifestOperationResult<GitProcessOutput>> ExecuteConfiguredAsync(
+        IReadOnlyList<string> arguments,
+        string resolvedExecutable,
+        TimeSpan timeout,
+        GitTransportMode transportMode,
+        string? repositoryUrl,
+        CancellationToken operationCancellation,
+        CancellationToken callerCancellation
+    )
+    {
+        var workingDirectory = GitTransportSecurity.GetGitWorkingDirectory(arguments);
+        var effectiveRepository = await ResolveEffectiveRepositoryIfNeededAsync(
+            repositoryUrl,
+            timeout,
+            transportMode,
+            workingDirectory,
+            operationCancellation,
+            callerCancellation
+        );
+        if (!effectiveRepository.IsSuccess)
+        {
+            return ManifestOperationResult<GitProcessOutput>.Failure(
+                effectiveRepository.Error ?? "Unable to resolve the effective Git repository URL."
+            );
+        }
+        var effectiveRepositoryUrl = effectiveRepository.Value;
+
+        var startInfo = CreateStartInfo(resolvedExecutable, arguments, transportMode);
+        if (_isGitExecutable)
+        {
+            GitTransportSecurity.ConfigureTransportEnvironment(
+                startInfo.Environment,
+                transportMode,
+                repositoryUrl
+            );
+            var configurationError = GitTransportSecurity.ConfigureSecureHttps(
+                startInfo.Environment,
+                transportMode,
+                effectiveRepositoryUrl
+            );
+            if (configurationError is not null)
+            {
+                return ManifestOperationResult<GitProcessOutput>.Failure(configurationError);
+            }
+
+            var verification = await _transportSecurity.VerifySecureHttpsAsync(
+                timeout,
+                transportMode,
+                effectiveRepositoryUrl,
+                workingDirectory,
+                operationCancellation,
+                callerCancellation
+            );
+            if (!verification.IsSuccess)
+            {
+                return ManifestOperationResult<GitProcessOutput>.Failure(
+                    verification.Error ?? "Unable to verify secure Git HTTPS settings."
+                );
+            }
+
+            var checkoutVerification = await _checkoutFilterGuard.VerifyAsync(
+                arguments,
+                timeout,
+                transportMode,
+                effectiveRepositoryUrl,
+                operationCancellation,
+                callerCancellation
+            );
+            if (!checkoutVerification.IsSuccess)
+            {
+                return ManifestOperationResult<GitProcessOutput>.Failure(
+                    checkoutVerification.Error ?? "Unable to verify Git checkout filters."
+                );
+            }
+        }
+
+        return await ExecuteProcessAsync(
+            startInfo,
+            timeout,
+            operationCancellation,
+            callerCancellation
+        );
+    }
+
+    private async Task<ManifestOperationResult<string?>> ResolveEffectiveRepositoryIfNeededAsync(
+        string? repositoryUrl,
+        TimeSpan timeout,
+        GitTransportMode transportMode,
+        string? workingDirectory,
+        CancellationToken operationCancellation,
+        CancellationToken callerCancellation
+    )
+    {
+        if (
+            !_isGitExecutable
+            || transportMode != GitTransportMode.SecureOnly
+            || repositoryUrl is null
+        )
+        {
+            return ManifestOperationResult<string?>.Success(repositoryUrl);
+        }
+
+        var resolved = await _transportSecurity.ResolveEffectiveRepositoryUrlAsync(
+            repositoryUrl,
+            timeout,
+            transportMode,
+            workingDirectory,
+            operationCancellation,
+            callerCancellation
+        );
+        return resolved.Value is { } value
+            ? ManifestOperationResult<string?>.Success(value)
+            : ManifestOperationResult<string?>.Failure(
+                resolved.Error ?? "Unable to resolve the effective Git repository URL."
+            );
+    }
+
+    private static async Task<ManifestOperationResult<GitProcessOutput>> ExecuteProcessAsync(
+        ProcessStartInfo startInfo,
+        TimeSpan timeout,
+        CancellationToken operationCancellation,
+        CancellationToken callerCancellation,
+        string? standardInput = null,
+        int maximumOutputCharacters = MaximumDiagnosticCharacters
+    )
+    {
+        startInfo.RedirectStandardInput = standardInput is not null;
+        if (standardInput is not null)
+        {
+            startInfo.StandardInputEncoding = _gitTextEncoding;
+        }
+        using var process = new Process { StartInfo = startInfo };
+        if (!process.Start())
+        {
+            return ManifestOperationResult<GitProcessOutput>.Failure(
+                "Unable to start the Git executable."
+            );
+        }
+
+        var standardOutput = ReadBoundedAsync(
+            process.StandardOutput,
+            maximumOutputCharacters,
+            operationCancellation
+        );
+        var standardError = ReadBoundedAsync(
+            process.StandardError,
+            MaximumDiagnosticCharacters,
+            operationCancellation
         );
         try
         {
-            await process.WaitForExitAsync(operationCancellation.Token);
+            if (standardInput is not null)
+            {
+                await process.StandardInput.WriteAsync(
+                    standardInput.AsMemory(),
+                    operationCancellation
+                );
+                process.StandardInput.Close();
+            }
+            await process.WaitForExitAsync(operationCancellation);
+            var (capturedOutput, outputTruncated) = await standardOutput;
+            var (capturedError, errorTruncated) = await standardError;
+            var output = new GitProcessOutput(
+                capturedOutput,
+                capturedError,
+                outputTruncated,
+                errorTruncated
+            );
+            return process.ExitCode == 0
+                ? ManifestOperationResult<GitProcessOutput>.Success(output)
+                : ManifestOperationResult<GitProcessOutput>.Failure(
+                    CreateExitCodeError(process.ExitCode, output)
+                );
+        }
+        catch (IOException)
+        {
+            await StopAsync(process);
+            await DrainOutputAsync(standardOutput, standardError);
+            return ManifestOperationResult<GitProcessOutput>.Failure(
+                "Git operation could not write command input."
+            );
         }
         catch (OperationCanceledException)
         {
             await StopAsync(process);
-            await Task.WhenAll(standardOutput, standardError);
-            return standardOutput.Result.ExceededLimit
-                ? CreateBoundedRecordFailure(
-                    outputName,
-                    recordLimit,
-                    outputByteLimit,
-                    recordByteLimit,
-                    standardOutput.Result
-                )
-                : ManifestOperationResult<GitProcessOutput>.Failure(
-                    cancellationToken.IsCancellationRequested
-                        ? "Git operation was canceled."
-                        : $"Git operation timed out after {timeout.TotalSeconds:0} seconds."
-                );
-        }
+            await DrainOutputAsync(standardOutput, standardError);
 
-        var captured = await standardOutput;
-        if (captured.ExceededLimit)
-        {
-            return CreateBoundedRecordFailure(
-                outputName,
-                recordLimit,
-                outputByteLimit,
-                recordByteLimit,
-                captured
+            return ManifestOperationResult<GitProcessOutput>.Failure(
+                callerCancellation.IsCancellationRequested
+                    ? "Git operation was canceled."
+                    : $"Git operation timed out after {timeout.TotalSeconds:0} seconds."
             );
         }
-
-        var output = new GitProcessOutput(captured.Text, (await standardError).Text);
-        return process.ExitCode == 0
-            ? ManifestOperationResult<GitProcessOutput>.Success(output)
-            : ManifestOperationResult<GitProcessOutput>.Failure(
-                CreateExitCodeError(process.ExitCode, output)
-            );
     }
 
-    private async Task<ManifestOperationResult<GitProcessOutput>> RunCoreAsync(
+    private ProcessStartInfo CreateStartInfo(
+        string resolvedExecutable,
         IReadOnlyList<string> arguments,
-        TimeSpan timeout,
-        long? standardOutputByteLimit,
-        string? outputName,
-        CancellationToken cancellationToken
+        GitTransportMode transportMode
     )
     {
-        if (timeout <= TimeSpan.Zero)
-        {
-            return ManifestOperationResult<GitProcessOutput>.Failure(
-                "Git operation timeout must be greater than zero."
-            );
-        }
-
-        if (cancellationToken.IsCancellationRequested)
-        {
-            return ManifestOperationResult<GitProcessOutput>.Failure("Git operation was canceled.");
-        }
-
-        try
-        {
-            using var process = new Process { StartInfo = CreateStartInfo(arguments) };
-            if (!process.Start())
-            {
-                return ManifestOperationResult<GitProcessOutput>.Failure(
-                    "Unable to start the Git executable."
-                );
-            }
-
-            return await CaptureProcessOutputAsync(
-                process,
-                timeout,
-                standardOutputByteLimit,
-                outputName,
-                cancellationToken
-            );
-        }
-        catch (Win32Exception exception)
-        {
-            return ManifestOperationResult<GitProcessOutput>.Failure(
-                $"Unable to run Git executable '{executable}': {exception.Message}"
-            );
-        }
-    }
-
-    private ProcessStartInfo CreateStartInfo(IReadOnlyList<string> arguments)
-    {
-        var startInfo = new ProcessStartInfo(executable)
+        var startInfo = new ProcessStartInfo(resolvedExecutable)
         {
             CreateNoWindow = true,
             RedirectStandardError = true,
             RedirectStandardOutput = true,
+            StandardErrorEncoding = _gitTextEncoding,
+            StandardOutputEncoding = _gitTextEncoding,
             UseShellExecute = false,
         };
         startInfo.Environment["GIT_TERMINAL_PROMPT"] = "0";
+        if (_nonInteractive)
+        {
+            startInfo.WorkingDirectory = Path.GetTempPath();
+            startInfo.Environment["GCM_INTERACTIVE"] = "Never";
+            startInfo.Environment["GIT_OPTIONAL_LOCKS"] = "0";
+            startInfo.Environment["GIT_SSH_COMMAND"] = CreateSshCommand();
+            startInfo.Environment["PATH"] = CreateSanitizedPath();
+            startInfo.Environment["SSH_ASKPASS_REQUIRE"] = "never";
+            startInfo.Environment.Remove("GIT_ASKPASS");
+            startInfo.Environment.Remove("SSH_ASKPASS");
+            startInfo.Environment["GIT_CONFIG_NOSYSTEM"] = "1";
+            startInfo.Environment["GIT_CONFIG_GLOBAL"] = OperatingSystem.IsWindows()
+                ? "NUL"
+                : "/dev/null";
+            startInfo.Environment.Remove("GIT_CONFIG_PARAMETERS");
+            foreach (
+                var variable in startInfo
+                    .Environment.Keys.Where(name =>
+                        name.StartsWith("GIT_CONFIG_KEY_", StringComparison.OrdinalIgnoreCase)
+                        || name.StartsWith("GIT_CONFIG_VALUE_", StringComparison.OrdinalIgnoreCase)
+                    )
+                    .ToArray()
+            )
+            {
+                startInfo.Environment.Remove(variable);
+            }
+            startInfo.Environment.Remove("GIT_CONFIG_COUNT");
+            startInfo.Environment.Remove("GIT_DIR");
+            startInfo.Environment.Remove("GIT_WORK_TREE");
+            startInfo.Environment.Remove("GIT_COMMON_DIR");
+            startInfo.Environment.Remove("GIT_EXEC_PATH");
+            startInfo.Environment.Remove("GIT_SSL_CERT");
+            startInfo.Environment.Remove("GIT_SSL_KEY");
+            startInfo.Environment.Remove("GIT_SSL_CAINFO");
+            startInfo.Environment.Remove("GIT_SSL_CAPATH");
+            foreach (
+                var variable in startInfo
+                    .Environment.Keys.Where(name =>
+                        name.StartsWith("GIT_TRACE", StringComparison.OrdinalIgnoreCase)
+                    )
+                    .ToArray()
+            )
+            {
+                startInfo.Environment.Remove(variable);
+            }
+        }
+
+        if (_isGitExecutable)
+        {
+            foreach (var argument in GitTransportSecurity.CreateTransportArguments(transportMode))
+            {
+                startInfo.ArgumentList.Add(argument);
+            }
+        }
+
         foreach (var argument in arguments)
         {
             startInfo.ArgumentList.Add(argument);
@@ -242,71 +472,66 @@ internal sealed class GitProcessRunner(
         return startInfo;
     }
 
-    private static async Task<ManifestOperationResult<GitProcessOutput>> CaptureProcessOutputAsync(
-        Process process,
-        TimeSpan timeout,
-        long? standardOutputByteLimit,
-        string? outputName,
-        CancellationToken cancellationToken
-    )
+    internal ProcessStartInfo CreateStartInfoForTests(string resolvedExecutable) =>
+        CreateStartInfo(resolvedExecutable, [], GitTransportMode.SecureOnly);
+
+    private static string CreateSshCommand()
     {
-        using var outputLimitCancellation = new CancellationTokenSource();
-        var standardOutput = standardOutputByteLimit is { } byteLimit
-            ? ReadBoundedBytesAsync(
-                process.StandardOutput.BaseStream,
-                byteLimit,
-                outputLimitCancellation.Cancel
-            )
-            : ReadBoundedAsync(process.StandardOutput);
-        var standardError = ReadBoundedAsync(process.StandardError);
-        using var timeoutCancellation = new CancellationTokenSource(timeout);
-        using var operationCancellation = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken,
-            timeoutCancellation.Token,
-            outputLimitCancellation.Token
+        var ssh = ResolveExecutable(
+            "ssh",
+            Environment.GetEnvironmentVariable("PATH"),
+            Path.GetFullPath("."),
+            OperatingSystem.IsWindows(),
+            [Path.GetFullPath("."), Path.GetFullPath(Path.GetTempPath())]
         );
-
-        try
+        if (ssh is null || ssh.IndexOfAny(['"', '$', '`', '\'', '\r', '\n']) >= 0)
         {
-            await process.WaitForExitAsync(operationCancellation.Token);
+            return $"\"{Path.Combine(Path.GetTempPath(), $".lunapack-ssh-unavailable-{Guid.NewGuid():N}")}\"";
         }
-        catch (OperationCanceledException)
-        {
-            await StopAsync(process);
-            await Task.WhenAll(standardOutput, standardError);
 
-            if (standardOutput.Result.ExceededLimit)
+        return $"\"{ssh}\" -oBatchMode=yes -oStrictHostKeyChecking=yes";
+    }
+
+    private static string CreateSanitizedPath()
+    {
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+        var exclusions = new[] { Path.GetFullPath("."), Path.GetFullPath(Path.GetTempPath()) };
+        var entries = new List<string>();
+        foreach (
+            var entry in (Environment.GetEnvironmentVariable("PATH") ?? string.Empty).Split(
+                Path.PathSeparator,
+                StringSplitOptions.RemoveEmptyEntries
+            )
+        )
+        {
+            var trimmedEntry = entry.Trim().Trim('"');
+            if (
+                !Path.IsPathRooted(trimmedEntry)
+                || trimmedEntry.StartsWith(@"\\", StringComparison.Ordinal)
+            )
             {
-                return CreateOutputLimitFailure(
-                    outputName,
-                    standardOutputByteLimit,
-                    standardOutput.Result.ObservedBytes
-                );
+                continue;
             }
 
-            return ManifestOperationResult<GitProcessOutput>.Failure(
-                cancellationToken.IsCancellationRequested
-                    ? "Git operation was canceled."
-                    : $"Git operation timed out after {timeout.TotalSeconds:0} seconds."
-            );
+            var absoluteEntry = Path.TrimEndingDirectorySeparator(Path.GetFullPath(trimmedEntry));
+            if (
+                exclusions.Any(excluded =>
+                    IsSameOrDescendant(absoluteEntry, Path.GetFullPath(excluded), comparison)
+                )
+            )
+            {
+                continue;
+            }
+
+            if (!entries.Any(existing => string.Equals(existing, absoluteEntry, comparison)))
+            {
+                entries.Add(absoluteEntry);
+            }
         }
 
-        var capturedOutput = await standardOutput;
-        if (capturedOutput.ExceededLimit)
-        {
-            return CreateOutputLimitFailure(
-                outputName,
-                standardOutputByteLimit,
-                capturedOutput.ObservedBytes
-            );
-        }
-
-        var output = new GitProcessOutput(capturedOutput.Text, (await standardError).Text);
-        return process.ExitCode == 0
-            ? ManifestOperationResult<GitProcessOutput>.Success(output)
-            : ManifestOperationResult<GitProcessOutput>.Failure(
-                CreateExitCodeError(process.ExitCode, output)
-            );
+        return string.Join(Path.PathSeparator, entries);
     }
 
     internal static string CreateExitCodeError(int exitCode, GitProcessOutput output)
@@ -319,9 +544,14 @@ internal sealed class GitProcessRunner(
                 "could not read username",
                 "could not read password",
                 "terminal prompts disabled",
-                "no credentials available"
+                "no credentials available",
+                "permission denied (publickey)",
+                "no supported authentication methods available",
+                "too many authentication failures"
             )
                 ? "Git authentication failed. Configure the operating-system Git credential helper or SSH credentials for this source."
+            : ContainsAny(diagnostic, "transport 'http' not allowed", "transport 'git' not allowed")
+                ? "Git source was rewritten to an insecure transport and blocked. Remove the matching url.*.insteadOf rule or use a secure source URL."
             : ContainsAny(
                 diagnostic,
                 "permission denied",
@@ -356,248 +586,198 @@ internal sealed class GitProcessRunner(
         return $"Git exited with code {exitCode}: {guidance}";
     }
 
+    private Task<ManifestOperationResult<GitProcessOutput>> ExecuteSecurityProbeAsync(
+        GitSecurityProbeRequest request,
+        CancellationToken operationCancellation,
+        CancellationToken callerCancellation
+    )
+    {
+        var resolvedExecutable = ResolveExecutable();
+        if (resolvedExecutable is null)
+        {
+            return Task.FromResult(
+                ManifestOperationResult<GitProcessOutput>.Failure(
+                    $"Unable to locate a trusted Git executable for '{_executable}'."
+                )
+            );
+        }
+
+        var startInfo = CreateStartInfo(
+            resolvedExecutable,
+            request.Arguments,
+            request.TransportMode
+        );
+        GitTransportSecurity.ConfigureTransportEnvironment(
+            startInfo.Environment,
+            request.TransportMode,
+            request.RepositoryUrl
+        );
+        if (request.GitIndexPath is not null)
+        {
+            startInfo.Environment["GIT_INDEX_FILE"] = request.GitIndexPath;
+        }
+        var configurationError = GitTransportSecurity.ConfigureSecureHttps(
+            startInfo.Environment,
+            request.TransportMode,
+            request.RepositoryUrl
+        );
+        return configurationError is null
+            ? ExecuteProcessAsync(
+                startInfo,
+                request.Timeout,
+                operationCancellation,
+                callerCancellation,
+                request.StandardInput,
+                request.MaximumOutputCharacters ?? MaximumDiagnosticCharacters
+            )
+            : Task.FromResult(
+                ManifestOperationResult<GitProcessOutput>.Failure(configurationError)
+            );
+    }
+
     private static bool ContainsAny(string value, params string[] fragments) =>
         fragments.Any(fragment => value.Contains(fragment, StringComparison.OrdinalIgnoreCase));
 
-    private static ManifestOperationResult<GitProcessOutput> CreateOutputLimitFailure(
-        string? outputName,
-        long? byteLimit,
-        long observedBytes
-    ) =>
-        ManifestOperationResult<GitProcessOutput>.Failure(
-            $"{outputName ?? "Git output"} exceeds its {byteLimit} byte limit (at least {observedBytes} bytes read).",
-            ManifestOperationErrorKind.ResourceLimitExceeded
-        );
-
-    private static ManifestOperationResult<GitProcessOutput> CreateRecordLimitFailure(
-        string outputName,
-        long recordLimit,
-        long observedRecords
-    ) =>
-        ManifestOperationResult<GitProcessOutput>.Failure(
-            $"{outputName} exceeds its {recordLimit} record limit (at least {observedRecords} records read).",
-            ManifestOperationErrorKind.ResourceLimitExceeded
-        );
-
-    private static ManifestOperationResult<GitProcessOutput> CreateBoundedRecordFailure(
-        string outputName,
-        long recordLimit,
-        long? outputByteLimit,
-        long? recordByteLimit,
-        BoundedOutput output
-    ) =>
-        output.Limit switch
-        {
-            BoundedOutputLimit.Records => CreateRecordLimitFailure(
-                outputName,
-                recordLimit,
-                output.ObservedRecords
-            ),
-            BoundedOutputLimit.OutputBytes => ManifestOperationResult<GitProcessOutput>.Failure(
-                $"{outputName} exceeds its {outputByteLimit} byte limit (at least {output.ObservedBytes} bytes read).",
-                ManifestOperationErrorKind.ResourceLimitExceeded
-            ),
-            BoundedOutputLimit.RecordBytes => ManifestOperationResult<GitProcessOutput>.Failure(
-                $"{outputName} record exceeds its {recordByteLimit} byte limit (at least {output.ObservedRecordBytes} bytes read).",
-                ManifestOperationErrorKind.ResourceLimitExceeded
-            ),
-            _ => CreateRecordLimitFailure(outputName, recordLimit, output.ObservedRecords),
-        };
-
-    private static async Task<BoundedOutput> ReadBoundedAsync(StreamReader reader)
+    private static async Task<(string Value, bool Truncated)> ReadBoundedAsync(
+        StreamReader reader,
+        int maximumCharacters,
+        CancellationToken cancellationToken
+    )
     {
         var buffer = new char[4096];
-        var captured = new StringBuilder(MaximumDiagnosticCharacters);
+        var captured = new StringBuilder(maximumCharacters);
+        var truncated = false;
         while (true)
         {
-            var charactersRead = await reader.ReadAsync(buffer.AsMemory());
+            var charactersRead = await reader.ReadAsync(buffer.AsMemory(), cancellationToken);
             if (charactersRead == 0)
             {
-                return new BoundedOutput(captured.ToString(), 0, 0, false);
+                return (captured.ToString(), truncated);
             }
 
-            var remainingCapacity = MaximumDiagnosticCharacters - captured.Length;
+            var remainingCapacity = maximumCharacters - captured.Length;
             if (remainingCapacity > 0)
             {
                 captured.Append(buffer, 0, Math.Min(charactersRead, remainingCapacity));
             }
+            if (charactersRead > remainingCapacity)
+            {
+                truncated = true;
+            }
         }
     }
 
-    private static async Task<BoundedOutput> ReadBoundedBytesAsync(
-        Stream stream,
-        long byteLimit,
-        Action stopProcess
+    private static async Task DrainOutputAsync(
+        Task<(string Value, bool Truncated)> standardOutput,
+        Task<(string Value, bool Truncated)> standardError
     )
     {
-        var buffer = new byte[81_920];
-        await using var captured = new MemoryStream();
-        long bytesRead = 0;
-        while (true)
+        try
         {
-            var read = await stream.ReadAsync(buffer.AsMemory());
-            if (read == 0)
-            {
-                return new BoundedOutput(
-                    Encoding.UTF8.GetString(captured.GetBuffer(), 0, checked((int)captured.Length)),
-                    bytesRead,
-                    0,
-                    false
-                );
-            }
-
-            var observedBytes = checked(bytesRead + read);
-            if (observedBytes > byteLimit)
-            {
-                stopProcess();
-                return new BoundedOutput(
-                    string.Empty,
-                    observedBytes,
-                    0,
-                    true,
-                    BoundedOutputLimit.OutputBytes
-                );
-            }
-
-            await captured.WriteAsync(buffer.AsMemory(0, read));
-            bytesRead = observedBytes;
+            await Task.WhenAll(standardOutput, standardError);
         }
+        catch (OperationCanceledException) { }
+        catch (IOException) { }
     }
 
-    private static async Task<BoundedOutput> ReadBoundedRecordsAsync(
-        Stream stream,
-        long recordLimit,
-        byte separator,
-        long? outputByteLimit,
-        long? recordByteLimit,
-        Action stopProcess
-    )
+    private string? ResolveExecutable()
     {
-        var buffer = new byte[81_920];
-        await using var captured = new MemoryStream();
-        var state = new BoundedRecordState(
-            captured,
-            recordLimit,
-            separator,
-            outputByteLimit,
-            recordByteLimit
+        return ResolveExecutable(
+            _executable,
+            Environment.GetEnvironmentVariable("PATH"),
+            Path.GetFullPath("."),
+            OperatingSystem.IsWindows()
         );
-        while (true)
-        {
-            var read = await stream.ReadAsync(buffer.AsMemory());
-            if (read == 0)
-            {
-                return state.Complete();
-            }
-
-            var failure = state.Write(buffer.AsSpan(0, read));
-            if (failure is not null)
-            {
-                stopProcess();
-                return failure;
-            }
-        }
     }
 
-    private sealed class BoundedRecordState(
-        MemoryStream captured,
-        long recordLimit,
-        byte separator,
-        long? outputByteLimit,
-        long? recordByteLimit
+    internal static string? ResolveExecutable(
+        string executable,
+        string? searchPath,
+        string currentDirectory,
+        bool isWindows,
+        IReadOnlyList<string>? excludedDirectories = null
     )
     {
-        private bool _inRecord;
-        private long _outputBytesRead;
-        private long _recordBytesRead;
-        private long _recordsRead;
-
-        public BoundedOutput Complete()
+        if (Path.IsPathRooted(executable))
         {
-            if (_inRecord)
-            {
-                _recordsRead++;
-            }
-
-            return _recordsRead > recordLimit
-                ? CreateFailure(BoundedOutputLimit.Records, captured.Length)
-                : new BoundedOutput(
-                    Encoding.UTF8.GetString(captured.GetBuffer(), 0, checked((int)captured.Length)),
-                    captured.Length,
-                    _recordsRead,
-                    false
-                );
+            return File.Exists(executable) ? Path.GetFullPath(executable) : null;
         }
 
-        public BoundedOutput? Write(ReadOnlySpan<byte> bytes)
+        if (
+            executable.Contains(Path.DirectorySeparatorChar, StringComparison.Ordinal)
+            || executable.Contains(Path.AltDirectorySeparatorChar, StringComparison.Ordinal)
+        )
         {
-            foreach (var value in bytes)
-            {
-                var observedOutputBytes = checked(_outputBytesRead + 1);
-                if (observedOutputBytes > outputByteLimit)
-                {
-                    return CreateFailure(
-                        BoundedOutputLimit.OutputBytes,
-                        observedOutputBytes,
-                        _recordBytesRead
-                    );
-                }
+            var absolute = Path.GetFullPath(executable);
+            return File.Exists(absolute) ? absolute : null;
+        }
 
-                if (value == separator)
-                {
-                    if (_inRecord)
-                    {
-                        _recordsRead++;
-                        _inRecord = false;
-                    }
-
-                    captured.WriteByte(value);
-                    _outputBytesRead = observedOutputBytes;
-                    _recordBytesRead = 0;
-                    continue;
-                }
-
-                if (!_inRecord)
-                {
-                    if (_recordsRead >= recordLimit)
-                    {
-                        return CreateFailure(BoundedOutputLimit.Records, captured.Length);
-                    }
-
-                    _inRecord = true;
-                }
-
-                var observedRecordBytes = checked(_recordBytesRead + 1);
-                if (observedRecordBytes > recordByteLimit)
-                {
-                    return CreateFailure(
-                        BoundedOutputLimit.RecordBytes,
-                        observedOutputBytes,
-                        observedRecordBytes
-                    );
-                }
-
-                captured.WriteByte(value);
-                _outputBytesRead = observedOutputBytes;
-                _recordBytesRead = observedRecordBytes;
-            }
-
+        if (string.IsNullOrEmpty(searchPath))
+        {
             return null;
         }
 
-        private BoundedOutput CreateFailure(
-            BoundedOutputLimit limit,
-            long observedBytes,
-            long observedRecordBytes = 0
-        ) =>
-            new(
-                string.Empty,
-                observedBytes,
-                limit == BoundedOutputLimit.Records ? _recordsRead + 1 : _recordsRead,
-                true,
-                limit,
-                observedRecordBytes
-            );
+        var normalizedCurrentDirectory = Path.TrimEndingDirectorySeparator(
+            Path.GetFullPath(currentDirectory)
+        );
+        var comparison = isWindows ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        var candidates = isWindows ? CreateExecutableCandidates(executable) : [executable];
+        foreach (
+            var entry in searchPath.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+        )
+        {
+            var trimmedEntry = entry.Trim().Trim('"');
+            if (
+                !Path.IsPathRooted(trimmedEntry)
+                || trimmedEntry.StartsWith(@"\\", StringComparison.Ordinal)
+            )
+            {
+                continue;
+            }
+
+            var absoluteEntry = Path.TrimEndingDirectorySeparator(Path.GetFullPath(trimmedEntry));
+            var exclusions = excludedDirectories ?? (IReadOnlyList<string>)[];
+            if (
+                IsSameOrDescendant(absoluteEntry, normalizedCurrentDirectory, comparison)
+                || exclusions.Any(excluded =>
+                    IsSameOrDescendant(absoluteEntry, Path.GetFullPath(excluded), comparison)
+                )
+            )
+            {
+                continue;
+            }
+
+            foreach (var candidate in candidates)
+            {
+                var executablePath = Path.Combine(absoluteEntry, candidate);
+                if (File.Exists(executablePath))
+                {
+                    return executablePath;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsSameOrDescendant(string path, string parent, StringComparison comparison)
+    {
+        var normalizedParent = Path.TrimEndingDirectorySeparator(parent);
+        var prefix = normalizedParent.EndsWith(Path.DirectorySeparatorChar)
+            ? normalizedParent
+            : normalizedParent + Path.DirectorySeparatorChar;
+        return string.Equals(path, normalizedParent, comparison)
+            || path.StartsWith(prefix, comparison);
+    }
+
+    private static IReadOnlyList<string> CreateExecutableCandidates(string executable)
+    {
+        if (Path.HasExtension(executable))
+        {
+            return [executable];
+        }
+
+        return [$"{executable}.exe", $"{executable}.com"];
     }
 
     private static async Task StopAsync(Process process)
@@ -622,23 +802,5 @@ internal sealed class GitProcessRunner(
         {
             // The process exited while cleanup raced with cancellation.
         }
-    }
-
-    private sealed record BoundedOutput(
-        string Text,
-        long ObservedBytes,
-        long ObservedRecords,
-        bool ExceededLimit,
-        BoundedOutputLimit Limit = BoundedOutputLimit.None,
-        long ObservedRecordBytes = 0
-    );
-
-    private enum BoundedOutputLimit
-    {
-        None,
-        Bytes,
-        Records,
-        OutputBytes,
-        RecordBytes,
     }
 }

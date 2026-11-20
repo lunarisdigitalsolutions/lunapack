@@ -72,7 +72,7 @@ Create a new architecture decision record from the [MADR-based template](templat
 | [ADR-0066](0066-organize-maintained-packs-by-family-and-role.md)                | Organize maintained packs by stable family, then role or concern.                       |
 | [ADR-0067](0067-own-and-package-the-cli-changelog.md)                           | Superseded by ADR-0068.                                                                 |
 | [ADR-0068](0068-publish-nuget-previews-from-main.md)                            | Unify stable and preview CLI releases in one artifact-backed pipeline.                  |
-| [ADR-0069](0069-revalidate-git-source-cache-entries.md)                         | Superseded by ADR-0091.                                                                 |
+| [ADR-0069](0069-revalidate-git-source-cache-entries.md)                         | Superseded by ADR-0104.                                                                 |
 | [ADR-0070][adr-0070]                                                            | Bind privileged workflows to trusted input provenance.                                  |
 | [ADR-0071][adr-0071]                                                            | Reject filesystem aliases at snapshot and project mutation boundaries.                  |
 | [ADR-0072][adr-0072]                                                            | Share parameter conditions across managed files and lifecycle hooks.                    |
@@ -93,9 +93,22 @@ Create a new architecture decision record from the [MADR-based template](templat
 | [ADR-0087][adr-0087]                                                            | Keep source-ignore state in a per-project sidecar for settings compatibility.           |
 | [ADR-0088][adr-0088]                                                            | Share changed-pack publishing behavior across registry workflow packs.                  |
 | [ADR-0089][adr-0089]                                                            | Separate direct-pack root eligibility from dependency resolution.                       |
-| [ADR-0090](0090-enforce-producer-side-pack-resource-budgets.md)                 | Enforce scoped resource limits at pack input and output producer boundaries.            |
-| [ADR-0091](0091-require-authoritative-git-manifests.md)                         | Require authoritative Git manifests for online lifecycle decisions.                     |
-| [ADR-0092](0092-reject-aliases-in-local-link-trees.md)                          | Reject filesystem aliases throughout local Luna Link source trees.                      |
+| [ADR-0090][adr-0090]                                                            | Version CLI JSON diagnostics behind explicit public DTOs.                               |
+| [ADR-0091](0091-screen-pack-managed-content-for-hidden-unicode.md)              | Screen pack-managed text for hidden Unicode with fail-safe, bounded diagnostics.        |
+| [ADR-0092][adr-0092]                                                            | Keep one canonical Luna CLI skill across installation routes.                           |
+| [ADR-0093][adr-0093]                                                            | Preserve modified targets removed by pack updates, with explicit removal.               |
+| [ADR-0094][adr-0094]                                                            | Diagnose environment blockers through opt-in, bounded project preflight checks.         |
+| [ADR-0095][adr-0095]                                                            | Store bounded local lifecycle hook history in a user-local sidecar.                     |
+| [ADR-0096][adr-0096]                                                            | Close redirected lifecycle output after cancellation.                                   |
+| [ADR-0097][adr-0097]                                                            | Show complete lifecycle consent details at every log level.                             |
+| [ADR-0098][adr-0098]                                                            | Keep lifecycle environment warnings advisory and enforce per-hook timeouts.             |
+| [ADR-0099](0099-define-strict-audit-exit-codes.md)                              | Reserve strict audit exit 2 for integrity violations and 1 for usage or state errors.   |
+| [ADR-0100](0100-confine-managed-file-audit-reads.md)                            | Confine lock-backed managed-file audit reads to non-aliased workspace paths.            |
+| [ADR-0101](0101-require-secure-git-transports-by-default.md)                    | Require secure Git transports by default with a scoped plaintext exception.             |
+| [ADR-0102][adr-0102]                                                            | Export versioned CycloneDX and SPDX inventories from stable lock evidence.              |
+| [ADR-0103](0103-enforce-producer-side-pack-resource-budgets.md)                 | Enforce scoped resource limits at pack input and output producer boundaries.            |
+| [ADR-0104](0104-require-authoritative-git-manifests.md)                         | Require authoritative Git manifests for online lifecycle decisions.                     |
+| [ADR-0105](0105-reject-aliases-in-local-link-trees.md)                          | Reject filesystem aliases throughout local Luna Link source trees.                      |
 
 [adr-0070]: 0070-bind-privileged-workflows-to-trusted-provenance.md
 [adr-0071]: 0071-reject-filesystem-aliases-at-mutation-boundaries.md
@@ -117,3 +130,12 @@ Create a new architecture decision record from the [MADR-based template](templat
 [adr-0087]: 0087-store-source-ignores-in-compatible-sidecar.md
 [adr-0088]: 0088-share-changed-pack-publishing-across-workflow-packs.md
 [adr-0089]: 0089-separate-direct-pack-roots-from-dependency-resolution.md
+[adr-0090]: 0090-version-cli-json-diagnostics.md
+[adr-0092]: 0092-keep-one-canonical-luna-cli-skill.md
+[adr-0093]: 0093-protect-modified-targets-removed-by-updates.md
+[adr-0094]: 0094-provide-read-only-environment-preflight.md
+[adr-0095]: 0095-store-local-lifecycle-hook-history.md
+[adr-0096]: 0096-close-lifecycle-output-streams-after-cancellation.md
+[adr-0097]: 0097-show-lifecycle-consent-details-at-every-log-level.md
+[adr-0098]: 0098-constrain-lifecycle-hook-environment-and-runtime.md
+[adr-0102]: 0102-export-versioned-lock-inventories.md

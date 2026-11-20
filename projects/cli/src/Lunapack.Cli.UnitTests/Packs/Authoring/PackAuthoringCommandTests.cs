@@ -1326,6 +1326,66 @@ public sealed class PackAuthoringCommandTests
     }
 
     [Test]
+    public async Task Validate_WhenManagedSourceHasHighConfidenceFinding_BlocksUntilOverride()
+    {
+        var console = new SpectreTestConsole();
+        console.Profile.Width = 500;
+        using var workspace = await CreateInitializedWorkspaceAsync(console);
+        File.WriteAllBytes(
+            Path.Combine(workspace.Path, "README.md"),
+            [0x73, 0x61, 0x66, 0x65, 0x00, 0xE2, 0x80, 0xAE]
+        );
+        await workspace.Application.RunAsync(
+            ["pack", "add", "file", "README.md", "--target", "docs/README.md"],
+            workspace.Path
+        );
+        var originalManifest = await File.ReadAllTextAsync(
+            Path.Combine(workspace.Path, PackManifestStore.FileName)
+        );
+
+        var blockedExit = await workspace.Application.RunAsync(
+            ["pack", "validate"],
+            workspace.Path
+        );
+
+        await Assert.That(blockedExit).IsEqualTo(1);
+        await Assert.That(console.Output).Contains("Hidden Unicode in 'README.md'");
+        await Assert.That(console.Output).Contains("U+202E (high-confidence)");
+        await Assert
+            .That(
+                await File.ReadAllTextAsync(
+                    Path.Combine(workspace.Path, PackManifestStore.FileName)
+                )
+            )
+            .IsEqualTo(originalManifest);
+
+        var allowedExit = await workspace.Application.RunAsync(
+            ["pack", "validate", "--allow-hidden-characters"],
+            workspace.Path
+        );
+
+        await Assert.That(allowedExit).IsEqualTo(0);
+        await Assert.That(console.Output).Contains("Manifest valid.");
+    }
+
+    [Test]
+    public async Task Validate_WhenManagedSourceHasWarningFinding_Succeeds()
+    {
+        var console = new SpectreTestConsole();
+        using var workspace = await CreateInitializedWorkspaceAsync(console);
+        File.WriteAllText(Path.Combine(workspace.Path, "README.md"), "safe\u00ADtext");
+        await workspace.Application.RunAsync(
+            ["pack", "add", "file", "README.md", "--target", "docs/README.md"],
+            workspace.Path
+        );
+
+        var exitCode = await workspace.Application.RunAsync(["pack", "validate"], workspace.Path);
+
+        await Assert.That(exitCode).IsEqualTo(0).Because(console.Output);
+        await Assert.That(console.Output).Contains("U+00AD (warning)");
+    }
+
+    [Test]
     public async Task Validate_WhenExternalSourceIsUnused_WarnsAndSucceeds()
     {
         var console = new SpectreTestConsole();
@@ -1388,6 +1448,42 @@ public sealed class PackAuthoringCommandTests
         await Assert.That(exitCode).IsEqualTo(expectedExitCode);
     }
 
+    [Test]
+    public async Task Validate_WhenExternalManagedSourceHasHiddenCharacter_ReportsSourcePath()
+    {
+        var console = new SpectreTestConsole();
+        console.Profile.Width = 500;
+        var runner = new PackValidationGitProcessRunner(true, "external\u202Econtent");
+        using var workspace = new TestWorkspace(gitProcessRunner: runner, ansiConsole: console);
+        await workspace.Application.RunAsync(
+            ["pack", "init", "--id", "example", "--author", "Example", "--license", "MIT"],
+            workspace.Path
+        );
+        await workspace.Application.RunAsync(
+            [
+                "pack",
+                "add",
+                "source",
+                "git",
+                "upstream",
+                "https://github.com/example/standards.git",
+                "--ref",
+                "main",
+            ],
+            workspace.Path
+        );
+        await workspace.Application.RunAsync(
+            ["pack", "add", "file", "README.md", "--source", "upstream"],
+            workspace.Path
+        );
+
+        var exitCode = await workspace.Application.RunAsync(["pack", "validate"], workspace.Path);
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(console.Output).Contains("Hidden Unicode in 'README.md'");
+        await Assert.That(console.Output).Contains("U+202E (high-confidence)");
+    }
+
     private static async Task<TestWorkspace> CreateInitializedWorkspaceAsync(
         SpectreTestConsole? console = null
     )
@@ -1412,7 +1508,10 @@ public sealed class PackAuthoringCommandTests
         return result.Value ?? throw new InvalidOperationException(result.Error);
     }
 
-    private sealed class PackValidationGitProcessRunner(bool createExternalFile) : IGitProcessRunner
+    private sealed class PackValidationGitProcessRunner(
+        bool createExternalFile,
+        string externalContents = "external content"
+    ) : IGitProcessRunner
     {
         public Task<ManifestOperationResult<GitProcessOutput>> RunAsync(
             IReadOnlyList<string> arguments,
@@ -1430,7 +1529,7 @@ public sealed class PackAuthoringCommandTests
 
             if (createExternalFile && arguments.Contains("checkout", StringComparer.Ordinal))
             {
-                File.WriteAllText(Path.Combine(arguments[1], "README.md"), "external content");
+                File.WriteAllText(Path.Combine(arguments[1], "README.md"), externalContents);
             }
 
             return Success(string.Empty);

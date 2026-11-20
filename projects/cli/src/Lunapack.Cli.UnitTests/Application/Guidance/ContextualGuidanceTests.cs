@@ -2,6 +2,7 @@ using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.Guidance;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources.Commands;
+using Lunapack.Cli.UnitTests.TestSupport;
 using SpectreTestConsole = Spectre.Console.Testing.TestConsole;
 
 namespace Lunapack.Cli.UnitTests.Application.Guidance;
@@ -336,7 +337,8 @@ public sealed class ContextualGuidanceTests
             new WorkspaceDirectoryResolver(workspace.FileSystem),
             advisor,
             new NextStepRenderer(console),
-            console
+            console,
+            TestGitTransportPolicy.Create(workspace.FileSystem, workspace.UserSettingsStore)
         );
 
         var exitCode = await handler.RemoveAsync(workspace.Path, "local");

@@ -4,6 +4,7 @@ using Lunapack.Cli.Packs.ExternalSources;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources;
 using Lunapack.Cli.Sources.Git;
+using Lunapack.Cli.UnitTests.TestSupport;
 
 namespace Lunapack.Cli.UnitTests.Packs.ExternalSources;
 
@@ -21,15 +22,19 @@ public sealed class ExternalSourceMaterializerTests
         var materializer = new ExternalSourceMaterializer(
             workspace.FileSystem,
             runner,
-            new GitRefResolver(runner)
+            new GitRefResolver(runner),
+            TestGitTransportPolicy.Create(workspace.FileSystem, workspace.UserSettingsStore)
         );
 
-        await using var materialization = (await materializer.MaterializeAsync(plan)).Value;
+        await using var materialization = (
+            await materializer.MaterializeAsync(workspace.Path, plan)
+        ).Value;
 
         await Assert.That(materialization).IsNotNull();
         await Assert.That(materialization?.Roots.Find("first", "upstream")).IsNotNull();
         await Assert.That(materialization?.Roots.Find("second", "shared")).IsNotNull();
         await Assert.That(runner.CheckoutCount).IsEqualTo(1);
+        await Assert.That(runner.CheckoutRepositoryUrl).IsEqualTo(plan.Groups[0].Source.Url);
     }
 
     [Test]
@@ -40,10 +45,12 @@ public sealed class ExternalSourceMaterializerTests
         var materializer = new ExternalSourceMaterializer(
             workspace.FileSystem,
             runner,
-            new GitRefResolver(runner)
+            new GitRefResolver(runner),
+            TestGitTransportPolicy.Create(workspace.FileSystem, workspace.UserSettingsStore)
         );
 
         var result = await materializer.MaterializeAsync(
+            workspace.Path,
             CreatePlan([new ExternalSourceRequirementUse("pack", "1.0.0", "upstream", null, 1)])
         );
 
@@ -62,10 +69,12 @@ public sealed class ExternalSourceMaterializerTests
         var materializer = new ExternalSourceMaterializer(
             workspace.FileSystem,
             runner,
-            new GitRefResolver(runner)
+            new GitRefResolver(runner),
+            TestGitTransportPolicy.Create(workspace.FileSystem, workspace.UserSettingsStore)
         );
 
         var result = await materializer.MaterializeAsync(
+            workspace.Path,
             CreatePlan([new ExternalSourceRequirementUse("pack", "1.0.0", "upstream", null, 1)]),
             ResourceLimits.Default with
             {
@@ -92,10 +101,12 @@ public sealed class ExternalSourceMaterializerTests
         var materializer = new ExternalSourceMaterializer(
             workspace.FileSystem,
             runner,
-            new GitRefResolver(runner)
+            new GitRefResolver(runner),
+            TestGitTransportPolicy.Create(workspace.FileSystem, workspace.UserSettingsStore)
         );
 
         var result = await materializer.MaterializeAsync(
+            workspace.Path,
             CreatePlan([new ExternalSourceRequirementUse("pack", "1.0.0", "upstream", null, 1)]),
             ResourceLimits.Default with
             {
@@ -153,10 +164,32 @@ public sealed class ExternalSourceMaterializerTests
     {
         public int CheckoutCount { get; private set; }
 
+        public string? CheckoutRepositoryUrl { get; private set; }
+
         public Task<ManifestOperationResult<GitProcessOutput>> RunAsync(
             IReadOnlyList<string> arguments,
             TimeSpan timeout,
             CancellationToken cancellationToken
+        ) => ExecuteAsync(arguments);
+
+        public Task<ManifestOperationResult<GitProcessOutput>> RunAsync(
+            IReadOnlyList<string> arguments,
+            TimeSpan timeout,
+            GitTransportMode transportMode,
+            string? repositoryUrl,
+            CancellationToken cancellationToken
+        )
+        {
+            if (arguments.Contains("checkout", StringComparer.Ordinal))
+            {
+                CheckoutRepositoryUrl = repositoryUrl;
+            }
+
+            return ExecuteAsync(arguments);
+        }
+
+        private Task<ManifestOperationResult<GitProcessOutput>> ExecuteAsync(
+            IReadOnlyList<string> arguments
         )
         {
             if (

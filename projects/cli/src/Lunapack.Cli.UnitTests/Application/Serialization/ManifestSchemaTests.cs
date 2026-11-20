@@ -1,7 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Lunapack.Cli.Application.Paths;
-using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Packs.Manifest;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources;
@@ -284,7 +283,42 @@ public sealed class ManifestSchemaTests
     }
 
     [Test]
-    public async Task ProjectSchema_WhenPreferencesDeclared_AllowsOptionalTypedValues()
+    public async Task Scenario_ProjectSchemaDeclaresLifecyclePolicy_UsesOptionalBoundedFields()
+    {
+        using var schema = JsonDocument.Parse(
+            File.ReadAllText(
+                Path.Combine(AppContext.BaseDirectory, "TestData", "lunapack.schema.json")
+            )
+        );
+        var definitions = schema.RootElement.GetProperty("definitions");
+        var projectTrust = definitions.GetProperty("projectTrust");
+        var policy = definitions.GetProperty("lifecycleHookPolicy");
+        var policyProperties = policy.GetProperty("properties");
+        var variableNames = policyProperties.GetProperty("allowedEnvironmentVariables");
+        var timeout = policyProperties.GetProperty("timeoutSeconds");
+
+        await Assert.That(projectTrust.TryGetProperty("required", out _)).IsFalse();
+        await Assert
+            .That(
+                projectTrust
+                    .GetProperty("properties")
+                    .GetProperty("scripts")
+                    .GetProperty("$ref")
+                    .GetString()
+            )
+            .IsEqualTo("#/definitions/lifecycleHookPolicy");
+        await Assert.That(policy.GetProperty("additionalProperties").GetBoolean()).IsFalse();
+        await Assert.That(variableNames.GetProperty("uniqueItems").GetBoolean()).IsTrue();
+        await Assert
+            .That(variableNames.GetProperty("items").GetProperty("minLength").GetInt32())
+            .IsEqualTo(1);
+        await Assert.That(timeout.GetProperty("type").GetString()).IsEqualTo("integer");
+        await Assert.That(timeout.GetProperty("minimum").GetInt32()).IsEqualTo(1);
+        await Assert.That(timeout.GetProperty("maximum").GetInt32()).IsEqualTo(1800);
+    }
+
+    [Test]
+    public async Task ProjectSchema_WhenPreferencesDeclared_AllowsOnlyOptionalBooleanValues()
     {
         using var schema = JsonDocument.Parse(
             File.ReadAllText(
@@ -294,14 +328,10 @@ public sealed class ManifestSchemaTests
         var root = schema.RootElement;
         var preferences = root.GetProperty("properties").GetProperty("preferences");
         var preferenceSchema = root.GetProperty("definitions").GetProperty("cliPreferences");
+        var gitPreferences = root.GetProperty("definitions").GetProperty("gitPreferences");
         var catalogPreferences = root.GetProperty("definitions").GetProperty("catalogPreferences");
         var nextStepPreferences = root.GetProperty("definitions")
             .GetProperty("nextStepPreferences");
-        var resourceLimitReference = preferenceSchema
-            .GetProperty("properties")
-            .GetProperty("resourceLimits")
-            .GetProperty("$ref")
-            .GetString();
         var requiredProperties = root.GetProperty("required")
             .EnumerateArray()
             .Select(property => property.GetString())
@@ -314,6 +344,27 @@ public sealed class ManifestSchemaTests
         await Assert
             .That(preferenceSchema.GetProperty("additionalProperties").GetBoolean())
             .IsFalse();
+        await Assert
+            .That(
+                preferenceSchema
+                    .GetProperty("properties")
+                    .GetProperty("git")
+                    .GetProperty("$ref")
+                    .GetString()
+            )
+            .IsEqualTo("#/definitions/gitPreferences");
+        await Assert
+            .That(gitPreferences.GetProperty("additionalProperties").GetBoolean())
+            .IsFalse();
+        await Assert
+            .That(
+                gitPreferences
+                    .GetProperty("properties")
+                    .GetProperty("allowInsecureTransport")
+                    .GetProperty("type")
+                    .GetString()
+            )
+            .IsEqualTo("boolean");
         await Assert
             .That(catalogPreferences.GetProperty("additionalProperties").GetBoolean())
             .IsFalse();
@@ -338,52 +389,6 @@ public sealed class ManifestSchemaTests
                     .GetString()
             )
             .IsEqualTo("boolean");
-        await Assert.That(resourceLimitReference).IsEqualTo("#/definitions/projectResourceLimits");
-    }
-
-    [Test]
-    public async Task ProjectSchema_WhenResourceLimitsDeclared_UsesBuiltinDefaultCeilings()
-    {
-        using var schema = JsonDocument.Parse(
-            File.ReadAllText(
-                Path.Combine(AppContext.BaseDirectory, "TestData", "lunapack.schema.json")
-            )
-        );
-        var resourceLimits = schema
-            .RootElement.GetProperty("definitions")
-            .GetProperty("projectResourceLimits");
-        var properties = resourceLimits.GetProperty("properties");
-        var expectedMaximums = new Dictionary<string, long>(StringComparer.Ordinal)
-        {
-            ["projectManifestBytes"] = 1_048_576,
-            ["packManifestBytes"] = 1_048_576,
-            ["lockFileBytes"] = 67_108_864,
-            ["packDocumentBytes"] = 16_777_216,
-            ["packSnapshotBytes"] = 2_147_483_648,
-            ["renderedFileBytes"] = 67_108_864,
-            ["renderedTotalBytes"] = 536_870_912,
-            ["dependencyDepth"] = 64,
-            ["dependencyNodes"] = 1_024,
-            ["dependencyReferences"] = 100_000,
-            ["filesPerPack"] = 10_000,
-            ["filesPerGraph"] = 100_000,
-            ["ociArchiveEntries"] = 100_000,
-            ["ociDownloadBytes"] = 536_870_912,
-            ["ociEntryBytes"] = 536_870_912,
-            ["ociExpandedBytes"] = 2_147_483_648,
-        };
-
-        await Assert
-            .That(resourceLimits.GetProperty("additionalProperties").GetBoolean())
-            .IsFalse();
-        await Assert.That(properties.EnumerateObject().Count()).IsEqualTo(expectedMaximums.Count);
-        foreach (var (name, maximum) in expectedMaximums)
-        {
-            var property = properties.GetProperty(name);
-            await Assert.That(property.GetProperty("type").GetString()).IsEqualTo("integer");
-            await Assert.That(property.GetProperty("minimum").GetInt64()).IsEqualTo(1);
-            await Assert.That(property.GetProperty("maximum").GetInt64()).IsEqualTo(maximum);
-        }
     }
 
     [Test]
@@ -433,6 +438,7 @@ public sealed class ManifestSchemaTests
         );
         var definitions = schema.RootElement.GetProperty("definitions");
         var expectedReference = "#/definitions/cliPreferences";
+        var gitPreferences = definitions.GetProperty("gitPreferences");
 
         await Assert
             .That(
@@ -462,55 +468,25 @@ public sealed class ManifestSchemaTests
                     .GetBoolean()
             )
             .IsFalse();
-    }
-
-    [Test]
-    public async Task UserSettingsSchema_WhenResourceLimitsDeclared_UsesFiniteUserCeilings()
-    {
-        using var schema = JsonDocument.Parse(
-            File.ReadAllText(
-                Path.Combine(
-                    AppContext.BaseDirectory,
-                    "TestData",
-                    "lunapack-user-settings.schema.json"
-                )
-            )
-        );
-        var resourceLimits = schema
-            .RootElement.GetProperty("definitions")
-            .GetProperty("userResourceLimits");
-        var properties = resourceLimits.GetProperty("properties");
-        var expectedMaximums = new Dictionary<string, long>(StringComparer.Ordinal)
-        {
-            ["projectManifestBytes"] = 16_777_216,
-            ["packManifestBytes"] = 67_108_864,
-            ["lockFileBytes"] = 1_073_741_824,
-            ["packDocumentBytes"] = 268_435_456,
-            ["packSnapshotBytes"] = 17_179_869_184,
-            ["renderedFileBytes"] = 268_435_456,
-            ["renderedTotalBytes"] = 4_294_967_296,
-            ["dependencyDepth"] = 128,
-            ["dependencyNodes"] = 100_000,
-            ["dependencyReferences"] = 1_000_000,
-            ["filesPerPack"] = 100_000,
-            ["filesPerGraph"] = 1_000_000,
-            ["ociArchiveEntries"] = 1_000_000,
-            ["ociDownloadBytes"] = 17_179_869_184,
-            ["ociEntryBytes"] = 4_294_967_296,
-            ["ociExpandedBytes"] = 17_179_869_184,
-        };
-
         await Assert
-            .That(resourceLimits.GetProperty("additionalProperties").GetBoolean())
-            .IsFalse();
-        await Assert.That(properties.EnumerateObject().Count()).IsEqualTo(expectedMaximums.Count);
-        foreach (var (name, maximum) in expectedMaximums)
-        {
-            var property = properties.GetProperty(name);
-            await Assert.That(property.GetProperty("type").GetString()).IsEqualTo("integer");
-            await Assert.That(property.GetProperty("minimum").GetInt64()).IsEqualTo(1);
-            await Assert.That(property.GetProperty("maximum").GetInt64()).IsEqualTo(maximum);
-        }
+            .That(
+                definitions
+                    .GetProperty("cliPreferences")
+                    .GetProperty("properties")
+                    .GetProperty("git")
+                    .GetProperty("$ref")
+                    .GetString()
+            )
+            .IsEqualTo("#/definitions/gitPreferences");
+        await Assert
+            .That(
+                gitPreferences
+                    .GetProperty("properties")
+                    .GetProperty("allowInsecureTransport")
+                    .GetProperty("type")
+                    .GetString()
+            )
+            .IsEqualTo("boolean");
     }
 
     [Test]
@@ -1659,24 +1635,64 @@ public sealed class ManifestSchemaTests
     }
 
     [Test]
-    public async Task ProjectConfiguration_WhenResourceLimitRaisesDefault_IsRejected()
+    [Arguments(1)]
+    [Arguments(1800)]
+    public async Task Scenario_LifecycleTimeoutIsAtBoundary_IsAccepted(int timeoutSeconds)
     {
-        var configuration = new ProjectConfiguration
+        var configuration = CreateConfigurationWithSource();
+        configuration.Trust.Scripts = new LifecycleHookPolicy
         {
-            SchemaVersion = 1,
-            Preferences = new CliPreferences
-            {
-                ResourceLimits = new ResourceLimitPreferences { PackManifestBytes = 1_048_577 },
-            },
+            AllowedEnvironmentVariables = ["CUSTOM_PATH"],
+            TimeoutSeconds = timeoutSeconds,
         };
 
         var issues = ManifestModelValidator.Validate(configuration);
 
-        await Assert
-            .That(issues)
-            .Contains(
-                "Project resource limit 'resource-limits.pack-manifest-bytes' cannot exceed the built-in default of 1048576 bytes."
-            );
+        await Assert.That(issues).IsEmpty();
+    }
+
+    [Test]
+    [Arguments(0)]
+    [Arguments(1801)]
+    public async Task Scenario_LifecycleTimeoutIsOutOfRange_IsRejected(int timeoutSeconds)
+    {
+        var configuration = CreateConfigurationWithSource();
+        configuration.Trust.Scripts = new LifecycleHookPolicy { TimeoutSeconds = timeoutSeconds };
+
+        var issues = ManifestModelValidator.Validate(configuration);
+
+        await Assert.That(issues).IsNotEmpty();
+    }
+
+    [Test]
+    [Arguments("")]
+    [Arguments("CUSTOM=VALUE")]
+    [Arguments("CUSTOM\0VALUE")]
+    public async Task Scenario_LifecycleVariableNameIsInvalid_IsRejected(string variableName)
+    {
+        var configuration = CreateConfigurationWithSource();
+        configuration.Trust.Scripts = new LifecycleHookPolicy
+        {
+            AllowedEnvironmentVariables = [variableName],
+        };
+
+        var issues = ManifestModelValidator.Validate(configuration);
+
+        await Assert.That(issues).IsNotEmpty();
+    }
+
+    [Test]
+    public async Task Scenario_LifecycleVariableNameIsDuplicated_IsRejected()
+    {
+        var configuration = CreateConfigurationWithSource();
+        configuration.Trust.Scripts = new LifecycleHookPolicy
+        {
+            AllowedEnvironmentVariables = ["CUSTOM_PATH", "CUSTOM_PATH"],
+        };
+
+        var issues = ManifestModelValidator.Validate(configuration);
+
+        await Assert.That(issues).IsNotEmpty();
     }
 
     [Test]
@@ -1996,32 +2012,6 @@ public sealed class ManifestSchemaTests
         var issues = ManifestModelValidator.Validate(settings);
 
         await Assert.That(issues).IsNotEmpty();
-    }
-
-    [Test]
-    public async Task UserSettings_WhenResourceLimitExceedsHardCeiling_IsRejected()
-    {
-        var settings = new UserSettings
-        {
-            Global = new UserTrust
-            {
-                Preferences = new CliPreferences
-                {
-                    ResourceLimits = new ResourceLimitPreferences
-                    {
-                        PackManifestBytes = 67_108_865,
-                    },
-                },
-            },
-        };
-
-        var issues = ManifestModelValidator.Validate(settings);
-
-        await Assert
-            .That(issues)
-            .Contains(
-                "Resource limit 'resource-limits.pack-manifest-bytes' must be a positive integer no greater than 67108864 bytes."
-            );
     }
 
     private static ProjectConfiguration CreateConfigurationWithSource() =>

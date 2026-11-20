@@ -13,7 +13,8 @@ internal sealed class GitLinkSourceProvider(
     IFileSystem fileSystem,
     IGitProcessRunner processRunner,
     GitRefResolver refResolver,
-    GitLinkCache cache
+    GitLinkCache cache,
+    GitTransportPolicy transportPolicy
 ) : ILinkSourceProvider
 {
     private const int DefaultTimeoutSeconds = 300;
@@ -53,7 +54,25 @@ internal sealed class GitLinkSourceProvider(
                 Ref = linkRef,
             }
             : gitSource;
-        var resolution = await refResolver.ResolveAsync(effectiveSource, null, cancellationToken);
+        var authorization = await transportPolicy.AuthorizeAsync(
+            projectDirectory,
+            effectiveSource.Url,
+            effectiveSource.Name
+        );
+        if (!authorization.IsSuccess)
+        {
+            return ManifestOperationResult<LinkSourceListing>.Failure(
+                authorization.Error ?? $"Unable to authorize Git link source '{gitSource.Name}'."
+            );
+        }
+        var transportMode = authorization.Value;
+
+        var resolution = await refResolver.ResolveAsync(
+            effectiveSource,
+            null,
+            cancellationToken,
+            transportMode
+        );
         if (resolution.Value is not { } resolvedRef)
         {
             return ManifestOperationResult<LinkSourceListing>.Failure(
@@ -73,28 +92,26 @@ internal sealed class GitLinkSourceProvider(
 
         var limits = resourceLimits ?? ResourceLimits.Default;
         var cached = cache.LoadMetadata(identity, resolvedRef.ResolvedCommit, limits);
-        if (cached is null)
-        {
-            return await ListFromGitAsync(
+        return cached is null
+            ? await ListFromGitAsync(
                 effectiveSource,
                 identity,
                 provenance,
                 limits,
+                transportMode,
                 cancellationToken
+            )
+            : ManifestOperationResult<LinkSourceListing>.Success(
+                CreateListing(
+                    identity,
+                    provenance,
+                    string.Empty,
+                    cached.Tree,
+                    transportMode,
+                    effectiveSource.Name,
+                    null
+                )
             );
-        }
-
-        if (cached.Tree.Count > limits.FilesPerGraph)
-        {
-            return ManifestOperationResult<LinkSourceListing>.Failure(
-                $"Git link source cache exceeds its {limits.FilesPerGraph} file limit (at least {cached.Tree.Count} files observed).",
-                ManifestOperationErrorKind.ResourceLimitExceeded
-            );
-        }
-
-        return ManifestOperationResult<LinkSourceListing>.Success(
-            CreateListing(identity, provenance, string.Empty, cached.Tree, null)
-        );
     }
 
     public Task<ManifestOperationResult<IReadOnlyDictionary<string, string>>> MaterializeAsync(
@@ -125,96 +142,57 @@ internal sealed class GitLinkSourceProvider(
             );
         }
 
-        var limits = resourceLimits ?? ResourceLimits.Default;
-        var budget = new LinkSnapshotBudget(limits);
-        var cached = await SnapshotCachedBlobsAsync(
-            listing,
-            gitSource,
-            selectedPaths,
-            workspace,
-            budget,
-            cancellationToken
-        );
-        if (cached.Value is not { } cachedSnapshots)
+        var commit = gitSource.ResolvedCommit;
+        var contents = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        var missingPaths = new List<string>();
+        foreach (var selectedPath in selectedPaths)
         {
-            return ManifestOperationResult<IReadOnlyDictionary<string, string>>.Failure(
-                cached.Error ?? "Unable to read cached Git link content.",
-                cached.ErrorKind
+            var cachedBlob = cache.TryReadBlob(
+                listing.Identity,
+                commit,
+                listing.BlobIds[selectedPath]
             );
+            if (cachedBlob is null)
+            {
+                missingPaths.Add(selectedPath);
+            }
+            else
+            {
+                contents.Add(selectedPath, cachedBlob);
+            }
         }
 
-        var snapshots = cachedSnapshots.Snapshots;
-        var missingPaths = cachedSnapshots.MissingPaths;
         if (missingPaths.Count > 0)
         {
             var checkout = await CheckoutAsync(
                 listing,
                 gitSource,
                 missingPaths,
-                workspace,
-                budget,
-                snapshots,
+                contents,
                 cancellationToken
             );
             if (!checkout.IsSuccess)
             {
                 return ManifestOperationResult<IReadOnlyDictionary<string, string>>.Failure(
-                    checkout.Error ?? "Unable to materialize Git link content.",
-                    checkout.ErrorKind
+                    checkout.Error ?? "Unable to materialize Git link content."
                 );
             }
         }
 
-        return ManifestOperationResult<IReadOnlyDictionary<string, string>>.Success(snapshots);
-    }
-
-    private async Task<ManifestOperationResult<CachedLinkSnapshots>> SnapshotCachedBlobsAsync(
-        LinkSourceListing listing,
-        GitSourceProvenance gitSource,
-        IReadOnlyList<string> selectedPaths,
-        LinkOperationWorkspace workspace,
-        LinkSnapshotBudget budget,
-        CancellationToken cancellationToken
-    )
-    {
         var snapshots = new Dictionary<string, string>(StringComparer.Ordinal);
-        var missingPaths = new List<string>();
         foreach (var selectedPath in selectedPaths)
         {
-            var cachedBlobPath = cache.TryGetBlobPath(
-                listing.Identity,
-                gitSource.ResolvedCommit,
-                listing.BlobIds[selectedPath],
-                Math.Max(0, budget.RemainingBytes)
-            );
-            if (cachedBlobPath is null)
-            {
-                missingPaths.Add(selectedPath);
-                continue;
-            }
-
-            var observed = budget.AddFilePath(
+            var cachedContents = contents[selectedPath];
+            await using var source = new MemoryStream(cachedContents, writable: false);
+            var snapshot = await workspace.WriteAsync(
                 selectedPath,
-                fileSystem.FileInfo.New(cachedBlobPath).Length
-            );
-            if (!observed.IsSuccess)
-            {
-                return ManifestOperationResult<CachedLinkSnapshots>.Failure(
-                    observed.Error!,
-                    observed.ErrorKind
-                );
-            }
-
-            var snapshot = await SnapshotFileAsync(
-                selectedPath,
-                cachedBlobPath,
-                workspace,
-                null,
+                source,
+                cachedContents.Length,
                 cancellationToken
             );
             if (snapshot.Value is not { } snapshotPath)
             {
-                return ManifestOperationResult<CachedLinkSnapshots>.Failure(
+                return ManifestOperationResult<IReadOnlyDictionary<string, string>>.Failure(
                     snapshot.Error ?? $"Unable to snapshot link source file '{selectedPath}'.",
                     snapshot.ErrorKind
                 );
@@ -223,9 +201,7 @@ internal sealed class GitLinkSourceProvider(
             snapshots.Add(selectedPath, snapshotPath);
         }
 
-        return ManifestOperationResult<CachedLinkSnapshots>.Success(
-            new CachedLinkSnapshots(missingPaths, snapshots)
-        );
+        return ManifestOperationResult<IReadOnlyDictionary<string, string>>.Success(snapshots);
     }
 
     private async Task<ManifestOperationResult<LinkSourceListing>> ListFromGitAsync(
@@ -233,6 +209,7 @@ internal sealed class GitLinkSourceProvider(
         ConfiguredSourceIdentity identity,
         GitSourceProvenance provenance,
         ResourceLimits resourceLimits,
+        GitTransportMode transportMode,
         CancellationToken cancellationToken
     )
     {
@@ -240,8 +217,10 @@ internal sealed class GitLinkSourceProvider(
         var fetched = await FetchAsync(
             repository,
             source.Url,
+            source.Name,
             provenance.ResolvedCommit,
             CreateTimeout(source),
+            transportMode,
             cancellationToken
         );
         if (!fetched.IsSuccess)
@@ -253,21 +232,33 @@ internal sealed class GitLinkSourceProvider(
         }
 
         var listed = await processRunner.RunBoundedRecordsAsync(
-            ["-C", repository, "ls-tree", "-r", "-l", "-z", "FETCH_HEAD"],
+            ["-C", repository, "ls-tree", "-r", "-z", "FETCH_HEAD"],
             CreateTimeout(source),
             resourceLimits.FilesPerGraph,
             "Git link source tree enumeration",
             0,
             64L * 1024 * 1024,
             1L * 1024 * 1024,
+            transportMode,
+            source.Url,
             cancellationToken
         );
         if (listed.Value is not { } output)
         {
             GitTemporaryWorkspace.Delete(fileSystem, repository);
             return ManifestOperationResult<LinkSourceListing>.Failure(
-                listed.Error ?? "Unable to enumerate the Git link source tree.",
-                listed.ErrorKind
+                GitSourceFailureFormatter.Format(
+                    source.Name,
+                    listed.Error,
+                    "Unable to enumerate the Git link source tree."
+                )
+            );
+        }
+        if (output.StandardOutputTruncated)
+        {
+            GitTemporaryWorkspace.Delete(fileSystem, repository);
+            return ManifestOperationResult<LinkSourceListing>.Failure(
+                "Git link tree output was truncated; the source cannot be resolved safely."
             );
         }
 
@@ -295,6 +286,8 @@ internal sealed class GitLinkSourceProvider(
                 provenance,
                 repository,
                 tree,
+                transportMode,
+                source.Name,
                 () => GitTemporaryWorkspace.Delete(fileSystem, repository)
             )
         );
@@ -303,32 +296,56 @@ internal sealed class GitLinkSourceProvider(
     private async Task<ManifestOperationResult<bool>> FetchAsync(
         string repository,
         string sourceUrl,
+        string sourceName,
         string resolvedCommit,
         TimeSpan timeout,
+        GitTransportMode transportMode,
         CancellationToken cancellationToken
     )
     {
-        var commands = new[]
-        {
-            new[] { "init", "--quiet", repository },
-            ["-C", repository, "remote", "add", "origin", sourceUrl],
+        var commands = ((
+            string[] Arguments,
+            GitTransportMode TransportMode,
+            string? RepositoryUrl
+        )[])
             [
-                "-C",
-                repository,
-                "fetch",
-                "--depth=1",
-                "--filter=blob:none",
-                "origin",
-                resolvedCommit,
-            ],
-        };
-        foreach (var arguments in commands)
+                (["init", "--quiet", repository], GitTransportMode.SecureOnly, (string?)null),
+                (
+                    ["-C", repository, "remote", "add", "--", "origin", sourceUrl],
+                    GitTransportMode.SecureOnly,
+                    null
+                ),
+                (
+                    [
+                        "-C",
+                        repository,
+                        "fetch",
+                        "--depth=1",
+                        "--filter=blob:none",
+                        "origin",
+                        resolvedCommit,
+                    ],
+                    transportMode,
+                    sourceUrl
+                ),
+            ];
+        foreach (var (arguments, commandTransportMode, repositoryUrl) in commands)
         {
-            var result = await processRunner.RunAsync(arguments, timeout, cancellationToken);
+            var result = await processRunner.RunAsync(
+                arguments,
+                timeout,
+                commandTransportMode,
+                repositoryUrl,
+                cancellationToken
+            );
             if (!result.IsSuccess)
             {
                 return ManifestOperationResult<bool>.Failure(
-                    result.Error ?? "Git link source fetch failed."
+                    GitSourceFailureFormatter.Format(
+                        sourceName,
+                        result.Error,
+                        "Git link source fetch failed."
+                    )
                 );
             }
         }
@@ -340,9 +357,7 @@ internal sealed class GitLinkSourceProvider(
         LinkSourceListing listing,
         GitSourceProvenance gitSource,
         IReadOnlyList<string> missingPaths,
-        LinkOperationWorkspace workspace,
-        LinkSnapshotBudget budget,
-        Dictionary<string, string> snapshots,
+        Dictionary<string, byte[]> contents,
         CancellationToken cancellationToken
     )
     {
@@ -362,8 +377,10 @@ internal sealed class GitLinkSourceProvider(
                 var fetched = await FetchAsync(
                     repository,
                     gitSource.Url,
+                    listing.SourceName,
                     gitSource.ResolvedCommit,
                     TimeSpan.FromSeconds(DefaultTimeoutSeconds),
+                    listing.TransportMode,
                     cancellationToken
                 );
                 if (!fetched.IsSuccess)
@@ -374,22 +391,13 @@ internal sealed class GitLinkSourceProvider(
                 }
             }
 
-            var preflight = await PreflightMissingBlobsAsync(
-                materializationListing,
-                missingPaths,
-                repository,
-                budget,
-                cancellationToken
-            );
-            if (!preflight.IsSuccess)
-            {
-                return preflight;
-            }
-
             var checkout = await CheckoutPathsAsync(
                 repository,
                 gitSource.Path,
                 missingPaths,
+                listing.TransportMode,
+                gitSource.Url,
+                listing.SourceName,
                 cancellationToken
             );
             if (!checkout.IsSuccess)
@@ -397,14 +405,7 @@ internal sealed class GitLinkSourceProvider(
                 return checkout;
             }
 
-            return await ReadCheckedOutFilesAsync(
-                materializationListing,
-                gitSource,
-                missingPaths,
-                workspace,
-                snapshots,
-                cancellationToken
-            );
+            return ReadCheckedOutFiles(materializationListing, gitSource, missingPaths, contents);
         }
         finally
         {
@@ -415,70 +416,13 @@ internal sealed class GitLinkSourceProvider(
         }
     }
 
-    private async Task<ManifestOperationResult<bool>> PreflightMissingBlobsAsync(
-        LinkSourceListing listing,
-        IReadOnlyList<string> missingPaths,
-        string repository,
-        LinkSnapshotBudget budget,
-        CancellationToken cancellationToken
-    )
-    {
-        var repositoryPaths = missingPaths.Select(path =>
-            string.IsNullOrEmpty(listing.GitSource?.Path)
-                ? path
-                : $"{listing.GitSource.Path}/{path}"
-        );
-        var listed = await processRunner.RunBoundedRecordsAsync(
-            ["-C", repository, "ls-tree", "-r", "-l", "-z", "FETCH_HEAD", "--", .. repositoryPaths],
-            TimeSpan.FromSeconds(DefaultTimeoutSeconds),
-            missingPaths.Count,
-            "Git link source blob preflight",
-            0,
-            64L * 1024 * 1024,
-            1L * 1024 * 1024,
-            cancellationToken
-        );
-        if (listed.Value is not { } output)
-        {
-            return ManifestOperationResult<bool>.Failure(
-                listed.Error ?? "Unable to preflight Git link source blobs.",
-                listed.ErrorKind
-            );
-        }
-
-        var entries = ParseTree(output.StandardOutput, listing.GitSource?.Path)
-            .ToDictionary(entry => entry.Path, StringComparer.Ordinal);
-        foreach (var missingPath in missingPaths)
-        {
-            if (
-                !entries.TryGetValue(missingPath, out var entry)
-                || entry.Size is not { } size
-                || !string.Equals(
-                    entry.BlobId,
-                    listing.BlobIds[missingPath],
-                    StringComparison.Ordinal
-                )
-            )
-            {
-                return ManifestOperationResult<bool>.Failure(
-                    $"Git link source blob metadata for '{missingPath}' changed or is unavailable."
-                );
-            }
-
-            var observed = budget.AddFilePath(missingPath, size);
-            if (!observed.IsSuccess)
-            {
-                return observed;
-            }
-        }
-
-        return ManifestOperationResult<bool>.Success(true);
-    }
-
     private async Task<ManifestOperationResult<bool>> CheckoutPathsAsync(
         string repository,
         string? basePath,
         IReadOnlyList<string> selectedPaths,
+        GitTransportMode transportMode,
+        string sourceUrl,
+        string sourceName,
         CancellationToken cancellationToken
     )
     {
@@ -487,42 +431,62 @@ internal sealed class GitLinkSourceProvider(
         );
         var commands = new[]
         {
-            new[] { "-C", repository, "sparse-checkout", "init", "--no-cone" },
-            [
-                "-C",
-                repository,
-                "sparse-checkout",
-                "set",
-                "--no-cone",
-                "--",
-                .. repositoryPaths.Select(path => $"/{path}"),
-            ],
-            [
-                "-c",
-                "core.autocrlf=false",
-                "-c",
-                "core.eol=lf",
-                "-c",
-                "core.symlinks=false",
-                "-C",
-                repository,
-                "checkout",
-                "--quiet",
-                "--detach",
-                "FETCH_HEAD",
-            ],
+            (
+                new[] { "-C", repository, "sparse-checkout", "init", "--no-cone" },
+                GitTransportMode.SecureOnly,
+                (string?)null
+            ),
+            (
+                (string[])
+                    [
+                        "-C",
+                        repository,
+                        "sparse-checkout",
+                        "set",
+                        "--no-cone",
+                        "--",
+                        .. repositoryPaths.Select(path => $"/{path}"),
+                    ],
+                GitTransportMode.SecureOnly,
+                null
+            ),
+            (
+                new[]
+                {
+                    "-c",
+                    "core.autocrlf=false",
+                    "-c",
+                    "core.eol=lf",
+                    "-c",
+                    "core.symlinks=false",
+                    "-C",
+                    repository,
+                    "checkout",
+                    "--quiet",
+                    "--detach",
+                    "FETCH_HEAD",
+                },
+                transportMode,
+                sourceUrl
+            ),
         };
-        foreach (var arguments in commands)
+        foreach (var (arguments, commandTransportMode, repositoryUrl) in commands)
         {
             var result = await processRunner.RunAsync(
                 arguments,
                 TimeSpan.FromSeconds(DefaultTimeoutSeconds),
+                commandTransportMode,
+                repositoryUrl,
                 cancellationToken
             );
             if (!result.IsSuccess)
             {
                 return ManifestOperationResult<bool>.Failure(
-                    result.Error ?? "Git link source checkout failed."
+                    GitSourceFailureFormatter.Format(
+                        sourceName,
+                        result.Error,
+                        "Git link source checkout failed."
+                    )
                 );
             }
         }
@@ -530,13 +494,11 @@ internal sealed class GitLinkSourceProvider(
         return ManifestOperationResult<bool>.Success(true);
     }
 
-    private async Task<ManifestOperationResult<bool>> ReadCheckedOutFilesAsync(
+    private ManifestOperationResult<bool> ReadCheckedOutFiles(
         LinkSourceListing listing,
         GitSourceProvenance gitSource,
         IReadOnlyList<string> missingPaths,
-        LinkOperationWorkspace workspace,
-        Dictionary<string, string> snapshots,
-        CancellationToken cancellationToken
+        Dictionary<string, byte[]> contents
     )
     {
         var basePath = gitSource.Path;
@@ -557,58 +519,19 @@ internal sealed class GitLinkSourceProvider(
             }
 
             var blobId = listing.BlobIds[missingPath];
-            await using (var verification = fileSystem.File.OpenRead(filePath))
-            {
-                if (!GitObjectId.Matches(blobId, verification, verification.Length))
-                {
-                    return ManifestOperationResult<bool>.Failure(
-                        $"Git link source file '{missingPath}' does not match its recorded object id."
-                    );
-                }
-            }
-
-            var snapshot = await SnapshotFileAsync(
-                missingPath,
-                filePath,
-                workspace,
-                null,
-                cancellationToken
-            );
-            if (snapshot.Value is not { } snapshotPath)
+            var fileContents = fileSystem.File.ReadAllBytes(filePath);
+            if (!GitObjectId.Matches(blobId, fileContents))
             {
                 return ManifestOperationResult<bool>.Failure(
-                    snapshot.Error ?? $"Unable to snapshot Git link source file '{missingPath}'.",
-                    snapshot.ErrorKind
+                    $"Git link source file '{missingPath}' does not match its recorded object id."
                 );
             }
 
-            snapshots.Add(missingPath, snapshotPath);
-            cache.SaveBlobFromPath(listing.Identity, gitSource.ResolvedCommit, blobId, filePath);
+            contents.Add(missingPath, fileContents);
+            cache.SaveBlob(listing.Identity, gitSource.ResolvedCommit, blobId, fileContents);
         }
 
         return ManifestOperationResult<bool>.Success(true);
-    }
-
-    private async Task<ManifestOperationResult<string>> SnapshotFileAsync(
-        string sourcePath,
-        string filePath,
-        LinkOperationWorkspace workspace,
-        LinkSnapshotBudget? budget,
-        CancellationToken cancellationToken
-    )
-    {
-        var length = fileSystem.FileInfo.New(filePath).Length;
-        if (budget is not null)
-        {
-            var observed = budget.AddFile(length);
-            if (!observed.IsSuccess)
-            {
-                return ManifestOperationResult<string>.Failure(observed.Error!, observed.ErrorKind);
-            }
-        }
-
-        await using var source = fileSystem.File.OpenRead(filePath);
-        return await workspace.WriteAsync(sourcePath, source, length, cancellationToken);
     }
 
     private static LinkSourceListing CreateListing(
@@ -616,6 +539,8 @@ internal sealed class GitLinkSourceProvider(
         GitSourceProvenance provenance,
         string repository,
         IReadOnlyList<GitLinkCacheEntry> tree,
+        GitTransportMode transportMode,
+        string sourceName,
         Action? cleanup
     ) =>
         new(identity, provenance, repository, [.. tree.Select(entry => entry.Path)])
@@ -625,12 +550,8 @@ internal sealed class GitLinkSourceProvider(
                 entry => entry.BlobId,
                 StringComparer.Ordinal
             ),
-            BlobSizes = tree.Where(entry => entry.Size is not null)
-                .ToDictionary(
-                    entry => entry.Path,
-                    entry => entry.Size!.Value,
-                    StringComparer.Ordinal
-                ),
+            TransportMode = transportMode,
+            SourceName = sourceName,
             Cleanup = cleanup,
         };
 
@@ -648,30 +569,9 @@ internal sealed class GitLinkSourceProvider(
 
             var fields = line[..separator].Split(' ', StringSplitOptions.RemoveEmptyEntries);
             var treeEntryIsInvalid =
-                fields.Length is < 3 or > 4
+                fields.Length != 3
                 || !string.Equals(fields[1], "blob", StringComparison.Ordinal)
                 || !IsRegularFileMode(fields[0]);
-            long? size = null;
-            if (!treeEntryIsInvalid && fields.Length == 4)
-            {
-                if (
-                    !long.TryParse(
-                        fields[3],
-                        NumberStyles.Integer,
-                        CultureInfo.InvariantCulture,
-                        out var parsedSize
-                    )
-                    || parsedSize < 0
-                )
-                {
-                    treeEntryIsInvalid = true;
-                }
-                else
-                {
-                    size = parsedSize;
-                }
-            }
-
             if (treeEntryIsInvalid)
             {
                 continue;
@@ -683,14 +583,7 @@ internal sealed class GitLinkSourceProvider(
                 continue;
             }
 
-            entries.Add(
-                new GitLinkCacheEntry
-                {
-                    BlobId = fields[2],
-                    Path = path[prefix.Length..],
-                    Size = size,
-                }
-            );
+            entries.Add(new GitLinkCacheEntry { BlobId = fields[2], Path = path[prefix.Length..] });
         }
 
         return entries;
@@ -699,11 +592,6 @@ internal sealed class GitLinkSourceProvider(
     private static bool IsRegularFileMode(string mode) =>
         string.Equals(mode, "100644", StringComparison.Ordinal)
         || string.Equals(mode, "100755", StringComparison.Ordinal);
-
-    private sealed record CachedLinkSnapshots(
-        List<string> MissingPaths,
-        Dictionary<string, string> Snapshots
-    );
 
     private static TimeSpan CreateTimeout(ProjectConfiguration.GitSource source) =>
         TimeSpan.FromSeconds(source.TimeoutSeconds ?? DefaultTimeoutSeconds);

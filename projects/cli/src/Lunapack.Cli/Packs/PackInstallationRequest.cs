@@ -36,6 +36,10 @@ internal sealed record PackInstallationRequest(
 
     public bool SaveRemapping { get; init; }
 
+    public bool RemoveModified { get; init; }
+
+    public bool AllowHiddenCharacters { get; init; }
+
     public static ManifestOperationResult<PackInstallationRequest> Create(
         IFileSystem fileSystem,
         string projectDirectory,
@@ -49,7 +53,8 @@ internal sealed record PackInstallationRequest(
         IEnumerable<string>? fileRemappings = null,
         ScriptExecutionMode? scriptMode = null,
         bool skipInstructions = false,
-        bool saveRemapping = false
+        bool saveRemapping = false,
+        bool allowHiddenCharacters = false
     )
     {
         var parsedPackReference = PackReference.Parse(packReferenceValue);
@@ -109,7 +114,8 @@ internal sealed record PackInstallationRequest(
                     noVariables,
                     scriptMode ?? ScriptExecutionMode.Prompt,
                     skipInstructions,
-                    saveRemapping
+                    saveRemapping,
+                    allowHiddenCharacters
                 )
             );
     }
@@ -124,7 +130,8 @@ internal sealed record PackInstallationRequest(
         bool noVariables,
         ScriptExecutionMode scriptMode,
         bool skipInstructions,
-        bool saveRemapping
+        bool saveRemapping,
+        bool allowHiddenCharacters
     ) =>
         new(packReference, destination, adoptExisting)
         {
@@ -140,6 +147,7 @@ internal sealed record PackInstallationRequest(
             ScriptMode = scriptMode,
             SkipInstructions = skipInstructions,
             SaveRemapping = saveRemapping,
+            AllowHiddenCharacters = allowHiddenCharacters,
         };
 
     private static string? NormalizeDestination(string? destination) =>

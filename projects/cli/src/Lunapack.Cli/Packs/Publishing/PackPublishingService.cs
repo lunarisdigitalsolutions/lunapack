@@ -22,6 +22,7 @@ internal sealed class PackPublishingService(
         string projectDirectory,
         string packDirectory,
         string targetName,
+        bool allowHiddenCharacters = false,
         CancellationToken cancellationToken = default
     )
     {
@@ -71,6 +72,7 @@ internal sealed class PackPublishingService(
             packDirectory,
             source,
             state.EffectiveResourceLimits,
+            allowHiddenCharacters,
             cancellationToken
         );
     }

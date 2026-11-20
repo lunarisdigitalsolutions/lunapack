@@ -78,20 +78,30 @@ explicit `false` mean no denial. `LUNAPACK_USER_PROFILE` can select an alternate
 profile root for isolated automation; Luna stores settings beneath that root's
 `.lunapack` directory.
 
+Optional lifecycle script policy in `trust.scripts` controls environment
+warnings and per-hook timeouts, not script authorization. Global-user and
+project-local user policy use
+`<profile>/.lunapack/lifecycle-hook-policy.yml`, leaving `config.yml` unchanged.
+See [Lifecycle hooks and script trust](trust-and-scripts.md#lifecycle-script-policy)
+for the policy fields, defaults, and precedence.
+
 ## CLI preferences
 
 Use `luna config` to set, list, or remove Boolean preferences and resource
 limits. Boolean preference keys are:
 
-| Key                        | Built-in default | Effect                                           |
-| -------------------------- | ---------------- | ------------------------------------------------ |
-| `discover.only-composites` | `false`          | Show only composite packs in `luna discover`.    |
-| `search.only-composites`   | `false`          | Show only composite packs in `luna search`.      |
-| `next-steps.enabled`       | `true`           | Show contextual next-step and recovery guidance. |
+| Key                            | Built-in default | Effect                                           |
+| ------------------------------ | ---------------- | ------------------------------------------------ |
+| `discover.only-composites`     | `false`          | Show only composite packs in `luna discover`.    |
+| `git.allow-insecure-transport` | `false`          | Allow `http://` and `git://` Git sources.        |
+| `search.only-composites`       | `false`          | Show only composite packs in `luna search`.      |
+| `next-steps.enabled`           | `true`           | Show contextual next-step and recovery guidance. |
 
 ```powershell
 luna config set discover.only-composites true --project
 luna config set next-steps.enabled false --user-project
+luna config set git.allow-insecure-transport true --global
+luna config set git.allow-insecure-transport false --project
 luna config list --global
 luna config remove discover.only-composites --project
 ```
@@ -103,6 +113,8 @@ Project-local values go in `lunapack.yml`:
 preferences:
   discover:
     onlyComposites: true
+  git:
+    allowInsecureTransport: true
   nextSteps:
     enabled: false
   resourceLimits:
@@ -199,6 +211,11 @@ default. For resource limits, Luna selects the user-project value over global,
 or the built-in default, and then applies the project-local value only as a
 lower cap. A repository-controlled value therefore cannot raise a stricter
 user setting. An explicit `false` overrides less-specific `true` values.
+`git.allow-insecure-transport`
+applies to every `http://` and `git://` Git source in its selected scope; it is
+not a per-source allowlist. Prefer HTTPS or SSH. See
+[Git source behavior](../advanced/git-source-behavior.md#require-secure-transport)
+for transport warnings, credential limits, and redirect behavior.
 `--only-composites` enables the composite filter for one discover or search
 invocation; it does not disable a filter already enabled by settings.
 `--suppress-next-steps` always suppresses guidance for the current invocation.

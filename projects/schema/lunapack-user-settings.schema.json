@@ -190,6 +190,9 @@
         "discover": {
           "$ref": "#/definitions/catalogPreferences"
         },
+        "git": {
+          "$ref": "#/definitions/gitPreferences"
+        },
         "search": {
           "$ref": "#/definitions/catalogPreferences"
         },
@@ -284,6 +287,15 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 17179869184
+        }
+      }
+    },
+    "gitPreferences": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allowInsecureTransport": {
+          "type": "boolean"
         }
       }
     },

@@ -1,4 +1,5 @@
 ﻿using System.IO.Abstractions;
+using System.Security.Cryptography;
 using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Application.Paths;
@@ -66,8 +67,10 @@ internal sealed class PackUpdateTransaction(IFileSystem fileSystem, CliConsole c
             case SkipManagedFileUpdateAction:
                 console.Verbose($"Skipped managed file '{action.TargetPathRelativeToProject}'.");
                 return;
-            case DeleteManagedFileUpdateAction:
-                DeleteTarget(action.TargetPath, rollback);
+            case DeleteManagedFileUpdateAction deleteAction:
+                DeleteTarget(deleteAction, rollback);
+                return;
+            case PreserveManagedFileUpdateAction:
                 return;
             case BackupAndCopyManagedFileUpdateAction backupAction:
                 BackupAndWrite(backupAction, rollback);
@@ -90,13 +93,60 @@ internal sealed class PackUpdateTransaction(IFileSystem fileSystem, CliConsole c
         WriteTarget(action, rollback);
     }
 
-    private void DeleteTarget(string targetPath, Rollback rollback)
+    private void DeleteTarget(DeleteManagedFileUpdateAction action, Rollback rollback)
     {
-        rollback.Snapshot(targetPath);
-        if (fileSystem.File.Exists(targetPath))
+        ProjectMutationPathSecurity.EnsureNoAliases(
+            fileSystem,
+            rollback.ProjectDirectory,
+            action.TargetPath
+        );
+        if (!fileSystem.File.Exists(action.TargetPath))
         {
-            fileSystem.File.Delete(targetPath);
-            console.Debug($"Deleted managed file '{targetPath}'.");
+            throw new InvalidOperationException(
+                $"Managed target '{action.TargetPathRelativeToProject}' changed after the update was planned."
+            );
+        }
+
+        var plannedContents = fileSystem.File.ReadAllBytes(action.TargetPath);
+        var currentSha256 = Convert.ToHexString(SHA256.HashData(plannedContents));
+        if (
+            !string.Equals(
+                currentSha256,
+                action.PlannedTargetSha256,
+                StringComparison.OrdinalIgnoreCase
+            )
+        )
+        {
+            throw new InvalidOperationException(
+                $"Managed target '{action.TargetPathRelativeToProject}' changed after the update was planned."
+            );
+        }
+
+        ProjectMutationPathSecurity.EnsureNoAliases(
+            fileSystem,
+            rollback.ProjectDirectory,
+            action.TargetPath
+        );
+        var confirmedContents = fileSystem.File.ReadAllBytes(action.TargetPath);
+        var confirmedSha256 = Convert.ToHexString(SHA256.HashData(confirmedContents));
+        if (
+            !string.Equals(
+                confirmedSha256,
+                action.PlannedTargetSha256,
+                StringComparison.OrdinalIgnoreCase
+            )
+        )
+        {
+            throw new InvalidOperationException(
+                $"Managed target '{action.TargetPathRelativeToProject}' changed after the update was planned."
+            );
+        }
+
+        rollback.Snapshot(action.TargetPath, confirmedContents);
+        if (fileSystem.File.Exists(action.TargetPath))
+        {
+            fileSystem.File.Delete(action.TargetPath);
+            console.Debug($"Deleted managed file '{action.TargetPath}'.");
         }
     }
 
@@ -144,7 +194,12 @@ internal sealed class PackUpdateTransaction(IFileSystem fileSystem, CliConsole c
     {
         private readonly List<string> _createdDirectories = [];
         private readonly List<string> _createdFiles = [];
-        private readonly Dictionary<string, byte[]> _snapshots = new(StringComparer.Ordinal);
+        private readonly HashSet<string> _createdFilePaths = new(
+            ProjectPath.ProjectRelativePathComparer(fileSystem)
+        );
+        private readonly Dictionary<string, byte[]> _snapshots = new(
+            ProjectPath.ProjectRelativePathComparer(fileSystem)
+        );
 
         public string ProjectDirectory { get; } = projectDirectory;
 
@@ -154,6 +209,11 @@ internal sealed class PackUpdateTransaction(IFileSystem fileSystem, CliConsole c
             {
                 if (fileSystem.File.Exists(createdFile))
                 {
+                    ProjectMutationPathSecurity.EnsureNoAliases(
+                        fileSystem,
+                        ProjectDirectory,
+                        createdFile
+                    );
                     fileSystem.File.Delete(createdFile);
                     console.Verbose($"Removed file created during rollback '{createdFile}'.");
                 }
@@ -177,6 +237,11 @@ internal sealed class PackUpdateTransaction(IFileSystem fileSystem, CliConsole c
                     && !fileSystem.Directory.EnumerateFileSystemEntries(createdDirectory).Any();
                 if (createdDirectoryIsEmpty)
                 {
+                    ProjectMutationPathSecurity.EnsureNoAliases(
+                        fileSystem,
+                        ProjectDirectory,
+                        createdDirectory
+                    );
                     fileSystem.Directory.Delete(createdDirectory);
                     console.Verbose(
                         $"Removed directory created during rollback '{createdDirectory}'."
@@ -187,7 +252,7 @@ internal sealed class PackUpdateTransaction(IFileSystem fileSystem, CliConsole c
 
         public void Snapshot(string path)
         {
-            if (_snapshots.ContainsKey(path))
+            if (_snapshots.ContainsKey(path) || _createdFilePaths.Contains(path))
             {
                 return;
             }
@@ -202,8 +267,22 @@ internal sealed class PackUpdateTransaction(IFileSystem fileSystem, CliConsole c
             }
         }
 
+        public void Snapshot(string path, byte[] contents)
+        {
+            if (!_createdFilePaths.Contains(path))
+            {
+                _snapshots.TryAdd(path, contents);
+            }
+        }
+
         public void TrackCreatedDirectory(string path) => _createdDirectories.Add(path);
 
-        public void TrackCreatedFile(string path) => _createdFiles.Add(path);
+        public void TrackCreatedFile(string path)
+        {
+            if (_createdFilePaths.Add(path))
+            {
+                _createdFiles.Add(path);
+            }
+        }
     }
 }

@@ -13,6 +13,7 @@ internal interface IPackPublisher
         string packDirectory,
         ProjectConfiguration.Source source,
         ResourceLimits? resourceLimits,
-        CancellationToken cancellationToken
+        bool allowHiddenCharacters = false,
+        CancellationToken cancellationToken = default
     );
 }

@@ -13,8 +13,9 @@ namespace Lunapack.Cli.Sources.Oci;
 internal sealed class OciDistributionRegistryClient(
     TimeSpan? timeout = null,
     IOciAccessTokenProvider? accessTokenProvider = null,
-    Func<HttpMessageHandler>? httpMessageHandlerFactory = null
-) : IOciRegistryClient
+    Func<HttpMessageHandler>? httpMessageHandlerFactory = null,
+    bool allowAutoRedirect = true
+) : IOciRegistryClient, IOciRegistryAvailabilityClient
 {
     public const long MaximumMetadataBytes = 1024 * 1024;
     private static readonly TimeSpan _defaultTimeout = TimeSpan.FromSeconds(45);
@@ -22,7 +23,48 @@ internal sealed class OciDistributionRegistryClient(
         "0123456789abcdef"
     );
     private const int RegistryPageSize = 100;
+    private readonly bool _allowAutoRedirect = allowAutoRedirect;
     private readonly TimeSpan _timeout = timeout ?? _defaultTimeout;
+
+    public Task<OciRegistryResult<OciRegistryUnit>> ProbeAsync(
+        Uri registry,
+        string? repository,
+        OciRegistryCredential? credential,
+        string credentialPartition,
+        CancellationToken cancellationToken
+    ) =>
+        ExecuteAsync(
+            async token =>
+            {
+                var registryOrigin = CreateRegistryOrigin(registry);
+                using var httpClient = CreateClient();
+                var requestSession = new RegistryRequestSession(
+                    httpClient,
+                    registryOrigin,
+                    credential,
+                    credentialPartition,
+                    accessTokenProvider
+                );
+                var requestUri = repository is null
+                    ? new Uri(registryOrigin, "v2/")
+                    : new UriBuilder(CreateRepositoryRequestUri(registry, repository, "tags/list"))
+                    {
+                        Query = "n=1",
+                    }.Uri;
+                var scopes = repository is null
+                    ? ["registry:catalog:*"]
+                    : CreateRepositoryScopes(repository, ScopeAction.Pull);
+                using var response = await requestSession.SendAsync(
+                    () => new HttpRequestMessage(HttpMethod.Get, requestUri),
+                    scopes,
+                    token
+                );
+                EnsureResponseStatus(response, HttpStatusCode.OK);
+                return new OciRegistryUnit();
+            },
+            "Unable to probe registry endpoint.",
+            cancellationToken
+        );
 
     public Task<OciRegistryResult<IReadOnlyList<string>>> ListRepositoriesAsync(
         Uri registry,
@@ -938,13 +980,13 @@ internal sealed class OciDistributionRegistryClient(
     }
 
     private HttpClient CreateClient() =>
-        new(
-            httpMessageHandlerFactory?.Invoke()
-                ?? new SocketsHttpHandler { AllowAutoRedirect = true }
-        )
+        new(httpMessageHandlerFactory?.Invoke() ?? CreateDefaultHandler(_allowAutoRedirect))
         {
             Timeout = _timeout,
         };
+
+    internal static SocketsHttpHandler CreateDefaultHandler(bool allowAutoRedirect) =>
+        new() { AllowAutoRedirect = allowAutoRedirect };
 
     private async Task<OciRegistryResult<T>> ExecuteAsync<T>(
         Func<CancellationToken, Task<T>> operation,

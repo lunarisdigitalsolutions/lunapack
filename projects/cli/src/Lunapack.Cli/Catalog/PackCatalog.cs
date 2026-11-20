@@ -39,23 +39,36 @@ internal sealed class PackCatalog : IDisposable
         UserSettingsStore? userSettingsStore = null,
         OciPackSource? ociPackSource = null,
         ConfiguredSourceIgnoreService? configuredSourceIgnoreService = null,
-        IOperationSnapshotSecurity? operationSnapshotSecurity = null
+        IOperationSnapshotSecurity? operationSnapshotSecurity = null,
+        GitTransportPolicy? transportPolicy = null
     )
     {
         _fileSystem = fileSystem;
         _console = console;
         _operationSnapshotSecurity = operationSnapshotSecurity ?? new OperationSnapshotSecurity();
+        var effectiveUserSettingsStore = userSettingsStore ?? new UserSettingsStore(fileSystem);
         _sourceIgnoreService =
             configuredSourceIgnoreService
             ?? new ConfiguredSourceIgnoreService(fileSystem, userSettingsStore);
 
         var effectiveProcessRunner = processRunner ?? new GitProcessRunner();
+        var effectiveTransportPolicy =
+            transportPolicy
+            ?? new GitTransportPolicy(
+                new CliPreferenceService(
+                    fileSystem,
+                    new ProjectStateStore(fileSystem),
+                    effectiveUserSettingsStore
+                ),
+                console
+            );
         _gitPackDiscovery = new GitPackDiscovery(
             fileSystem,
             effectiveProcessRunner,
             new GitRefResolver(effectiveProcessRunner),
             new GitSourceCache(fileSystem),
-            console
+            console,
+            effectiveTransportPolicy
         );
         _localPackDiscovery = new LocalPackDiscovery(fileSystem, console);
         _ownsOciPackSource = ociPackSource is null;
@@ -103,14 +116,23 @@ internal sealed class PackCatalog : IDisposable
         string projectDirectory,
         ProjectConfiguration configuration,
         IReadOnlyDictionary<string, string?> requestedPacks,
-        ResourceLimits? resourceLimits = null
-    ) => BrowseAsync(projectDirectory, configuration, requestedPacks, resourceLimits);
+        ResourceLimits? resourceLimits = null,
+        bool requireComplete = false
+    ) =>
+        BrowseAsync(
+            projectDirectory,
+            configuration,
+            requestedPacks,
+            resourceLimits,
+            requireComplete
+        );
 
     private async Task<ManifestOperationResult<IReadOnlyList<CatalogPack>>> BrowseAsync(
         string projectDirectory,
         ProjectConfiguration configuration,
         IReadOnlyDictionary<string, string?>? requestedPacks,
-        ResourceLimits? resourceLimits = null
+        ResourceLimits? resourceLimits = null,
+        bool requireComplete = false
     )
     {
         var effectiveResourceLimits = resourceLimits ?? ResourceLimits.Default;
@@ -128,7 +150,8 @@ internal sealed class PackCatalog : IDisposable
             configuration,
             ignoreContext,
             requestedPacks,
-            effectiveResourceLimits
+            effectiveResourceLimits,
+            requireComplete
         );
     }
 
@@ -139,7 +162,8 @@ internal sealed class PackCatalog : IDisposable
         ProjectConfiguration configuration,
         ConfiguredSourceIgnoreService.SourceIgnoreContext ignoreContext,
         IReadOnlyDictionary<string, string?>? requestedPacks,
-        ResourceLimits resourceLimits
+        ResourceLimits resourceLimits,
+        bool requireComplete
     )
     {
         var catalog = new List<CatalogPack>();
@@ -170,7 +194,8 @@ internal sealed class PackCatalog : IDisposable
                 source,
                 sourceOrder,
                 requestedPacks,
-                resourceLimits
+                resourceLimits,
+                requireComplete
             );
             if (sourceCatalog.Value is not { } sourcePacks)
             {
@@ -201,7 +226,26 @@ internal sealed class PackCatalog : IDisposable
             catalog.AddRange(sourcePacks);
         }
 
-        if (activeSourceCount == 0 && configuration.Sources.Count > 0)
+        return CompleteConfiguredCatalog(
+            catalog,
+            configuration.Sources.Count,
+            activeSourceCount,
+            successfulSourceCount,
+            failedSources,
+            requireComplete
+        );
+    }
+
+    private ManifestOperationResult<IReadOnlyList<CatalogPack>> CompleteConfiguredCatalog(
+        List<CatalogPack> catalog,
+        int configuredSourceCount,
+        int activeSourceCount,
+        int successfulSourceCount,
+        List<string> failedSources,
+        bool requireComplete
+    )
+    {
+        if (activeSourceCount == 0 && configuredSourceCount > 0)
         {
             _console.Info("All configured pack sources are ignored locally.");
         }
@@ -210,6 +254,13 @@ internal sealed class PackCatalog : IDisposable
         {
             return ManifestOperationResult<IReadOnlyList<CatalogPack>>.Failure(
                 string.Join(Environment.NewLine, failedSources)
+            );
+        }
+
+        if (requireComplete && failedSources.Count > 0)
+        {
+            return ManifestOperationResult<IReadOnlyList<CatalogPack>>.Failure(
+                $"Unable to check all configured pack sources:{Environment.NewLine}{string.Join(Environment.NewLine, failedSources)}"
             );
         }
 
@@ -354,7 +405,8 @@ internal sealed class PackCatalog : IDisposable
         ProjectConfiguration.Source source,
         int sourceOrder,
         IReadOnlyDictionary<string, string?>? requestedPacks,
-        ResourceLimits resourceLimits
+        ResourceLimits resourceLimits,
+        bool requireComplete = false
     ) =>
         source switch
         {
@@ -383,7 +435,8 @@ internal sealed class PackCatalog : IDisposable
                     ociSource,
                     sourceOrder,
                     requestedPacks,
-                    resourceLimits: resourceLimits
+                    resourceLimits: resourceLimits,
+                    requireComplete: requireComplete
                 ),
             _ => Task.FromResult(
                 ManifestOperationResult<IReadOnlyList<CatalogPack>>.Failure(

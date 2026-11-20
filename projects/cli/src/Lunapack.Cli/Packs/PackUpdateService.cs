@@ -30,7 +30,8 @@ internal sealed class PackUpdateService(
         bool skipInstructions = false,
         bool acceptSources = false,
         PackParameterPromptCallback? promptParameters = null,
-        PackUpdateOptions? options = null
+        PackUpdateOptions? options = null,
+        CancellationToken cancellationToken = default
     ) =>
         await UpdateAsync(
             projectDirectory,
@@ -41,7 +42,8 @@ internal sealed class PackUpdateService(
             skipInstructions,
             acceptSources,
             promptParameters,
-            options ?? new PackUpdateOptions()
+            options ?? new PackUpdateOptions(),
+            cancellationToken
         );
 
     public async Task<UpdateResult> UpdateSelectedAsync(
@@ -52,7 +54,8 @@ internal sealed class PackUpdateService(
         bool skipInstructions = false,
         bool acceptSources = false,
         PackParameterPromptCallback? promptParameters = null,
-        PackUpdateOptions? options = null
+        PackUpdateOptions? options = null,
+        CancellationToken cancellationToken = default
     ) =>
         await UpdateAsync(
             projectDirectory,
@@ -63,7 +66,8 @@ internal sealed class PackUpdateService(
             skipInstructions,
             acceptSources,
             promptParameters,
-            options ?? new PackUpdateOptions()
+            options ?? new PackUpdateOptions(),
+            cancellationToken
         );
 
     private async Task<UpdateResult> UpdateAsync(
@@ -75,7 +79,8 @@ internal sealed class PackUpdateService(
         bool skipInstructions,
         bool acceptSources,
         PackParameterPromptCallback? promptParameters,
-        PackUpdateOptions options
+        PackUpdateOptions options,
+        CancellationToken cancellationToken
     )
     {
         var loadedState = await projectStateStore.LoadAsync(projectDirectory);
@@ -113,7 +118,8 @@ internal sealed class PackUpdateService(
                 skipInstructions,
                 acceptSources,
                 cachedPromptParameters,
-                options
+                options,
+                cancellationToken
             )
             : await UpdateAllAsync(
                 projectDirectory,
@@ -125,9 +131,22 @@ internal sealed class PackUpdateService(
                 skipInstructions,
                 acceptSources,
                 cachedPromptParameters,
-                options
+                options,
+                cancellationToken
             );
     }
+
+    private Task<string?> GetNamedIntegrityErrorAsync(
+        string projectDirectory,
+        ProjectState state,
+        NamedPackUpdate update
+    ) =>
+        GetLockedOciIntegrityErrorAsync(
+            projectDirectory,
+            state,
+            update.CurrentPack,
+            new CatalogManifestBudget(state.EffectiveResourceLimits)
+        );
 
     private async Task<
         ManifestOperationResult<IReadOnlyList<CatalogPack>>
@@ -243,7 +262,8 @@ internal sealed class PackUpdateService(
         bool skipInstructions,
         bool acceptSources,
         PackParameterPromptCallback? promptParameters,
-        PackUpdateOptions options
+        PackUpdateOptions options,
+        CancellationToken cancellationToken
     )
     {
         var selectedUpdate = SelectNamedUpdate(state, catalog, packReference);
@@ -259,12 +279,7 @@ internal sealed class PackUpdateService(
             && update.SelectedPack.SourceIdentity == update.CurrentPack.SourceIdentity
         )
         {
-            var integrityError = await GetLockedOciIntegrityErrorAsync(
-                projectDirectory,
-                state,
-                update.CurrentPack,
-                new CatalogManifestBudget(state.EffectiveResourceLimits)
-            );
+            var integrityError = await GetNamedIntegrityErrorAsync(projectDirectory, state, update);
             if (integrityError is not null)
             {
                 return UpdateResult.Failure(integrityError);
@@ -303,7 +318,8 @@ internal sealed class PackUpdateService(
                 skipInstructions,
                 acceptSources,
                 promptParameters,
-                options
+                options,
+                cancellationToken
             );
             if (previewResult is not null)
             {
@@ -322,7 +338,8 @@ internal sealed class PackUpdateService(
             acceptSources,
             promptParameters,
             options,
-            update.SourceSwitch
+            update.SourceSwitch,
+            cancellationToken
         );
     }
 
@@ -370,7 +387,8 @@ internal sealed class PackUpdateService(
         bool skipInstructions,
         bool acceptSources,
         PackParameterPromptCallback? promptParameters,
-        PackUpdateOptions options
+        PackUpdateOptions options,
+        CancellationToken cancellationToken
     )
     {
         var preview = await ApplyAsync(
@@ -383,7 +401,8 @@ internal sealed class PackUpdateService(
             skipInstructions,
             acceptSources,
             promptParameters,
-            options
+            options,
+            cancellationToken: cancellationToken
         );
         if (preview.Error is not null || preview.IsLifecycleFailure)
         {
@@ -491,7 +510,8 @@ internal sealed class PackUpdateService(
         bool skipInstructions,
         bool acceptSources,
         PackParameterPromptCallback? promptParameters,
-        PackUpdateOptions options
+        PackUpdateOptions options,
+        CancellationToken cancellationToken
     )
     {
         var selectedUpdates = SelectVersionUpdates(state, catalog, selectedUpdateIds);
@@ -550,7 +570,8 @@ internal sealed class PackUpdateService(
                 skipInstructions,
                 acceptSources,
                 promptParameters,
-                options
+                options,
+                cancellationToken
             );
             if (previewResult is not null)
             {
@@ -568,7 +589,8 @@ internal sealed class PackUpdateService(
             skipInstructions,
             acceptSources,
             promptParameters,
-            options
+            options,
+            cancellationToken: cancellationToken
         );
     }
 
@@ -701,7 +723,8 @@ internal sealed class PackUpdateService(
         bool skipInstructions,
         bool acceptSources,
         PackParameterPromptCallback? promptParameters,
-        PackUpdateOptions options
+        PackUpdateOptions options,
+        CancellationToken cancellationToken
     )
     {
         var externalOutcomes = externalRefreshRoots
@@ -723,7 +746,8 @@ internal sealed class PackUpdateService(
             skipInstructions,
             acceptSources,
             promptParameters,
-            options
+            options,
+            cancellationToken: cancellationToken
         );
         if (preview.Error is not null || preview.IsLifecycleFailure)
         {
@@ -756,25 +780,16 @@ internal sealed class PackUpdateService(
         bool acceptSources,
         PackParameterPromptCallback? promptParameters,
         PackUpdateOptions options,
-        LockedSourceUpdateSelector.SourceSwitch? proposedSourceSwitch = null
+        LockedSourceUpdateSelector.SourceSwitch? proposedSourceSwitch = null,
+        CancellationToken cancellationToken = default
     )
     {
-        var updateRequestResult = PackInstallationRequest.Create(
-            fileSystem,
+        var updateRequestResult = CreateUpdateRequest(
             projectDirectory,
-            updateRequestRoot.Version is null
-                ? updateRequestRoot.Id
-                : $"{updateRequestRoot.Id}@{updateRequestRoot.Version}",
-            updateRequestRoot.Destination,
-            adoptExisting: false,
-            options.Parameters,
-            options.NoVariables,
-            options.SkippedVariables,
-            options.DirectoryRemappings,
-            options.FileRemappings,
+            updateRequestRoot,
             scriptMode,
             skipInstructions,
-            options.SaveRemapping
+            options
         );
         if (updateRequestResult.Value is not { } updateRequest)
         {
@@ -783,21 +798,17 @@ internal sealed class PackUpdateService(
             );
         }
 
-        updateRequest = updateRequest with { AcceptSources = acceptSources };
-        if (options.SaveRemapping)
-        {
-            selectedRequestedRoots =
-            [
-                .. selectedRequestedRoots.Select(root =>
-                    string.Equals(root.Id, updateRequestRoot.Id, StringComparison.Ordinal)
-                        ? root with
-                        {
-                            Remap = updateRequest.TargetRemapping?.MergeInto(root.Remap),
-                        }
-                        : root
-                ),
-            ];
-        }
+        updateRequest = ConfigureUpdateRequest(
+            updateRequest,
+            acceptSources,
+            options.RemoveModified
+        );
+        selectedRequestedRoots = ApplySavedRemapping(
+            selectedRequestedRoots,
+            updateRequestRoot,
+            updateRequest,
+            options.SaveRemapping
+        );
         if (promptParameters is not null)
         {
             var parameters = await packLifecycleService.PromptUpdateParametersAsync(
@@ -833,12 +844,65 @@ internal sealed class PackUpdateService(
             projectDirectory,
             selectedRequestedRoots,
             updateRequest,
-            plan => appliedPlan = plan
+            plan => appliedPlan = plan,
+            cancellationToken
         );
         return exitCode == 0
             ? UpdateResult.Success(outcomes, appliedPlan)
             : UpdateResult.LifecycleFailure();
     }
+
+    private static PackInstallationRequest ConfigureUpdateRequest(
+        PackInstallationRequest request,
+        bool acceptSources,
+        bool removeModified
+    ) => request with { AcceptSources = acceptSources, RemoveModified = removeModified };
+
+    private static IReadOnlyList<ProjectConfiguration.RequestedPack> ApplySavedRemapping(
+        IReadOnlyList<ProjectConfiguration.RequestedPack> requestedRoots,
+        ProjectConfiguration.RequestedPack updateRequestRoot,
+        PackInstallationRequest updateRequest,
+        bool saveRemapping
+    ) =>
+        saveRemapping
+            ?
+            [
+                .. requestedRoots.Select(root =>
+                    string.Equals(root.Id, updateRequestRoot.Id, StringComparison.Ordinal)
+                        ? root with
+                        {
+                            Remap = updateRequest.TargetRemapping?.MergeInto(root.Remap),
+                        }
+                        : root
+                ),
+            ]
+            : requestedRoots;
+
+    private ManifestOperationResult<PackInstallationRequest> CreateUpdateRequest(
+        string projectDirectory,
+        ProjectConfiguration.RequestedPack requestedRoot,
+        ScriptExecutionMode scriptMode,
+        bool skipInstructions,
+        PackUpdateOptions options
+    ) =>
+        PackInstallationRequest.Create(
+            fileSystem,
+            projectDirectory,
+            requestedRoot.Version is null
+                ? requestedRoot.Id
+                : $"{requestedRoot.Id}@{requestedRoot.Version}",
+            requestedRoot.Destination,
+            adoptExisting: false,
+            options.Parameters,
+            options.NoVariables,
+            options.SkippedVariables,
+            options.DirectoryRemappings,
+            options.FileRemappings,
+            scriptMode,
+            skipInstructions,
+            options.SaveRemapping,
+            options.AllowHiddenCharacters
+        );
 
     internal sealed record UpdateResult(
         IReadOnlyList<UpdateOutcome> Outcomes,

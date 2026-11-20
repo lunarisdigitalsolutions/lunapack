@@ -17,6 +17,7 @@ internal sealed class LocalSourceCommandHandler(
     NextStepAdvisor nextStepAdvisor,
     NextStepRenderer nextStepRenderer,
     CliConsole console,
+    GitTransportPolicy transportPolicy,
     GitRefResolver? gitRefResolver = null,
     CliCompletionProvider? completionProvider = null,
     UserSettingsStore? userSettingsStore = null
@@ -528,7 +529,13 @@ internal sealed class LocalSourceCommandHandler(
         string? repositoryPath
     )
     {
-        var candidate = await CreateGitSourceAsync(name, repositoryUrl, gitRef, repositoryPath);
+        var candidate = await CreateGitSourceAsync(
+            projectDirectory,
+            name,
+            repositoryUrl,
+            gitRef,
+            repositoryPath
+        );
         if (candidate.Value is not { } candidateGitSource)
         {
             return console.Fail(candidate.Error);
@@ -628,6 +635,7 @@ internal sealed class LocalSourceCommandHandler(
     private async Task<
         ManifestOperationResult<ProjectConfiguration.GitSource>
     > CreateGitSourceAsync(
+        string projectDirectory,
         string name,
         string repositoryUrl,
         string? gitRef,
@@ -664,7 +672,20 @@ internal sealed class LocalSourceCommandHandler(
             );
         }
 
-        var canonicalRef = await CanonicalizeRefAsync(repositoryUrl, gitRef);
+        var authorization = await transportPolicy.AuthorizeAsync(
+            projectDirectory,
+            repositoryUrl,
+            name
+        );
+        if (!authorization.IsSuccess)
+        {
+            return ManifestOperationResult<ProjectConfiguration.GitSource>.Failure(
+                authorization.Error ?? $"Unable to authorize Git source '{name}'."
+            );
+        }
+        var transportMode = authorization.Value;
+
+        var canonicalRef = await CanonicalizeRefAsync(repositoryUrl, gitRef, transportMode, name);
         return canonicalRef.IsSuccess
             ? ManifestOperationResult<ProjectConfiguration.GitSource>.Success(
                 new ProjectConfiguration.GitSource
@@ -684,7 +705,9 @@ internal sealed class LocalSourceCommandHandler(
 
     private async Task<ManifestOperationResult<string?>> CanonicalizeRefAsync(
         string repositoryUrl,
-        string? gitRef
+        string? gitRef,
+        GitTransportMode transportMode,
+        string sourceName
     )
     {
         if (string.IsNullOrWhiteSpace(gitRef))
@@ -701,7 +724,9 @@ internal sealed class LocalSourceCommandHandler(
             repositoryUrl,
             gitRef,
             timeout: null,
-            CancellationToken.None
+            CancellationToken.None,
+            transportMode,
+            sourceName
         );
         return canonicalRef.Value is { } resolved
             ? ManifestOperationResult<string?>.Success(resolved.CanonicalRef)

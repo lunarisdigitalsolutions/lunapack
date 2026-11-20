@@ -39,7 +39,9 @@ public sealed class CliHelpDocumentationTests
         ),
         new("discover", null, ["--versions", "-v", "--allow-draft", "--only-composites"]),
         new("search", "<term>", ["--versions", "-v", "--allow-draft", "--only-composites"]),
-        new("validate", "<pack-reference>"),
+        new("validate", "<pack-reference>", ["--format"]),
+        new("pack validate", null, ["--allow-hidden-characters"]),
+        new("publish", "<folder> --target <source>", ["--target", "--allow-hidden-characters"]),
         new("inspect", "<pack-reference>"),
         new(
             "pack add hook script command",
@@ -84,10 +86,11 @@ public sealed class CliHelpDocumentationTests
                 "-sv",
                 "--scripts",
                 "--skip-instructions",
+                "--allow-hidden-characters",
             ]
         ),
         new("uninstall", "<pack-reference> [<pack-reference>...]"),
-        new("outdated"),
+        new("outdated", null, ["--offline", "--format"]),
         new(
             "update",
             "[<pack-reference>...]",
@@ -109,10 +112,12 @@ public sealed class CliHelpDocumentationTests
                 "--save-remap",
                 "--scripts",
                 "--skip-instructions",
+                "--allow-hidden-characters",
             ]
         ),
         new("mv", "<source> <target>", ["--save-remap"]),
-        new("audit"),
+        new("audit", null, ["--strict", "--fail-fast", "--format"]),
+        new("hooks history", null, ["--limit"]),
     ];
 
     [Test]
@@ -156,6 +161,26 @@ public sealed class CliHelpDocumentationTests
         await Assert.That(documentation).DoesNotContain("luna pack add script");
         await Assert.That(documentation).DoesNotContain("luna pack rm script");
         await Assert.That(documentation).DoesNotContain("luna pack scripts");
+    }
+
+    [Test]
+    public async Task Scenario_LifecycleCommandsRequestHelp_DescribeRuntimeGuardrails()
+    {
+        foreach (var command in new[] { "install", "uninstall", "update" })
+        {
+            using var workspace = new TestWorkspace(ansiConsole: new SpectreTestConsole());
+            await using var output = new StringWriter();
+
+            var exitCode = await workspace.Application.RunAsync(
+                [command, "--help"],
+                workspace.Path,
+                output
+            );
+
+            await Assert.That(exitCode).IsEqualTo(0);
+            await Assert.That(output.ToString()).Contains("inherited environment names");
+            await Assert.That(output.ToString()).Contains("per-hook timeouts");
+        }
     }
 
     [Test]

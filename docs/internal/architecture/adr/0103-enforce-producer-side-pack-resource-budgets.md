@@ -5,7 +5,7 @@ decision-makers:
   - Lunaris Engineering
 ---
 
-# ADR-0090: Enforce Producer-Side Pack Resource Budgets
+# ADR-0103: Enforce Producer-Side Pack Resource Budgets
 
 ## Context and Problem Statement
 

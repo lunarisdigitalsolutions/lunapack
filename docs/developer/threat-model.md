@@ -96,7 +96,25 @@ Treat every pack and source as publisher code.
 | Verification  | Invalid, escaping, identity-mismatched, commit-mismatched, and content-mismatched cache tests.                                                                                                                                      |
 | Residual risk | A same-user attacker who can modify the workspace can also modify project configuration and lock evidence. Luna does not sign local state.                                                                                          |
 
-### TM-T03: Ambiguous or Malformed Documents
+### TM-T03: Git Transport Downgrade
+
+| Field         | Assessment                                                                                                                                                                                                                                                                                                            |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Component     | Git source resolution, discovery, materialization, links, and external pack sources                                                                                                                                                                                                                                   |
+| Asset         | Fetched pack bytes, refs, credentials, and project lock provenance                                                                                                                                                                                                                                                    |
+| Scenario      | A network attacker, redirect, or `url.*.insteadOf` rule changes a secure-looking source into an insecure or unverified transport.                                                                                                                                                                                     |
+| Preconditions | A consumer configures a Git source and a network observer or inherited Git configuration can alter its effective transport.                                                                                                                                                                                           |
+| Likelihood    | Medium                                                                                                                                                                                                                                                                                                                |
+| Impact        | Source traffic or credentials can be exposed, and altered refs or pack content can enter resolution.                                                                                                                                                                                                                  |
+| Severity      | High                                                                                                                                                                                                                                                                                                                  |
+| Controls      | Plaintext transports require an explicit scoped preference; process protocol allowlists override inherited Git protocol settings; HTTPS certificate verification and redirect rejection apply to the effective rewritten URL, including lazy fetches; query/fragment URLs and repository smudge filters are rejected. |
+| Fix           | Prefer HTTPS or SSH. If a legacy plaintext source is unavoidable, scope `git.allow-insecure-transport` narrowly and do not use it for private repositories.                                                                                                                                                           |
+| Priority      | Implemented release control                                                                                                                                                                                                                                                                                           |
+| Status        | Secure transports are the default; plaintext use remains an explicit compatibility exception                                                                                                                                                                                                                          |
+| Verification  | Preference precedence, rewrite, redirect, TLS override, credential-helper, warning, and lazy-fetch tests.                                                                                                                                                                                                             |
+| Residual risk | Opted-in HTTP cannot protect network confidentiality or integrity. Embedded URL credentials, `http.extraHeader`, proxy configuration, and user-managed external Git processes can still supply credentials or network behavior outside Luna's direct controls.                                                        |
+
+### TM-T04: Ambiguous or Malformed Documents
 
 | Field         | Assessment                                                                                                                                        |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -114,7 +132,7 @@ Treat every pack and source as publisher code.
 | Verification  | Malformed configuration, duplicate parameter, target traversal, and runtime/schema parity tests.                                                  |
 | Residual risk | Document byte ceilings bound normal input size; malformed parser nesting still remains a separate parser-hardening concern.                       |
 
-### TM-T04: Unsafe OCI Archive Extraction
+### TM-T05: Unsafe OCI Archive Extraction
 
 | Field         | Assessment                                                                                                                                                                                                                                                                             |
 | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -131,6 +149,24 @@ Treat every pack and source as publisher code.
 | Status        | Fixed for defined archive limits and path rules                                                                                                                                                                                                                                        |
 | Verification  | Traversal, rooted-path, collision, link-like-entry, corrupt ZIP, size-boundary, cleanup, and no-mutation tests.                                                                                                                                                                        |
 | Residual risk | An authorized publisher can still supply harmful but structurally valid pack content or scripts.                                                                                                                                                                                       |
+
+### TM-T05: Review Bypass Through Hidden Unicode
+
+| Field         | Assessment                                                                                                                                                                                                                                    |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Component     | Managed pack content, managed paths, install/update plans, author validation, publication, and audit output                                                                                                                                   |
+| Asset         | Human-readable review state and the bytes LunaPack will apply or publish                                                                                                                                                                      |
+| Scenario      | A pack uses bidi controls, zero-width characters, invalid-byte prefixes, BOM ambiguity, or terminal controls in paths so a reviewer sees text or output that differs from the actual bytes.                                                   |
+| Preconditions | A user reviews, installs, validates, or publishes pack-managed content, or audits files after an attacker can modify them.                                                                                                                    |
+| Likelihood    | Medium                                                                                                                                                                                                                                        |
+| Impact        | Deceptive content can bypass visual review, conceal or split identifiers, spoof diagnostic paths, and reach lifecycle or release boundaries without an obvious warning.                                                                       |
+| Severity      | High                                                                                                                                                                                                                                          |
+| Controls      | Final-plan, raw-source, and installed-target screening; strict/recovering Unicode decoding; high-confidence blocker policy; terminal-safe path validation and diagnostics; emoji exemptions; bounded finding retention; audit-only reporting. |
+| Fix           | Implemented. Inspect every reported code point and use `--allow-hidden-characters` only for a reviewed byte sequence.                                                                                                                         |
+| Priority      | Implemented review control                                                                                                                                                                                                                    |
+| Status        | Fixed for the classified Unicode and path cases; semantic review still matters                                                                                                                                                                |
+| Verification  | Scalar-location, all-bidi, U+200B, NUL/invalid/BOM, orphan-selector, truncation, terminal-path, state-preservation, authoring, publication, and lifecycle tests.                                                                              |
+| Residual risk | Hidden characters outside the blocker or scanner scope can remain warnings, and valid Unicode cannot prove benign intent. Different editors and terminals may still render the same bytes differently.                                        |
 
 ## Repudiation
 
@@ -232,21 +268,21 @@ Treat every pack and source as publisher code.
 
 ### TM-E01: User-Authority Execution by Lifecycle Scripts
 
-| Field         | Assessment                                                                                                                                                                        |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Component     | Lifecycle hook authorization and process launch                                                                                                                                   |
-| Asset         | Current user's files, credentials, processes, and network access                                                                                                                  |
-| Scenario      | A malicious pack convinces a user or automation to approve a hook that performs arbitrary actions.                                                                                |
-| Preconditions | Script execution is explicitly approved, previously trusted, or selected with `--scripts run`.                                                                                    |
-| Likelihood    | Medium                                                                                                                                                                            |
-| Impact        | Arbitrary code execution with the invoking user's full ambient authority.                                                                                                         |
-| Severity      | High                                                                                                                                                                              |
-| Controls      | Prompt, run, and skip modes; source-scoped trust; dominant denial; escaped preview; direct executable resolution; literal argv; snapshot hashing; and pre-mutation authorization. |
-| Fix           | Treat approval as code execution. Use denial or skip mode where hooks are not required. LunaPack does not claim sandboxing.                                                       |
-| Priority      | Permanent trust boundary                                                                                                                                                          |
-| Status        | Accepted by design                                                                                                                                                                |
-| Verification  | Trust-scope, denial, argument, digest, cancellation, and rollback tests.                                                                                                          |
-| Residual risk | Authorized code can create irreversible external effects that no transaction can restore.                                                                                         |
+| Field         | Assessment                                                                                                                                                                                                      |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Component     | Lifecycle hook authorization and process launch                                                                                                                                                                 |
+| Asset         | Current user's files, credentials, processes, and network access                                                                                                                                                |
+| Scenario      | A malicious pack convinces a user or automation to approve a hook that performs arbitrary actions.                                                                                                              |
+| Preconditions | Script execution is explicitly approved, previously trusted, or selected with `--scripts run`.                                                                                                                  |
+| Likelihood    | Medium                                                                                                                                                                                                          |
+| Impact        | Arbitrary code execution with the invoking user's full ambient authority.                                                                                                                                       |
+| Severity      | High                                                                                                                                                                                                            |
+| Controls      | Prompt, run, and skip modes; source-scoped trust; dominant denial; escaped preview; value-free environment warnings; per-hook timeouts with process-tree cleanup; literal argv; and pre-mutation authorization. |
+| Fix           | Treat approval as code execution. Use denial or skip mode where hooks are not required. LunaPack does not claim sandboxing.                                                                                     |
+| Priority      | Permanent trust boundary                                                                                                                                                                                        |
+| Status        | Accepted by design                                                                                                                                                                                              |
+| Verification  | Trust-scope, denial, argument, digest, cancellation, and rollback tests.                                                                                                                                        |
+| Residual risk | Authorized scripts inherit every process environment value; warnings do not filter values or prevent access. Code can also create irreversible external effects that no transaction can restore.                |
 
 ## Safer Operation
 
@@ -254,7 +290,8 @@ Treat every pack and source as publisher code.
 2. Pin full Git commits and exact Luna versions in reproducible automation.
 3. Inspect unfamiliar packs and run `--dry-run` before applying changes.
 4. Review managed targets, external sources, templates, instructions, and hook
-   arguments.
+   arguments. Investigate every hidden-Unicode finding in the original bytes;
+   do not judge only by rendered text.
 5. Use `--scripts skip` or the narrowest trust scope that satisfies the workflow.
 6. Keep `lunapack-lock.yml` under review and use `luna audit` for drift.
 7. Run untrusted evaluation in a disposable workspace with minimal credentials.
@@ -265,6 +302,9 @@ Treat every pack and source as publisher code.
 10. Review user-owned resource-limit increases in
     [`luna config`](cli/configuration.md#resource-limits) and keep project-owned
     reductions at or below the built-in defaults.
+11. Configure lifecycle script warnings and deadlines at the narrowest needed
+    scope; the warning allow-list does not restrict environment access. See the
+    [script policy reference](cli/trust-and-scripts.md#lifecycle-script-policy).
 
 Diagnostics and hook output may contain private paths, URLs, usernames, or tool
 output. Redact them before sharing. LunaPack does not collect telemetry.

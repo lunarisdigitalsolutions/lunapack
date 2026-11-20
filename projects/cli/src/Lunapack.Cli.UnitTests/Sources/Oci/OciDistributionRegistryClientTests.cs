@@ -12,6 +12,90 @@ public sealed class OciDistributionRegistryClientTests
     private static readonly Uri _registry = new("https://registry.example.test");
 
     [Test]
+    public async Task DefaultHandler_WhenRedirectsAreDisabled_RefusesAutomaticRedirects()
+    {
+        using var handler = OciDistributionRegistryClient.CreateDefaultHandler(
+            allowAutoRedirect: false
+        );
+
+        await Assert.That(handler.AllowAutoRedirect).IsFalse();
+    }
+
+    [Test]
+    public async Task Probe_WhenRegistryUsesBearerChallenge_ObtainsBoundedToken()
+    {
+        var requestCount = 0;
+        var client = CreateClient(
+            (request, _) =>
+            {
+                requestCount++;
+                if (
+                    string.Equals(
+                        request.RequestUri?.AbsolutePath,
+                        "/token",
+                        StringComparison.Ordinal
+                    )
+                )
+                {
+                    return Task.FromResult(
+                        CreateJsonResponse(HttpStatusCode.OK, "{\"token\":\"probe-token\"}")
+                    );
+                }
+
+                if (request.Headers.Authorization is null)
+                {
+                    var unauthorized = CreateResponse(HttpStatusCode.Unauthorized);
+                    unauthorized.Headers.WwwAuthenticate.ParseAdd(
+                        "Bearer realm=\"https://registry.example.test/token\",service=\"registry.example.test\""
+                    );
+                    return Task.FromResult(unauthorized);
+                }
+
+                return Task.FromResult(CreateResponse(HttpStatusCode.OK));
+            }
+        );
+
+        var result = await client.ProbeAsync(
+            _registry,
+            repository: null,
+            credential: null,
+            credentialPartition: "probe-partition",
+            cancellationToken: CancellationToken.None
+        );
+
+        await Assert
+            .That(result.IsSuccess)
+            .IsTrue()
+            .Because(result.Failure?.Message ?? "The registry probe failed.");
+        await Assert.That(requestCount).IsEqualTo(3);
+    }
+
+    [Test]
+    public async Task Probe_WhenRepositoryIsKnown_UsesConfiguredRepositoryPath()
+    {
+        Uri? requestUri = null;
+        var client = CreateClient(
+            (request, _) =>
+            {
+                requestUri = request.RequestUri;
+                return Task.FromResult(CreateResponse(HttpStatusCode.OK));
+            }
+        );
+
+        var result = await client.ProbeAsync(
+            _registry,
+            "engineering/backend",
+            credential: null,
+            credentialPartition: "probe-partition",
+            cancellationToken: CancellationToken.None
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert.That(requestUri?.AbsolutePath).IsEqualTo("/v2/engineering/backend/tags/list");
+        await Assert.That(requestUri?.Query).IsEqualTo("?n=1");
+    }
+
+    [Test]
     [Arguments(HttpStatusCode.Unauthorized)]
     [Arguments(HttpStatusCode.Forbidden)]
     [Arguments(HttpStatusCode.NotFound)]

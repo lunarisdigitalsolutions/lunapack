@@ -30,6 +30,7 @@ internal sealed class UserSettingsStore
         .Build();
 
     private readonly IFileSystem _fileSystem;
+    private readonly UserSidecarFile _sidecarFile;
 
     public UserSettingsStore(IFileSystem fileSystem)
         : this(fileSystem, GetUserProfileDirectory()) { }
@@ -39,13 +40,17 @@ internal sealed class UserSettingsStore
         ArgumentException.ThrowIfNullOrWhiteSpace(userProfileDirectory);
         _fileSystem = fileSystem;
         var profileDirectory = fileSystem.Path.GetFullPath(userProfileDirectory);
-        SettingsDirectory = fileSystem.Path.Combine(profileDirectory, DirectoryName);
-        SettingsPath = fileSystem.Path.Combine(SettingsDirectory, FileName);
+        _sidecarFile = new UserSidecarFile(
+            fileSystem,
+            fileSystem.Path.Combine(profileDirectory, DirectoryName),
+            FileName,
+            "User settings"
+        );
     }
 
-    public string SettingsPath { get; }
+    public string SettingsPath => _sidecarFile.SettingsPath;
 
-    public string SettingsDirectory { get; }
+    public string SettingsDirectory => _sidecarFile.SettingsDirectory;
 
     public ManifestOperationResult<string> GetProjectKey(string projectDirectory) =>
         CanonicalProjectPath.Resolve(_fileSystem, projectDirectory);
@@ -54,13 +59,13 @@ internal sealed class UserSettingsStore
     {
         try
         {
-            var pathError = ValidateExistingPaths();
+            var pathError = _sidecarFile.ValidateExistingPaths();
             if (pathError is not null)
             {
                 return ManifestOperationResult<UserSettings>.Failure(pathError);
             }
 
-            if (!_fileSystem.File.Exists(SettingsPath))
+            if (!_sidecarFile.Exists())
             {
                 return ManifestOperationResult<UserSettings>.Success(new UserSettings());
             }
@@ -73,7 +78,10 @@ internal sealed class UserSettingsStore
             );
             if (read.Value is not { } contents)
             {
-                return ManifestOperationResult<UserSettings>.Failure(read.Error!);
+                return ManifestOperationResult<UserSettings>.Failure(
+                    read.Error ?? "Unable to read user settings.",
+                    read.ErrorKind
+                );
             }
 
             var unknownResourceLimit = ResourceLimitYamlValidator.ValidateUserSettings(
@@ -87,7 +95,7 @@ internal sealed class UserSettingsStore
             }
 
             var settings = _deserializer.Deserialize<UserSettings>(contents.Text);
-            if (settings is null || !IsValid(settings))
+            if (settings is null || !IsValidForLoad(settings))
             {
                 return ManifestOperationResult<UserSettings>.Failure(
                     $"Invalid user settings in '{SettingsPath}'."
@@ -111,7 +119,7 @@ internal sealed class UserSettingsStore
 
     public Task<ManifestOperationResult<bool>> SaveAsync(UserSettings settings)
     {
-        if (!IsValid(settings))
+        if (!IsValidForSave(settings))
         {
             return Result(
                 ManifestOperationResult<bool>.Failure("Refusing to write invalid user settings.")
@@ -128,23 +136,15 @@ internal sealed class UserSettingsStore
                 )
             );
         }
-
-        var temporaryPath = _fileSystem.Path.Combine(
-            SettingsDirectory,
-            $".{FileName}.{Guid.NewGuid():N}.tmp"
-        );
         try
         {
-            var pathError = ValidateExistingPaths();
+            var pathError = _sidecarFile.ValidateExistingPaths();
             if (pathError is not null)
             {
                 return Result(ManifestOperationResult<bool>.Failure(pathError));
             }
 
-            EnsureSettingsDirectory();
-            _fileSystem.File.WriteAllText(temporaryPath, serialized);
-            UserSettingsPathSecurity.Apply(temporaryPath, directory: false);
-            _fileSystem.File.Move(temporaryPath, SettingsPath, overwrite: true);
+            _sidecarFile.WriteAllText(_serializer.Serialize(Normalize(settings)));
             return Result(ManifestOperationResult<bool>.Success(true));
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
@@ -155,95 +155,36 @@ internal sealed class UserSettingsStore
                 )
             );
         }
-        finally
-        {
-            if (_fileSystem.File.Exists(temporaryPath))
-            {
-                _fileSystem.File.Delete(temporaryPath);
-            }
-        }
     }
 
-    private string? ValidateExistingPaths()
+    private bool IsValidForLoad(UserSettings settings)
     {
-        if (_fileSystem.File.Exists(SettingsDirectory))
-        {
-            return $"User settings path '{SettingsDirectory}' must be a directory.";
-        }
-
-        if (_fileSystem.Directory.Exists(SettingsDirectory))
-        {
-            var directoryError = UserSettingsPathSecurity.ValidateExisting(
-                _fileSystem,
-                SettingsDirectory,
-                directory: true
-            );
-            if (directoryError is not null)
-            {
-                return directoryError;
-            }
-        }
-
-        if (_fileSystem.Directory.Exists(SettingsPath))
-        {
-            return $"User settings path '{SettingsPath}' must be a regular file.";
-        }
-
-        return _fileSystem.File.Exists(SettingsPath)
-            ? UserSettingsPathSecurity.ValidateExisting(_fileSystem, SettingsPath, directory: false)
-            : null;
-    }
-
-    private void EnsureSettingsDirectory()
-    {
-        if (!_fileSystem.Directory.Exists(SettingsDirectory))
-        {
-            _fileSystem.Directory.CreateDirectory(SettingsDirectory);
-            UserSettingsPathSecurity.Apply(SettingsDirectory, directory: true);
-        }
-    }
-
-    private bool IsValid(UserSettings settings)
-    {
-        if (ManifestModelValidator.Validate(settings).Count != 0)
+        if (settings.Projects is null)
         {
             return false;
         }
 
-        foreach (var projectPath in settings.Projects.Keys)
+        if (!ProjectIdentityMap.ValidateForLoad(_fileSystem, settings.Projects.Keys))
         {
-            var fullPath = _fileSystem.Path.GetFullPath(projectPath);
-            var normalizedPath = ProjectPath.Normalize(
-                _fileSystem.Path.TrimEndingDirectorySeparator(fullPath)
-            );
-            if (!string.Equals(projectPath, normalizedPath, StringComparison.Ordinal))
-            {
-                return false;
-            }
-
-            if (_fileSystem.Directory.Exists(fullPath))
-            {
-                var canonicalPath = GetProjectKey(fullPath);
-                var hasExpectedCanonicalPath =
-                    canonicalPath.Value is { } value
-                    && string.Equals(projectPath, value, StringComparison.Ordinal);
-                if (!hasExpectedCanonicalPath)
-                {
-                    return false;
-                }
-            }
+            return false;
         }
 
-        return true;
+        var normalizedSettings = settings with
+        {
+            Projects = ProjectIdentityMap.NormalizeSeparators(settings.Projects),
+        };
+        return ManifestModelValidator.Validate(normalizedSettings).Count == 0;
     }
 
-    private static UserSettings Normalize(UserSettings settings) =>
+    private bool IsValidForSave(UserSettings settings) =>
+        settings.Projects is not null
+        && ManifestModelValidator.Validate(settings).Count == 0
+        && ProjectIdentityMap.ValidateForSave(_fileSystem, settings.Projects.Keys);
+
+    private UserSettings Normalize(UserSettings settings) =>
         settings with
         {
-            Projects = new Dictionary<string, LocalProjectTrust>(
-                settings.Projects,
-                StringComparer.Ordinal
-            ),
+            Projects = ProjectIdentityMap.Normalize(_fileSystem, settings.Projects),
         };
 
     private static Task<ManifestOperationResult<T>> Result<T>(ManifestOperationResult<T> result) =>

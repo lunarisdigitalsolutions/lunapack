@@ -11,16 +11,27 @@ internal sealed partial class GitRefResolver(IGitProcessRunner processRunner)
     public async Task<ManifestOperationResult<GitSourceResolution>> ResolveAsync(
         ProjectConfiguration.GitSource source,
         string? cachedDefaultBranch,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        GitTransportMode transportMode = GitTransportMode.SecureOnly
     )
     {
+        var repository = SourceIdentityNormalizer.NormalizeRepository(source.Url);
+        if (!repository.IsSuccess)
+        {
+            return ManifestOperationResult<GitSourceResolution>.Failure(
+                "The Git repository location is invalid."
+            );
+        }
+
         var timeout = TimeSpan.FromSeconds(source.TimeoutSeconds ?? DefaultTimeoutSeconds);
         if (source.Ref is { } configuredRef)
         {
             return await ResolveExplicitRefAsync(
                 source.Url,
+                source.Name,
                 configuredRef,
                 timeout,
+                transportMode,
                 cancellationToken
             );
         }
@@ -29,8 +40,10 @@ internal sealed partial class GitRefResolver(IGitProcessRunner processRunner)
         {
             var cachedResolution = await ResolveExplicitRefAsync(
                 source.Url,
+                source.Name,
                 defaultBranch,
                 timeout,
+                transportMode,
                 cancellationToken
             );
             if (cachedResolution.IsSuccess)
@@ -48,16 +61,32 @@ internal sealed partial class GitRefResolver(IGitProcessRunner processRunner)
             }
         }
 
-        return await ResolveRemoteHeadAsync(source.Url, timeout, cancellationToken);
+        return await ResolveRemoteHeadAsync(
+            source.Url,
+            source.Name,
+            timeout,
+            transportMode,
+            cancellationToken
+        );
     }
 
     public async Task<ManifestOperationResult<GitCanonicalRef>> ResolveCanonicalRefAsync(
         string repositoryUrl,
         string reference,
         TimeSpan? timeout,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        GitTransportMode transportMode = GitTransportMode.SecureOnly,
+        string? sourceName = null
     )
     {
+        var repository = SourceIdentityNormalizer.NormalizeRepository(repositoryUrl);
+        if (!repository.IsSuccess)
+        {
+            return ManifestOperationResult<GitCanonicalRef>.Failure(
+                "The Git repository location is invalid."
+            );
+        }
+
         var trimmedReference = reference?.Trim() ?? string.Empty;
         if (trimmedReference.Length == 0)
         {
@@ -75,14 +104,27 @@ internal sealed partial class GitRefResolver(IGitProcessRunner processRunner)
         }
 
         var command = await processRunner.RunAsync(
-            ["ls-remote", "--exit-code", repositoryUrl, trimmedReference],
+            ["ls-remote", "--exit-code", "--", repositoryUrl, trimmedReference],
             timeout ?? TimeSpan.FromSeconds(DefaultTimeoutSeconds),
+            transportMode,
+            repositoryUrl,
             cancellationToken
         );
         if (command.Value is not { } output)
         {
             return ManifestOperationResult<GitCanonicalRef>.Failure(
-                command.Error ?? $"Unable to resolve Git ref '{reference}'."
+                GitSourceFailureFormatter.Format(
+                    sourceName,
+                    command.Error,
+                    $"Unable to resolve Git ref '{reference}'."
+                )
+            );
+        }
+
+        if (output.StandardOutputTruncated)
+        {
+            return ManifestOperationResult<GitCanonicalRef>.Failure(
+                "Git ref output was truncated; the ref cannot be resolved safely."
             );
         }
 
@@ -131,8 +173,10 @@ internal sealed partial class GitRefResolver(IGitProcessRunner processRunner)
 
     private async Task<ManifestOperationResult<GitSourceResolution>> ResolveExplicitRefAsync(
         string repositoryUrl,
+        string sourceName,
         string reference,
         TimeSpan timeout,
+        GitTransportMode transportMode,
         CancellationToken cancellationToken
     )
     {
@@ -144,14 +188,27 @@ internal sealed partial class GitRefResolver(IGitProcessRunner processRunner)
         }
 
         var command = await processRunner.RunAsync(
-            ["ls-remote", "--exit-code", repositoryUrl, reference],
+            ["ls-remote", "--exit-code", "--", repositoryUrl, reference],
             timeout,
+            transportMode,
+            repositoryUrl,
             cancellationToken
         );
         if (command.Value is not { } output)
         {
             return ManifestOperationResult<GitSourceResolution>.Failure(
-                command.Error ?? $"Unable to resolve Git ref '{reference}'."
+                GitSourceFailureFormatter.Format(
+                    sourceName,
+                    command.Error,
+                    $"Unable to resolve Git ref '{reference}'."
+                )
+            );
+        }
+
+        if (output.StandardOutputTruncated)
+        {
+            return ManifestOperationResult<GitSourceResolution>.Failure(
+                "Git ref output was truncated; the ref cannot be resolved safely."
             );
         }
 
@@ -167,19 +224,34 @@ internal sealed partial class GitRefResolver(IGitProcessRunner processRunner)
 
     private async Task<ManifestOperationResult<GitSourceResolution>> ResolveRemoteHeadAsync(
         string repositoryUrl,
+        string sourceName,
         TimeSpan timeout,
+        GitTransportMode transportMode,
         CancellationToken cancellationToken
     )
     {
         var command = await processRunner.RunAsync(
-            ["ls-remote", "--symref", repositoryUrl, "HEAD"],
+            ["ls-remote", "--symref", "--", repositoryUrl, "HEAD"],
             timeout,
+            transportMode,
+            repositoryUrl,
             cancellationToken
         );
         if (command.Value is not { } output)
         {
             return ManifestOperationResult<GitSourceResolution>.Failure(
-                command.Error ?? "Unable to resolve the remote Git HEAD."
+                GitSourceFailureFormatter.Format(
+                    sourceName,
+                    command.Error,
+                    "Unable to resolve the remote Git HEAD."
+                )
+            );
+        }
+
+        if (output.StandardOutputTruncated)
+        {
+            return ManifestOperationResult<GitSourceResolution>.Failure(
+                "Git ref output was truncated; the remote HEAD cannot be resolved safely."
             );
         }
 

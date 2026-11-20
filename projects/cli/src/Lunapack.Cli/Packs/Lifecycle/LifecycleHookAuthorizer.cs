@@ -250,17 +250,30 @@ internal sealed class LifecycleHookAuthorizer(
             );
         }
 
-        return
-            trustPolicy.IsTrusted(
-                projectDirectory,
-                evaluation.ProjectKey,
-                configuration,
-                evaluation.Settings,
-                invocation.Pack.SourceName,
-                invocation.Pack.SourceIdentity,
-                invocation.Pack.Manifest.Id
-            ) || confirmer.Confirm(command)
-            ? ManifestOperationResult<AuthorizationDecision>.Success(new(command))
+        var trustScopes = GetTrustScopes(projectDirectory, configuration, evaluation, invocation);
+        if (trustScopes.Count > 0)
+        {
+            return ManifestOperationResult<AuthorizationDecision>.Success(
+                new(
+                    command with
+                    {
+                        Authorization = LifecycleScriptAuthorizationSource.PersistedTrust(
+                            trustScopes
+                        ),
+                    }
+                )
+            );
+        }
+
+        return confirmer.Confirm(command)
+            ? ManifestOperationResult<AuthorizationDecision>.Success(
+                new(
+                    command with
+                    {
+                        Authorization = LifecycleScriptAuthorizationSource.InteractiveConfirmation,
+                    }
+                )
+            )
             : ManifestOperationResult<AuthorizationDecision>.Success(new(null));
     }
 
@@ -279,7 +292,12 @@ internal sealed class LifecycleHookAuthorizer(
                 >.Failure(resolved.Error ?? "Unable to resolve lifecycle hook command.");
             }
 
-            resolvedInvocations.Add(command);
+            resolvedInvocations.Add(
+                command with
+                {
+                    Authorization = LifecycleScriptAuthorizationSource.InvocationRun,
+                }
+            );
         }
 
         return ManifestOperationResult<IReadOnlyList<ResolvedLifecycleHookInvocation>>.Success(

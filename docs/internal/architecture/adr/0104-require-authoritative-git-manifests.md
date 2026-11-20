@@ -5,7 +5,7 @@ decision-makers:
   - Lunaris Engineering
 ---
 
-# ADR-0091: Require Authoritative Git Manifests
+# ADR-0104: Require Authoritative Git Manifests
 
 ## Context and Problem Statement
 

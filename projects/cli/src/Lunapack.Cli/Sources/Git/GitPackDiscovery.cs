@@ -1,11 +1,9 @@
-using System.Globalization;
 using System.IO.Abstractions;
 using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Application.Serialization;
 using Lunapack.Cli.Catalog;
-using Lunapack.Cli.Packs;
 using Lunapack.Cli.Packs.Manifest;
 using Lunapack.Cli.Project;
 using NuGet.Versioning;
@@ -19,7 +17,8 @@ internal sealed class GitPackDiscovery(
     IGitProcessRunner processRunner,
     GitRefResolver refResolver,
     GitSourceCache cache,
-    CliConsole console
+    CliConsole console,
+    GitTransportPolicy transportPolicy
 )
 {
     private const int DefaultTimeoutSeconds = 300;
@@ -37,6 +36,14 @@ internal sealed class GitPackDiscovery(
 
     private readonly CliConsole _console = console;
 
+    public Task<ManifestOperationResult<IReadOnlyList<CatalogPack>>> BrowseAsync(
+        string projectDirectory,
+        ProjectConfiguration.GitSource source,
+        int sourceOrder,
+        CancellationToken cancellationToken
+    ) =>
+        BrowseAsync(projectDirectory, source, sourceOrder, resourceLimits: null, cancellationToken);
+
     public async Task<ManifestOperationResult<IReadOnlyList<CatalogPack>>> BrowseAsync(
         string projectDirectory,
         ProjectConfiguration.GitSource source,
@@ -53,10 +60,24 @@ internal sealed class GitPackDiscovery(
             );
         }
 
+        var authorization = await transportPolicy.AuthorizeAsync(
+            projectDirectory,
+            source.Url,
+            source.Name
+        );
+        if (!authorization.IsSuccess)
+        {
+            return ManifestOperationResult<IReadOnlyList<CatalogPack>>.Failure(
+                authorization.Error ?? $"Unable to authorize Git source '{source.Name}'."
+            );
+        }
+        var transportMode = authorization.Value;
+
         var resolution = await refResolver.ResolveAsync(
             source,
             cachedDefaultBranch: null,
-            cancellationToken
+            cancellationToken,
+            transportMode
         );
         if (resolution.Value is not { } resolvedSource)
         {
@@ -69,13 +90,13 @@ internal sealed class GitPackDiscovery(
             source,
             resolvedSource.ResolvedCommit,
             effectiveResourceLimits,
+            transportMode,
             cancellationToken
         );
         if (discovered.Value is not { } packs)
         {
             return ManifestOperationResult<IReadOnlyList<CatalogPack>>.Failure(
-                discovered.Error ?? "Unable to discover Git packs.",
-                discovered.ErrorKind
+                discovered.Error ?? "Unable to discover Git packs."
             );
         }
 
@@ -87,7 +108,10 @@ internal sealed class GitPackDiscovery(
             Packs = packs,
         };
         var currentEntry = cache.Load(projectDirectory, source, effectiveResourceLimits);
-        if (currentEntry.Value is { } entry && GitSourceCache.AreEquivalent(entry, newEntry))
+        if (
+            currentEntry.Value is { } cachedEntry
+            && GitSourceCache.AreEquivalent(cachedEntry, newEntry)
+        )
         {
             return ManifestOperationResult<IReadOnlyList<CatalogPack>>.Success(
                 CreateCatalog(source, sourceOrder, resolvedSource.ResolvedCommit, packs)
@@ -100,8 +124,7 @@ internal sealed class GitPackDiscovery(
                 CreateCatalog(source, sourceOrder, resolvedSource.ResolvedCommit, packs)
             )
             : ManifestOperationResult<IReadOnlyList<CatalogPack>>.Failure(
-                saved.Error ?? "Unable to persist Git source cache.",
-                saved.ErrorKind
+                saved.Error ?? "Unable to persist Git source cache."
             );
     }
 
@@ -131,6 +154,7 @@ internal sealed class GitPackDiscovery(
             source,
             resolvedCommit,
             resourceLimits ?? ResourceLimits.Default,
+            GitTransportMode.SecureOnly,
             cancellationToken
         );
         return discovered.Value is { } packs
@@ -151,14 +175,6 @@ internal sealed class GitPackDiscovery(
     )
     {
         var loadedCache = cache.Load(projectDirectory, source, resourceLimits);
-        if (!loadedCache.IsSuccess)
-        {
-            return ManifestOperationResult<IReadOnlyList<CatalogPack>>.Failure(
-                loadedCache.Error ?? "Unable to read Git source cache.",
-                loadedCache.ErrorKind
-            );
-        }
-
         return loadedCache.Value is { } entry
             ? ManifestOperationResult<IReadOnlyList<CatalogPack>>.Success(
                 CreateCatalog(source, sourceOrder, entry.ResolvedCommit, entry.Packs)
@@ -170,6 +186,7 @@ internal sealed class GitPackDiscovery(
         ProjectConfiguration.GitSource source,
         string resolvedCommit,
         ResourceLimits resourceLimits,
+        GitTransportMode transportMode,
         CancellationToken cancellationToken
     )
     {
@@ -188,6 +205,7 @@ internal sealed class GitPackDiscovery(
                 resolvedCommit,
                 workspace,
                 timeout,
+                transportMode,
                 cancellationToken
             );
             if (preparationFailure is not null)
@@ -195,37 +213,44 @@ internal sealed class GitPackDiscovery(
                 return preparationFailure;
             }
 
-            var listed = await ListManifestPathsAsync(
+            var listed = await ListRepositoryPathsAsync(
                 source,
                 resolvedCommit,
                 workspace,
                 timeout,
                 resourceLimits,
+                transportMode,
                 cancellationToken
             );
             if (listed.Value is not { } paths)
             {
                 return ManifestOperationResult<List<GitCachedPack>>.Failure(
-                    listed.Error ?? "Unable to list Git repository paths.",
-                    listed.ErrorKind
+                    GitSourceFailureFormatter.Format(
+                        source.Name,
+                        listed.Error,
+                        "Unable to list Git repository paths."
+                    )
+                );
+            }
+            if (paths.StandardOutputTruncated)
+            {
+                return ManifestOperationResult<List<GitCachedPack>>.Failure(
+                    "Git repository path output was truncated; discovery cannot continue safely."
                 );
             }
 
+            var repositoryPaths = ParseRepositoryPaths(paths);
             var packs = await DiscoverPacksAsync(
                 source,
                 resolvedCommit,
                 workspace,
                 timeout,
-                ParseRecords(paths),
+                repositoryPaths,
                 resourceLimits,
+                transportMode,
                 cancellationToken
             );
-            return packs.Value is { } discoveredPacks
-                ? ManifestOperationResult<List<GitCachedPack>>.Success(discoveredPacks)
-                : ManifestOperationResult<List<GitCachedPack>>.Failure(
-                    packs.Error ?? "Unable to discover Git packs.",
-                    packs.ErrorKind
-                );
+            return packs;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
@@ -242,23 +267,51 @@ internal sealed class GitPackDiscovery(
         string resolvedCommit,
         string workspace,
         TimeSpan timeout,
+        GitTransportMode transportMode,
         CancellationToken cancellationToken
     )
     {
         fileSystem.Directory.CreateDirectory(workspace);
         var commands = new[]
         {
-            new[] { "init", "--quiet", workspace },
-            ["-C", workspace, "remote", "add", "origin", source.Url],
-            ["-C", workspace, "fetch", "--depth=1", "--filter=blob:none", "origin", resolvedCommit],
+            (new[] { "init", "--quiet", workspace }, GitTransportMode.SecureOnly, (string?)null),
+            (
+                ["-C", workspace, "remote", "add", "--", "origin", source.Url],
+                GitTransportMode.SecureOnly,
+                null
+            ),
+            (
+                new[]
+                {
+                    "-C",
+                    workspace,
+                    "fetch",
+                    "--depth=1",
+                    "--filter=blob:none",
+                    "origin",
+                    resolvedCommit,
+                },
+                transportMode,
+                source.Url
+            ),
         };
-        foreach (var command in commands)
+        foreach (var (command, commandTransportMode, repositoryUrl) in commands)
         {
-            var result = await processRunner.RunAsync(command, timeout, cancellationToken);
+            var result = await processRunner.RunAsync(
+                command,
+                timeout,
+                commandTransportMode,
+                repositoryUrl,
+                cancellationToken
+            );
             if (!result.IsSuccess)
             {
                 return ManifestOperationResult<List<GitCachedPack>>.Failure(
-                    result.Error ?? "Unable to prepare the Git discovery workspace."
+                    GitSourceFailureFormatter.Format(
+                        source.Name,
+                        result.Error,
+                        "Unable to prepare the Git discovery workspace."
+                    )
                 );
             }
         }
@@ -266,12 +319,13 @@ internal sealed class GitPackDiscovery(
         return null;
     }
 
-    private Task<ManifestOperationResult<GitProcessOutput>> ListManifestPathsAsync(
+    private Task<ManifestOperationResult<GitProcessOutput>> ListRepositoryPathsAsync(
         ProjectConfiguration.GitSource source,
         string resolvedCommit,
         string workspace,
         TimeSpan timeout,
         ResourceLimits resourceLimits,
+        GitTransportMode transportMode,
         CancellationToken cancellationToken
     ) =>
         processRunner.RunBoundedRecordsAsync(
@@ -292,7 +346,15 @@ internal sealed class GitPackDiscovery(
             0,
             MaximumEnumerationOutputBytes,
             MaximumEnumerationRecordBytes,
+            transportMode,
+            source.Url,
             cancellationToken
+        );
+
+    private static string[] ParseRepositoryPaths(GitProcessOutput paths) =>
+        paths.StandardOutput.Split(
+            '\0',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
         );
 
     private async Task<ManifestOperationResult<List<GitCachedPack>>> DiscoverPacksAsync(
@@ -300,69 +362,51 @@ internal sealed class GitPackDiscovery(
         string resolvedCommit,
         string workspace,
         TimeSpan timeout,
-        IReadOnlyList<string> manifestPaths,
+        IReadOnlyList<string> repositoryPaths,
         ResourceLimits resourceLimits,
+        GitTransportMode transportMode,
         CancellationToken cancellationToken
     )
     {
         var packs = new List<GitCachedPack>();
         long catalogManifestBytes = 0;
-        foreach (var path in manifestPaths.Where(IsManifestPath))
+        foreach (var path in repositoryPaths.Where(IsManifestPath))
         {
             var manifestResult = await processRunner.RunBoundedAsync(
                 ["-C", workspace, "show", $"{resolvedCommit}:{path}"],
                 timeout,
                 resourceLimits.PackManifestBytes,
                 "Git pack manifest",
+                transportMode,
+                source.Url,
                 cancellationToken
             );
-            if (manifestResult.ErrorKind == ManifestOperationErrorKind.ResourceLimitExceeded)
-            {
-                return ManifestOperationResult<List<GitCachedPack>>.Failure(
-                    manifestResult.Error ?? "Git pack manifest exceeds its configured byte limit.",
-                    manifestResult.ErrorKind
-                );
-            }
-
             if (manifestResult.Value is not { } manifestOutput)
             {
-                continue;
+                return ManifestOperationResult<List<GitCachedPack>>.Failure(
+                    GitSourceFailureFormatter.Format(
+                        source.Name,
+                        manifestResult.Error,
+                        $"Unable to read Git source manifest '{path}' from '{source.Name}'."
+                    )
+                );
             }
-
-            var listedFiles = await ListPackSnapshotRecordsAsync(
-                GetPackPath(path),
-                resolvedCommit,
-                workspace,
-                timeout,
-                resourceLimits,
-                cancellationToken
-            );
-            if (listedFiles.Value is not { } snapshotRecords)
+            if (manifestOutput.StandardOutputTruncated)
             {
                 return ManifestOperationResult<List<GitCachedPack>>.Failure(
-                    listedFiles.Error ?? "Unable to enumerate Git pack snapshot.",
-                    listedFiles.ErrorKind
+                    $"Git source manifest '{path}' was truncated.",
+                    ManifestOperationErrorKind.ResourceLimitExceeded
                 );
             }
 
-            var snapshotFiles = ParsePackSnapshotRecords(
-                ParseRecords(snapshotRecords),
-                GetPackPath(path),
-                resourceLimits
+            var manifest = await TryParseAsync(
+                manifestOutput.StandardOutput,
+                GetPackSourceFiles(repositoryPaths, GetPackPath(path))
             );
-            if (snapshotFiles.Value is not { } sourceFiles)
-            {
-                return ManifestOperationResult<List<GitCachedPack>>.Failure(
-                    snapshotFiles.Error ?? "Git pack snapshot exceeds its configured limits.",
-                    snapshotFiles.ErrorKind
-                );
-            }
-
-            var manifest = await TryParseAsync(manifestOutput.StandardOutput, sourceFiles);
             if (manifest is null)
             {
                 _console.Debug(
-                    $"Ignoring invalid pack manifest '{path}' from Git source '{source.Url}'."
+                    $"Ignoring invalid pack manifest '{path}' from Git source '{source.Name}'."
                 );
             }
             else
@@ -375,93 +419,11 @@ internal sealed class GitPackDiscovery(
                         ManifestOperationErrorKind.ResourceLimitExceeded
                     );
                 }
-
                 packs.Add(manifest with { PackPath = GetPackPath(path) });
             }
         }
 
         return ManifestOperationResult<List<GitCachedPack>>.Success(packs);
-    }
-
-    private Task<ManifestOperationResult<GitProcessOutput>> ListPackSnapshotRecordsAsync(
-        string packPath,
-        string resolvedCommit,
-        string workspace,
-        TimeSpan timeout,
-        ResourceLimits resourceLimits,
-        CancellationToken cancellationToken
-    ) =>
-        processRunner.RunBoundedRecordsAsync(
-            ["-C", workspace, "ls-tree", "-r", "-l", "-z", resolvedCommit, "--", packPath],
-            timeout,
-            resourceLimits.FilesPerPack,
-            "Git pack snapshot enumeration",
-            0,
-            MaximumEnumerationOutputBytes,
-            MaximumEnumerationRecordBytes,
-            cancellationToken
-        );
-
-    private static string[] ParseRecords(GitProcessOutput output) =>
-        [
-            .. output
-                .StandardOutput.Split('\0', StringSplitOptions.RemoveEmptyEntries)
-                .Select(record => record.Trim())
-                .Where(record => record.Length > 0),
-        ];
-
-    private static ManifestOperationResult<List<string>> ParsePackSnapshotRecords(
-        string[] records,
-        string packPath,
-        ResourceLimits resourceLimits
-    )
-    {
-        var budget = new PackSnapshotBudget(packPath, resourceLimits);
-        var files = new List<string>(records.Length);
-        var prefix = string.Equals(packPath, ".", StringComparison.Ordinal)
-            ? string.Empty
-            : $"{packPath}/";
-        foreach (var record in records)
-        {
-            var separator = record.IndexOf('\t', StringComparison.Ordinal);
-            var metadata = separator < 0 ? string.Empty : record[..separator];
-            var repositoryPath = separator < 0 ? record : record[(separator + 1)..];
-            if (!repositoryPath.StartsWith(prefix, StringComparison.Ordinal))
-            {
-                return ManifestOperationResult<List<string>>.Failure(
-                    $"Git pack snapshot entry '{repositoryPath}' is outside pack '{packPath}'."
-                );
-            }
-
-            var metadataParts = metadata.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            var size = 0L;
-            if (
-                metadataParts.Length >= 4
-                && !long.TryParse(
-                    metadataParts[3],
-                    NumberStyles.Integer,
-                    CultureInfo.InvariantCulture,
-                    out size
-                )
-            )
-            {
-                size = 0;
-            }
-
-            var relativePath = repositoryPath[prefix.Length..];
-            var added = budget.AddFilePath(relativePath, size);
-            if (!added.IsSuccess)
-            {
-                return ManifestOperationResult<List<string>>.Failure(
-                    added.Error ?? "Git pack snapshot exceeds its configured limits.",
-                    added.ErrorKind
-                );
-            }
-
-            files.Add(relativePath);
-        }
-
-        return ManifestOperationResult<List<string>>.Success(files);
     }
 
     private static List<CatalogPack> CreateCatalog(
@@ -537,6 +499,22 @@ internal sealed class GitPackDiscovery(
     {
         var separator = manifestPath.LastIndexOf('/');
         return separator < 0 ? "." : manifestPath[..separator];
+    }
+
+    private static List<string> GetPackSourceFiles(
+        IReadOnlyList<string> repositoryPaths,
+        string packPath
+    )
+    {
+        var prefix = string.Equals(packPath, ".", StringComparison.Ordinal)
+            ? string.Empty
+            : $"{packPath}/";
+        return
+        [
+            .. repositoryPaths
+                .Where(path => path.StartsWith(prefix, StringComparison.Ordinal))
+                .Select(path => path[prefix.Length..]),
+        ];
     }
 
     private static bool IsManifestPath(string path) =>

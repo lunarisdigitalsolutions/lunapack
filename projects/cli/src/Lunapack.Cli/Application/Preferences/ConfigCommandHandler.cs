@@ -12,6 +12,7 @@ internal sealed class ConfigCommandHandler(
     private static readonly string[] _preferenceKeys =
     [
         "discover.only-composites",
+        "git.allow-insecure-transport",
         "search.only-composites",
         "next-steps.enabled",
         .. ResourceLimits.Definitions.Select(definition => definition.Name),

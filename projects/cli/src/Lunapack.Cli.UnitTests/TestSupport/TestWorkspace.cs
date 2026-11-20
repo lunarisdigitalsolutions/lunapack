@@ -1,6 +1,7 @@
 using System.IO.Abstractions;
 using Lunapack.Cli.Application;
 using Lunapack.Cli.Application.Completions;
+using Lunapack.Cli.Doctor;
 using Lunapack.Cli.Packs;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources.Git;
@@ -15,7 +16,8 @@ internal sealed class TestWorkspace : IDisposable
         IPackUpdatePrompter? packUpdatePrompter = null,
         IAnsiConsole? ansiConsole = null,
         IGitProcessRunner? gitProcessRunner = null,
-        ITrustConfirmer? trustConfirmer = null
+        ITrustConfirmer? trustConfirmer = null,
+        IDoctorService? doctorService = null
     )
     {
         Path = System.IO.Path.Combine(
@@ -52,7 +54,8 @@ internal sealed class TestWorkspace : IDisposable
                     isWindows: true
                 ),
                 new ZshCompletionScriptInstaller(FileSystem, profileDirectory),
-            ])
+            ]),
+            doctorService: doctorService
         );
         ManifestStore = new ProjectManifestStore(FileSystem);
         StateStore = new ProjectStateStore(FileSystem, UserSettingsStore);

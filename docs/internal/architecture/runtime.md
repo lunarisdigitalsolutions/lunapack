@@ -34,6 +34,52 @@ duplicate. Adding a Git or GitHub source resolves a supplied short ref through
 `git ls-remote` to its complete form and rejects an ambiguous match before the
 fingerprint or ref is persisted.
 
+Git transport policy resolves `git.allow-insecure-transport` before each Git
+network operation. The default denies `http://` and `git://`; explicit opt-in
+allows only the configured insecure protocol and emits one sanitized warning
+per source per CLI operation. Process-level protocol settings also block
+`url.*.insteadOf` rewrites from secure URLs to either plaintext transport.
+Before a secure network operation, the process runner asks Git to resolve the
+effective repository URL in the same `-C` repository context as the operation,
+without contacting it. It then adds URL-specific
+`http.<url>.followRedirects=false` and `http.<url>.sslVerify=true` settings for
+the effective HTTPS destination. A separate non-network Git invocation verifies
+both values before the requested operation starts. Inherited command-scope Git
+configuration that overrides either value causes the operation to fail closed.
+`GIT_ALLOW_PROTOCOL` is replaced with a mode-specific protocol allowlist, and
+`GIT_SSL_NO_VERIFY` and inherited repository-selection variables such as
+`GIT_DIR`, `GIT_WORK_TREE`, and `GIT_INDEX_FILE` are removed. Redirects remain
+disabled even when the target is HTTPS; consumers must configure the final
+HTTPS URL. URL-specific configuration keys omit credentials and do not alter
+source identity.
+The `file` protocol is allowed only when the originally configured location is
+an absolute local filesystem path. Network sources cannot rewrite to `file`,
+UNC paths, or hosted `file://` locations.
+
+For opted-in HTTP operations, the Git process resets inherited
+`credential.helper` values. This does not suppress credentials embedded in
+source URLs or supplied through `http.extraHeader` and proxy configuration.
+Those are residual risks of the explicit plaintext exception.
+
+Git checkout is preceded by a bounded, batched `git check-attr` query against the
+selected commit's index. This evaluates nested repository attributes, macros,
+global and system attribute files, and repository-info attributes rather than
+parsing `.gitattributes` independently. Any effective `filter` assignment that
+could invoke a smudge process fails before checkout. `GIT_LFS_SKIP_SMUDGE` is
+also set as defense in depth, so remote Git content cannot delegate network
+access to Git LFS or another configured smudge transport. Repository URLs
+containing credentials, query, or fragment components are rejected because Git
+URL-specific configuration cannot reliably bind security controls to them.
+The checkout policy builds its index in an operation-specific temporary file;
+the real worktree index remains unchanged until Git performs the requested
+checkout. Bounded Git output is marked and rejected before ref, path, manifest,
+or link parsing when any required data was truncated.
+Effective URLs are checked for trailing Git line termination, invalid UTF-8
+replacement characters, surrounding whitespace, and raw backslashes before
+either the URL or its security configuration is used. URL-specific settings
+bind to the exact validated HTTPS text rather than a .NET-normalized form. Git
+remote-helper and option-like locations are rejected before process dispatch.
+
 Pack manifests may declare Git sources under pack-local aliases. After graph
 resolution, the external-source planner collects only aliases referenced by
 selected managed files, groups equivalent fingerprints, and maps them to an

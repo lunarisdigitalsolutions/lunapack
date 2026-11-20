@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
-using System.Text.Json.Nodes;
 using Lunapack.Cli.Application.CommandExecution;
 using Lunapack.Cli.Application.Preferences;
 using Lunapack.Cli.Application.Serialization;
@@ -11,14 +10,12 @@ using Lunapack.Cli.Packs.Planning;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources;
 using Lunapack.Cli.Sources.Git;
+using Lunapack.Cli.UnitTests.TestSupport;
 
 namespace Lunapack.Cli.UnitTests.Sources.Git;
 
 public sealed class GitSourceTransportTests
 {
-    private static readonly long[] _snapshotAtBoundary = [60L, 40L];
-    private static readonly long[] _snapshotOverFileLimit = [60L, 40L, 1L];
-
     [Test]
     public async Task Identity_WhenGitSourceNeedsNormalization_MatchesCacheIdentity()
     {
@@ -38,6 +35,104 @@ public sealed class GitSourceTransportTests
         await Assert.That(cacheIdentity.Url).IsEqualTo(identity.Url);
         await Assert.That(cacheIdentity.Ref).IsEqualTo(identity.Ref);
         await Assert.That(cacheIdentity.Path).IsEqualTo(identity.Path);
+    }
+
+    [Test]
+    public async Task Identity_WhenRepositoryStartsWithOption_RejectsLocation()
+    {
+        var result = SourceIdentityNormalizer.NormalizeRepository(
+            "--upload-pack=sh -c 'sentinel'@example.test:organization/packs.git"
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("must not begin");
+    }
+
+    [Test]
+    public async Task Identity_WhenRepositoryContainsQuery_RejectsLocation()
+    {
+        var result = SourceIdentityNormalizer.NormalizeRepository(
+            "https://example.test/packs.git?token=sentinel"
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("queries or fragments");
+        await Assert.That(result.Error).DoesNotContain("sentinel");
+    }
+
+    [Test]
+    public async Task Identity_WhenScpUrlUsesSshAliasCharacters_PreservesRepository()
+    {
+        var result = SourceIdentityNormalizer.NormalizeRepository(
+            "deploy+team@_work-alias.example.:repo.git"
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert.That(result.Value).IsEqualTo("_work-alias.example./repo");
+    }
+
+    [Test]
+    [Arguments("git@alias-:repo.git", "alias-/repo")]
+    [Arguments("git@alias_:repo.git", "alias_/repo")]
+    public async Task Identity_WhenScpAliasHasSafeTrailingCharacter_PreservesRepository(
+        string repositoryUrl,
+        string expectedIdentity
+    )
+    {
+        var result = SourceIdentityNormalizer.NormalizeRepository(repositoryUrl);
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        await Assert.That(result.Value).IsEqualTo(expectedIdentity);
+    }
+
+    [Test]
+    public async Task Identity_WhenInvalidUrlContainsCredentials_DoesNotEchoUrl()
+    {
+        var result = SourceIdentityNormalizer.NormalizeRepository(
+            "https://user:sentinel@example.test"
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).DoesNotContain("sentinel");
+        await Assert.That(result.Error).DoesNotContain("example.test");
+    }
+
+    [Test]
+    public async Task Identity_WhenHttpsRepositoryContainsBackslash_RejectsLocation()
+    {
+        var result = SourceIdentityNormalizer.NormalizeRepository(
+            @"https://example.test/packs\archive.git"
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("must not contain backslashes");
+    }
+
+    [Test]
+    public async Task Identity_WhenRepositoryUsesRemoteHelper_RejectsLocation()
+    {
+        var result = SourceIdentityNormalizer.NormalizeRepository("ext::sentinel-command");
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("remote-helper");
+        await Assert.That(result.Error).DoesNotContain("sentinel");
+    }
+
+    [Test]
+    [Arguments("//attacker.example/share/repository.git")]
+    [Arguments(@"\\attacker.example\share\repository.git")]
+    [Arguments(@"/\attacker.example\share\repository.git")]
+    [Arguments(@"\/attacker.example/share/repository.git")]
+    [Arguments("file://attacker.example/share/repository.git")]
+    public async Task Identity_WhenRepositoryUsesHostedFilePath_RejectsLocation(
+        string repositoryUrl
+    )
+    {
+        var result = SourceIdentityNormalizer.NormalizeRepository(repositoryUrl);
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("UNC");
+        await Assert.That(result.Error).DoesNotContain("attacker.example");
     }
 
     [Test]
@@ -196,214 +291,6 @@ public sealed class GitSourceTransportTests
     }
 
     [Test]
-    public async Task Cache_WhenContentExceedsByteLimit_RejectsReadWithLowerBound()
-    {
-        var fileSystem = new MockFileSystem();
-        var cache = new GitSourceCache(fileSystem);
-        var source = CreateSource();
-        var entry = CreateCacheEntry(
-            source,
-            new PackManifest
-            {
-                Id = "example",
-                Version = "1.0.0",
-                Author = "Example",
-                License = "MIT",
-            },
-            "packs/example"
-        );
-        cache.Save(@"C:\project", entry);
-        var cachePath = fileSystem
-            .Directory.GetFiles(fileSystem.Path.Combine(@"C:\project", ".lunapack", "git-sources"))
-            .Single();
-        var byteLimit = fileSystem.FileInfo.New(cachePath).Length - 1;
-
-        var loaded = cache.Load(
-            @"C:\project",
-            source,
-            ResourceLimits.Default with
-            {
-                LockFileBytes = byteLimit,
-            }
-        );
-
-        await Assert.That(loaded.IsSuccess).IsFalse();
-        await Assert
-            .That(loaded.ErrorKind)
-            .IsEqualTo(ManifestOperationErrorKind.ResourceLimitExceeded);
-        await Assert.That(loaded.Error).Contains($"at least {byteLimit + 1} bytes read");
-    }
-
-    [Test]
-    public async Task Cache_WhenPackRecordCountExceedsLimit_RejectsWrite()
-    {
-        var fileSystem = new MockFileSystem();
-        var cache = new GitSourceCache(fileSystem);
-        var source = CreateSource();
-        var entry = CreateCacheEntry(
-            source,
-            new PackManifest
-            {
-                Id = "example",
-                Version = "1.0.0",
-                Author = "Example",
-                License = "MIT",
-            },
-            "packs/example"
-        );
-        entry.Packs.Add(
-            new GitCachedPack
-            {
-                Id = "second",
-                Version = "1.0.0",
-                Manifest = new PackManifest
-                {
-                    Id = "second",
-                    Version = "1.0.0",
-                    Author = "Example",
-                    License = "MIT",
-                },
-                PackPath = "packs/second",
-            }
-        );
-
-        var saved = cache.Save(
-            @"C:\project",
-            entry,
-            ResourceLimits.Default with
-            {
-                FilesPerGraph = 1,
-            }
-        );
-
-        await Assert.That(saved.IsSuccess).IsFalse();
-        await Assert
-            .That(saved.ErrorKind)
-            .IsEqualTo(ManifestOperationErrorKind.ResourceLimitExceeded);
-    }
-
-    [Test]
-    public async Task Cache_WhenManifestByteCountIsForged_TreatsEntryAsMiss()
-    {
-        var fileSystem = new MockFileSystem();
-        var cache = new GitSourceCache(fileSystem);
-        var source = CreateSource();
-        var entry = CreateCacheEntry(
-            source,
-            new PackManifest
-            {
-                Id = "example",
-                Version = "1.0.0",
-                Author = "Example",
-                License = "MIT",
-            },
-            "packs/example"
-        );
-        await Assert.That(cache.Save(@"C:\project", entry).IsSuccess).IsTrue();
-        var cacheFile = fileSystem
-            .Directory.GetFiles(fileSystem.Path.Combine(@"C:\project", ".lunapack", "git-sources"))
-            .Single();
-        var cacheJson = JsonNode.Parse(fileSystem.File.ReadAllText(cacheFile));
-        cacheJson!["packs"]![0]!["manifestByteCount"] = 1;
-        fileSystem.File.WriteAllText(cacheFile, cacheJson.ToJsonString());
-
-        var loaded = cache.Load(@"C:\project", source);
-
-        await Assert.That(loaded.IsSuccess).IsTrue();
-        await Assert.That(loaded.Value).IsNull();
-    }
-
-    [Test]
-    public async Task Cache_WhenAggregateManifestContentExceedsCompiledLimit_RejectsWrite()
-    {
-        var fileSystem = new MockFileSystem();
-        var cache = new GitSourceCache(fileSystem);
-        var source = CreateSource();
-        var sharedDescription = new string('x', 1_040_000);
-        var entry = new GitSourceCacheEntry
-        {
-            Source = GitSourceCacheIdentity.Create(source),
-            ResolvedCommit = Commit,
-            Packs =
-            [
-                .. Enumerable
-                    .Range(0, 65)
-                    .Select(index => new GitCachedPack
-                    {
-                        Id = $"pack-{index}",
-                        Version = "1.0.0",
-                        Manifest = new PackManifest
-                        {
-                            Id = $"pack-{index}",
-                            Version = "1.0.0",
-                            Author = "Example",
-                            License = "MIT",
-                            Description = sharedDescription,
-                        },
-                        PackPath = $"packs/pack-{index}",
-                    }),
-            ],
-        };
-
-        var saved = cache.Save(@"C:\project", entry);
-
-        await Assert.That(saved.IsSuccess).IsFalse();
-        await Assert
-            .That(saved.ErrorKind)
-            .IsEqualTo(ManifestOperationErrorKind.ResourceLimitExceeded);
-        await Assert.That(saved.Error).Contains("byte aggregate limit");
-    }
-
-    [Test]
-    public async Task Discovery_WhenProjectCacheContainsDifferentManifest_UsesGitCommitData()
-    {
-        var fileSystem = new MockFileSystem();
-        var source = CreateSource();
-        var cache = new GitSourceCache(fileSystem);
-        var poisonedManifest = new PackManifest
-        {
-            Id = "example",
-            Version = "1.0.0",
-            Author = "Attacker",
-            License = "MIT",
-            Hooks = new PackManifest.PackHooks
-            {
-                PreInstall =
-                [
-                    new PackManifest.PackHook { Type = "script", Command = "attacker-tool" },
-                ],
-            },
-        };
-        var poisonedEntry = CreateCacheEntry(source, poisonedManifest, "packs/example") with
-        {
-            DefaultBranch = "attacker-controlled",
-        };
-        cache.Save(@"C:\project", poisonedEntry);
-        var processRunner = new ParameterManifestGitProcessRunner();
-        var discovery = new GitPackDiscovery(
-            fileSystem,
-            processRunner,
-            new GitRefResolver(processRunner),
-            cache,
-            TestConsole.Create()
-        );
-
-        var result = await discovery.BrowseAsync(@"C:\project", source, 0);
-
-        await Assert.That(result.IsSuccess).IsTrue().Because(result.Error ?? string.Empty);
-        var manifest = result.RequireValue().Single().Manifest;
-        await Assert.That(manifest.Hooks).IsNull();
-        await Assert.That(manifest.Parameters["enabled"].Default).IsTypeOf<bool>();
-        await Assert
-            .That(
-                processRunner.Calls.First(call =>
-                    call[0].Equals("ls-remote", StringComparison.Ordinal)
-                )
-            )
-            .IsEquivalentTo(["ls-remote", "--symref", "https://example.test/packs.git", "HEAD"]);
-    }
-
-    [Test]
     public async Task ProcessRunner_WhenCanceledBeforeStart_ReturnsFailure()
     {
         using var cancellation = new CancellationTokenSource();
@@ -428,6 +315,42 @@ public sealed class GitSourceTransportTests
         );
 
         await Assert.That(result.IsSuccess).IsFalse();
+    }
+
+    [Test]
+    public async Task ProcessRunner_WhenWorkspaceContainsGitExecutable_IgnoresWorkspaceCopy()
+    {
+        var root = Path.Combine(
+            Path.GetTempPath(),
+            "lunapack-git-path",
+            Guid.NewGuid().ToString("N")
+        );
+        var workspace = Path.Combine(root, "workspace");
+        var trusted = Path.Combine(root, "trusted");
+        Directory.CreateDirectory(workspace);
+        Directory.CreateDirectory(trusted);
+        try
+        {
+            var extension = OperatingSystem.IsWindows() ? ".exe" : string.Empty;
+            var workspaceGit = Path.Combine(workspace, $"git{extension}");
+            var trustedGit = Path.Combine(trusted, $"git{extension}");
+            File.WriteAllText(workspaceGit, string.Empty);
+            File.WriteAllText(trustedGit, string.Empty);
+            var searchPath = string.Join(Path.PathSeparator, workspace, trusted);
+
+            var resolved = GitProcessRunner.ResolveExecutable(
+                "git",
+                searchPath,
+                workspace,
+                OperatingSystem.IsWindows()
+            );
+
+            await Assert.That(resolved).IsEqualTo(trustedGit);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
     }
 
     [Test]
@@ -511,7 +434,8 @@ public sealed class GitSourceTransportTests
             processRunner,
             new GitRefResolver(processRunner),
             new GitSourceCache(fileSystem),
-            TestConsole.Create()
+            TestConsole.Create(),
+            TestGitTransportPolicy.Create(fileSystem)
         );
 
         var result = await discovery.BrowseAsync(
@@ -537,7 +461,8 @@ public sealed class GitSourceTransportTests
             processRunner,
             new GitRefResolver(processRunner),
             new GitSourceCache(fileSystem),
-            TestConsole.Create()
+            TestConsole.Create(),
+            TestGitTransportPolicy.Create(fileSystem)
         );
         using var cancellation = new CancellationTokenSource();
 
@@ -545,7 +470,7 @@ public sealed class GitSourceTransportTests
             @"C:\project",
             CreateSource(),
             0,
-            cancellationToken: cancellation.Token
+            cancellation.Token
         );
 
         await Assert.That(result.IsSuccess).IsFalse();
@@ -553,114 +478,6 @@ public sealed class GitSourceTransportTests
         await Assert
             .That(processRunner.CancellationTokens.All(token => token == cancellation.Token))
             .IsTrue();
-    }
-
-    [Test]
-    public async Task Discovery_WhenGitPackMatchesSnapshotLimits_AcceptsBoundary()
-    {
-        var fileSystem = new MockFileSystem();
-        var processRunner = new SnapshotListingGitProcessRunner(_snapshotAtBoundary);
-        var discovery = new GitPackDiscovery(
-            fileSystem,
-            processRunner,
-            new GitRefResolver(processRunner),
-            new GitSourceCache(fileSystem),
-            TestConsole.Create()
-        );
-        var resourceLimits = ResourceLimits.Default with
-        {
-            FilesPerPack = 2,
-            PackSnapshotBytes = 100,
-        };
-
-        var result = await discovery.BrowseAsync(
-            @"C:\project",
-            CreateSource(),
-            0,
-            resourceLimits: resourceLimits
-        );
-
-        await Assert.That(result.IsSuccess).IsTrue().Because(result.Error ?? string.Empty);
-    }
-
-    [Test]
-    public async Task Discovery_WhenGitPackExceedsFileLimit_RejectsWithLowerBound()
-    {
-        var fileSystem = new MockFileSystem();
-        var processRunner = new SnapshotListingGitProcessRunner(_snapshotOverFileLimit);
-        var discovery = new GitPackDiscovery(
-            fileSystem,
-            processRunner,
-            new GitRefResolver(processRunner),
-            new GitSourceCache(fileSystem),
-            TestConsole.Create()
-        );
-        var resourceLimits = ResourceLimits.Default with { FilesPerPack = 2 };
-
-        var result = await discovery.BrowseAsync(
-            @"C:\project",
-            CreateSource(),
-            0,
-            resourceLimits: resourceLimits
-        );
-
-        await Assert.That(result.IsSuccess).IsFalse();
-        await Assert.That(result.Error).Contains("2 record limit");
-        await Assert.That(result.Error).Contains("at least 3 records read");
-    }
-
-    [Test]
-    public async Task Discovery_WhenGitPackParentDirectoriesExceedLimit_RejectsBeforeCheckout()
-    {
-        var fileSystem = new MockFileSystem();
-        var processRunner = new SnapshotListingGitProcessRunner([60L, 40L], nested: true);
-        var discovery = new GitPackDiscovery(
-            fileSystem,
-            processRunner,
-            new GitRefResolver(processRunner),
-            new GitSourceCache(fileSystem),
-            TestConsole.Create()
-        );
-        var resourceLimits = ResourceLimits.Default with { FilesPerPack = 2 };
-
-        var result = await discovery.BrowseAsync(
-            @"C:\project",
-            CreateSource(),
-            0,
-            resourceLimits: resourceLimits
-        );
-
-        await Assert.That(result.IsSuccess).IsFalse();
-        await Assert
-            .That(result.ErrorKind)
-            .IsEqualTo(ManifestOperationErrorKind.ResourceLimitExceeded);
-        await Assert.That(result.Error).Contains("file and directory limit");
-    }
-
-    [Test]
-    public async Task Discovery_WhenGitPackExceedsSnapshotBytes_RejectsAtLimit()
-    {
-        var fileSystem = new MockFileSystem();
-        var processRunner = new SnapshotListingGitProcessRunner(_snapshotAtBoundary);
-        var discovery = new GitPackDiscovery(
-            fileSystem,
-            processRunner,
-            new GitRefResolver(processRunner),
-            new GitSourceCache(fileSystem),
-            TestConsole.Create()
-        );
-        var resourceLimits = ResourceLimits.Default with { PackSnapshotBytes = 99 };
-
-        var result = await discovery.BrowseAsync(
-            @"C:\project",
-            CreateSource(),
-            0,
-            resourceLimits: resourceLimits
-        );
-
-        await Assert.That(result.IsSuccess).IsFalse();
-        await Assert.That(result.Error).Contains("99 byte limit");
-        await Assert.That(result.Error).Contains("at least 100 bytes observed");
     }
 
     [Test]
@@ -696,6 +513,7 @@ public sealed class GitSourceTransportTests
             fileSystem,
             processRunner,
             TestConsole.Create(),
+            TestGitTransportPolicy.Create(fileSystem),
             new NoOpOperationSnapshotSecurity()
         );
 
@@ -714,6 +532,15 @@ public sealed class GitSourceTransportTests
             .IsTrue();
         await Assert
             .That(
+                processRunner
+                    .Calls.Single(call =>
+                        call.Arguments.Contains("checkout", StringComparer.Ordinal)
+                    )
+                    .RepositoryUrl
+            )
+            .IsEqualTo(source.Url);
+        await Assert
+            .That(
                 processRunner.Arguments.Any(arguments =>
                     arguments.Contains("sparse-checkout", StringComparer.Ordinal)
                     && arguments.Contains("set", StringComparer.Ordinal)
@@ -721,103 +548,6 @@ public sealed class GitSourceTransportTests
                 )
             )
             .IsTrue();
-    }
-
-    [Test]
-    public async Task Materializer_WhenCheckoutManifestDiffersFromResolvedManifest_RejectsPack()
-    {
-        var fileSystem = new MockFileSystem();
-        var processRunner = new CapturingGitProcessRunner(fileSystem);
-        var source = CreateSource() with { Ref = "main", Path = "packs" };
-        var provenance = new GitSourceProvenance
-        {
-            Url = source.Url,
-            Ref = source.Ref,
-            Path = source.Path,
-            ResolvedCommit = Commit,
-        };
-        var graph = new ResolvedPackGraph([
-            new DiscoveredPack(
-                "source",
-                "packs/example",
-                new PackManifest
-                {
-                    Id = "example",
-                    Version = "1.0.0",
-                    Author = "Example",
-                    License = "MIT",
-                    Hooks = new PackManifest.PackHooks
-                    {
-                        PreInstall =
-                        [
-                            new PackManifest.PackHook { Type = "script", Command = "substituted" },
-                        ],
-                    },
-                },
-                provenance,
-                "packs/example"
-            ),
-        ]);
-        var materializer = new GitPackMaterializer(
-            fileSystem,
-            processRunner,
-            TestConsole.Create(),
-            new NoOpOperationSnapshotSecurity()
-        );
-
-        var result = await materializer.MaterializeAsync(
-            @"C:\project",
-            graph,
-            new ProjectConfiguration { Sources = [source] }
-        );
-
-        await Assert.That(result.IsSuccess).IsFalse();
-        await Assert.That(result.Error).Contains("does not match the manifest resolved");
-    }
-
-    [Test]
-    public async Task ResolveLocked_WhenGitRefMoves_ReadsPackFromLockedCommit()
-    {
-        var fileSystem = new MockFileSystem();
-        var processRunner = new LockedCommitGitProcessRunner();
-        var source = CreateSource() with { Ref = "main", Path = "packs" };
-        var provenance = new GitSourceProvenance
-        {
-            Url = source.Url,
-            Ref = source.Ref,
-            Path = source.Path,
-            ResolvedCommit = Commit,
-        };
-        var lockedPack = new ProjectLockFile.ResolvedPack
-        {
-            Id = "example",
-            Version = "1.0.0",
-            SourceName = source.Name,
-            SourceIdentity = ConfiguredSourceIdentity.Create(source),
-            GitSource = provenance,
-            PackPath = "packs/example",
-        };
-        using var catalog = new PackCatalog(
-            fileSystem,
-            TestConsole.Create(),
-            processRunner: processRunner
-        );
-
-        var result = await catalog.ResolveLockedAsync(
-            @"C:\project",
-            new ProjectConfiguration { Sources = [source] },
-            lockedPack
-        );
-
-        await Assert.That(result.IsSuccess).IsTrue().Because(result.Error ?? string.Empty);
-        await Assert.That(processRunner.FetchedCommit).IsEqualTo(Commit);
-        await Assert
-            .That(
-                processRunner.Calls.Any(arguments =>
-                    arguments.Contains("ls-remote", StringComparer.Ordinal)
-                )
-            )
-            .IsFalse();
     }
 
     [Test]
@@ -830,7 +560,8 @@ public sealed class GitSourceTransportTests
             processRunner,
             new GitRefResolver(processRunner),
             new GitSourceCache(fileSystem),
-            TestConsole.Create()
+            TestConsole.Create(),
+            TestGitTransportPolicy.Create(fileSystem)
         );
 
         var result = await discovery.BrowseAsync(@"C:\project", CreateSource(), 0);
@@ -839,6 +570,42 @@ public sealed class GitSourceTransportTests
         var defaultValue = result.RequireValue().Single().Manifest.Parameters["enabled"].Default;
         await Assert.That(defaultValue).IsTypeOf<bool>();
         await Assert.That((bool)defaultValue!).IsTrue();
+    }
+
+    [Test]
+    public async Task Discovery_WhenHttpIsEnabled_PropagatesTransportToLazyBlobRead()
+    {
+        using var workspace = new TestWorkspace();
+        var preferences = new CliPreferenceService(
+            workspace.FileSystem,
+            workspace.StateStore,
+            workspace.UserSettingsStore
+        );
+        await preferences.SetAsync(
+            workspace.Path,
+            "git.allow-insecure-transport",
+            "true",
+            CliPreferenceService.Scope.Global
+        );
+        var processRunner = new ParameterManifestGitProcessRunner();
+        var discovery = new GitPackDiscovery(
+            workspace.FileSystem,
+            processRunner,
+            new GitRefResolver(processRunner),
+            new GitSourceCache(workspace.FileSystem),
+            TestConsole.Create(),
+            TestGitTransportPolicy.Create(workspace.FileSystem, workspace.UserSettingsStore)
+        );
+        var source = CreateSource() with { Url = "http://example.test/packs.git" };
+
+        var result = await discovery.BrowseAsync(workspace.Path, source, 0);
+        var show = processRunner.Calls.Single(call =>
+            call.Arguments.Contains("show", StringComparer.Ordinal)
+        );
+
+        await Assert.That(result.IsSuccess).IsTrue().Because(result.Error ?? string.Empty);
+        await Assert.That(show.TransportMode).IsEqualTo(GitTransportMode.AllowHttp);
+        await Assert.That(show.RepositoryUrl).IsEqualTo(source.Url);
     }
 
     [Test]
@@ -864,7 +631,13 @@ public sealed class GitSourceTransportTests
         await Assert.That(result.RequireValue().DefaultBranch).IsEqualTo("main");
         await Assert
             .That(processRunner.Arguments)
-            .IsEquivalentTo(["ls-remote", "--exit-code", "https://example.test/packs.git", "main"]);
+            .IsEquivalentTo([
+                "ls-remote",
+                "--exit-code",
+                "--",
+                "https://example.test/packs.git",
+                "main",
+            ]);
     }
 
     [Test]
@@ -885,6 +658,83 @@ public sealed class GitSourceTransportTests
 
         await Assert.That(result.RequireValue().ResolvedCommit).IsEqualTo(Commit);
         await Assert.That(result.RequireValue().DefaultBranch).IsEqualTo("main");
+    }
+
+    [Test]
+    public async Task RefResolver_WhenGitAuthenticationFails_IdentifiesSourceAndIgnoreCommand()
+    {
+        var resolver = new GitRefResolver(
+            new FakeGitProcessRunner(
+                ManifestOperationResult<GitProcessOutput>.Failure(
+                    "Git exited with code 128: Git authentication failed."
+                )
+            )
+        );
+
+        var result = await resolver.ResolveAsync(
+            CreateSource() with
+            {
+                Name = "engineering",
+                Ref = "main",
+            },
+            null,
+            default
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("Git source 'engineering'");
+        await Assert.That(result.Error).Contains("luna sources ignore engineering");
+    }
+
+    [Test]
+    public async Task RefResolver_WhenGitOutputIsTruncated_FailsWithoutParsing()
+    {
+        var resolver = new GitRefResolver(
+            new FakeGitProcessRunner(
+                ManifestOperationResult<GitProcessOutput>.Success(
+                    new GitProcessOutput(
+                        $"{Commit}\trefs/heads/main\n",
+                        string.Empty,
+                        StandardOutputTruncated: true
+                    )
+                )
+            )
+        );
+
+        var result = await resolver.ResolveAsync(
+            CreateSource() with
+            {
+                Ref = "main",
+            },
+            null,
+            default
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("truncated");
+    }
+
+    [Test]
+    public async Task RefResolver_WhenRepositoryLooksLikeGitOption_DoesNotRunGit()
+    {
+        var processRunner = new FakeGitProcessRunner(
+            ManifestOperationResult<GitProcessOutput>.Success(
+                new GitProcessOutput("unexpected", string.Empty)
+            )
+        );
+        var resolver = new GitRefResolver(processRunner);
+
+        var result = await resolver.ResolveAsync(
+            CreateSource() with
+            {
+                Url = "--upload-pack=sh -c 'sentinel'@example.test:packs.git",
+            },
+            null,
+            default
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(processRunner.Arguments).IsEmpty();
     }
 
     private const string Commit = "0123456789abcdef0123456789abcdef01234567";
@@ -908,7 +758,6 @@ public sealed class GitSourceTransportTests
                     Id = manifest.Id,
                     Version = manifest.Version,
                     Manifest = manifest,
-                    ManifestByteCount = 1,
                     PackPath = packPath,
                 },
             ],
@@ -956,15 +805,30 @@ public sealed class GitSourceTransportTests
 
     private sealed class ParameterManifestGitProcessRunner : IGitProcessRunner
     {
-        public List<IReadOnlyList<string>> Calls { get; } = [];
+        public List<GitProcessCall> Calls { get; } = [];
 
         public Task<ManifestOperationResult<GitProcessOutput>> RunAsync(
             IReadOnlyList<string> arguments,
             TimeSpan timeout,
             CancellationToken cancellationToken
+        ) => ExecuteAsync(arguments);
+
+        public Task<ManifestOperationResult<GitProcessOutput>> RunAsync(
+            IReadOnlyList<string> arguments,
+            TimeSpan timeout,
+            GitTransportMode transportMode,
+            string? repositoryUrl,
+            CancellationToken cancellationToken
         )
         {
-            Calls.Add(arguments);
+            Calls.Add(new GitProcessCall(arguments, transportMode, repositoryUrl));
+            return ExecuteAsync(arguments);
+        }
+
+        private static Task<ManifestOperationResult<GitProcessOutput>> ExecuteAsync(
+            IReadOnlyList<string> arguments
+        )
+        {
             var output =
                 string.Equals(arguments[0], "ls-remote", StringComparison.Ordinal)
                     ? $"ref: refs/heads/main\tHEAD\n{Commit}\tHEAD\n"
@@ -980,84 +844,39 @@ public sealed class GitSourceTransportTests
         }
     }
 
-    private sealed class SnapshotListingGitProcessRunner(
-        IReadOnlyList<long> fileSizes,
-        bool nested = false
-    ) : IGitProcessRunner
-    {
-        public Task<ManifestOperationResult<GitProcessOutput>> RunAsync(
-            IReadOnlyList<string> arguments,
-            TimeSpan timeout,
-            CancellationToken cancellationToken
-        )
-        {
-            var output =
-                string.Equals(arguments[0], "ls-remote", StringComparison.Ordinal)
-                    ? $"ref: refs/heads/main\tHEAD\n{Commit}\tHEAD\n"
-                : arguments.Contains("show", StringComparer.Ordinal)
-                    ? "id: example\nversion: 1.0.0\nauthor: Example\nlicense: MIT\n"
-                : arguments.Contains("ls-tree", StringComparer.Ordinal)
-                && arguments.Contains("--name-only", StringComparer.Ordinal)
-                    ? "packs/example/pack.yml\0"
-                : arguments.Contains("ls-tree", StringComparer.Ordinal)
-                    ? string.Concat(
-                        fileSizes.Select(
-                            (size, index) =>
-                                $"100644 blob 0123456789abcdef0123456789abcdef01234567 {size}\tpacks/example/{(index == 0 ? "pack.yml" : nested ? $"directory-{index}/file.txt" : $"file-{index}.txt")}\0"
-                        )
-                    )
-                : string.Empty;
-            return Task.FromResult(
-                ManifestOperationResult<GitProcessOutput>.Success(
-                    new GitProcessOutput(output, string.Empty)
-                )
-            );
-        }
-    }
-
-    private sealed class LockedCommitGitProcessRunner : IGitProcessRunner
-    {
-        public List<IReadOnlyList<string>> Calls { get; } = [];
-
-        public string? FetchedCommit { get; private set; }
-
-        public Task<ManifestOperationResult<GitProcessOutput>> RunAsync(
-            IReadOnlyList<string> arguments,
-            TimeSpan timeout,
-            CancellationToken cancellationToken
-        )
-        {
-            Calls.Add(arguments);
-            if (arguments.Contains("fetch", StringComparer.Ordinal))
-            {
-                FetchedCommit = arguments[^1];
-            }
-
-            var output =
-                arguments.Contains("ls-tree", StringComparer.Ordinal)
-                && arguments.Contains("--name-only", StringComparer.Ordinal)
-                    ? "packs/example/pack.yml\0"
-                : arguments.Contains("ls-tree", StringComparer.Ordinal)
-                    ? "100644 blob 0123456789abcdef0123456789abcdef01234567 85\tpacks/example/pack.yml\0"
-                : arguments.Contains("show", StringComparer.Ordinal)
-                    ? "id: example\nversion: 1.0.0\nauthor: Example\nlicense: MIT\n"
-                : string.Empty;
-            return Task.FromResult(
-                ManifestOperationResult<GitProcessOutput>.Success(
-                    new GitProcessOutput(output, string.Empty)
-                )
-            );
-        }
-    }
+    private sealed record GitProcessCall(
+        IReadOnlyList<string> Arguments,
+        GitTransportMode TransportMode,
+        string? RepositoryUrl
+    );
 
     private sealed class CapturingGitProcessRunner(MockFileSystem fileSystem) : IGitProcessRunner
     {
         public List<IReadOnlyList<string>> Arguments { get; } = [];
 
+        public List<GitProcessCall> Calls { get; } = [];
+
         public Task<ManifestOperationResult<GitProcessOutput>> RunAsync(
             IReadOnlyList<string> arguments,
             TimeSpan timeout,
             CancellationToken cancellationToken
+        ) => ExecuteAsync(arguments, fileSystem);
+
+        public Task<ManifestOperationResult<GitProcessOutput>> RunAsync(
+            IReadOnlyList<string> arguments,
+            TimeSpan timeout,
+            GitTransportMode transportMode,
+            string? repositoryUrl,
+            CancellationToken cancellationToken
+        )
+        {
+            Calls.Add(new GitProcessCall(arguments, transportMode, repositoryUrl));
+            return ExecuteAsync(arguments, fileSystem);
+        }
+
+        private Task<ManifestOperationResult<GitProcessOutput>> ExecuteAsync(
+            IReadOnlyList<string> arguments,
+            MockFileSystem fileSystem
         )
         {
             Arguments.Add(arguments);

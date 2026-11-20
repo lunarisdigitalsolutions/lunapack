@@ -17,6 +17,38 @@ public sealed class PackCatalogTests
     private static readonly string _secondDirectory = Path.GetFullPath("second");
 
     [Test]
+    public async Task BrowseForUpdates_WhenCompleteRequired_FailsOnPartialCatalog()
+    {
+        var fileSystem = CreateFileSystem([]);
+        fileSystem.Directory.CreateDirectory(_projectDirectory);
+        fileSystem.Directory.CreateDirectory(_packsDirectory);
+        var configuration = new ProjectConfiguration
+        {
+            Sources =
+            [
+                new ProjectConfiguration.LocalSource { Name = "available", Path = _packsDirectory },
+                new ProjectConfiguration.LocalSource
+                {
+                    Name = "missing",
+                    Path = Path.Combine(_projectDirectory, "missing"),
+                },
+            ],
+        };
+        var catalog = new PackCatalog(fileSystem, TestConsole.Create());
+
+        var result = await catalog.BrowseForUpdatesAsync(
+            _projectDirectory,
+            configuration,
+            new Dictionary<string, string?>(StringComparer.Ordinal) { ["example"] = null },
+            requireComplete: true
+        );
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("Unable to check all configured pack sources");
+        await Assert.That(result.Error).Contains("missing");
+    }
+
+    [Test]
     public async Task Browse_WhenPacksAreNested_UsesManifestDirectoriesAsPackRoots()
     {
         var fileSystem = CreateFileSystem([

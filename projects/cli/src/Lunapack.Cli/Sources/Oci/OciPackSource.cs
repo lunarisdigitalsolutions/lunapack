@@ -81,6 +81,7 @@ internal sealed class OciPackSource : IDisposable
             source,
             sourceOrder,
             resourceLimits,
+            requireComplete: false,
             cancellationToken
         );
 
@@ -90,6 +91,7 @@ internal sealed class OciPackSource : IDisposable
         int sourceOrder,
         IReadOnlyDictionary<string, string?> requestedPacks,
         ResourceLimits? resourceLimits = null,
+        bool requireComplete = false,
         CancellationToken cancellationToken = default
     ) =>
         _discovery.BrowseForUpdatesAsync(
@@ -98,6 +100,7 @@ internal sealed class OciPackSource : IDisposable
             sourceOrder,
             requestedPacks,
             resourceLimits,
+            requireComplete,
             cancellationToken
         );
 

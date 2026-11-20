@@ -5,7 +5,7 @@ decision-makers:
   - Lunaris Engineering
 ---
 
-# ADR-0092: Reject Aliases in Local Link Trees
+# ADR-0105: Reject Aliases in Local Link Trees
 
 ## Context and Problem Statement
 

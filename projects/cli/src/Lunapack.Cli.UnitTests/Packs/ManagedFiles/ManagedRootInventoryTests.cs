@@ -1,3 +1,4 @@
+using System.IO.Abstractions.TestingHelpers;
 using Lunapack.Cli.Packs.ManagedFiles;
 using Lunapack.Cli.Project;
 using Lunapack.Cli.Sources;
@@ -30,11 +31,27 @@ public sealed class ManagedRootInventoryTests
         var lockFile = CreateLockFile();
         lockFile.Links["agents-expert"].Files[0].TargetPath = "docs/readme.md";
 
-        var ownership = ManagedRootInventory.CreateOwnershipMap(lockFile);
+        var ownership = ManagedRootInventory.CreateOwnershipMap(lockFile, new MockFileSystem());
 
         await Assert
             .That(ownership["docs/readme.md"].Select(owner => owner.Name))
             .IsEquivalentTo(["example", "agents-expert"]);
+    }
+
+    [Test]
+    public async Task CreateOwnershipMap_WhenPathCaseDiffersOnCaseInsensitiveHost_UsesFilesystemIdentity()
+    {
+        if (!OperatingSystem.IsWindows() && !OperatingSystem.IsMacOS())
+        {
+            Skip.Test("The default filesystem is not known to alias path case.");
+        }
+
+        var ownership = ManagedRootInventory.CreateOwnershipMap(
+            CreateLockFile(),
+            new MockFileSystem()
+        );
+
+        await Assert.That(ownership["DOCS/README.MD"]).Count().IsEqualTo(1);
     }
 
     [Test]
@@ -59,7 +76,11 @@ public sealed class ManagedRootInventoryTests
             ),
         };
 
-        var collision = ManagedRootInventory.FindCrossRootCollision(plannedRoots, lockFile);
+        var collision = ManagedRootInventory.FindCrossRootCollision(
+            plannedRoots,
+            lockFile,
+            new MockFileSystem()
+        );
 
         await Assert
             .That(collision)
@@ -91,7 +112,13 @@ public sealed class ManagedRootInventoryTests
         };
 
         await Assert
-            .That(ManagedRootInventory.FindCrossRootCollision(plannedRoots, lockFile))
+            .That(
+                ManagedRootInventory.FindCrossRootCollision(
+                    plannedRoots,
+                    lockFile,
+                    new MockFileSystem()
+                )
+            )
             .IsNull();
     }
 

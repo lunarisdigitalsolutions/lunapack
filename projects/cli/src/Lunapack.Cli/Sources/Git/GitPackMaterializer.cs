@@ -18,6 +18,7 @@ internal sealed class GitPackMaterializer(
     IFileSystem fileSystem,
     IGitProcessRunner processRunner,
     CliConsole console,
+    GitTransportPolicy transportPolicy,
     IOperationSnapshotSecurity? snapshotSecurity = null,
     OciPackSource? ociPackSource = null,
     PackManifestStore? packManifestStore = null
@@ -102,8 +103,7 @@ internal sealed class GitPackMaterializer(
             {
                 return Failure(
                     workspace,
-                    sourcePackResult.Error ?? "Unable to materialize Git pack.",
-                    sourcePackResult.ErrorKind
+                    sourcePackResult.Error ?? "Unable to materialize Git pack."
                 );
             }
 
@@ -115,11 +115,7 @@ internal sealed class GitPackMaterializer(
             var snapshot = snapshotter.Snapshot(sourcePack, snapshotRoot, resourceLimits);
             if (snapshot.Value is not { } snapshottedPack)
             {
-                return Failure(
-                    workspace,
-                    snapshot.Error ?? "Unable to snapshot resolved pack.",
-                    snapshot.ErrorKind
-                );
+                return Failure(workspace, snapshot.Error ?? "Unable to snapshot resolved pack.");
             }
 
             materializedPacks.Add(snapshottedPack);
@@ -151,9 +147,23 @@ internal sealed class GitPackMaterializer(
             if (configuredSource is null)
             {
                 return ManifestOperationResult<DiscoveredPack>.Failure(
-                    $"Git source '{gitSource.Url}' is not configured for pack '{pack.Manifest.Id}'."
+                    $"The Git source is not configured for pack '{pack.Manifest.Id}'."
                 );
             }
+
+            var authorization = await transportPolicy.AuthorizeAsync(
+                projectDirectory,
+                configuredSource.Url,
+                configuredSource.Name
+            );
+            if (!authorization.IsSuccess)
+            {
+                return ManifestOperationResult<DiscoveredPack>.Failure(
+                    authorization.Error
+                        ?? $"Unable to authorize Git source '{configuredSource.Name}'."
+                );
+            }
+            var transportMode = authorization.Value;
 
             var gitWorkspace = fileSystem.Path.Combine(
                 workspace,
@@ -165,6 +175,7 @@ internal sealed class GitPackMaterializer(
                 gitSource,
                 configuredSource,
                 gitWorkspace,
+                transportMode,
                 resourceLimits,
                 cancellationToken
             );
@@ -236,15 +247,14 @@ internal sealed class GitPackMaterializer(
             ociWorkspace,
             provenance.ManifestDigest,
             provenance.ContentDigest,
-            resourceLimits: resourceLimits,
-            cancellationToken: cancellationToken
+            resourceLimits,
+            cancellationToken
         );
         if (release.Value is not { } materializedRelease)
         {
             return ManifestOperationResult<DiscoveredPack>.Failure(
                 release.Error
-                    ?? $"Unable to retrieve locked OCI pack '{pack.Manifest.Id}@{pack.Manifest.Version}'.",
-                release.ErrorKind
+                    ?? $"Unable to retrieve locked OCI pack '{pack.Manifest.Id}@{pack.Manifest.Version}'."
             );
         }
 
@@ -314,46 +324,27 @@ internal sealed class GitPackMaterializer(
         GitSourceProvenance gitSource,
         ProjectConfiguration.GitSource source,
         string workspace,
+        GitTransportMode transportMode,
         ResourceLimits resourceLimits,
         CancellationToken cancellationToken
     )
     {
         var timeout = TimeSpan.FromSeconds(source.TimeoutSeconds ?? DefaultTimeoutSeconds);
         fileSystem.Directory.CreateDirectory(workspace);
-        var commands = new[]
+        var preparation = await PreparePackWorkspaceAsync(
+            pack,
+            gitSource,
+            source,
+            workspace,
+            timeout,
+            transportMode,
+            cancellationToken
+        );
+        if (!preparation.IsSuccess)
         {
-            new[] { "init", "--quiet", workspace },
-            ["-C", workspace, "remote", "add", "origin", gitSource.Url],
-            [
-                "-C",
-                workspace,
-                "fetch",
-                "--depth=1",
-                "--filter=blob:none",
-                "origin",
-                gitSource.ResolvedCommit,
-            ],
-            ["-C", workspace, "sparse-checkout", "init", "--no-cone"],
-            [
-                "-C",
-                workspace,
-                "sparse-checkout",
-                "set",
-                "--no-cone",
-                "--",
-                CreateSparsePattern(pack.RepositoryPath),
-            ],
-            ["-C", workspace, "checkout", "--quiet", "--detach", "FETCH_HEAD"],
-        };
-        foreach (var command in commands)
-        {
-            var result = await processRunner.RunAsync(command, timeout, cancellationToken);
-            if (!result.IsSuccess)
-            {
-                return ManifestOperationResult<DiscoveredPack>.Failure(
-                    result.Error ?? "Git pack materialization failed."
-                );
-            }
+            return ManifestOperationResult<DiscoveredPack>.Failure(
+                preparation.Error ?? "Git pack materialization failed."
+            );
         }
 
         var packDirectory = GetPackDirectory(workspace, pack.RepositoryPath);
@@ -384,6 +375,87 @@ internal sealed class GitPackMaterializer(
                 PackDirectory = packDirectory,
             }
         );
+    }
+
+    private async Task<ManifestOperationResult<bool>> PreparePackWorkspaceAsync(
+        DiscoveredPack pack,
+        GitSourceProvenance gitSource,
+        ProjectConfiguration.GitSource source,
+        string workspace,
+        TimeSpan timeout,
+        GitTransportMode transportMode,
+        CancellationToken cancellationToken
+    )
+    {
+        var commands = new[]
+        {
+            (new[] { "init", "--quiet", workspace }, GitTransportMode.SecureOnly, (string?)null),
+            (
+                ["-C", workspace, "remote", "add", "--", "origin", gitSource.Url],
+                GitTransportMode.SecureOnly,
+                null
+            ),
+            (
+                new[]
+                {
+                    "-C",
+                    workspace,
+                    "fetch",
+                    "--depth=1",
+                    "--filter=blob:none",
+                    "origin",
+                    gitSource.ResolvedCommit,
+                },
+                transportMode,
+                gitSource.Url
+            ),
+            (
+                ["-C", workspace, "sparse-checkout", "init", "--no-cone"],
+                GitTransportMode.SecureOnly,
+                null
+            ),
+            (
+                [
+                    "-C",
+                    workspace,
+                    "sparse-checkout",
+                    "set",
+                    "--no-cone",
+                    "--",
+                    CreateSparsePattern(pack.RepositoryPath),
+                ],
+                GitTransportMode.SecureOnly,
+                null
+            ),
+            (
+                new[] { "-C", workspace, "checkout", "--quiet", "--detach", "FETCH_HEAD" },
+                transportMode,
+                gitSource.Url
+            ),
+        };
+
+        foreach (var (command, commandTransportMode, repositoryUrl) in commands)
+        {
+            var result = await processRunner.RunAsync(
+                command,
+                timeout,
+                commandTransportMode,
+                repositoryUrl,
+                cancellationToken
+            );
+            if (!result.IsSuccess)
+            {
+                return ManifestOperationResult<bool>.Failure(
+                    GitSourceFailureFormatter.Format(
+                        source.Name,
+                        result.Error,
+                        "Git pack materialization failed."
+                    )
+                );
+            }
+        }
+
+        return ManifestOperationResult<bool>.Success(true);
     }
 
     private static bool HaveEquivalentManifest(PackManifest expected, PackManifest actual)
@@ -424,15 +496,11 @@ internal sealed class GitPackMaterializer(
                 .. repositoryPath.Split('/', StringSplitOptions.RemoveEmptyEntries),
             ]);
 
-    private ManifestOperationResult<GitPackMaterialization> Failure(
-        string workspace,
-        string error,
-        ManifestOperationErrorKind errorKind = ManifestOperationErrorKind.General
-    )
+    private ManifestOperationResult<GitPackMaterialization> Failure(string workspace, string error)
     {
         PrepareForDelete(workspace);
 
-        return ManifestOperationResult<GitPackMaterialization>.Failure(error, errorKind);
+        return ManifestOperationResult<GitPackMaterialization>.Failure(error);
     }
 
     private void PrepareForDelete(string workspace)

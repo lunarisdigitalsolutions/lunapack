@@ -26,21 +26,55 @@ internal sealed class OciPackPublisher(
     public bool CanPublish(ProjectConfiguration.Source source) =>
         source is ProjectConfiguration.OciSource;
 
-    public async Task<ManifestOperationResult<PackPublicationResult>> PublishAsync(
+    public Task<ManifestOperationResult<PackPublicationResult>> PublishAsync(
+        string projectDirectory,
+        string packDirectory,
+        ProjectConfiguration.Source source,
+        bool allowHiddenCharacters,
+        CancellationToken cancellationToken = default
+    ) =>
+        PublishAsync(
+            projectDirectory,
+            packDirectory,
+            source,
+            null,
+            allowHiddenCharacters,
+            cancellationToken
+        );
+
+    public Task<ManifestOperationResult<PackPublicationResult>> PublishAsync(
         string projectDirectory,
         string packDirectory,
         ProjectConfiguration.Source source,
         CancellationToken cancellationToken
-    ) => await PublishAsync(projectDirectory, packDirectory, source, null, cancellationToken);
+    ) => PublishAsync(projectDirectory, packDirectory, source, null, false, cancellationToken);
+
+    public Task<ManifestOperationResult<PackPublicationResult>> PublishAsync(
+        string projectDirectory,
+        string packDirectory,
+        ProjectConfiguration.Source source,
+        ResourceLimits? resourceLimits,
+        CancellationToken cancellationToken
+    ) =>
+        PublishAsync(
+            projectDirectory,
+            packDirectory,
+            source,
+            resourceLimits,
+            false,
+            cancellationToken
+        );
 
     public async Task<ManifestOperationResult<PackPublicationResult>> PublishAsync(
         string projectDirectory,
         string packDirectory,
         ProjectConfiguration.Source source,
         ResourceLimits? resourceLimits,
-        CancellationToken cancellationToken
+        bool allowHiddenCharacters = false,
+        CancellationToken cancellationToken = default
     )
     {
+        var effectiveResourceLimits = resourceLimits ?? ResourceLimits.Default;
         if (source is not ProjectConfiguration.OciSource ociSource)
         {
             return Failure<PackPublicationResult>(
@@ -62,7 +96,7 @@ internal sealed class OciPackPublisher(
             var archive = await CreateArchiveAsync(
                 packDirectory,
                 archivePath,
-                resourceLimits ?? ResourceLimits.Default,
+                effectiveResourceLimits,
                 cancellationToken
             );
             if (archive.Value is not { } content)
@@ -75,16 +109,17 @@ internal sealed class OciPackPublisher(
 
             var snapshotDirectory = fileSystem.Path.Combine(workspace.Path, "pack");
             var validation = await ValidateArchiveAsync(
+                projectDirectory,
                 archivePath,
                 snapshotDirectory,
-                resourceLimits ?? ResourceLimits.Default,
+                effectiveResourceLimits,
+                allowHiddenCharacters,
                 cancellationToken
             );
             if (validation.Value is not { } manifest)
             {
                 return Failure<PackPublicationResult>(
-                    validation.Error ?? "The pack is not valid for publication.",
-                    validation.ErrorKind
+                    validation.Error ?? "The pack is not valid for publication."
                 );
             }
 
@@ -96,7 +131,6 @@ internal sealed class OciPackPublisher(
                 archivePath,
                 content,
                 sourceMetadata,
-                resourceLimits ?? ResourceLimits.Default,
                 cancellationToken
             );
         }
@@ -140,9 +174,11 @@ internal sealed class OciPackPublisher(
     }
 
     private async Task<ManifestOperationResult<PackManifest>> ValidateArchiveAsync(
+        string projectDirectory,
         string archivePath,
         string snapshotDirectory,
         ResourceLimits resourceLimits,
+        bool allowHiddenCharacters,
         CancellationToken cancellationToken
     )
     {
@@ -196,9 +232,11 @@ internal sealed class OciPackPublisher(
         }
 
         var externalValidation = await authoringValidationService.ValidateExternalSourcesAsync(
+            projectDirectory,
             snapshotDirectory,
             manifest,
-            resourceLimits
+            resourceLimits,
+            allowHiddenCharacters
         );
         return externalValidation.IsSuccess
             ? ManifestOperationResult<PackManifest>.Success(manifest)
@@ -214,7 +252,6 @@ internal sealed class OciPackPublisher(
         string archivePath,
         OciBlobTransfer content,
         (string? Source, string? Revision) sourceMetadata,
-        ResourceLimits resourceLimits,
         CancellationToken cancellationToken
     )
     {
@@ -241,12 +278,7 @@ internal sealed class OciPackPublisher(
             );
         }
 
-        var artifactResult = CreateArtifact(
-            pack,
-            content,
-            sourceMetadata,
-            resourceLimits.OciDownloadBytes
-        );
+        var artifactResult = CreateArtifact(pack, content, sourceMetadata);
         if (artifactResult.Value is not { } artifact)
         {
             return Failure<PackPublicationResult>(
@@ -310,8 +342,7 @@ internal sealed class OciPackPublisher(
     private static ManifestOperationResult<PreparedArtifact> CreateArtifact(
         PackManifest pack,
         OciBlobTransfer content,
-        (string? Source, string? Revision) sourceMetadata,
-        long maximumContentBytes
+        (string? Source, string? Revision) sourceMetadata
     )
     {
         var (configContent, configDescriptor) = OciPackArtifact.CreateConfig(pack);
@@ -325,8 +356,7 @@ internal sealed class OciPackPublisher(
             configDescriptor,
             contentDescriptor,
             sourceMetadata.Source,
-            sourceMetadata.Revision,
-            maximumContentBytes
+            sourceMetadata.Revision
         );
         if (!manifest.IsSuccess)
         {
@@ -506,10 +536,7 @@ internal sealed class OciPackPublisher(
                     repository,
                     $"Unable to check whether OCI release '{tag}' already exists",
                     current.Failure
-                ),
-                current.Failure?.Kind == OciRegistryFailureKind.ResourceLimitExceeded
-                    ? ManifestOperationErrorKind.ResourceLimitExceeded
-                    : ManifestOperationErrorKind.General
+                )
             );
     }
 
@@ -725,9 +752,12 @@ internal sealed class OciPackPublisher(
     ) =>
         $"OCI source '{source.Name}' repository '{repository}': {operation}. {failure?.Message ?? "The registry operation failed."}";
 
+    private static ManifestOperationResult<T> Failure<T>(string message) =>
+        ManifestOperationResult<T>.Failure(message);
+
     private static ManifestOperationResult<T> Failure<T>(
         string message,
-        ManifestOperationErrorKind errorKind = ManifestOperationErrorKind.General
+        ManifestOperationErrorKind errorKind
     ) => ManifestOperationResult<T>.Failure(message, errorKind);
 
     private sealed record PublishContext(Uri Registry, string RegistryUrl, string PartitionId);

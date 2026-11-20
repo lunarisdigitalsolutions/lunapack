@@ -1,4 +1,5 @@
 using Lunapack.Cli.Sources;
+using Lunapack.Cli.Sources.Git;
 
 namespace Lunapack.Cli.Links;
 
@@ -14,6 +15,10 @@ internal sealed record LinkSourceListing(
 
     public IReadOnlyDictionary<string, long> BlobSizes { get; init; } =
         new Dictionary<string, long>(StringComparer.Ordinal);
+
+    public GitTransportMode TransportMode { get; init; } = GitTransportMode.SecureOnly;
+
+    public string SourceName { get; init; } = string.Empty;
 
     public Action? Cleanup { get; init; }
 

@@ -2,10 +2,12 @@
 
 Pack lifecycle scripts are optional executable hooks. They are not sandboxed:
 an allowed hook runs with the invoking user's filesystem, process, network, and
-credential access. Review the pack source and hook arguments before permitting
-execution. Instruction hooks display prepared Markdown but never launch a
-process and do not use trust. See the [security model](../threat-model.md) for
-trust boundaries and residual risks.
+credential access, including the full inherited process environment. Luna warns
+about unlisted environment variable names and applies a per-hook timeout, but
+neither limits what an authorized script can access. Review the pack source and
+hook arguments before permitting execution. Instruction hooks display prepared
+Markdown but never launch a process and do not use trust. See the
+[security model](../threat-model.md) for trust boundaries and residual risks.
 
 ## Script modes
 
@@ -19,6 +21,9 @@ trust boundaries and residual risks.
 
 Persisted script denial overrides all three modes and every source or pack
 grant. It is evaluated before command resolution or confirmation.
+
+Before requesting consent, LunaPack displays the pack ID, resolved command and
+arguments, and optional script description, regardless of the minimum log level.
 
 Dry runs do not execute hooks or request hook consent. They may prompt for pack
 parameters before planning unless `--skip-parameters` is set. They show each
@@ -42,6 +47,10 @@ by LunaPack.
 In noninteractive sessions, LunaPack captures bounded hook output. Hooks used in
 automation must not require input; configure the underlying command's
 noninteractive or accept-defaults option instead.
+
+When cancellation stops a hook's process tree, LunaPack closes redirected
+readers instead of waiting for detached descendants that retain output handles.
+Output already captured is emitted; unread output may be discarded.
 
 ## Trust scopes
 
@@ -103,6 +112,71 @@ positive grants and the last reset can reactivate them. Noninteractive reset
 fails without changing settings. During lifecycle work, Luna warns once per
 denied hook with pack, version, event, and all policy origins before processing
 instructions or managed files. The operation then continues without scripts.
+
+## Lifecycle script policy
+
+Script policy controls environment warnings and execution time only. It does
+not authorize a script or override script denial.
+
+Portable policy belongs in `lunapack.yml`:
+
+```yaml
+trust:
+  scripts:
+    allowedEnvironmentVariables:
+      - CUSTOM_TOOL_HOME
+    timeoutSeconds: 120
+```
+
+`allowedEnvironmentVariables` adds names to a built-in platform allow-list.
+Names from project, project-local user, and global-user policy are combined.
+Windows compares names without regard to case; other platforms compare names
+ordinally. Empty names, duplicate names, `=`, and NUL are invalid. The built-in
+list includes `PATH`, `TEMP`, `TMP`, and `TMPDIR` on every platform. Windows
+also includes `PATHEXT`, `SYSTEMROOT`, `WINDIR`, `COMSPEC`, `USERPROFILE`,
+`HOMEDRIVE`, `HOMEPATH`, `APPDATA`, `LOCALAPPDATA`, and `SYSTEMDRIVE`; other
+platforms also include `HOME`, `SHELL`, `LANG`, `LC_ALL`, `LC_CTYPE`, and
+`TERM`.
+
+Luna reports names outside the effective list before an authorized script
+starts. It never includes their values in the warning. The script still
+receives every inherited variable; adding a name only suppresses its warning.
+This policy is not environment filtering or isolation.
+
+Global-user and project-local user policy live in
+`<profile>/.lunapack/lifecycle-hook-policy.yml`, separate from `config.yml`:
+
+```yaml
+global:
+  allowedEnvironmentVariables:
+    - CUSTOM_TOOL_HOME
+  timeoutSeconds: 180
+projects:
+  /workspace/my-project:
+    timeoutSeconds: 60
+```
+
+Edit the sidecar directly; Luna has no policy-editing command.
+Replace the `projects` key with the project's canonical absolute path using
+`/` separators and the filesystem's final physical spelling; for example, use
+`'C:/work/my-project'` on Windows. Luna normalizes existing differently cased
+or aliased keys when loading the sidecar. The `LUNAPACK_USER_PROFILE` variable
+selects the profile root.
+
+`timeoutSeconds` accepts integers from 1 through 1,800. Each script hook uses
+the smallest configured value across project, project-local user, and
+global-user policy, or 300 seconds when no scope sets a value. The deadline
+covers root-process exit, remaining descendants, and captured-output draining.
+A root exit with active descendants does not complete the hook. On timeout,
+Luna terminates the process tree and fails the lifecycle operation; caller
+cancellation is reported separately. A failed post-hook rolls back Luna
+managed files and project state, but cannot undo external effects caused by
+the script.
+
+Existing version-1 project files may omit `trust.scripts`. Older Luna versions
+ignore this project property and the user sidecar, so they do not issue these
+warnings or enforce timeouts. Older strict external schema validators may reject
+the new optional project property.
 
 Project configuration example:
 
