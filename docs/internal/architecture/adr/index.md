@@ -105,6 +105,7 @@ Create a new architecture decision record from the [MADR-based template](templat
 | [ADR-0099](0099-define-strict-audit-exit-codes.md)                              | Reserve strict audit exit 2 for integrity violations and 1 for usage or state errors.   |
 | [ADR-0100](0100-confine-managed-file-audit-reads.md)                            | Confine lock-backed managed-file audit reads to non-aliased workspace paths.            |
 | [ADR-0101](0101-require-secure-git-transports-by-default.md)                    | Require secure Git transports by default with a scoped plaintext exception.             |
+| [ADR-0102][adr-0102]                                                            | Export versioned CycloneDX and SPDX inventories from stable lock evidence.              |
 
 [adr-0070]: 0070-bind-privileged-workflows-to-trusted-provenance.md
 [adr-0071]: 0071-reject-filesystem-aliases-at-mutation-boundaries.md
@@ -134,3 +135,4 @@ Create a new architecture decision record from the [MADR-based template](templat
 [adr-0096]: 0096-close-lifecycle-output-streams-after-cancellation.md
 [adr-0097]: 0097-show-lifecycle-consent-details-at-every-log-level.md
 [adr-0098]: 0098-constrain-lifecycle-hook-environment-and-runtime.md
+[adr-0102]: 0102-export-versioned-lock-inventories.md

@@ -57,6 +57,16 @@ internal static class CliOutputFormatOption
 
     public static bool TryGetSupportedCommand(IReadOnlyList<string> args, out string command)
     {
+        if (!TryGetCommand(args, out command))
+        {
+            return false;
+        }
+
+        return command is "audit" or "outdated" or "validate";
+    }
+
+    public static bool TryGetCommand(IReadOnlyList<string> args, out string command)
+    {
         for (var index = 0; index < args.Count; index++)
         {
             var argument = args[index];
@@ -89,7 +99,7 @@ internal static class CliOutputFormatOption
             }
 
             command = argument;
-            return command is "audit" or "outdated" or "validate";
+            return true;
         }
 
         command = string.Empty;
