@@ -11,15 +11,18 @@ public sealed class LocalLinkSourceProviderTests
     public async Task ListAsync_WhenDescendantIsReparsePoint_RejectsSource()
     {
         var fileSystem = new MockFileSystem();
-        fileSystem.AddFile(@"C:\project\source\escaped\secret.txt", "secret");
+        var projectDirectory = fileSystem.Path.GetFullPath("project");
+        var escapedDirectory = fileSystem.Path.Combine(projectDirectory, "source", "escaped");
+        fileSystem.AddFile(fileSystem.Path.Combine(escapedDirectory, "secret.txt"), "secret");
+        fileSystem.Directory.CreateDirectory(escapedDirectory);
         fileSystem.File.SetAttributes(
-            @"C:\project\source\escaped",
+            escapedDirectory,
             FileAttributes.Directory | FileAttributes.ReparsePoint
         );
         var provider = new LocalLinkSourceProvider(fileSystem);
 
         var result = await provider.ListAsync(
-            @"C:\project",
+            projectDirectory,
             CreateSource(),
             CreateLink(),
             lockedIdentity: null,
@@ -34,15 +37,19 @@ public sealed class LocalLinkSourceProviderTests
     public async Task MaterializeAsync_WhenParentBecomesReparsePoint_RejectsPath()
     {
         var fileSystem = new MockFileSystem();
-        fileSystem.AddFile(@"C:\project\source\nested\secret.txt", "secret");
+        var projectDirectory = fileSystem.Path.GetFullPath("project");
+        var sourceDirectory = fileSystem.Path.Combine(projectDirectory, "source");
+        var nestedDirectory = fileSystem.Path.Combine(sourceDirectory, "nested");
+        fileSystem.AddFile(fileSystem.Path.Combine(nestedDirectory, "secret.txt"), "secret");
+        fileSystem.Directory.CreateDirectory(nestedDirectory);
         var listing = new LinkSourceListing(
             ConfiguredSourceIdentity.CreateLocal("source"),
             GitSource: null,
-            @"C:\project\source",
+            sourceDirectory,
             ["nested/secret.txt"]
         );
         fileSystem.File.SetAttributes(
-            @"C:\project\source\nested",
+            nestedDirectory,
             FileAttributes.Directory | FileAttributes.ReparsePoint
         );
         using var workspace = LinkOperationWorkspace.Create(fileSystem);
