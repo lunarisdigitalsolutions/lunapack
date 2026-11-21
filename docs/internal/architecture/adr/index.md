@@ -109,6 +109,7 @@ Create a new architecture decision record from the [MADR-based template](templat
 | [ADR-0103](0103-enforce-producer-side-pack-resource-budgets.md)                 | Enforce scoped resource limits at pack input and output producer boundaries.            |
 | [ADR-0104](0104-require-authoritative-git-manifests.md)                         | Require authoritative Git manifests for online lifecycle decisions.                     |
 | [ADR-0105](0105-reject-aliases-in-local-link-trees.md)                          | Reject filesystem aliases throughout local Luna Link source trees.                      |
+| [ADR-0106](0106-render-cli-changelog-from-canonical-source.md)                  | Render the canonical CLI changelog through a transient Docusaurus document.             |
 
 [adr-0070]: 0070-bind-privileged-workflows-to-trusted-provenance.md
 [adr-0071]: 0071-reject-filesystem-aliases-at-mutation-boundaries.md
