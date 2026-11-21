@@ -13,6 +13,13 @@ inputs:
     description: Whether to publish, archive, and upload CLI artifacts.
     required: false
     default: 'false'
+  test-project-paths:
+    description: Optional newline-separated test project paths for separate reporting.
+    required: false
+    default: |
+      projects/cli/src/Lunapack.Cli.UnitTests/Lunapack.Cli.UnitTests.csproj
+      projects/cli/src/Lunapack.Cli.IntegrationTests/Lunapack.Cli.IntegrationTests.csproj
+      projects/cli/src/Lunapack.Cli.SecurityTests/Lunapack.Cli.SecurityTests.csproj
   artifact-retention-days:
     description: Retention period for uploaded artifacts.
     required: false
@@ -47,10 +54,7 @@ runs:
       with:
         solution-path: projects/cli/src/Lunapack.slnx
         publish-project-path: projects/cli/src/Lunapack.Cli/Lunapack.Cli.csproj
-        test-project-paths: |
-          projects/cli/src/Lunapack.Cli.UnitTests/Lunapack.Cli.UnitTests.csproj
-          projects/cli/src/Lunapack.Cli.IntegrationTests/Lunapack.Cli.IntegrationTests.csproj
-          projects/cli/src/Lunapack.Cli.SecurityTests/Lunapack.Cli.SecurityTests.csproj
+        test-project-paths: ${{ inputs.test-project-paths }}
         runtime-identifier: ${{ inputs.runtime-identifier }}
         should-publish: ${{ inputs.publish-artifacts }}
         additional-publish-arguments: --self-contained -p:PublishAot=true
