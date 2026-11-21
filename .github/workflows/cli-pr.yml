@@ -82,10 +82,6 @@ jobs:
         uses: ./.github/actions/cli/build
         with:
           runtime-identifier: ${{ matrix.runtimeIdentifier }}
-          test-project-paths: |
-            projects/cli/src/Lunapack.Cli.UnitTests/Lunapack.Cli.UnitTests.csproj
-            projects/cli/src/Lunapack.Cli.IntegrationTests/Lunapack.Cli.IntegrationTests.csproj
-            projects/cli/src/Lunapack.Cli.SecurityTests/Lunapack.Cli.SecurityTests.csproj
           publish-artifacts: 'false'
 
       - name: Run CLI sanity check
@@ -112,10 +108,6 @@ jobs:
         uses: ./.github/actions/cli/build
         with:
           runtime-identifier: win-x64
-          test-project-paths: |
-            projects/cli/src/Lunapack.Cli.UnitTests/Lunapack.Cli.UnitTests.csproj
-            projects/cli/src/Lunapack.Cli.IntegrationTests/Lunapack.Cli.IntegrationTests.csproj
-            projects/cli/src/Lunapack.Cli.SecurityTests/Lunapack.Cli.SecurityTests.csproj
           publish-artifacts: 'false'
 
       - name: Run CLI sanity check
