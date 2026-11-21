@@ -7,6 +7,8 @@ pack-package, documentation, CI, build, test, and release-process changes.
 
 Update this section before creating a release tag.
 
+## Version 1.7.0 - 2026-11-21
+
 ### Resource Limits
 
 - Luna now applies finite, configurable ceilings to project and pack manifests,
