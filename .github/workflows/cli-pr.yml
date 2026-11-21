@@ -7,6 +7,8 @@ on:
       - reopened
       - ready_for_review
       - synchronize
+      - labeled
+      - unlabeled
     branches:
       - main
     paths:
@@ -20,24 +22,39 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    name: ${{ matrix.runtimeIdentifier }}
+  build-linux:
+    name: linux-x64
     if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      checks: write
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+
+      - name: Build Luna CLI
+        uses: ./.github/actions/cli/build
+        with:
+          runtime-identifier: linux-x64
+          publish-artifacts: 'false'
+
+  build-macos:
+    name: ${{ matrix.runtimeIdentifier }}
+    if: ${{ !github.event.pull_request.draft && contains(github.event.pull_request.labels.*.name, 'ci-macos') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         include:
-          - runner: ubuntu-latest
-            runtimeIdentifier: linux-x64
-            testProjectPaths: ''
           - runner: macos-26-intel
             runtimeIdentifier: osx-x64
-            testProjectPaths: projects/cli/src/Lunapack.Cli.UnitTests/Lunapack.Cli.UnitTests.csproj
           - runner: macos-26
             runtimeIdentifier: osx-arm64
-            testProjectPaths: projects/cli/src/Lunapack.Cli.UnitTests/Lunapack.Cli.UnitTests.csproj
     permissions:
       checks: write
       contents: read
@@ -51,5 +68,26 @@ jobs:
         uses: ./.github/actions/cli/build
         with:
           runtime-identifier: ${{ matrix.runtimeIdentifier }}
-          test-project-paths: ${{ matrix.testProjectPaths }}
+          test-project-paths: projects/cli/src/Lunapack.Cli.UnitTests/Lunapack.Cli.UnitTests.csproj
+          publish-artifacts: 'false'
+
+  build-windows:
+    name: win-x64
+    if: ${{ !github.event.pull_request.draft && contains(github.event.pull_request.labels.*.name, 'ci-windows') }}
+    runs-on: windows-2025
+    timeout-minutes: 45
+    permissions:
+      checks: write
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+
+      - name: Build Luna CLI
+        uses: ./.github/actions/cli/build
+        with:
+          runtime-identifier: win-x64
+          test-project-paths: projects/cli/src/Lunapack.Cli.UnitTests/Lunapack.Cli.UnitTests.csproj
           publish-artifacts: 'false'
