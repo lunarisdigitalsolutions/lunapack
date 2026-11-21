@@ -5,10 +5,7 @@ pack-package, documentation, CI, build, test, and release-process changes.
 
 ## Unreleased
 
-### Fixed
-
-- macOS lifecycle hook cancellation and timeout now terminate detached
-  descendant processes consistently.
+Update this section before creating a release tag.
 
 ## Version 1.7.0 - 2026-11-21
 
