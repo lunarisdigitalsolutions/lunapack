@@ -473,7 +473,16 @@ public sealed class LifecycleHookProcessSecurityTests
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         while (IsProcessRunning(processId))
         {
-            await Task.Delay(TimeSpan.FromMilliseconds(20), timeout.Token);
+            try
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(20), timeout.Token);
+            }
+            catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+            {
+                throw new TimeoutException(
+                    $"Process {processId} remained running after 15 seconds."
+                );
+            }
         }
     }
 
