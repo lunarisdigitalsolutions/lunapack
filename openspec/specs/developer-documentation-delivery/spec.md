@@ -9,12 +9,17 @@ main-branch builds as the repository's GitHub Pages site.
 
 ### Requirement: Validate affected pull requests
 
-The repository SHALL provide a pull-request workflow that runs for pull requests targeting `main` when `docs/developer/**`, `projects/website/src/**`, or the workflow definition changes. The workflow MUST install the locked website dependencies and build the static site. It MUST NOT deploy a Pages artifact or request write-level GitHub Pages permissions.
+The repository SHALL provide a pull-request workflow that runs for pull requests targeting `main` when `docs/developer/**`, `projects/website/src/**`, `projects/cli/CHANGELOG.md`, or the workflow definition changes. The workflow MUST install the locked website dependencies and build the static site. It MUST NOT deploy a Pages artifact or request write-level GitHub Pages permissions.
 
 #### Scenario: Change a developer documentation file in a pull request
 
 - **WHEN** a pull request targeting `main` changes a file under `docs/developer`
 - **THEN** the website validation workflow installs dependencies and reports whether the static-site build succeeds
+
+#### Scenario: Change the canonical CLI changelog in a pull request
+
+- **WHEN** a pull request targeting `main` changes `projects/cli/CHANGELOG.md`
+- **THEN** the website validation workflow rebuilds the static site with the updated changelog
 
 #### Scenario: Change an unrelated file in a pull request
 
@@ -23,7 +28,7 @@ The repository SHALL provide a pull-request workflow that runs for pull requests
 
 ### Requirement: Publish affected main-branch builds
 
-The repository SHALL provide a GitHub Pages workflow that runs after pushes to `main` when `docs/developer/**`, `projects/website/src/**`, or the workflow definition changes. The workflow MUST install locked dependencies, build the static site, upload only the generated site output, and deploy that artifact to GitHub Pages using the minimum required Pages permissions. Concurrent deployments MUST preserve an in-progress production deployment.
+The repository SHALL provide a GitHub Pages workflow that runs after pushes to `main` when `docs/developer/**`, `projects/website/src/**`, `projects/cli/CHANGELOG.md`, or the workflow definition changes. The workflow MUST install locked dependencies, build the static site, upload only the generated site output, and deploy that artifact to GitHub Pages using the minimum required Pages permissions. Concurrent deployments MUST preserve an in-progress production deployment.
 
 #### Scenario: Merge a developer documentation change
 
@@ -34,6 +39,11 @@ The repository SHALL provide a GitHub Pages workflow that runs after pushes to `
 
 - **WHEN** a change under `projects/website/src` is merged into `main`
 - **THEN** the Pages workflow builds and deploys the updated static site
+
+#### Scenario: Merge the canonical CLI changelog
+
+- **WHEN** `projects/cli/CHANGELOG.md` is changed and merged into `main`
+- **THEN** the Pages workflow rebuilds and deploys the updated changelog page
 
 ### Requirement: Preserve GitHub Pages base-path compatibility
 
