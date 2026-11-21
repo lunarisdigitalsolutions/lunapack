@@ -4,8 +4,10 @@
   "private": true,
   "description": "LunaPack developer documentation website.",
   "scripts": {
-    "start": "docusaurus start src",
-    "build": "docusaurus build src",
+    "prepare:changelog": "node src/scripts/prepare-cli-changelog.mjs",
+    "test:changelog": "node --test src/scripts/prepare-cli-changelog.test.mjs",
+    "start": "npm run prepare:changelog && docusaurus start src",
+    "build": "npm run prepare:changelog && docusaurus build src",
     "serve": "docusaurus serve src",
     "clear": "docusaurus clear src"
   },

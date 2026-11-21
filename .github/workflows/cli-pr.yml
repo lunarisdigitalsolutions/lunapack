@@ -23,10 +23,18 @@ permissions:
 
 jobs:
   build-linux:
-    name: linux-x64
+    name: ${{ matrix.runtimeIdentifier }}
     if: ${{ !github.event.pull_request.draft }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            runtimeIdentifier: linux-x64
+          - runner: ubuntu-24.04-arm
+            runtimeIdentifier: linux-arm64
     permissions:
       checks: write
       contents: read
@@ -39,8 +47,14 @@ jobs:
       - name: Build Luna CLI
         uses: ./.github/actions/cli/build
         with:
-          runtime-identifier: linux-x64
+          runtime-identifier: ${{ matrix.runtimeIdentifier }}
           publish-artifacts: 'false'
+
+      - name: Run CLI sanity check
+        uses: ./.github/actions/cli/sanity
+        with:
+          published-directory: ${{ github.workspace }}/projects/cli/src/Lunapack.Cli/bin/Release/net10.0/${{ matrix.runtimeIdentifier }}/publish
+          source-ref: ${{ github.sha }}
 
   build-macos:
     name: ${{ matrix.runtimeIdentifier }}
@@ -68,8 +82,13 @@ jobs:
         uses: ./.github/actions/cli/build
         with:
           runtime-identifier: ${{ matrix.runtimeIdentifier }}
-          test-project-paths: projects/cli/src/Lunapack.Cli.UnitTests/Lunapack.Cli.UnitTests.csproj
           publish-artifacts: 'false'
+
+      - name: Run CLI sanity check
+        uses: ./.github/actions/cli/sanity
+        with:
+          published-directory: ${{ github.workspace }}/projects/cli/src/Lunapack.Cli/bin/Release/net10.0/${{ matrix.runtimeIdentifier }}/publish
+          source-ref: ${{ github.sha }}
 
   build-windows:
     name: win-x64
@@ -89,5 +108,10 @@ jobs:
         uses: ./.github/actions/cli/build
         with:
           runtime-identifier: win-x64
-          test-project-paths: projects/cli/src/Lunapack.Cli.UnitTests/Lunapack.Cli.UnitTests.csproj
           publish-artifacts: 'false'
+
+      - name: Run CLI sanity check
+        uses: ./.github/actions/cli/sanity
+        with:
+          published-directory: ${{ github.workspace }}/projects/cli/src/Lunapack.Cli/bin/Release/net10.0/win-x64/publish
+          source-ref: ${{ github.sha }}

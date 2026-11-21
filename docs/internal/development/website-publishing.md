@@ -9,6 +9,12 @@ presentation only.
 order: what LunaPack is, getting started, CLI reference, then the Diataxis pack
 guide. Add or move a developer page in that sidebar as part of the same change.
 
+The canonical Luna CLI changelog remains `projects/cli/CHANGELOG.md`. Website
+build and start scripts generate a transient Docusaurus document under
+`projects/website/src/.generated/changelog`; do not commit or maintain a copy
+under `docs/developer`. The generated document removes the maintainer-only
+`Unreleased` placeholder before Docusaurus renders `/changelog/`.
+
 ## Build Locally
 
 Use the website's isolated npm project:
@@ -22,7 +28,8 @@ npm run serve --prefix projects/website
 `npm run serve` publishes the generated `build` directory locally. The site
 uses the root `/` base path configured for `https://lunapack.dev/`. Verify the
 landing page at `/`, developer-documentation routes under `/developer/`, and
-linked CLI and pack pages from those paths.
+linked CLI and pack pages from those paths. Verify the changelog route at
+`/changelog/` and confirm it hides the `Unreleased` maintainer placeholder.
 
 ## Dependency Updates
 
@@ -45,8 +52,8 @@ one available. See [ADR-0024](../architecture/adr/0024-publish-developer-docs-wi
 
 `website-pr.yml` runs the `.github/actions/website/build` composite action for
 pull requests to `main` that change `docs/developer/**`,
-`projects/website/src/**`, the website composite action, or either website
-workflow. It never deploys.
+`projects/website/src/**`, `projects/cli/CHANGELOG.md`, the website composite
+action, or either website workflow. It never deploys.
 
 `website.yml` uses the same composite action and path filters for pushes to
 `main`. Its build job receives content and Pages metadata read permissions and

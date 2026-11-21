@@ -12,6 +12,7 @@ on:
     paths:
       - 'docs/developer/**'
       - 'projects/website/src/**'
+      - 'projects/cli/CHANGELOG.md'
       - '.github/actions/website/**'
       - '.github/workflows/website.yml'
       - '.github/workflows/website-pr.yml'

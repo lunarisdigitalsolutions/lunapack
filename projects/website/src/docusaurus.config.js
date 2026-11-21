@@ -38,6 +38,18 @@ const config = {
       })
     ]
   ],
+  plugins: [
+    [
+      require.resolve('@docusaurus/plugin-content-docs'),
+      {
+        id: 'cliChangelog',
+        path: './.generated/changelog',
+        routeBasePath: 'changelog',
+        sidebarPath: false,
+        include: ['index.md']
+      }
+    ]
+  ],
   themes: [
     [
       require.resolve('@easyops-cn/docusaurus-search-local'),
@@ -68,6 +80,11 @@ const config = {
             sidebarId: 'developerSidebar',
             position: 'left',
             label: 'Documentation'
+          },
+          {
+            to: '/changelog/',
+            position: 'left',
+            label: 'Changelog'
           },
           {
             href: 'https://github.com/lunarisdigitalsolutions/lunapack',

@@ -72,6 +72,7 @@ publish/
 !.github/**/build
 out/
 /tasks.md
+projects/website/src/.generated/
 
 # Husky generated support files
 .husky/_/
