@@ -407,7 +407,7 @@ public sealed class LifecycleHookProcessSecurityTests
             "POSIX::setsid(); open(F, \">\", $ENV{"
             + processIdName
             + "}); print F $$; close(F); sleep 30";
-        return CreateInvocation(ShellArgument, $"/usr/bin/perl -MPOSIX -e '{perlScript}' &");
+        return CreateInvocation(ShellArgument, $"/usr/bin/perl -MPOSIX -e '{perlScript}'");
     }
 
     private static ResolvedLifecycleHookInvocation CreateWindowsDescendantInvocation(
@@ -470,7 +470,7 @@ public sealed class LifecycleHookProcessSecurityTests
 
     private static async Task WaitForProcessExitAsync(int processId)
     {
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         while (IsProcessRunning(processId))
         {
             await Task.Delay(TimeSpan.FromMilliseconds(20), timeout.Token);
@@ -511,6 +511,10 @@ public sealed class LifecycleHookProcessSecurityTests
             return !process.HasExited;
         }
         catch (ArgumentException)
+        {
+            return false;
+        }
+        catch (InvalidOperationException)
         {
             return false;
         }

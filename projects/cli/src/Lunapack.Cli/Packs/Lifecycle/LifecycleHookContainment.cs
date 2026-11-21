@@ -469,7 +469,10 @@ internal sealed class LifecycleHookContainment : IDisposable
         Dictionary<int, (int ProcessId, int ParentProcessId, int ProcessGroupId)> rows
     )
     {
-        if (row.ProcessGroupId == Environment.ProcessId)
+        if (
+            row.ProcessGroupId == Environment.ProcessId
+            || _macProcessGroupIds.ContainsKey(row.ProcessGroupId)
+        )
         {
             return true;
         }
@@ -494,13 +497,27 @@ internal sealed class LifecycleHookContainment : IDisposable
 
     private async Task KillMacDescendantsAsync()
     {
-        await RefreshMacDescendantsAsync(rootProcessId: null, CancellationToken.None);
-        foreach (var groupId in _macProcessGroupIds.Keys)
+        for (var attempt = 0; attempt < 3; attempt++)
         {
-            _ = KillUnixProcess(-groupId);
+            await RefreshMacDescendantsAsync(rootProcessId: null, CancellationToken.None);
+            foreach (var groupId in _macProcessGroupIds.Keys.ToArray())
+            {
+                _ = KillUnixProcess(-groupId);
+            }
+
+            foreach (var processId in _macProcessIds.Keys.ToArray())
+            {
+                if (processId != Environment.ProcessId)
+                {
+                    _ = KillUnixProcess(processId);
+                }
+            }
+
+            await Task.Delay(MacDescendantSettleMilliseconds);
         }
 
-        foreach (var processId in _macProcessIds.Keys)
+        await RefreshMacDescendantsAsync(rootProcessId: null, CancellationToken.None);
+        foreach (var processId in _macProcessIds.Keys.ToArray())
         {
             if (processId != Environment.ProcessId)
             {
