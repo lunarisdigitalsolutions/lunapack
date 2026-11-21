@@ -83,7 +83,7 @@ Create a new architecture decision record from the [MADR-based template](templat
 | [ADR-0077][adr-0077]                                                            | Allow explicit noninteractive parameter resolution for dry-run previews.                |
 | [ADR-0078][adr-0078]                                                            | Align configurable update inputs and target remapping with installation.                |
 | [ADR-0079][adr-0079]                                                            | Validate direct Git pack references while preserving local diagnostics.                 |
-| [ADR-0080][adr-0080]                                                            | Run x64 CLI sanity checks in native build jobs.                                         |
+| [ADR-0080][adr-0080]                                                            | Superseded by ADR-0107.                                                                 |
 | [ADR-0081][adr-0081]                                                            | Inherit composite remaps and evaluate runtime hook state during ordered dispatch.       |
 | [ADR-0082][adr-0082]                                                            | Require pack changelog entries only after the initial release.                          |
 | [ADR-0083][adr-0083]                                                            | Evaluate explicitly marked composite parameter expressions as typed values.             |
@@ -110,6 +110,7 @@ Create a new architecture decision record from the [MADR-based template](templat
 | [ADR-0104](0104-require-authoritative-git-manifests.md)                         | Require authoritative Git manifests for online lifecycle decisions.                     |
 | [ADR-0105](0105-reject-aliases-in-local-link-trees.md)                          | Reject filesystem aliases throughout local Luna Link source trees.                      |
 | [ADR-0106](0106-render-cli-changelog-from-canonical-source.md)                  | Render the canonical CLI changelog through a transient Docusaurus document.             |
+| [ADR-0107](0107-run-cli-sanity-checks-across-native-matrices.md)                | Run CLI lifecycle sanity checks across every native release and PR matrix RID.          |
 
 [adr-0070]: 0070-bind-privileged-workflows-to-trusted-provenance.md
 [adr-0071]: 0071-reject-filesystem-aliases-at-mutation-boundaries.md
