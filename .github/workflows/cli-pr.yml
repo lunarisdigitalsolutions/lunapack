@@ -21,8 +21,20 @@ permissions:
 
 jobs:
   build:
+    name: ${{ matrix.runtimeIdentifier }}
     if: ${{ !github.event.pull_request.draft }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            runtimeIdentifier: linux-x64
+          - runner: macos-26-intel
+            runtimeIdentifier: osx-x64
+          - runner: macos-26
+            runtimeIdentifier: osx-arm64
     permissions:
       checks: write
       contents: read
@@ -35,5 +47,5 @@ jobs:
       - name: Build Luna CLI
         uses: ./.github/actions/cli/build
         with:
-          runtime-identifier: linux-x64
+          runtime-identifier: ${{ matrix.runtimeIdentifier }}
           publish-artifacts: 'false'
