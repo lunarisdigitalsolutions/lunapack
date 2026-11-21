@@ -364,14 +364,24 @@ internal sealed class LifecycleHookContainment : IDisposable
             },
         };
         process.StartInfo.ArgumentList.Add("-axo");
-        process.StartInfo.ArgumentList.Add("pid=,ppid=,pgid=,sid=");
+        process.StartInfo.ArgumentList.Add("pid=,ppid=,pgid=");
         process.Start();
         var outputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
         await process.WaitForExitAsync(cancellationToken);
-        var processRows = (await outputTask)
-            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
-            .Select(ParseMacProcessRow)
-            .ToDictionary(row => row.ProcessId);
+        var processRows =
+            new Dictionary<int, (int ProcessId, int ParentProcessId, int ProcessGroupId)>();
+        foreach (
+            var row in (await outputTask).Split(
+                '\n',
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+            )
+        )
+        {
+            if (ParseMacProcessRow(row) is { } processRow)
+            {
+                processRows[processRow.ProcessId] = processRow;
+            }
+        }
         var activeProcessIds = new HashSet<int>(processRows.Keys);
         foreach (var processId in _macProcessIds.Keys)
         {
@@ -418,34 +428,48 @@ internal sealed class LifecycleHookContainment : IDisposable
         }
     }
 
-    private static (
-        int ProcessId,
-        int ParentProcessId,
-        int ProcessGroupId,
-        int SessionId
-    ) ParseMacProcessRow(string row)
+    internal static (int ProcessId, int ParentProcessId, int ProcessGroupId)? ParseMacProcessRow(
+        string row
+    )
     {
         var fields = row.Split(
             [' ', '\t', '\r'],
             StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
         );
-        return (
-            int.Parse(fields[0], NumberStyles.Integer, CultureInfo.InvariantCulture),
-            int.Parse(fields[1], NumberStyles.Integer, CultureInfo.InvariantCulture),
-            int.Parse(fields[2], NumberStyles.Integer, CultureInfo.InvariantCulture),
-            int.Parse(fields[3], NumberStyles.Integer, CultureInfo.InvariantCulture)
-        );
+        if (
+            fields.Length < 3
+            || !int.TryParse(
+                fields[0],
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out var processId
+            )
+            || !int.TryParse(
+                fields[1],
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out var parentProcessId
+            )
+            || !int.TryParse(
+                fields[2],
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out var processGroupId
+            )
+        )
+        {
+            return null;
+        }
+
+        return (processId, parentProcessId, processGroupId);
     }
 
     private bool IsMacDescendant(
-        (int ProcessId, int ParentProcessId, int ProcessGroupId, int SessionId) row,
-        Dictionary<
-            int,
-            (int ProcessId, int ParentProcessId, int ProcessGroupId, int SessionId)
-        > rows
+        (int ProcessId, int ParentProcessId, int ProcessGroupId) row,
+        Dictionary<int, (int ProcessId, int ParentProcessId, int ProcessGroupId)> rows
     )
     {
-        if (row.ProcessGroupId == Environment.ProcessId || row.SessionId == Environment.ProcessId)
+        if (row.ProcessGroupId == Environment.ProcessId)
         {
             return true;
         }
