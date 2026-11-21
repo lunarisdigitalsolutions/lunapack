@@ -25,16 +25,14 @@ internal sealed class DoctorTemporaryFileProbe(IFileSystem fileSystem) : IDoctor
     {
         try
         {
-            using var probe = new FileStream(
+            using var probe = fileSystem.File.Open(
                 probePath,
                 FileMode.CreateNew,
                 FileAccess.Write,
-                FileShare.None,
-                bufferSize: 1,
-                FileOptions.None
+                FileShare.None
             );
             probe.WriteByte(0);
-            probe.Flush(flushToDisk: false);
+            probe.Flush();
         }
         catch (Exception exception)
             when (exception
@@ -126,13 +124,24 @@ internal sealed class DoctorTemporaryFileProbe(IFileSystem fileSystem) : IDoctor
 
         try
         {
-            var current = root;
-            if (IsReparsePoint(current))
+            var tempDirectory = fileSystem.Path.TrimEndingDirectorySeparator(
+                fileSystem.Path.GetFullPath(Path.GetTempPath())
+            );
+            var tempRelative = fileSystem.Path.GetRelativePath(tempDirectory, directory);
+            var isWithinTempDirectory = IsWithinDirectory(tempRelative);
+            var validationStart = isWithinTempDirectory ? tempDirectory : root;
+            var relative = isWithinTempDirectory
+                ? string.Equals(tempRelative, ".", StringComparison.Ordinal)
+                    ? ""
+                    : tempRelative
+                : directory[root.Length..];
+
+            var current = validationStart;
+            if (!isWithinTempDirectory && IsReparsePoint(current))
             {
                 return "The directory path crosses a link or reparse point.";
             }
 
-            var relative = directory[root.Length..];
             foreach (
                 var segment in relative.Split(
                     [
@@ -156,6 +165,24 @@ internal sealed class DoctorTemporaryFileProbe(IFileSystem fileSystem) : IDoctor
         }
 
         return null;
+    }
+
+    private bool IsWithinDirectory(string relativePath)
+    {
+        if (fileSystem.Path.IsPathRooted(relativePath))
+        {
+            return false;
+        }
+
+        if (string.Equals(relativePath, "..", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var directorySeparator = fileSystem.Path.DirectorySeparatorChar;
+        var altDirectorySeparator = fileSystem.Path.AltDirectorySeparatorChar;
+        return !relativePath.StartsWith($"..{directorySeparator}", StringComparison.Ordinal)
+            && !relativePath.StartsWith($"..{altDirectorySeparator}", StringComparison.Ordinal);
     }
 
     private bool IsReparsePoint(string path) =>

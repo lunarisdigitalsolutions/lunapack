@@ -1,10 +1,30 @@
 using System.IO.Abstractions;
+using System.IO.Abstractions.TestingHelpers;
 using Lunapack.Cli.Doctor;
 
 namespace Lunapack.Cli.UnitTests.Doctor;
 
 public sealed class DoctorTemporaryFileProbeTests
 {
+    [Test]
+    public async Task Probe_WhenTempDescendantIsReparsePoint_Fails()
+    {
+        var fileSystem = new MockFileSystem();
+        var tempDirectory = fileSystem.Path.GetFullPath(Path.GetTempPath());
+        fileSystem.AddDirectory(tempDirectory);
+        var directory = fileSystem.Path.Combine(tempDirectory, "lunapack-doctor-probe-link");
+        fileSystem.AddDirectory(directory);
+        fileSystem.File.SetAttributes(
+            directory,
+            FileAttributes.Directory | FileAttributes.ReparsePoint
+        );
+
+        var result = new DoctorTemporaryFileProbe(fileSystem).Probe(directory);
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Message).Contains("link or reparse point");
+    }
+
     [Test]
     public async Task Probe_WhenDirectoryExists_LeavesNoTemporaryFile()
     {
