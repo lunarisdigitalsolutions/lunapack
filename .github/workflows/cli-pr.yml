@@ -31,10 +31,13 @@ jobs:
         include:
           - runner: ubuntu-latest
             runtimeIdentifier: linux-x64
+            testProjectPaths: ''
           - runner: macos-26-intel
             runtimeIdentifier: osx-x64
+            testProjectPaths: projects/cli/src/Lunapack.Cli.UnitTests/Lunapack.Cli.UnitTests.csproj
           - runner: macos-26
             runtimeIdentifier: osx-arm64
+            testProjectPaths: projects/cli/src/Lunapack.Cli.UnitTests/Lunapack.Cli.UnitTests.csproj
     permissions:
       checks: write
       contents: read
@@ -48,4 +51,5 @@ jobs:
         uses: ./.github/actions/cli/build
         with:
           runtime-identifier: ${{ matrix.runtimeIdentifier }}
+          test-project-paths: ${{ matrix.testProjectPaths }}
           publish-artifacts: 'false'
